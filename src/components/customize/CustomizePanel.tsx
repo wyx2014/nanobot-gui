@@ -3,14 +3,13 @@ import { useCustomizeStore } from '@/stores/customizeStore';
 import { APP_VERSION } from '@/utils/version';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { useI18n } from '@/i18n';
-import { X, Sparkles, Bot, Server, Cpu, Search } from 'lucide-react';
+import { X, Sparkles, Server, Cpu, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import SkillsSection from './SkillsSection';
-import AgentsSection from './AgentsSection';
 import MCPSection from './MCPSection';
 import ModelsSection from './ModelsSection';
 
-type TabId = 'skills' | 'agents' | 'mcp' | 'models';
+type TabId = 'skills' | 'mcp' | 'models';
 
 export default function CustomizePanel() {
   const { showCustomize, activeTab, setActiveTab, closeCustomize, searchQuery, setSearchQuery } =
@@ -20,7 +19,6 @@ export default function CustomizePanel() {
 
   const tabs: { id: TabId; label: string; icon: typeof Sparkles }[] = [
     { id: 'skills', label: t.toolbox.skills, icon: Sparkles },
-    { id: 'agents', label: t.toolbox.agents, icon: Bot },
     { id: 'mcp', label: t.toolbox.mcp, icon: Server },
     { id: 'models', label: t.toolbox.models, icon: Cpu },
   ];
@@ -38,8 +36,6 @@ export default function CustomizePanel() {
     switch (activeTab) {
       case 'skills':
         return <SkillsSection />;
-      case 'agents':
-        return <AgentsSection />;
       case 'mcp':
         return <MCPSection />;
       case 'models':
@@ -100,7 +96,7 @@ export default function CustomizePanel() {
           </div>
 
           {/* Search */}
-          {(activeTab === 'skills' || activeTab === 'agents' || activeTab === 'mcp') && (
+          {(activeTab === 'skills' || activeTab === 'mcp') && (
             <div className="relative mt-3">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
               <input

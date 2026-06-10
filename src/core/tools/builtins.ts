@@ -1060,11 +1060,6 @@ const delegateToAgentTool: ToolDefinition = {
       return `Error: 代理 "${agentName}" 未找到。可用代理: ${available || '无'}`;
     }
 
-    // 2. Check if disabled
-    const { disabledAgents } = useSettingsStore.getState();
-    if (disabledAgents.includes(agentName)) {
-      return `Error: 代理 "${agentName}" 已被停用。`;
-    }
 
     // 3. Get parent loop context
     const loopCtx = getCurrentLoopContext();

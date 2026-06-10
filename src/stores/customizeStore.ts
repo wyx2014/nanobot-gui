@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-type CustomizeTab = 'skills' | 'agents' | 'mcp' | 'models';
+type CustomizeTab = 'skills' | 'mcp' | 'models';
 
 interface CustomizeState {
   showCustomize: boolean;

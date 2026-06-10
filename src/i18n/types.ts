@@ -308,8 +308,6 @@ export interface TranslationDict {
   toolbox: {
     title: string;
     skills: string;
-    agents: string;
-    experts: string;
     mcp: string;
     searchPlaceholder: string;
     footerDescription: string;
@@ -323,34 +321,6 @@ export interface TranslationDict {
     nameFormatHint: string;
     aiAssistedCreate: string;
     installFailed: string;
-    // Agents Section
-    installedAgents: string;
-    noInstalledAgents: string;
-    agentMarketplace: string;
-    createAgent: string;
-    mainAgent: string;
-    defaultAgent: string;
-    mainAgentDesc: string;
-    // Experts Section
-    installedExperts: string;
-    noInstalledExperts: string;
-    createExpert: string;
-    expertDetail: string;
-    expertEditorTitle: string;
-    expertEditorName: string;
-    expertEditorDescription: string;
-    expertEditorMetadata: string;
-    expertEditorInstructions: string;
-    expertEditorMCPServers: string;
-    expertEditorSubagents: string;
-    expertEnabled: string;
-    expertDisabled: string;
-    expertModel: string;
-    expertModelInherit: string;
-    noCustomExperts: string;
-    expertEdit: string;
-    expertSave: string;
-    expertSaveAndTest: string;
     // MCP Section
     mcpServers: string;
     configuredServers: string;
@@ -497,9 +467,7 @@ export interface TranslationDict {
     noLogs: string;
     // MarketplaceCard i18n
     installing: string;
-    aiCreateAgentPrompt: string;
     aiCreateSkillPrompt: string;
-    agentTestPrompt: string;
   };
 
   // Permission Dialog

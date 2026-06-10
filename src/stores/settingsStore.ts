@@ -169,8 +169,8 @@ export type ViewMode = 'chat' | 'schedule' | 'toolbox' | 'settings';
 // System settings tabs
 export type SystemSettingsTab = 'general' | 'ai-services' | 'memory' | 'sandbox' | 'about';
 
-// Toolbox tabs (Skills, Agents, Experts, MCP)
-export type ToolboxTab = 'skills' | 'agents' | 'experts' | 'mcp';
+// Toolbox tabs (Skills, MCP)
+export type ToolboxTab = 'skills' | 'mcp';
 
 interface SettingsState {
   provider: LLMProvider;
@@ -211,10 +211,6 @@ interface SettingsState {
   viewMode: ViewMode;
   // Disabled skills (persisted)
   disabledSkills: string[];
-  // Disabled agents (persisted)
-  disabledAgents: string[];
-  // Disabled experts (persisted)
-  disabledExperts: string[];
   // Sandbox
   sandboxEnabled: boolean;
   // Network isolation
@@ -291,10 +287,6 @@ interface SettingsActions {
   setViewMode: (mode: ViewMode) => void;
   // Skill enable/disable
   toggleSkillEnabled: (skillName: string) => void;
-  // Agent enable/disable
-  toggleAgentEnabled: (agentName: string) => void;
-  // Expert enable/disable
-  toggleExpertEnabled: (expertName: string) => void;
   // Unified provider switch (sets provider + format + baseUrl + model atomically)
   switchProvider: (provider: LLMProvider) => void;
   // Sandbox
@@ -399,8 +391,6 @@ export const useSettingsStore = create<SettingsStore>()(
       installingItem: null,
       viewMode: 'chat' as ViewMode,
       disabledSkills: [],
-      disabledAgents: [],
-      disabledExperts: [],
       sandboxEnabled: true,
       networkIsolationEnabled: false,
       networkWhitelist: [],
@@ -486,16 +476,6 @@ export const useSettingsStore = create<SettingsStore>()(
         disabledSkills: s.disabledSkills.includes(skillName)
           ? s.disabledSkills.filter((n) => n !== skillName)
           : [...s.disabledSkills, skillName],
-      })),
-      toggleAgentEnabled: (agentName) => set((s) => ({
-        disabledAgents: s.disabledAgents.includes(agentName)
-          ? s.disabledAgents.filter((n) => n !== agentName)
-          : [...s.disabledAgents, agentName],
-      })),
-      toggleExpertEnabled: (expertName) => set((s) => ({
-        disabledExperts: s.disabledExperts.includes(expertName)
-          ? s.disabledExperts.filter((n) => n !== expertName)
-          : [...s.disabledExperts, expertName],
       })),
       setSandboxEnabled: (sandboxEnabled) => set({ sandboxEnabled }),
       setNetworkIsolationEnabled: (networkIsolationEnabled) => set({ networkIsolationEnabled }),
@@ -594,8 +574,6 @@ export const useSettingsStore = create<SettingsStore>()(
 
           // Ensure new fields have defaults (defensive — shallow merge handles this too)
           if (state.disabledSkills === undefined) state.disabledSkills = [];
-          if (state.disabledAgents === undefined) state.disabledAgents = [];
-          if (state.disabledExperts === undefined) state.disabledExperts = [];
           if (state.sandboxEnabled === undefined) state.sandboxEnabled = true;
           if (state.closeAction === undefined) state.closeAction = 'ask';
           if (state.lastUpdateCheck === undefined) state.lastUpdateCheck = 0;
@@ -629,8 +607,6 @@ export const useSettingsStore = create<SettingsStore>()(
         sidebarCollapsed: state.sidebarCollapsed,
         rightPanelCollapsed: state.rightPanelCollapsed,
         disabledSkills: state.disabledSkills,
-        disabledAgents: state.disabledAgents,
-        disabledExperts: state.disabledExperts,
         sandboxEnabled: state.sandboxEnabled,
         networkIsolationEnabled: state.networkIsolationEnabled,
         networkWhitelist: state.networkWhitelist,

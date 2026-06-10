@@ -101,7 +101,6 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
   const skills = useDiscoveryStore((s) => s.skills);
   const agents = useDiscoveryStore((s) => s.agents);
   const disabledSkills = useSettingsStore((s) => s.disabledSkills);
-  const disabledAgents = useSettingsStore((s) => s.disabledAgents);
   const currentModel = useSettingsStore((s) => getEffectiveModel(s));
   const provider = useSettingsStore((s) => s.provider);
   const setModel = useSettingsStore((s) => s.setModel);
@@ -206,7 +205,6 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
   };
 
   const disabledSkillSet = useMemo(() => new Set(disabledSkills), [disabledSkills]);
-  const disabledAgentSet = useMemo(() => new Set(disabledAgents), [disabledAgents]);
 
   // Suggestion type tracking: 'skill' for / prefix, 'agent' for @ prefix
   const suggestionType = useMemo((): 'skill' | 'agent' | null => {
@@ -226,7 +224,7 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
     if (suggestionType === 'agent') {
       const query = trimmed.slice(1).toLowerCase();
       return agents
-        .filter((a) => a.name !== 'ruyi' && !disabledAgentSet.has(a.name))
+        .filter((a) => a.name !== 'ruyi')
         .filter((a) => {
           if (!query) return true;
           return a.name.toLowerCase().includes(query) ||
@@ -257,7 +255,7 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
         }));
     }
     return [];
-  }, [text, skills, agents, suggestionType, disabledSkillSet, disabledAgentSet]);
+  }, [text, skills, agents, suggestionType, disabledSkillSet]);
 
   // Reset dismissed state when suggestions change
   useEffect(() => {

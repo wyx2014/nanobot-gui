@@ -110,16 +110,12 @@ export function routeInput(input: string): RouteResult {
     if (agentName) {
       const agent = agentRegistry.getAgent(agentName);
       if (agent && agent.name !== 'ruyi') {
-        // Check if disabled
-        const disabledAgents = useSettingsStore.getState().disabledAgents ?? [];
-        if (!disabledAgents.includes(agentName)) {
-          return {
-            type: 'delegate',
-            name: agentName,
-            delegateAgent: agent,
-            cleanInput: taskText || `@${agentName}`,
-          };
-        }
+        return {
+          type: 'delegate',
+          name: agentName,
+          delegateAgent: agent,
+          cleanInput: taskText || `@${agentName}`,
+        };
       }
     }
   }
@@ -537,9 +533,8 @@ computer use（截屏+点击）速度慢、容易出错，只在**必须看屏�
 
   // List available agents for delegation
   try {
-    const disabledAgents = new Set(settingsState.disabledAgents ?? []);
     const availableAgents = agentRegistry.getAvailableAgents().filter(
-      (a) => a.name !== 'ruyi' && !disabledAgents.has(a.name)
+      (a) => a.name !== 'ruyi'
     );
     if (availableAgents.length > 0) {
       const agentLines = availableAgents.map((a) => `- ${a.name}: ${a.description}`);

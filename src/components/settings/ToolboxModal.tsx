@@ -3,14 +3,12 @@ import { useSettingsStore, type ToolboxTab } from '@/stores/settingsStore';
 import { useChatStore } from '@/stores/chatStore';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { useI18n } from '@/i18n';
-import { Search, Sparkles, Bot, Server, Wrench, Plus, Upload, Wand2, PenLine, ChevronDown, X, GraduationCap } from 'lucide-react';
+import { Search, Sparkles, Server, Wrench, Plus, Upload, Wand2, PenLine, ChevronDown, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fsBridge, osBridge, dialogBridge } from '@/lib/ipc-factory';
 import { joinPath, normalizeSeparators } from '@/utils/pathUtils';
 import { ITEM_NAME_RE } from '@/utils/validation';
 import SkillsSection from '../customize/SkillsSection';
-import AgentsSection from '../customize/AgentsSection';
-import ExpertsSection from '../customize/ExpertsSection';
 import MCPSection from '../customize/MCPSection';
 
 export default function ToolboxView() {
@@ -55,22 +53,16 @@ export default function ToolboxView() {
 
   const handleAICreate = () => {
     startNewConversation();
-    const isAgent = activeToolboxTab === 'agents';
-    const isExpert = activeToolboxTab === 'experts';
-    // Fallback to agent creation prompt if expert specific isn't available for now, since it was not explicitly requested
-    const prompt = isAgent ? t.toolbox.aiCreateAgentPrompt : isExpert ? t.toolbox.aiCreateAgentPrompt : t.toolbox.aiCreateSkillPrompt;
-    setPendingInput(prompt);
+    setPendingInput(t.toolbox.aiCreateSkillPrompt);
     closeToolbox();
   };
 
-  // Handler for uploading a file (Skills/Agents/Experts)
+  // Handler for uploading a file (Skills)
   const handleUploadFile = async () => {
     setShowCreateMenu(false);
 
-    const isAgent = activeToolboxTab === 'agents';
-    const isExpert = activeToolboxTab === 'experts';
-    const expectedFileName = isAgent ? 'AGENT.md' : isExpert ? 'EXPERT.md' : 'SKILL.md';
-    const targetFolder = isAgent ? 'agents' : isExpert ? 'experts' : 'skills';
+    const expectedFileName = 'SKILL.md';
+    const targetFolder = 'skills';
 
     try {
       const filePath = await dialogBridge.open({
@@ -108,7 +100,7 @@ export default function ToolboxView() {
         return;
       }
 
-      // Write to ~/.ruyi/{skills|agents}/{name}/{SKILL|AGENT}.md
+      // Write to ~/.ruyi/skills/{name}/SKILL.md
       const home = await osBridge.homeDir();
       const targetDir = joinPath(home, '.ruyi', targetFolder, name);
 
@@ -130,7 +122,7 @@ export default function ToolboxView() {
     setMcpAddFormOpen(true);
   };
 
-  // Handler for manual create (opens blank editor in SkillsSection/AgentsSection)
+  // Handler for manual create (opens blank editor in SkillsSection)
   const handleManualCreate = () => {
     setShowCreateMenu(false);
     setManualCreateTrigger((c) => c + 1);
@@ -140,8 +132,6 @@ export default function ToolboxView() {
   const getCreateButtonLabel = () => {
     switch (activeToolboxTab) {
       case 'skills': return t.toolbox.createSkill;
-      case 'agents': return t.toolbox.createAgent;
-      case 'experts': return t.toolbox.createExpert;
       case 'mcp': return t.toolbox.createMCP;
       default: return t.toolbox.createSkill;
     }
@@ -149,8 +139,6 @@ export default function ToolboxView() {
 
   const navItems: { id: ToolboxTab; label: string; icon: typeof Sparkles }[] = [
     { id: 'skills', label: t.toolbox.skills, icon: Sparkles },
-    { id: 'agents', label: t.toolbox.agents, icon: Bot },
-    { id: 'experts', label: t.toolbox.experts, icon: GraduationCap },
     { id: 'mcp', label: t.toolbox.mcp, icon: Server },
   ];
 
@@ -158,10 +146,6 @@ export default function ToolboxView() {
     switch (activeToolboxTab) {
       case 'skills':
         return <SkillsSection manualCreateTrigger={manualCreateTrigger} />;
-      case 'agents':
-        return <AgentsSection manualCreateTrigger={manualCreateTrigger} />;
-      case 'experts':
-        return <ExpertsSection manualCreateTrigger={manualCreateTrigger} />;
       case 'mcp':
         return <MCPSection showAddForm={mcpAddFormOpen} onAddFormChange={setMcpAddFormOpen} />;
       default:

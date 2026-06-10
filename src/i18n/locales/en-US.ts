@@ -30,7 +30,6 @@ const enUS: TranslationDict = {
     deleteConversation: 'Delete conversation',
     conversationDeleted: 'Conversation deleted',
     undo: 'Undo',
-    importSession: 'Import session',
     renameConversation: 'Rename',
     viewScheduledTask: 'View scheduled task',
     archiveRun: 'Archive',
@@ -129,7 +128,6 @@ const enUS: TranslationDict = {
 
   settings: {
     title: 'System Settings',
-    memory: 'Memory',
     apiConfig: 'API Config',
     modelSelect: 'Model',
     advanced: 'Advanced',

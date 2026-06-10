@@ -167,7 +167,7 @@ export const AVAILABLE_MODELS = Object.fromEntries(
 export type ViewMode = 'chat' | 'schedule' | 'toolbox' | 'settings';
 
 // System settings tabs
-export type SystemSettingsTab = 'general' | 'ai-services' | 'memory' | 'sandbox' | 'about';
+export type SystemSettingsTab = 'general' | 'ai-services' | 'sandbox' | 'about';
 
 // Toolbox tabs (Skills, MCP)
 export type ToolboxTab = 'skills' | 'mcp';

@@ -3,7 +3,7 @@ import { useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useScheduleStore } from '@/stores/scheduleStore';
 import { useI18n } from '@/i18n';
-import { Plus, Clock, Wrench, Trash2, Settings, Download, Upload, Pencil, Undo2, HelpCircle } from 'lucide-react';
+import { Plus, Clock, Wrench, Trash2, Settings, Download, Pencil, Undo2, HelpCircle } from 'lucide-react';
 import GuideModal from '@/components/common/GuideModal';
 import ProfileEditModal from '@/components/common/ProfileEditModal';
 import { Button } from '@/components/ui/button';
@@ -158,21 +158,6 @@ export default function Sidebar() {
     setContextMenu(null);
   };
 
-  const handleImport = async () => {
-    try {
-      const filePath = await dialogBridge.open({
-        filters: [{ name: 'JSON', extensions: ['json'] }],
-        multiple: false,
-      });
-      if (filePath) {
-        const json = await fsBridge.readTextFile(filePath as string);
-        importConversation(json);
-      }
-    } catch (err) {
-      console.error('Import failed:', err);
-    }
-  };
-
   return (
     <div className="flex flex-col h-full w-[260px] bg-[#f5f3ee] border-r border-[#e8e4dd]">
       {/* Drag region — covers the title bar area above sidebar content (macOS overlay only) */}
@@ -311,13 +296,6 @@ export default function Sidebar() {
             <div className="text-[13px] font-semibold text-[#29261b] truncate">
               {userNickname || t.sidebar.defaultNickname}
             </div>
-          </button>
-          <button
-            onClick={handleImport}
-            className="btn-ghost p-1.5 text-[#656358] hover:text-[#29261b] hover:bg-[#e8e5de] rounded-md"
-            title={t.sidebar.importSession}
-          >
-            <Upload className="h-3.5 w-3.5" />
           </button>
           <button
             onClick={() => openSystemSettings(updateInfo ? 'about' : undefined)}

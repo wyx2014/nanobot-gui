@@ -1,8 +1,8 @@
 import { useSettingsStore, type SystemSettingsTab } from '@/stores/settingsStore';
 import { useI18n } from '@/i18n';
-import { Settings2, Info, Shield, Check, SlidersHorizontal, Brain } from 'lucide-react';
+import { Settings2, Info, Shield, Check, SlidersHorizontal } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { AIServicesSection, AboutSection, SandboxSection, GeneralSection, MemorySection } from './sections';
+import { AIServicesSection, AboutSection, SandboxSection, GeneralSection } from './sections';
 
 export default function SystemSettingsView() {
   const {
@@ -13,7 +13,6 @@ export default function SystemSettingsView() {
 
   const navItems: { id: SystemSettingsTab; label: string; icon: typeof Settings2 }[] = [
     { id: 'ai-services', label: t.settings.aiServices, icon: Settings2 },
-    { id: 'memory', label: t.settings.memory, icon: Brain },
     { id: 'sandbox', label: t.settings.sandbox, icon: Shield },
     { id: 'general', label: t.settings.general, icon: SlidersHorizontal },
     { id: 'about', label: t.common.version, icon: Info },
@@ -25,8 +24,6 @@ export default function SystemSettingsView() {
         return <GeneralSection />;
       case 'ai-services':
         return <AIServicesSection />;
-      case 'memory':
-        return <MemorySection />;
       case 'sandbox':
         return <SandboxSection />;
       case 'about':

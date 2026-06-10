@@ -30,7 +30,6 @@ const zhCN: TranslationDict = {
     deleteConversation: '删除会话',
     conversationDeleted: '会话已删除',
     undo: '撤销',
-    importSession: '导入会话',
     renameConversation: '重命名',
     viewScheduledTask: '查看定时任务',
     archiveRun: '删除记录',
@@ -129,7 +128,6 @@ const zhCN: TranslationDict = {
 
   settings: {
     title: '系统设置',
-    memory: '记忆',
     apiConfig: 'API 配置',
     modelSelect: '模型选择',
     advanced: '高级参数',

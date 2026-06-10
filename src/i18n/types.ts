@@ -42,7 +42,6 @@ export interface TranslationDict {
     deleteConversation: string;
     conversationDeleted: string;
     undo: string;
-    importSession: string;
     renameConversation: string;
     viewScheduledTask: string;
     archiveRun: string;
@@ -147,7 +146,6 @@ export interface TranslationDict {
   // Settings Modal
   settings: {
     title: string;
-    memory: string;
     apiConfig: string;
     modelSelect: string;
     advanced: string;

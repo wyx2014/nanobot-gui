@@ -1,0 +1,133 @@
+import { describe, it, expect } from 'vitest';
+import { classifyError, LLMError } from './adapter';
+
+describe('adapter', () => {
+  // ── LLMError class ──
+  describe('LLMError', () => {
+    it('creates error with code and message', () => {
+      const err = new LLMError('Rate limited', 'rate_limit');
+      expect(err.message).toBe('Rate limited');
+      expect(err.code).toBe('rate_limit');
+      expect(err.name).toBe('LLMError');
+      expect(err.retryable).toBe(false); // default
+    });
+
+    it('creates retryable error with options', () => {
+      const err = new LLMError('Overloaded', 'overloaded', {
+        retryable: true,
+        retryAfterMs: 5000,
+        statusCode: 529,
+      });
+      expect(err.retryable).toBe(true);
+      expect(err.retryAfterMs).toBe(5000);
+      expect(err.statusCode).toBe(529);
+    });
+
+    it('is instanceof Error', () => {
+      const err = new LLMError('test', 'unknown');
+      expect(err).toBeInstanceOf(Error);
+      expect(err).toBeInstanceOf(LLMError);
+    });
+  });
+
+  // ── classifyError — HTTP status codes ──
+  describe('classifyError', () => {
+    it('429 → rate_limit (retryable)', () => {
+      const err = classifyError(429, 'Too many requests');
+      expect(err.code).toBe('rate_limit');
+      expect(err.retryable).toBe(true);
+      expect(err.statusCode).toBe(429);
+    });
+
+    it('429 with retry-after header', () => {
+      const err = classifyError(429, 'Rate limit, retry after: 30 seconds');
+      expect(err.code).toBe('rate_limit');
+      expect(err.retryAfterMs).toBe(30000);
+    });
+
+    it('529 → overloaded (retryable)', () => {
+      const err = classifyError(529, 'Service overloaded');
+      expect(err.code).toBe('overloaded');
+      expect(err.retryable).toBe(true);
+      expect(err.retryAfterMs).toBe(5000);
+    });
+
+    it('503 → overloaded (retryable)', () => {
+      const err = classifyError(503, 'Service unavailable');
+      expect(err.code).toBe('overloaded');
+      expect(err.retryable).toBe(true);
+    });
+
+    it('500 → server_error (retryable)', () => {
+      const err = classifyError(500, 'Internal server error');
+      expect(err.code).toBe('server_error');
+      expect(err.retryable).toBe(true);
+      expect(err.retryAfterMs).toBe(2000);
+    });
+
+    it('502 → server_error (retryable)', () => {
+      const err = classifyError(502, 'Bad gateway');
+      expect(err.code).toBe('server_error');
+      expect(err.retryable).toBe(true);
+    });
+
+    it('401 → authentication (not retryable)', () => {
+      const err = classifyError(401, 'Unauthorized');
+      expect(err.code).toBe('authentication');
+      expect(err.retryable).toBe(false);
+    });
+
+    it('403 → authentication (not retryable)', () => {
+      const err = classifyError(403, 'Forbidden');
+      expect(err.code).toBe('authentication');
+      expect(err.retryable).toBe(false);
+    });
+
+    it('404 → not_found (not retryable)', () => {
+      const err = classifyError(404, 'Model not found');
+      expect(err.code).toBe('not_found');
+      expect(err.retryable).toBe(false);
+    });
+
+    it('400 with context length → context_too_long', () => {
+      const err = classifyError(400, 'prompt is too long for the context window');
+      expect(err.code).toBe('context_too_long');
+      expect(err.retryable).toBe(false);
+    });
+
+    it('400 with token mention → context_too_long', () => {
+      const err = classifyError(400, 'max tokens exceeded');
+      expect(err.code).toBe('context_too_long');
+    });
+
+    it('400 with schema context word → invalid_request (not misclassified)', () => {
+      const err = classifyError(400, "Invalid schema for function: In context=('properties', 'paths'), array schema missing items");
+      expect(err.code).toBe('invalid_request');
+    });
+
+    it('400 generic → invalid_request', () => {
+      const err = classifyError(400, 'Invalid parameter value');
+      expect(err.code).toBe('invalid_request');
+      expect(err.retryable).toBe(false);
+    });
+
+    it('unknown status → unknown', () => {
+      const err = classifyError(418, "I'm a teapot");
+      expect(err.code).toBe('unknown');
+      expect(err.retryable).toBe(false);
+    });
+  });
+
+  // ── Retry-after extraction ──
+  describe('retry-after extraction', () => {
+    it('extracts retry-after seconds from message', () => {
+      const err = classifyError(429, 'Rate limit exceeded. Retry after: 10');
+      expect(err.retryAfterMs).toBe(10000); // 10s * 1000
+    });
+
+    it('returns undefined when no retry-after', () => {
+      const err = classifyError(429, 'Rate limit exceeded');
+      expect(err.retryAfterMs).toBeUndefined();
+    });
+  });
+});

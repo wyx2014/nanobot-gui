@@ -1,0 +1,124 @@
+/**
+ * Per-subagent AbortController management.
+ *
+ * Each subagent gets its own AbortController that:
+ * 1. Can be cancelled independently without affecting parent or siblings
+ * 2. Is automatically cancelled when the parent signal aborts (cascade)
+ * 3. Tracks active subagents for UI visibility
+ */
+
+/** Active subagent entry */
+interface ActiveSubagent {
+  id: string;
+  agentName: string;
+  controller: AbortController;
+  parentCleanup: () => void; // remove parent signal listener
+  startTime: number;
+}
+
+// Module-level registry of active subagent controllers
+const activeSubagents = new Map<string, ActiveSubagent>();
+
+// Listeners for UI state updates
+const listeners = new Set<() => void>();
+
+function notifyListeners() {
+  listeners.forEach(fn => fn());
+}
+
+/**
+ * Create a child AbortController linked to a parent signal.
+ * Returns the subagent ID and the child signal.
+ */
+export function createSubagentController(
+  agentName: string,
+  parentSignal?: AbortSignal
+): { subagentId: string; signal: AbortSignal; cleanup: () => void } {
+  const id = `sub-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  const controller = new AbortController();
+
+  // If parent is already aborted, immediately abort child
+  if (parentSignal?.aborted) {
+    controller.abort();
+  }
+
+  // Wire parent abort → child abort (cascade)
+  let parentCleanup = () => {};
+  if (parentSignal) {
+    const onParentAbort = () => controller.abort();
+    parentSignal.addEventListener('abort', onParentAbort, { once: true });
+    parentCleanup = () => parentSignal.removeEventListener('abort', onParentAbort);
+  }
+
+  const entry: ActiveSubagent = {
+    id,
+    agentName,
+    controller,
+    parentCleanup,
+    startTime: Date.now(),
+  };
+
+  activeSubagents.set(id, entry);
+  notifyListeners();
+
+  const cleanup = () => {
+    removeSubagent(id);
+  };
+
+  return { subagentId: id, signal: controller.signal, cleanup };
+}
+
+/**
+ * Cancel a specific subagent by ID (without affecting parent or siblings)
+ */
+export function cancelSubagent(subagentId: string): boolean {
+  const entry = activeSubagents.get(subagentId);
+  if (!entry) return false;
+
+  entry.controller.abort();
+  removeSubagent(subagentId);
+  return true;
+}
+
+/**
+ * Remove a subagent from tracking (called on completion or cancellation)
+ */
+function removeSubagent(subagentId: string) {
+  const entry = activeSubagents.get(subagentId);
+  if (entry) {
+    entry.parentCleanup();
+    activeSubagents.delete(subagentId);
+    notifyListeners();
+  }
+}
+
+/**
+ * Get list of active subagents (for UI display)
+ */
+export function getActiveSubagents(): Array<{ id: string; agentName: string; startTime: number }> {
+  return Array.from(activeSubagents.values()).map(({ id, agentName, startTime }) => ({
+    id,
+    agentName,
+    startTime,
+  }));
+}
+
+/**
+ * Subscribe to active subagent list changes (for useSyncExternalStore)
+ */
+export function subscribeToActiveSubagents(callback: () => void): () => void {
+  listeners.add(callback);
+  return () => listeners.delete(callback);
+}
+
+/**
+ * Cancel all active subagents (cleanup on conversation reset)
+ */
+export function cancelAllSubagents() {
+  for (const entry of activeSubagents.values()) {
+    entry.controller.abort();
+    entry.parentCleanup();
+  }
+  activeSubagents.clear();
+  notifyListeners();
+}

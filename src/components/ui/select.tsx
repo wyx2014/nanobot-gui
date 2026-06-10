@@ -1,0 +1,110 @@
+import * as React from 'react';
+import { ChevronDown, Check } from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+export interface SelectOption {
+  value: string;
+  label: string;
+}
+
+export interface SelectProps {
+  value: string;
+  onChange: (value: string) => void;
+  options: SelectOption[];
+  placeholder?: string;
+  /** 'default' = full-width form field, 'inline' = compact for settings rows */
+  variant?: 'default' | 'inline';
+  className?: string;
+}
+
+export function Select({ value, onChange, options, placeholder, variant = 'default', className }: SelectProps) {
+  const [open, setOpen] = React.useState(false);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
+  const selectedOption = options.find((opt) => opt.value === value);
+  const isInline = variant === 'inline';
+
+  React.useEffect(() => {
+    if (!open) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [open]);
+
+  return (
+    <div ref={containerRef} className={cn('relative', !isInline && 'w-full', className)}>
+      {/* Trigger */}
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className={cn(
+          'flex items-center gap-2 rounded-lg border border-[#e8e4dd] text-sm text-left transition-all',
+          'focus:outline-none focus:ring-2 focus:ring-[#d97757]/30 focus:border-[#d97757]',
+          'hover:border-[#d0cdc6]',
+          open && 'ring-2 ring-[#d97757]/30 border-[#d97757]',
+          isInline
+            ? 'px-3 py-1.5 bg-[#faf9f5]'
+            : 'w-full h-9 px-3 justify-between bg-[#faf9f7]',
+        )}
+      >
+        <span className={cn(!selectedOption ? 'text-[#b8b5ab]' : 'text-[#29261b]')}>
+          {selectedOption?.label ?? placeholder ?? '...'}
+        </span>
+        <ChevronDown
+          className={cn(
+            'h-3.5 w-3.5 text-[#888579] transition-transform shrink-0',
+            open && 'rotate-180'
+          )}
+        />
+      </button>
+
+      {/* Dropdown */}
+      {open && (
+        <div className={cn(
+          'absolute z-50 top-full mt-1 py-1 bg-white border border-[#e8e4dd] rounded-xl shadow-lg max-h-60 overflow-auto',
+          isInline ? 'right-0 min-w-[140px]' : 'left-0 right-0',
+        )}>
+          {options.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => {
+                onChange(opt.value);
+                setOpen(false);
+              }}
+              className={cn(
+                'w-full px-3 py-2 text-sm text-left transition-colors',
+                'hover:bg-[#f5f3ee]',
+                opt.value === value
+                  ? 'text-[#d97757] bg-[#d97757]/5'
+                  : 'text-[#29261b]'
+              )}
+            >
+              {isInline ? (
+                opt.label
+              ) : (
+                <span className="inline-flex items-center gap-2">
+                  <span className="w-4 shrink-0">
+                    {opt.value === value && <Check className="h-4 w-4 text-[#d97757]" />}
+                  </span>
+                  {opt.label}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -6,7 +6,7 @@ export default defineConfig({
   main: {
     plugins: [
       externalizeDepsPlugin({
-        include: ['node-llama-cpp', 'better-sqlite3', 'sqlite-vec']
+        include: ['node-llama-cpp']
       })
     ],
     build: {
@@ -15,7 +15,7 @@ export default defineConfig({
         formats: ['cjs']
       },
       rollupOptions: {
-        external: ['electron', 'node-llama-cpp', 'better-sqlite3', 'sqlite-vec'],
+        external: ['electron', 'node-llama-cpp'],
         output: {
           entryFileNames: 'index.cjs'
         },
@@ -39,7 +39,10 @@ export default defineConfig({
     root: '.',
     server: {
       port: 5173,
-      strictPort: true
+      strictPort: true,
+      watch: {
+        ignored: ['**/embedded-python/**']
+      }
     },
     build: {
       rollupOptions: {

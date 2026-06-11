@@ -5,10 +5,9 @@ import MarkdownRenderer from './MarkdownRenderer';
 import ToolCallsGroup from './ToolCallsGroup';
 import { useChatStore, useActiveConversation } from '@/stores/chatStore';
 import { usePreviewStore } from '@/stores/previewStore';
-import { runAgentLoop } from '@/core/agent/agentLoop';
+import { sendNanobotMessage } from '@/core/nanobot/chatBridge';
 import { useI18n } from '@/i18n';
 import { cn } from '@/lib/utils';
-import ruyiAvatar from '@/assets/ruyi-avatar.png';
 
 // Helper to get text content from Message
 function getTextContent(content: string | MessageContent[]): string {
@@ -29,7 +28,7 @@ function ThinkingBlock({ thinking }: { thinking: string }) {
   const { t } = useI18n();
 
   return (
-    <div className="my-3 rounded-xl overflow-hidden border border-[#706b5730] bg-[#f5f3ee] max-w-full">
+      <div className="my-3 rounded-2xl overflow-hidden border border-[#dedbd3] bg-[#f3f2ee] max-w-full">
       <button
         onClick={() => setExpanded(!expanded)}
         className="btn-ghost w-full flex items-center gap-2 px-3.5 py-2.5 text-sm hover:bg-[#e8e5de]"
@@ -157,7 +156,7 @@ function EditInput({
       </button>
 
       {/* Input field area - rounded-2xl for multi-line */}
-      <div className="flex-1 flex items-end gap-2 px-4 py-2 bg-white rounded-2xl border-2 border-[#1a73e8] shadow-sm min-h-[44px]">
+      <div className="flex-1 flex items-end gap-2 px-4 py-2 bg-white rounded-2xl border border-[#dedbd3] shadow-sm min-h-[44px] focus-within:border-[#8f8b82]">
         <textarea
           ref={textareaRef}
           value={text}
@@ -173,7 +172,7 @@ function EditInput({
         <button
           onClick={() => onSave(text)}
           disabled={!text.trim()}
-          className="p-1.5 rounded-full bg-[#1a73e8] text-white hover:bg-[#1557b0] transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed mb-1"
+          className="p-1.5 rounded-full bg-[#29261b] text-white hover:bg-[#3d3929] transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed mb-1"
           title={t.chat.saveAndResend}
         >
           <ArrowUp className="h-4 w-4" />
@@ -284,7 +283,7 @@ export default function MessageBubble({
     // Preserve image blocks from original message content
     const originalImages = getImageBlocks(message.content);
     setIsEditing(false);
-    // Delete this message and all subsequent messages, then runAgentLoop creates a fresh one
+    // Delete this message and all subsequent messages, then nanobot bridge creates a fresh one
     deleteMessagesFrom(convId, message.id);
     // Regenerate response, passing original images if any
     const imageAttachments = originalImages.map((img, i) => ({
@@ -292,7 +291,7 @@ export default function MessageBubble({
       data: img.source.data,
       mediaType: img.source.media_type,
     }));
-    await runAgentLoop(convId, newContent, imageAttachments.length > 0 ? { images: imageAttachments } : undefined);
+    await sendNanobotMessage(convId, newContent, imageAttachments.length > 0 ? { images: imageAttachments } : undefined);
   };
 
 
@@ -335,7 +334,7 @@ export default function MessageBubble({
         data: img.source.data,
         mediaType: img.source.media_type,
       }));
-      await runAgentLoop(convId, userContent, imageAttachments.length > 0 ? { images: imageAttachments } : undefined);
+      await sendNanobotMessage(convId, userContent, imageAttachments.length > 0 ? { images: imageAttachments } : undefined);
     }
   };
 
@@ -410,7 +409,7 @@ export default function MessageBubble({
               )}
               <div
                 onContextMenu={handleContextMenu}
-                className="px-4 py-2.5 rounded-2xl rounded-br-sm bg-[#d97757] text-white shadow-sm cursor-default"
+                className="px-5 py-3 rounded-[22px] bg-[#efede8] text-[#191814] cursor-default"
               >
                 {/* Skill badge inside bubble */}
                 {message.skill && (
@@ -481,14 +480,7 @@ export default function MessageBubble({
   }
 
   return (
-    <div className="flex gap-3 w-full overflow-hidden group">
-      {/* RUYI Avatar - 小布丁人 */}
-      <div className="shrink-0 mt-0.5">
-        <div className="w-7 h-7 rounded-full overflow-hidden">
-          <img src={ruyiAvatar} alt="Ruyi" className="w-full h-full object-cover" />
-        </div>
-      </div>
-
+    <div className="flex w-full overflow-hidden group">
       {/* Content */}
       <div className="flex-1 min-w-0 overflow-hidden">
         {/* Thinking block if present */}

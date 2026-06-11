@@ -2,7 +2,7 @@ import { useEffect, useCallback } from 'react';
 import { AlertTriangle, ShieldAlert, ShieldX, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/i18n';
-import type { DangerLevel } from '@/core/tools/commandSafety';
+import type { DangerLevel } from '@/core/safety/commandSafety';
 
 export interface CommandConfirmRequest {
   command: string;

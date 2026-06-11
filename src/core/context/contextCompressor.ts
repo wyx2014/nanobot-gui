@@ -14,17 +14,31 @@
  */
 
 import type { Message } from '../../types';
-import type { LLMAdapter } from '../llm/adapter';
-import type { ChatOptions } from '../llm/adapter';
 import { estimateTokens, estimateMessageTokens } from './tokenEstimator';
 import { getMessageText, identifyRounds, RECENT_ROUNDS_TO_KEEP } from './contextUtils';
 
 const COMPRESSION_THRESHOLD = 0.75; // Trigger at 75% context usage
 const SUMMARY_MAX_TOKENS = 1024;
 
+interface CompressionChatOptions {
+  model: string;
+  apiKey: string;
+  baseUrl?: string;
+  maxTokens?: number;
+  signal?: AbortSignal;
+}
+
+interface CompressionAdapter {
+  chat(
+    messages: Message[],
+    options: CompressionChatOptions,
+    onEvent: (event: { type: string; text?: string }) => void,
+  ): Promise<void>;
+}
+
 /** Configuration for context compression */
 export interface CompressionConfig {
-  adapter: LLMAdapter;
+  adapter: CompressionAdapter;
   model: string;
   apiKey: string;
   baseUrl?: string;
@@ -140,7 +154,7 @@ ${middleText}
     }];
 
     let fullResponse = '';
-    const chatOptions: ChatOptions = {
+    const chatOptions: CompressionChatOptions = {
       model: config.model,
       apiKey: config.apiKey,
       baseUrl: config.baseUrl,

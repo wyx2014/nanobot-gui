@@ -6,6 +6,9 @@ dist/
 src-tauri/target/
 out/
 
+# Embedded Python Runtime
+embedded-python/
+
 # Environment
 .env
 .env.*

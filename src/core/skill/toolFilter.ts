@@ -41,7 +41,7 @@ function parsePattern(pattern: string): ParsedPattern {
 /**
  * Check if a string matches a glob-like pattern with * wildcards.
  * Only supports * (match any characters) — not full glob.
- * Exported for reuse in skillHooks.ts.
+ * Exported for reuse by skill-related filtering surfaces.
  */
 export function matchWildcard(value: string, pattern: string): boolean {
   if (pattern === '*') return true;

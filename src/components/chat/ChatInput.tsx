@@ -5,7 +5,6 @@ import { useFileDragDrop } from '@/hooks/useFileDragDrop';
 import { uint8ArrayToBase64 } from '@/utils/base64';
 import { getBaseName, IMAGE_MIME_MAP } from '@/utils/pathUtils';
 import { isImageFile } from '@/components/chat/FileAttachment';
-import { enqueueUserInput } from '@/core/agent/userInputQueue';
 import { useChatStore, useActiveConversation } from '@/stores/chatStore';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { useSettingsStore, getEffectiveModel, AVAILABLE_MODELS } from '@/stores/settingsStore';
@@ -14,7 +13,7 @@ import { usePermissionStore } from '@/stores/permissionStore';
 import type { PermissionDuration } from '@/stores/permissionStore';
 import { useI18n } from '@/i18n';
 import { Button } from '@/components/ui/button';
-import { cn, generateId } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import type { ImageAttachment } from '@/types';
 import { generateAttachmentId, readFileAsBase64, SUPPORTED_IMAGE_TYPES } from '@/utils/imageUtils';
 import PermissionDialog from '@/components/common/PermissionDialog';
@@ -328,20 +327,6 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
       message = bodyParts;
     }
 
-    // Mid-task input: if agent is running, enqueue the message instead of starting a new loop
-    if (isRunning && activeConv?.id && message) {
-      enqueueUserInput(activeConv.id, message);
-      // Also add as a user message to the UI immediately
-      useChatStore.getState().addMessage(activeConv.id, {
-        id: generateId(),
-        role: 'user',
-        content: message,
-        timestamp: Date.now(),
-      });
-      resetInput();
-      return;
-    }
-
     onSend(message, images.length > 0 ? images : undefined, isWelcome ? localWorkspace : undefined);
     resetInput();
   };
@@ -442,7 +427,7 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
       <div className="relative">
         {/* Suggestions Popup (Skills / Agents) */}
         {showSuggestions && suggestions.length > 0 && (
-          <div className="absolute bottom-full left-0 right-0 mb-2 bg-white rounded-xl border border-[#706b5750] shadow-lg overflow-hidden z-20">
+          <div className="absolute bottom-full left-0 right-0 mb-2 bg-white rounded-2xl border border-[#dedbd3] shadow-lg overflow-hidden z-20">
             {suggestions.map((item, idx) => (
               <button
                 key={item.name}
@@ -455,7 +440,7 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
                 <div className="flex items-center gap-3">
                   <span className={cn(
                     'w-5 text-center font-mono text-[12px] shrink-0',
-                    suggestionType === 'agent' ? 'text-blue-500' : 'text-[#656358]'
+                    suggestionType === 'agent' ? 'text-[#656358]' : 'text-[#656358]'
                   )}>
                     {suggestionType === 'agent' ? '@' : '/'}
                   </span>
@@ -475,15 +460,15 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
         {/* Input Card */}
         <div
           className={cn(
-            'relative bg-white rounded-2xl border transition-all',
+            'relative claude-elevated claude-input-focus rounded-[24px] transition-all',
             !isWelcome && isDragging
               ? 'border-[#d97757] ring-2 ring-[#d97757]/20'
-              : 'border-[#706b5760] focus-within:border-[#706b5790] focus-within:shadow-md shadow-sm'
+              : ''
           )}
         >
           {/* Chat-only: Drag overlay */}
           {!isWelcome && isDragging && (
-            <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-orange-50/90 z-10">
+            <div className="absolute inset-0 flex items-center justify-center rounded-[24px] bg-[#fbfaf7]/90 z-10">
               <span className="text-sm text-[#d97757] font-medium">{t.chat.dropFilesHere}</span>
             </div>
           )}
@@ -496,7 +481,7 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
                   <img
                     src={`data:${img.mediaType};base64,${img.data}`}
                     alt=""
-                    className="w-12 h-12 rounded-lg object-cover border border-[#706b5730]"
+                    className="w-12 h-12 rounded-xl object-cover border border-[#dedbd3]"
                   />
                   <button
                     onClick={() => removeImage(img.id)}
@@ -510,7 +495,7 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
               {files.map((f) => (
                 <div
                   key={f.id}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#f5f3ee] border border-[#706b5730] shrink-0 group/file"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#f3f2ee] border border-[#dedbd3] shrink-0 group/file"
                 >
                   <FileText className="h-3.5 w-3.5 text-[#656358] shrink-0" />
                   <span className="text-[12px] text-[#29261b] max-w-[160px] truncate">{f.name}</span>
@@ -529,7 +514,7 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
           <div className={cn(
             'flex items-start gap-0',
             isWelcome
-              ? hasAttachments ? 'px-5 pt-1 pb-1' : 'px-5 pt-4 pb-1'
+              ? hasAttachments ? 'px-5 pt-1 pb-1' : 'px-5 pt-5 pb-1'
               : hasAttachments ? 'px-4 pt-1 pb-1' : 'px-4 pt-3.5 pb-1'
           )}>
             {/* Inline command prefix (unified for both variants) */}
@@ -566,10 +551,10 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
               disabled={disabled}
               rows={isWelcome ? 2 : 1}
               className={cn(
-                'flex-1 bg-transparent resize-none outline-none text-[#29261b] leading-relaxed',
+                'flex-1 bg-transparent resize-none outline-none text-[#29261b] leading-relaxed placeholder:text-[#8f8b82]',
                 isWelcome
-                  ? 'min-h-[52px] max-h-[180px] text-[15px]'
-                  : 'min-h-[24px] max-h-[160px] py-0.5 text-[14.5px] disabled:opacity-40'
+                  ? 'min-h-[64px] max-h-[180px] text-[18px]'
+                  : 'min-h-[28px] max-h-[160px] py-0.5 text-[15px] disabled:opacity-40'
               )}
             />
           </div>
@@ -577,7 +562,7 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
           {/* Bottom Toolbar */}
           {isWelcome ? (
             /* Welcome variant: FolderSelector + [+] + --- + Start button */
-            <div className="flex items-center gap-2 px-5 pb-3.5">
+            <div className="flex items-center gap-2 px-5 pb-4">
               <FolderSelector
                 currentPath={localWorkspace}
                 recentPaths={recentPaths}
@@ -589,7 +574,7 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
                 size="icon"
                 onClick={handleAttach}
                 aria-label={t.chat.addAttachment}
-                className="btn-ghost h-7 w-7 text-[#656358] hover:text-[#29261b] hover:bg-[#e8e5de] rounded-lg"
+                className="btn-ghost h-8 w-8 text-[#29261b] hover:text-[#29261b] hover:bg-[#eeeeea] rounded-xl"
               >
                 <Plus className="h-4 w-4" />
               </Button>
@@ -599,7 +584,7 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
                 onClick={handleSend}
                 disabled={!hasContent}
                 className={cn(
-                  'btn-claude-primary flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[13px] font-medium',
+                  'btn-claude-primary flex items-center gap-1.5 px-4 py-2 rounded-xl text-[13px] font-medium',
                   hasContent
                     ? 'bg-[#29261b] text-[#faf9f5] shadow-sm'
                     : 'bg-[#e8e5de] text-[#656358]/50 cursor-not-allowed'
@@ -610,21 +595,33 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
               </button>
             </div>
           ) : (
-            /* Chat variant: Model label + [+] + --- + Stop/Send */
+            /* Chat variant: [+] + --- + Model label + Stop/Send */
             <div className="flex items-center justify-between px-4 pb-3 pt-1">
               {/* Left Actions */}
               <div className="flex items-center gap-0.5">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleAttach}
+                  aria-label={t.chat.addAttachment}
+                  className="btn-ghost h-8 w-8 text-[#29261b] hover:text-[#29261b] hover:bg-[#eeeeea] rounded-xl"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+
+              <div className="flex items-center gap-2">
                 {/* Model picker dropdown */}
                 <div className="relative" ref={modelPickerRef}>
                   <button
                     onClick={() => setShowModelPicker(!showModelPicker)}
-                    className="btn-ghost flex items-center gap-1 px-2 py-1 text-[12px] text-[#656358] font-medium hover:text-[#29261b] hover:bg-[#e8e5de] rounded-md transition-colors"
+                    className="btn-ghost flex items-center gap-1 px-2.5 py-1.5 text-[14px] text-[#3d3929] font-medium hover:text-[#29261b] hover:bg-[#eeeeea] rounded-lg transition-colors"
                   >
                     {modelDisplay}
                     <ChevronDown className={cn('h-3 w-3 transition-transform', showModelPicker && 'rotate-180')} />
                   </button>
                   {showModelPicker && availableModels.length > 0 && (
-                    <div className="absolute bottom-full left-0 mb-1.5 w-56 bg-white rounded-lg border border-neutral-200 shadow-lg py-1 z-50">
+                    <div className="absolute bottom-full right-0 mb-1.5 w-56 bg-white rounded-xl border border-[#dedbd3] shadow-lg py-1 z-50">
                       {availableModels.map((m) => (
                         <button
                           key={m.id}
@@ -647,43 +644,33 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
                   )}
                 </div>
 
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleAttach}
-                  aria-label={t.chat.addAttachment}
-                  className="btn-ghost h-7 w-7 text-[#656358] hover:text-[#29261b] hover:bg-[#e8e5de] rounded-lg"
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
+                {/* Send / Stop Button */}
+                {isStreaming ? (
+                  <Button
+                    size="icon"
+                    onClick={handleStop}
+                    aria-label={t.chat.stop}
+                    className="btn-claude-primary h-8 w-8 rounded-xl bg-red-500 hover:bg-red-600 text-white shadow-sm"
+                    title={t.chat.stop}
+                  >
+                    <Square className="h-3 w-3" fill="currentColor" />
+                  </Button>
+                ) : (
+                  <Button
+                    size="icon"
+                    onClick={handleSend}
+                    disabled={!hasContent || disabled}
+                    className={cn(
+                      'h-8 w-8 rounded-xl transition-colors',
+                      hasContent && !disabled
+                        ? 'bg-[#29261b] hover:bg-[#3d3a2f] text-[#faf9f5] shadow-sm'
+                        : 'bg-[#e8e5de] text-[#656358]/50 cursor-not-allowed hover:bg-[#e8e5de]'
+                    )}
+                  >
+                    <ArrowUp className="h-3.5 w-3.5" strokeWidth={2.5} />
+                  </Button>
+                )}
               </div>
-
-              {/* Send / Stop Button */}
-              {isStreaming ? (
-                <Button
-                  size="icon"
-                  onClick={handleStop}
-                  aria-label={t.chat.stop}
-                  className="btn-claude-primary h-7 w-7 rounded-lg bg-red-500 hover:bg-red-600 text-white shadow-sm"
-                  title={t.chat.stop}
-                >
-                  <Square className="h-3 w-3" fill="currentColor" />
-                </Button>
-              ) : (
-                <Button
-                  size="icon"
-                  onClick={handleSend}
-                  disabled={!hasContent || disabled}
-                  className={cn(
-                    'h-7 w-7 rounded-lg transition-colors',
-                    hasContent && !disabled
-                      ? 'bg-[#29261b] hover:bg-[#3d3a2f] text-[#faf9f5] shadow-sm'
-                      : 'bg-[#e8e5de] text-[#656358]/50 cursor-not-allowed hover:bg-[#e8e5de]'
-                  )}
-                >
-                  <ArrowUp className="h-3.5 w-3.5" strokeWidth={2.5} />
-                </Button>
-              )}
             </div>
           )}
         </div>

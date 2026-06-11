@@ -713,7 +713,7 @@ export interface TranslationDict {
     userCancelled: string;
   };
 
-  // Tool error messages (used in core/tools/registry.ts)
+    // Tool error messages
   toolErrors: {
     userDeniedAccess: string;
     pathAccessDenied: string;

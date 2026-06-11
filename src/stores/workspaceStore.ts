@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { authorizeWorkspace, revokeWorkspace } from '../core/tools/pathSafety';
+import { authorizeWorkspace, revokeWorkspace } from '../core/safety/pathSafety';
 import { getBaseName } from '../utils/pathUtils';
 
 interface WorkspaceState {

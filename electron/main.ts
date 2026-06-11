@@ -4,8 +4,8 @@ import fs from 'fs/promises'
 import { exec, spawn, ChildProcess } from 'child_process'
 import os from 'os'
 import Anthropic from '@anthropic-ai/sdk'
-import { MemoryStorage } from './memoryStorage'
-import { localEmbeddingService } from './localEmbedding'
+import { pythonBridge } from './pythonBridge'
+import { syncNanobotConfig, type NanobotConfigInput } from './nanobotConfig'
 
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 
@@ -19,7 +19,6 @@ app.commandLine.appendSwitch('disable-gpu-rasterization');
 app.commandLine.appendSwitch('disable-software-rasterizer');
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 
-let memoryStorage: MemoryStorage | null = null;
 let isQuitting = false;
 
 function createWindow(): void {
@@ -30,7 +29,8 @@ function createWindow(): void {
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
-      sandbox: false
+      sandbox: false,
+      webSecurity: false
     }
   })
 
@@ -60,37 +60,22 @@ function createWindow(): void {
 app.whenReady().then(() => {
   console.log('[Main] app.whenReady fired');
   
-  app.on('before-quit', () => {
-    isQuitting = true;
+  app.on('before-quit', async (e) => {
+    if (!isQuitting) {
+      isQuitting = true;
+      e.preventDefault();
+      console.log('[Main] Gracefully stopping nanobot before quit...');
+      await pythonBridge.stop();
+      app.quit();
+    }
   });
   const userData = app.getPath('userData');
   console.log('[Main] UserData Path:', userData);
-  
-  try {
-    const memoryDbPath = join(userData, 'taiziruyi_memory.sqlite');
-    console.log('[Main] Initializing MemoryStorage at:', memoryDbPath);
-    memoryStorage = new MemoryStorage(memoryDbPath);
-    console.log('[Main] MemoryStorage initialized successfully');
-  } catch (e: any) {
-    console.error('[Main] Failed to initialize MemoryStorage:', e);
-  }
 
   // Ensure models directory exists
   const modelsDirPath = join(userData, 'models');
   fs.mkdir(modelsDirPath, { recursive: true }).then(async () => {
     console.log('[Main] Models directory verified at:', modelsDirPath);
-    
-    // Pre-warm local embedding engine if default model exists
-    const defaultModelPath = join(modelsDirPath, 'embeddinggemma-300m-qat-Q4_0.gguf');
-    try {
-      await fs.access(defaultModelPath);
-      console.log('[Main] Default embedding model found, pre-warming engine...');
-      localEmbeddingService.init(defaultModelPath).catch(err => {
-        console.warn('[Main] Failed to pre-warm local embedding engine:', err.message);
-      });
-    } catch {
-      console.log('[Main] Default embedding model not found, skipping pre-warm.');
-    }
   }).catch(err => {
     console.error('[Main] Failed to create or access models directory:', err);
   });
@@ -427,69 +412,6 @@ app.whenReady().then(() => {
     return true;
   });
 
-  safeInvoke('memory:insert', async (data) => {
-    if (!memoryStorage) throw new Error('Memory storage not initialized');
-    return memoryStorage.insertDocument(data);
-  });
-  safeInvoke('memory:delete', async (data) => {
-    if (!memoryStorage) throw new Error('Memory storage not initialized');
-    const docId = typeof data === 'string' ? data : data?.docId;
-    return memoryStorage.deleteDocument(docId);
-  });
-  safeInvoke('memory:searchVector', async (data) => {
-    if (!memoryStorage) throw new Error('Memory storage not initialized');
-    const { queryVector, vector, limit } = data || {};
-    return memoryStorage.searchVector(queryVector || vector, limit);
-  });
-  safeInvoke('memory:searchKeyword', async (data) => {
-    if (!memoryStorage) throw new Error('Memory storage not initialized');
-    const { queryText, query, limit } = data || {};
-    return memoryStorage.searchKeyword(queryText || query, limit);
-  });
-  safeInvoke('memory:reinit', async (data) => {
-    const { dimensions } = data || {};
-    if (!dimensions) throw new Error('memory:reinit failed: dimensions is missing');
-    const userDataPath = app.getPath('userData');
-    const memoryDbPath = join(userDataPath, 'taiziruyi_memory.sqlite');
-    console.log(`[Main:Memory] Re-initializing with dimensions: ${dimensions}`);
-    memoryStorage = new MemoryStorage(memoryDbPath, dimensions, true);
-    if (dimensions === 768) {
-      const modelPath = join(userDataPath, 'models', 'embeddinggemma-300m-qat-Q4_0.gguf');
-      console.log(`[Main:Memory] Pre-warming local embedding engine at: ${modelPath}`);
-      localEmbeddingService.init(modelPath).catch(err => {
-        console.warn('[Main] Failed to pre-warm local embedding engine:', err.message);
-      });
-    }
-    return { success: true, dimensions: memoryStorage.getDimensions() };
-  });
-
-  safeInvoke('memory:getEmbedding', async (data) => {
-    const { text, modelPath } = data || {};
-    if (!text) throw new Error('memory:getEmbedding failed: text is missing');
-    console.log(`[Main:Memory] Generating embedding for text: "${text.substring(0, 50)}..."`);
-    if (modelPath) {
-      console.log(`[Main:Memory] Using local model at: ${modelPath}`);
-      await localEmbeddingService.init(modelPath);
-    }
-    const vector = await localEmbeddingService.embed(text);
-    console.log(`[Main:Memory] Successfully generated vector of length: ${vector.length}`);
-    return vector;
-  });
-
-  safeInvoke('memory:getStatus', async () => {
-    return {
-      status: localEmbeddingService.getStatus(),
-      dimensions: memoryStorage?.getDimensions() || 0,
-      totalCount: memoryStorage?.getTotalCount() || 0,
-      modelPath: localEmbeddingService.getModelPath()
-    };
-  });
-
-  safeInvoke('memory:list', async (data) => {
-    const { limit } = data || {};
-    return memoryStorage?.listDocuments(limit) || [];
-  });
-
   safeInvoke('app:fetch', async (data) => {
     const { url, options } = data || {}
     if (!url) throw new Error('app:fetch failed: URL is missing')
@@ -628,11 +550,69 @@ app.whenReady().then(() => {
     return true
   })
 
+  // ── nanobot Python bridge IPC handlers ──────────────────────────────────
+
+  // Query nanobot process status (called by renderer on startup)
+  ipcMain.handle('nanobot:status', () => ({
+    ready: pythonBridge.isReady,
+    port: pythonBridge.port,
+    tokenSecret: pythonBridge.tokenSecret,
+  }));
+
+  // Renderer pushes settings → main syncs to nanobot config and (re)starts bridge
+  ipcMain.handle('nanobot:sync-config', async (_, settings: NanobotConfigInput) => {
+    try {
+      const changed = await syncNanobotConfig(settings);
+      if (pythonBridge.isReady && changed) {
+        await pythonBridge.restart();
+      } else if (!pythonBridge.isReady) {
+        await pythonBridge.start();
+      }
+      return { ok: true };
+    } catch (err: any) {
+      console.error('[Main] nanobot:sync-config error:', err);
+      return { ok: false, error: err.message };
+    }
+  });
+
+  // Non-streaming HTTP proxy for nanobot API (GET/POST for status/memory queries)
+  ipcMain.handle('nanobot:request', async (_, {
+    method,
+    path: urlPath,
+    body,
+  }: { method?: string; path: string; body?: unknown }) => {
+    const url = `http://127.0.0.1:${pythonBridge.port}${urlPath}`;
+    const resp = await fetch(url, {
+      method: method ?? 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      body: body != null ? JSON.stringify(body) : undefined,
+    });
+    return { status: resp.status, data: await resp.json().catch(() => null) };
+  });
+
   createWindow()
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+
+  // ── Early nanobot startup (best-effort) ────────────────────────────────
+  // If a config.json from a previous session exists, start nanobot NOW so
+  // that it is ready (or nearly ready) by the time the renderer asks for it.
+  // The renderer's nanobot:sync-config call will still run later; if the
+  // config hasn't changed, isReady will already be true and no restart happens.
+  const earlyConfigPath = join(app.getPath('userData'), 'nanobot-workspace', '.nanobot', 'config.json');
+  fs.access(earlyConfigPath).then(() => {
+    console.log('[Main] Config found — pre-starting nanobot bridge...');
+    pythonBridge.start().then(() => {
+      console.log('[Main] nanobot bridge pre-started successfully');
+    }).catch((err) => {
+      console.warn('[Main] nanobot bridge pre-start failed (renderer will retry via sync-config):', err.message);
+    });
+  }).catch(() => {
+    console.log('[Main] No existing config, waiting for renderer to push settings via nanobot:sync-config');
+  });
+
 })
 
 app.on('window-all-closed', () => {

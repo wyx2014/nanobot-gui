@@ -159,7 +159,7 @@ export default function Sidebar() {
   };
 
   return (
-    <div className="flex flex-col h-full w-[260px] bg-[#f5f3ee] border-r border-[#e8e4dd]">
+    <div className="flex flex-col h-full w-[260px] bg-[#f7f6f2] border-r border-[#e5e2db]">
       {/* Drag region — covers the title bar area above sidebar content (macOS overlay only) */}
       {isMacOS() && (
         <div
@@ -167,14 +167,14 @@ export default function Sidebar() {
         />
       )}
       {/* Top Navigation */}
-      <nav className="px-4 pb-2 space-y-0.5" aria-label="Main navigation">
+      <nav className="px-4 pb-5 space-y-1" aria-label="Main navigation">
         <button
           onClick={() => { startNewConversation(); setViewMode('chat'); }}
           className={cn(
-            'btn-ghost flex items-center gap-3 w-full px-3 py-2.5 text-[14px] font-medium rounded-lg',
+            'btn-ghost flex items-center gap-3 w-full px-3 py-2.5 text-[15px] font-medium tracking-[-0.01em] rounded-xl',
             activeConversationId === null && viewMode === 'chat'
-              ? 'bg-white shadow-sm text-[#29261b]'
-              : 'text-[#29261b] hover:bg-[#e8e5de]'
+              ? 'bg-[#ecebe7] text-[#29261b]'
+              : 'text-[#34322d] hover:bg-[#eeeeea]'
           )}
         >
           <Plus className="h-[18px] w-[18px] text-[#3d3929]" strokeWidth={2} />
@@ -183,10 +183,10 @@ export default function Sidebar() {
         <button
           onClick={() => setViewMode('schedule')}
           className={cn(
-            'btn-ghost flex items-center gap-3 w-full px-3 py-2.5 text-[14px] rounded-lg',
+            'btn-ghost flex items-center gap-3 w-full px-3 py-2.5 text-[15px] font-medium tracking-[-0.01em] rounded-xl',
             viewMode === 'schedule'
-              ? 'bg-white shadow-sm text-[#29261b] font-medium'
-              : 'text-[#3d3929] hover:bg-[#e8e5de]'
+              ? 'bg-[#ecebe7] text-[#29261b] font-medium'
+              : 'text-[#34322d] hover:bg-[#eeeeea]'
           )}
         >
           <Clock className="h-[18px] w-[18px] text-[#656358]" strokeWidth={1.75} />
@@ -200,10 +200,10 @@ export default function Sidebar() {
         <button
           onClick={() => openToolbox()}
           className={cn(
-            'btn-ghost flex items-center gap-3 w-full px-3 py-2.5 text-[14px] rounded-lg',
+            'btn-ghost flex items-center gap-3 w-full px-3 py-2.5 text-[15px] font-medium tracking-[-0.01em] rounded-xl',
             viewMode === 'toolbox'
-              ? 'bg-white shadow-sm text-[#29261b] font-medium'
-              : 'text-[#3d3929] hover:bg-[#e8e5de]'
+              ? 'bg-[#ecebe7] text-[#29261b] font-medium'
+              : 'text-[#34322d] hover:bg-[#eeeeea]'
           )}
         >
           <Wrench className="h-[18px] w-[18px] text-[#656358]" strokeWidth={1.75} />
@@ -215,15 +215,15 @@ export default function Sidebar() {
       <ScheduledSection />
 
       {/* Recents Section */}
-      <div className="px-6 pt-4 pb-1.5">
-        <span className="text-[12px] font-medium text-[#656358]">{t.sidebar.recents}</span>
+      <div className="px-5 pt-3 pb-2 flex items-center justify-between">
+        <span className="text-[14px] font-medium tracking-[-0.01em] text-[#8a867c]">{t.sidebar.recents}</span>
       </div>
 
       {/* Conversation List */}
-      <ScrollArea className="flex-1 min-h-0 px-4">
+      <ScrollArea className="flex-1 min-h-0 px-2">
         {sortedConvs.length === 0 ? (
           <div className="px-4 py-3">
-            <p className="text-[13px] text-[#656358]">{t.sidebar.noSessionsYet}</p>
+            <p className="text-[14px] text-[#8a867c]">{t.sidebar.noSessionsYet}</p>
           </div>
         ) : (
           <div className="space-y-0.5">
@@ -234,10 +234,10 @@ export default function Sidebar() {
                 onContextMenu={(e) => handleContextMenu(e, conv.id)}
                 aria-current={conv.id === activeConversationId && viewMode === 'chat' ? 'true' : undefined}
                 className={cn(
-                  'group flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors w-full text-left',
+                  'group flex items-center gap-2 px-3.5 py-2.5 rounded-xl cursor-pointer transition-colors w-full text-left',
                   conv.id === activeConversationId && viewMode === 'chat'
-                    ? 'bg-white shadow-sm text-[#29261b]'
-                    : 'text-[#3d3929] hover:bg-[#e8e5de]'
+                    ? 'bg-[#ecebe7] text-[#29261b]'
+                    : 'text-[#34322d] hover:bg-[#eeeeea]'
                 )}
               >
                 <StatusIndicator
@@ -261,7 +261,7 @@ export default function Sidebar() {
                     }}
                   />
                 ) : (
-                  <span className="flex-1 truncate text-[13px]">{conv.title}</span>
+                  <span className="flex-1 truncate text-[14px] font-medium tracking-[-0.01em]">{conv.title}</span>
                 )}
                 <Button
                   variant="ghost"
@@ -278,7 +278,7 @@ export default function Sidebar() {
       </ScrollArea>
 
       {/* User Section */}
-      <div className="px-5 py-4 shrink-0">
+      <div className="px-5 py-4 shrink-0 border-t border-[#e5e2db]">
         <div className="flex items-center gap-2.5">
           {/* User avatar + nickname (clickable to edit) */}
           <button

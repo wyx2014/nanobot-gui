@@ -68,7 +68,7 @@ describe('taskExecutionStore', () => {
     });
   });
 
-  // ── Auto-linking simulation (mimics agentLoop behavior) ──
+  // ── Auto-linking simulation (mimics streamed tool event behavior) ──
   describe('planned step auto-linking flow', () => {
     it('simulates the full auto-linking lifecycle: pending → running → completed', () => {
       const store = useTaskExecutionStore.getState();
@@ -157,7 +157,7 @@ describe('taskExecutionStore', () => {
       const store = useTaskExecutionStore.getState();
       const exec = store.createExecution('conv-1', 'loop-1');
 
-      // No planned steps set — simulate the agentLoop auto-link check
+      // No planned steps set — simulate the streamed tool auto-link check
       const state = useTaskExecutionStore.getState().executions[exec.id];
       const nextPending = state.plannedSteps.find(s => s.status === 'pending');
       expect(nextPending).toBeUndefined();

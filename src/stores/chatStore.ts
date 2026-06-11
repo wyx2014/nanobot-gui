@@ -1,13 +1,14 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
-import type { Message, Conversation, AgentStatus, TokenUsage, ConversationStatus, ToolCallContext, ToolResultContent } from '../types';
+import type { Message, Conversation, AgentStatus, TokenUsage, ConversationStatus, ToolCall, ToolCallContext, ToolResultContent } from '../types';
 import type { ExecutionStepSnapshot } from '../types/execution';
 import { useWorkspaceStore } from './workspaceStore';
 import { useTaskExecutionStore } from './taskExecutionStore';
-import { clearTodos } from '../core/agent/todoManager';
-import { clearInputQueue } from '../core/agent/userInputQueue';
-import { clearAllSkillHooks } from '../core/tools/builtins';
+import { clearTodos } from '../core/nanobot/todoManager';
+import { clearInputQueue } from '../core/nanobot/userInputQueue';
+import { getNanobotToken, getNanobotStatus } from '@/core/nanobotClient';
+import { deleteSession } from '@/core/api';
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
@@ -142,6 +143,9 @@ interface ChatActions {
   setContextCache: (convId: string, cache: import('../types').ContextCache) => void;
   clearContextCache: (convId: string) => void;
 
+  addToolCall: (convId: string, messageId: string, toolCall: ToolCall) => void;
+  upsertConversation: (id: string, conversation: Conversation) => void;
+
   // Export/Import
   exportConversation: (convId: string) => string | null;
   importConversation: (json: string) => string | null;
@@ -218,6 +222,17 @@ export const useChatStore = create<ChatStore>()(
       },
 
       deleteConversation: (id) => {
+        // Asynchronously delete from backend gateway
+        getNanobotStatus().then((status) => {
+          if (status.ready) {
+            const token = getNanobotToken();
+            const baseUrl = `http://127.0.0.1:${status.port}`;
+            deleteSession(token, `websocket:${id}`, baseUrl).catch((err) => {
+              console.warn(`[chatStore] failed to delete session ${id} from gateway:`, err);
+            });
+          }
+        }).catch(() => {});
+
         // Cancel any ongoing streaming for this conversation
         const controller = abortControllers.get(id);
         if (controller) {
@@ -227,7 +242,6 @@ export const useChatStore = create<ChatStore>()(
         // Clean up per-conversation state in external modules
         clearTodos(id);
         clearInputQueue(id);
-        clearAllSkillHooks();
         useTaskExecutionStore.getState().clearConversation(id);
         const wasActive = get().activeConversationId === id;
         set((state) => {
@@ -321,6 +335,26 @@ export const useChatStore = create<ChatStore>()(
               tc.isExecuting = false;
             }
           }
+        });
+      },
+
+      addToolCall: (convId, messageId, toolCall) => {
+        set((state) => {
+          const msg = state.conversations[convId]?.messages.find((m) => m.id === messageId);
+          if (msg) {
+            if (!msg.toolCalls) {
+              msg.toolCalls = [];
+            }
+            if (!msg.toolCalls.some((c) => c.id === toolCall.id)) {
+              msg.toolCalls.push(toolCall);
+            }
+          }
+        });
+      },
+
+      upsertConversation: (id, conversation) => {
+        set((state) => {
+          state.conversations[id] = conversation;
         });
       },
 

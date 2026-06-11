@@ -47,7 +47,7 @@ export const fsBridge = {
   exists: async (path: string): Promise<boolean> => {
     return window.ipc.invoke('fs:exists', path);
   },
-  watch: async (path: string, callback: (event: any) => void, options?: { recursive?: boolean }): Promise<() => void> => {
+  watch: async (path: string, callback: (event: any) => void, _options?: { recursive?: boolean }): Promise<() => void> => {
     return window.ipc.on(`fs:watch:${path}`, callback);
   },
   lstat: async (path: string): Promise<any> => {

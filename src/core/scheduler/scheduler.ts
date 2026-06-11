@@ -1,42 +1,13 @@
 import { useScheduleStore } from '../../stores/scheduleStore';
 import { useChatStore } from '../../stores/chatStore';
 import { useToastStore } from '../../stores/toastStore';
-import { runAgentLoop } from '../agent/agentLoop';
+import { sendNanobotMessage } from '../nanobot/chatBridge';
 import {
   notifyScheduledTaskCompleted,
   notifyScheduledTaskError,
 } from '../../utils/notifications';
 import { getI18n, format } from '../../i18n';
 import type { ScheduledTask } from '../../types/schedule';
-import type { ConfirmationInfo, FilePermissionCallback } from '../tools/registry';
-import { usePermissionStore } from '../../stores/permissionStore';
-import { authorizeWorkspace } from '../tools/pathSafety';
-
-/**
- * Auto-deny confirmation callback for scheduled tasks.
- * Since scheduled tasks run unattended, dangerous commands are automatically rejected.
- */
-async function autoDenyConfirmation(_info: ConfirmationInfo): Promise<boolean> {
-  console.log('[Scheduler] Auto-denied dangerous command:', _info.command);
-  return false;
-}
-
-/**
- * Auto file permission callback for scheduled tasks.
- * Auto-allows paths that have persisted grants; auto-denies everything else.
- */
-const autoFilePermission: FilePermissionCallback = async (request) => {
-  const permStore = usePermissionStore.getState();
-
-  // Check if there's a persisted grant for this path
-  if (permStore.hasPermission(request.path, request.capability)) {
-    authorizeWorkspace(request.path);
-    return true;
-  }
-
-  console.log(`[Scheduler] Auto-denied file access: ${request.path} (${request.capability})`);
-  return false;
-};
 
 const TICK_INTERVAL_MS = 60_000; // 60 seconds
 
@@ -104,10 +75,7 @@ class SchedulerEngine {
     }
 
     try {
-      await runAgentLoop(conversationId, prompt, {
-        commandConfirmCallback: autoDenyConfirmation,
-        filePermissionCallback: autoFilePermission,
-      });
+      await sendNanobotMessage(conversationId, prompt);
       useScheduleStore.getState().completeRun(task.id, runId);
       notifyScheduledTaskCompleted(task.name);
       const t = getI18n();

@@ -7,7 +7,7 @@ import SystemSettingsView from '@/components/settings/SystemSettingsModal';
 import ToolboxView from '@/components/settings/ToolboxModal';
 import RightPanel from '@/components/panel/RightPanel';
 import ToastContainer from '@/components/common/ToastContainer';
-import { registerBuiltinTools } from '@/core/tools/builtins';
+import { useToastStore } from '@/stores/toastStore';
 import { initPlatform } from '@/utils/platform';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { initNetworkProxy } from '@/core/sandbox/config';
@@ -22,20 +22,19 @@ initPlatform().then(() => {
 }).catch((err) => {
   console.warn('[App] Platform detection init error:', err);
 });
-import { useSettingsStore } from '@/stores/settingsStore';
+import { useSettingsStore, getEffectiveModel } from '@/stores/settingsStore';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { isMacOS } from '@/utils/platform';
 import { cn } from '@/lib/utils';
 import { initNotifications } from '@/utils/notifications';
 import { schedulerEngine } from '@/core/scheduler/scheduler';
-import { initMCPStoreSync, cleanupMCPStoreSync } from '@/stores/mcpStore';
-import { initFileWatchers, stopAllWatchers } from '@/core/agent/fileWatcher';
-import { startBehaviorSensor, stopBehaviorSensor } from '@/core/agent/behaviorSensor';
+import { startBehaviorSensor, stopBehaviorSensor } from '@/core/runtime/behaviorSensor';
 import { useI18n } from '@/i18n';
 import CloseDialog from '@/components/common/CloseDialog';
 import { checkForUpdate } from '@/core/updates/checker';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
+import { syncNanobotSettings, bootstrapNanobotGateway, syncSessionsFromGateway, syncGatewaySettingsToStore } from '@/core/nanobotClient';
 
 function App() {
   const refreshDiscovery = useDiscoveryStore((s) => s.refresh);
@@ -78,10 +77,29 @@ function App() {
     };
   }, []);
 
+  // Listen for nanobot backend error events
   useEffect(() => {
-    registerBuiltinTools();
+    let unlistenFn: (() => void) | null = null;
+    let cancelled = false;
+    eventBridge.listen('nanobot-error', (msg: string) => {
+      useToastStore.getState().addToast({
+        title: 'Nanobot 错误',
+        message: msg,
+        type: 'error',
+        duration: 5000,
+      });
+    }).then((fn) => {
+      if (cancelled) fn();
+      else unlistenFn = fn;
+    });
+    return () => {
+      cancelled = true;
+      unlistenFn?.();
+    };
+  }, []);
+
+  useEffect(() => {
     refreshDiscovery();
-    initMCPStoreSync();
 
     // Initialize notifications with logging
     initNotifications().then((granted) => {
@@ -90,15 +108,6 @@ function App() {
       console.error('[App] Notification init error:', err);
     });
 
-    // Initialize file watchers
-    initFileWatchers().catch((err) => {
-      console.warn('[App] File watcher init error:', err);
-    });
-
-    return () => {
-      cleanupMCPStoreSync();
-      stopAllWatchers();
-    };
   }, [refreshDiscovery]);
 
   // Start scheduler engine
@@ -130,6 +139,78 @@ function App() {
   useEffect(() => {
     windowBridge.setTitle(isMacOS() ? '' : 'Ruyi');
   }, []);
+
+  // Sync settings and start nanobot bridge
+  const apiKey = useSettingsStore((s) => s.apiKey);
+  const baseUrl = useSettingsStore((s) => s.baseUrl);
+  const provider = useSettingsStore((s) => s.provider);
+  const apiFormat = useSettingsStore((s) => s.apiFormat);
+  const effectiveModel = useSettingsStore(getEffectiveModel);
+  const temperature = useSettingsStore((s) => s.temperature);
+  const enableThinking = useSettingsStore((s) => s.enableThinking);
+  const thinkingBudget = useSettingsStore((s) => s.thinkingBudget);
+  const useBuiltinWebSearch = useSettingsStore((s) => s.useBuiltinWebSearch);
+  const webSearchProvider = useSettingsStore((s) => s.webSearchProvider);
+  const webSearchApiKey = useSettingsStore((s) => s.webSearchApiKey);
+  const webSearchBaseUrl = useSettingsStore((s) => s.webSearchBaseUrl);
+  const sandboxEnabled = useSettingsStore((s) => s.sandboxEnabled);
+  const networkWhitelist = useSettingsStore((s) => s.networkWhitelist);
+  const allowPrivateNetworks = useSettingsStore((s) => s.allowPrivateNetworks);
+
+  useEffect(() => {
+    syncNanobotSettings({
+      apiKey,
+      baseUrl,
+      model: effectiveModel,
+      provider,
+      apiFormat,
+      temperature,
+      enableThinking,
+      thinkingBudget,
+      useBuiltinWebSearch,
+      webSearchProvider,
+      webSearchApiKey,
+      webSearchBaseUrl,
+      sandboxEnabled,
+      networkWhitelist,
+      allowPrivateNetworks,
+    }).then((res) => {
+      if (res.ok) {
+        console.log('[App] Nanobot settings synced and bridge started successfully');
+        bootstrapNanobotGateway().then(() => {
+          console.log('[App] Nanobot gateway bootstrap completed');
+          syncGatewaySettingsToStore().then(() => {
+            console.log('[App] Settings synced from gateway');
+          });
+          syncSessionsFromGateway().then(() => {
+            console.log('[App] Session history sync completed');
+          });
+        }).catch((err) => {
+          console.error('[App] Nanobot gateway bootstrap failed:', err);
+        });
+      } else {
+        console.error('[App] Nanobot settings sync failed:', res.error);
+      }
+    }).catch((err) => {
+      console.error('[App] Nanobot settings sync exception:', err);
+    });
+  }, [
+    apiKey,
+    baseUrl,
+    provider,
+    apiFormat,
+    effectiveModel,
+    temperature,
+    enableThinking,
+    thinkingBudget,
+    useBuiltinWebSearch,
+    webSearchProvider,
+    webSearchApiKey,
+    webSearchBaseUrl,
+    sandboxEnabled,
+    networkWhitelist,
+    allowPrivateNetworks,
+  ]);
 
   // macOS uses overlay title bar (content behind traffic lights); Windows uses native title bar
   const mac = isMacOS();
@@ -168,7 +249,7 @@ function App() {
           </div>
 
           {/* Main — pt-7 on macOS to clear overlay title bar; no padding on Windows (native title bar) */}
-          <main className={cn('flex-1 min-w-0 bg-[#faf9f5]', mac && 'pt-7')}>
+          <main className={cn('flex-1 min-w-0 bg-[#fbfaf7]', mac && 'pt-7')}>
             {viewMode === 'schedule' && <ScheduleView />}
             {viewMode === 'toolbox' && <ToolboxView />}
             {viewMode === 'settings' && <SystemSettingsView />}

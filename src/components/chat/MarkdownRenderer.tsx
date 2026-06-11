@@ -378,8 +378,8 @@ function buildMarkdownComponents(
         return (
           <code
             className={isUser
-              ? 'px-1 py-0.5 rounded bg-white/15 text-white text-[0.9em]'
-              : 'px-1 py-0.5 rounded bg-neutral-100 text-orange-600 text-[0.9em]'
+              ? 'px-1 py-0.5 rounded bg-[#e3e0d9] text-[#29261b] text-[0.9em]'
+              : 'px-1 py-0.5 rounded bg-[#f0eee8] text-[#b85f3f] text-[0.9em]'
             }
             {...props}
           >
@@ -400,29 +400,29 @@ function buildMarkdownComponents(
       return null;
     },
     p({ children }: { children?: ReactNode }) {
-      return <p className={isUser ? 'my-1 leading-relaxed text-[14.5px]' : 'my-2 leading-7 text-[15px]'}>{processChildren(children, sr, onCitationClick)}</p>;
+      return <p className={isUser ? 'my-1 leading-relaxed text-[14.5px]' : 'my-3 leading-8 text-[18px] text-[#191814]'}>{processChildren(children, sr, onCitationClick)}</p>;
     },
     h1({ children }: { children?: ReactNode }) {
-      return <h1 className={cn('text-xl font-semibold mt-5 mb-2', isUser ? 'text-white' : 'text-neutral-800')}>{children}</h1>;
+      return <h1 className={cn('text-[30px] leading-tight font-semibold mt-7 mb-4 tracking-[-0.02em]', isUser ? 'text-[#191814]' : 'text-[#191814]')}>{children}</h1>;
     },
     h2({ children }: { children?: ReactNode }) {
-      return <h2 className={cn('text-lg font-semibold mt-4 mb-2', isUser ? 'text-white' : 'text-neutral-800')}>{children}</h2>;
+      return <h2 className={cn('text-[25px] leading-tight font-semibold mt-8 mb-3 tracking-[-0.015em]', isUser ? 'text-[#191814]' : 'text-[#191814]')}>{children}</h2>;
     },
     h3({ children }: { children?: ReactNode }) {
-      return <h3 className={cn('text-base font-semibold mt-3 mb-1', isUser ? 'text-white' : 'text-neutral-800')}>{children}</h3>;
+      return <h3 className={cn('text-[21px] leading-snug font-semibold mt-6 mb-2', isUser ? 'text-[#191814]' : 'text-[#191814]')}>{children}</h3>;
     },
     ul({ children }: { children?: ReactNode }) {
-      return <ul className="my-2 ml-4 list-inside list-disc space-y-1">{children}</ul>;
+      return <ul className="my-3 ml-6 list-disc space-y-2">{children}</ul>;
     },
     ol({ children }: { children?: ReactNode }) {
-      return <ol className="my-2 ml-4 list-inside list-decimal space-y-1">{children}</ol>;
+      return <ol className="my-3 ml-6 list-decimal space-y-2">{children}</ol>;
     },
     li({ children }: { children?: ReactNode }) {
-      return <li className={isUser ? 'leading-relaxed text-[14.5px]' : 'leading-7 text-[15px]'}>{processChildren(children, sr, onCitationClick)}</li>;
+      return <li className={isUser ? 'leading-relaxed text-[14.5px]' : 'leading-8 text-[18px] text-[#191814]'}>{processChildren(children, sr, onCitationClick)}</li>;
     },
     blockquote({ children }: { children?: ReactNode }) {
       return (
-        <blockquote className={cn('my-3 pl-3 border-l-2 italic', isUser ? 'border-white/40 text-white/80' : 'border-orange-300 text-neutral-500')}>
+        <blockquote className={cn('my-4 pl-6 border-l-4', isUser ? 'border-[#d4d0c7] text-[#3d3929]' : 'border-[#e5e2db] text-[#3d3929]')}>
           {children}
         </blockquote>
       );
@@ -430,13 +430,13 @@ function buildMarkdownComponents(
     a({ href, children }: { href?: string; children?: ReactNode }) {
       const safeHref = SAFE_URL_PATTERN.test(href ?? '') ? href : undefined;
       return (
-        <a href={safeHref} target="_blank" rel="noopener noreferrer" className={isUser ? 'text-white underline' : 'text-orange-600 hover:underline'}>
+        <a href={safeHref} target="_blank" rel="noopener noreferrer" className={isUser ? 'text-[#191814] underline' : 'text-[#b85f3f] hover:underline'}>
           {children}
         </a>
       );
     },
     strong({ children }: { children?: ReactNode }) {
-      return <strong className={cn('font-semibold', isUser ? 'text-white' : 'text-neutral-800')}>{children}</strong>;
+      return <strong className={cn('font-semibold', isUser ? 'text-[#191814]' : 'text-[#191814]')}>{children}</strong>;
     },
     table({ children }: { children?: ReactNode }) {
       return (
@@ -455,7 +455,7 @@ function buildMarkdownComponents(
       return <td className="px-3 py-2 text-neutral-600">{children}</td>;
     },
     hr() {
-      return <hr className={cn('my-4', isUser ? 'border-white/30' : 'border-neutral-200')} />;
+      return <hr className={cn('my-7', isUser ? 'border-[#d4d0c7]' : 'border-[#dedbd3]')} />;
     },
   };
 }
@@ -480,11 +480,13 @@ export default memo(function MarkdownRenderer({ content, searchResults, onCitati
   );
 
   return (
-    <ReactMarkdown
-      remarkPlugins={remarkPluginsStable}
-      components={components}
-    >
-      {content}
-    </ReactMarkdown>
+    <div className={variant === 'assistant' ? 'claude-markdown' : undefined}>
+      <ReactMarkdown
+        remarkPlugins={remarkPluginsStable}
+        components={components}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
   );
 });

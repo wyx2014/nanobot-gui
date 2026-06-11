@@ -11,7 +11,7 @@
  */
 
 import type { SearchResult, WebSearchResponse } from '../../types';
-import { getAppFetch } from '../llm/appFetch';
+import { getAppFetch } from '../net/appFetch';
 
 export interface SearchOptions {
   count: number;

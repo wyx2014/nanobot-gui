@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { persist } from 'zustand/middleware';
-import { authorizeWorkspace, revokeWorkspace } from '../core/tools/pathSafety';
+import { authorizeWorkspace, revokeWorkspace } from '../core/safety/pathSafety';
 
 export type PermissionDuration = 'once' | 'session' | '24h' | 'always';
 

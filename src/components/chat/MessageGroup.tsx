@@ -9,9 +9,8 @@ import { useChatStore, useActiveConversation } from '@/stores/chatStore';
 import { useTaskExecutionStore } from '@/stores/taskExecutionStore';
 import { extractWorkflowSteps, extractFileOutputs } from '@/utils/workflowExtractor';
 import { parseSearchResults, stripSourcesBlock, parseSourcesFromText } from '@/utils/searchParser';
-import { snapshotToExecutionSteps } from '@/core/agent/executionSnapshot';
-import { runAgentLoop } from '@/core/agent/agentLoop';
-import ruyiAvatar from '@/assets/ruyi-avatar.png';
+import { snapshotToExecutionSteps } from '@/core/nanobot/executionSnapshot';
+import { sendNanobotMessage } from '@/core/nanobot/chatBridge';
 import ThinkingIndicator from './ThinkingIndicator';
 
 interface MessageGroupProps {
@@ -190,7 +189,7 @@ export default function MessageGroup({ messages }: MessageGroupProps) {
     }
 
     // Re-run the agent loop with images
-    await runAgentLoop(convId, userContent, { images: retryImages });
+    await sendNanobotMessage(convId, userContent, { images: retryImages });
   };
 
   // Collect text content from all assistant messages
@@ -205,14 +204,7 @@ export default function MessageGroup({ messages }: MessageGroupProps) {
 
       {/* Multiple assistant messages grouped with single avatar */}
       {assistantMsgs.length > 0 && (
-        <div className="flex gap-3 w-full overflow-hidden group">
-          {/* RUYI Avatar - only shown once for the group */}
-          <div className="shrink-0 mt-0.5">
-            <div className="w-7 h-7 rounded-full overflow-hidden">
-              <img src={ruyiAvatar} alt="Ruyi" className="w-full h-full object-cover" />
-            </div>
-          </div>
-
+        <div className="flex w-full overflow-hidden group">
           {/* Content area: workflow chain -> text -> file attachments */}
           <div className="flex-1 min-w-0 overflow-hidden">
             {/* 1. Task block (workflow progress) - prefer executionSteps > persisted snapshot > legacy */}
@@ -258,7 +250,7 @@ export default function MessageGroup({ messages }: MessageGroupProps) {
                     </div>
                   )}
                   {cleanedText && (
-                    <div className="text-[#29261b] break-words mb-2">
+                    <div className="text-[#191814] break-words mb-2">
                       <MarkdownRenderer
                         content={cleanedText}
                         searchResults={searchResults.length > 0 ? searchResults : undefined}
@@ -314,4 +306,3 @@ export default function MessageGroup({ messages }: MessageGroupProps) {
     </div>
   );
 }
-

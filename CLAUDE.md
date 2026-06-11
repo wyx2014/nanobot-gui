@@ -66,25 +66,15 @@ src/
 │   ├── sidebar/        # 侧边栏 (会话列表、工作区切换)
 │   └── ui/             # UI 基础组件 (shadcn/ui)
 ├── core/               # 核心逻辑
-│   ├── agent/          # Agent 核心
-│   │   ├── agentLoop.ts        # Agent 主循环
-│   │   ├── orchestrator.ts     # 任务编排
-│   │   ├── registry.ts         # Agent 注册
-│   │   └── ...                 # 其他 Agent 相关逻辑
+│   ├── nanobotClient.ts    # Python 核心 WebSocket 客户端
+│   ├── api.ts              # REST API 封装
 │   ├── context/        # 上下文管理 (会话上下文、工作区上下文)
-│   ├── llm/            # LLM 调用 (Anthropic API 封装)
 │   ├── mcp/            # MCP 协议实现
 │   ├── sandbox/        # 沙箱执行环境
 │   ├── scheduler/      # 定时任务调度器
 │   ├── search/         # 搜索功能
 │   ├── session/        # 会话管理
 │   ├── skill/          # 技能系统
-│   ├── tools/          # 工具注册与实现
-│   │   ├── builtins.ts         # 内置工具定义
-│   │   ├── registry.ts         # 工具注册表
-│   │   ├── commandSafety.ts    # 命令安全检查
-│   │   ├── pathSafety.ts       # 路径安全检查
-│   │   └── ...
 │   ├── updates/        # 应用更新检查
 │   └── capabilities.ts # 能力定义
 ├── stores/             # Zustand 状态管理
@@ -130,38 +120,20 @@ website/                # 官网
 
 ## Architecture
 
-### Agent 核心流程
+### Nanobot 后端集成流程
 
-1. **agentLoop** (`src/core/agent/agentLoop.ts`)
-   - Agent 主循环，负责消息处理和工具调用
-   - 处理用户输入、LLM 响应、工具执行结果
-   - 管理对话上下文和状态
+1. **后端托管 Agent 循环**:
+   - 所有的 Agent 主循环、思考逻辑（Reasoning）和工具调用（Tool Calling）均由 Python 后端 (`nanobot-gateway`) 负责。
+   - 客户端（GUI）不运行独立的 Agent 决策循环。
 
-2. **orchestrator** (`src/core/agent/orchestrator.ts`)
-   - 任务编排器，协调多个工具和子任务
-   - 决策工具调用顺序和并行执行策略
-   - 处理工具调用失败和重试逻辑
+2. **通信与流式传输**:
+   - 客户端通过 `src/core/nanobotClient.ts` 中的 `nanobotStream` 与后端建立 WebSocket 多路复用连接。
+   - 实时监听后端的 `delta`（文本片段）、`turn_end`（交互结束）和 `toolEvents`（工具调用进度）。
+   - 将流式状态解包并映射存入 Zustand `chatStore` 中。
 
-3. **registry** (`src/core/agent/registry.ts`)
-   - Agent 注册表，管理可用的 Agent
-   - 支持内置 Agent 和用户自定义 Agent
-   - 提供 Agent 发现和加载机制
-
-### 工具系统
-
-- **工具定义**: `src/core/tools/builtins.ts` 定义所有内置工具
-- **工具注册**: `src/core/tools/registry.ts` 管理工具注册表
-- **安全检查**:
-  - `commandSafety.ts` - 命令执行安全检查
-  - `pathSafety.ts` - 文件路径安全检查
-- **MCP 工具**: 通过 `@modelcontextprotocol/sdk` 连接外部 MCP 服务器
-- **支持的工具类型**:
-  - 文件操作 (读、写、编辑、删除)
-  - 命令执行 (Bash、Shell)
-  - 代码审查 (Lint、Format)
-  - Web 搜索和抓取
-  - 文档生成 (Markdown、PDF、DOCX)
-  - 数据处理 (Excel、CSV、JSON)
+3. **工具系统与安全**:
+   - 工具的安全检查（命令白名单、沙箱隔离）、MCP 工具注册和内置工具执行全都在 Python 后端进程中运行。
+   - 前端通过 `mcpStore` 获取可用 MCP 服务列表，但具体的调用请求仍然下发至后端网关处理。
 
 ### 状态管理
 

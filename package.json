@@ -16,9 +16,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "build:win": "npm run electron:build && electron-builder --win --config",
-    "build:mac": "npm run electron:build && electron-builder --mac --config",
-    "build:linux": "npm run electron:build && electron-builder --linux --config"
+    "prepare-python": "node scripts/download-python.mjs",
+    "build:win": "npm run prepare-python && npm run electron:build && electron-builder --win --config",
+    "build:mac": "npm run prepare-python && npm run electron:build && electron-builder --mac --config",
+    "build:linux": "npm run prepare-python && npm run electron:build && electron-builder --linux --config"
   },
   "build": {
     "appId": "com.taiziruyi.app",
@@ -29,6 +30,29 @@
     "files": [
       "out/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "embedded-python/runtime/",
+        "to": "python/",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "../nanobot/",
+        "to": "nanobot-src/",
+        "filter": [
+          "nanobot/**/*.py",
+          "nanobot/templates/**/*.md",
+          "nanobot/skills/**/*.md",
+          "pyproject.toml",
+          "!**/__pycache__/**",
+          "!**/venv/**",
+          "!**/.git/**",
+          "!**/tests/**"
+        ]
+      }
     ],
     "mac": {
       "target": [
@@ -52,7 +76,9 @@
     "@anthropic-ai/sdk": "^0.78.0",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@mozilla/readability": "^0.6.0",
-    "better-sqlite3": "^12.8.0",
+    "@radix-ui/react-dialog": "^1.1.16",
+    "@radix-ui/react-dropdown-menu": "^2.1.17",
+    "@radix-ui/react-separator": "^1.1.9",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "docx-preview": "^0.3.7",
@@ -67,7 +93,6 @@
     "react-syntax-highlighter": "^16.1.0",
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",
-    "sqlite-vec": "^0.1.7-alpha.2",
     "tailwind-merge": "^3.5.0",
     "turndown": "^7.2.2",
     "xlsx": "^0.18.5",
@@ -82,7 +107,6 @@
     "@eslint/js": "^9.39.1",
     "@tailwindcss/postcss": "^4.2.1",
     "@tailwindcss/vite": "^4.2.1",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/dompurify": "^3.0.5",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.7",

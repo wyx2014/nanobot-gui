@@ -113,11 +113,11 @@ export default function ScheduledSection() {
   };
 
   return (
-    <div className="px-4 pb-1">
+    <div className="px-3 pb-4">
       {/* Section header */}
       <button
         onClick={() => setSectionOpen(!sectionOpen)}
-        className="flex items-center gap-1 w-full px-2 py-1 text-[12px] font-medium text-[#656358] hover:text-[#29261b]"
+        className="flex items-center gap-1 w-full px-2 py-1 text-[13px] font-medium tracking-[-0.01em] text-[#8a867c] hover:text-[#29261b]"
       >
         <ChevronRight
           className={cn('h-3 w-3 transition-transform', sectionOpen && 'rotate-90')}
@@ -148,7 +148,7 @@ export default function ScheduledSection() {
                   <button
                     onClick={() => handleParentClick(task.id)}
                     className={cn(
-                      'flex-1 min-w-0 text-left py-1 rounded-md text-[12px] truncate',
+                      'flex-1 min-w-0 text-left py-1 rounded-md text-[13px] font-medium tracking-[-0.01em] truncate',
                       'text-[#3d3929] hover:text-[#29261b]'
                     )}
                   >
@@ -172,11 +172,11 @@ export default function ScheduledSection() {
                           onContextMenu={(e) => handleRunContextMenu(e, task.id, run)}
                           disabled={!convExists}
                           className={cn(
-                            'flex items-center gap-1.5 w-full px-2 py-1 rounded-md text-[12px] truncate transition-colors',
+                            'flex items-center gap-1.5 w-full px-2 py-1 rounded-lg text-[12.5px] font-medium tracking-[-0.01em] truncate transition-colors',
                             isActive
-                              ? 'bg-white shadow-sm text-[#29261b]'
+                              ? 'bg-[#ecebe7] text-[#29261b]'
                               : convExists
-                                ? 'text-[#656358] hover:bg-[#e8e5de] hover:text-[#3d3929]'
+                                ? 'text-[#656358] hover:bg-[#eeeeea] hover:text-[#3d3929]'
                                 : 'text-[#b0ad9f] cursor-not-allowed'
                           )}
                         >

@@ -9,7 +9,7 @@ import {
 
 // Mock getAppFetch
 const mockFetch = vi.fn();
-vi.mock('../llm/appFetch', () => ({
+vi.mock('../net/appFetch', () => ({
   getAppFetch: vi.fn().mockResolvedValue(
     (...args: Parameters<typeof fetch>) => mockFetch(...args)
   ),

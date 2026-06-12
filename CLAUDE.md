@@ -1,357 +1,339 @@
-# TaiziRuyi (太资如意) - AI 桌面办公助手
+# TpaRuyi（太资如意）项目说明
 
-## Project Overview
+## 项目概览
 
-TaiziRuyi 是一个本地运行的 AI 桌面办公助手，灵感来自 Claude Code 的 Cowork 模式。用户通过自然语言对话指挥 AI 完成读文件、跑命令、写文档、做报表等任务。
+TpaRuyi 是一个本地运行的 AI 桌面办公助手。当前项目定位是 Electron 桌面 GUI：负责桌面体验、聊天界面、设置、工具箱、定时任务和文件预览；真正的 Agent 运行时由内置 Python `nanobot` gateway 承接。
 
-- **当前版本**: v0.5.9
-- **品牌名称**: 太资如意
-- **产品标识**: com.taiziruyi.app
-- **支持平台**: macOS (dmg), Windows (nsis)
+当前版本：`0.5.9`
 
-## Tech Stack
+应用 ID：`com.tparuyi.app`
 
-### 核心技术
-- **Frontend**: React 19.2 + TypeScript 5.9 + Vite 7.3
-- **Desktop**: Electron 34.0 (TypeScript)
-- **Styling**: Tailwind CSS 4.2 + Radix UI + shadcn/ui
-- **State Management**: Zustand 5.0
-- **AI SDK**: Anthropic SDK 0.78 (@anthropic-ai/sdk)
-- **MCP**: Model Context Protocol SDK 1.27 (@modelcontextprotocol/sdk)
-- **Testing**: Vitest 4.0 + Happy DOM
+运行时分工：
 
-### 关键依赖
-- **文档处理**: docx-preview, react-pdf, xlsx, yaml
-- **Web 内容提取**: @mozilla/readability, turndown
-- **Markdown**: react-markdown, remark-gfm, remark-breaks
-- **代码高亮**: react-syntax-highlighter
-- **工具库**: immer, zod, clsx, class-variance-authority
-- **图标**: lucide-react
+- Electron 主进程负责启动/停止本地 Python gateway。
+- React renderer 负责 UI 状态、设置、聊天渲染、工具箱、定时任务界面和文件预览。
+- Python `nanobot` 负责 Agent loop、模型路由、记忆、工具执行、MCP、定时任务触发、安全策略和会话持久化。
 
-## Key Commands
+## 当前架构
+
+```text
+electron/main.ts
+  ├─ BrowserWindow 生命周期
+  ├─ 文件 / shell / 窗口 IPC
+  ├─ 配置同步 IPC
+  └─ pythonBridge.start()
+
+electron/pythonBridge.ts
+  ├─ 开发环境 Python: ../nanobot/venv/bin/python3
+  ├─ 打包环境 Python: resources/python/bin/python3
+  ├─ 启动命令: python -m nanobot desktop-gateway
+  └─ 端口: 8900
+
+src/App.tsx
+  ├─ syncNanobotSettings()
+  ├─ bootstrapNanobotGateway()
+  ├─ syncGatewaySettingsToStore()
+  └─ syncSessionsFromGateway()
+
+src/core/nanobot/chatBridge.ts
+  └─ sendNanobotMessage()
+       ├─ 先把用户/助手消息乐观写入 chatStore
+       ├─ 通过 NanobotClient WebSocket 发送消息
+       └─ 将 gateway 事件映射为 GUI 状态
+
+nanobot gateway
+  ├─ Agent loop
+  ├─ 模型服务
+  ├─ 记忆 / 会话
+  ├─ 工具执行
+  ├─ MCP
+  ├─ CronService 定时任务
+  └─ 沙箱 / 安全策略
+```
+
+## 重要边界
+
+不要重新引入 GUI 本地执行引擎。
+
+以下旧的 GUI 侧子系统已经删除或被替换：
+
+- `src/core/agent`
+- `src/core/agent_v2`
+- `src/core/llm`
+- `src/core/memory`
+- `src/core/tools`
+- 作为执行来源的 GUI 本地 tool registry
+- GUI 本地定时任务 tick/scheduler
+
+GUI 可以保留轻量辅助模块，用于渲染、发现、权限展示、安全标签和兼容旧状态；但执行权威属于 nanobot。
+
+## 技术栈
+
+- 前端：React 19 + TypeScript 5.9 + Vite
+- 桌面：Electron 34 + electron-vite
+- 样式：Tailwind CSS 4 + 本地 UI 组件
+- 状态：Zustand + Immer
+- 运行时后端：Python `nanobot` gateway
+- 通信：REST + WebSocket
+- 打包：electron-builder + standalone Python
+- 测试：Vitest + happy-dom
+
+## 常用命令
 
 ```bash
-# 开发模式
-npm run dev              # 前端开发服务器 (http://localhost:5173)
-npm run electron:dev     # 启动 Electron 桌面应用
+npm install
+
+# 开发
+npm run electron:dev
+npm run dev
 
 # 构建
-npm run build            # 构建前端 (tsc + vite build)
-npm run electron:build   # 构建 Electron 桌面应用
+npm run build
+npm run electron:build
+
+# 打包
+npm run build:mac
+npm run build:win
 
 # 测试
-npm run test             # 运行测试
-npm run test:watch       # 监听模式
-npm run test:coverage    # 覆盖率报告
+npm run test
+npm run test:watch
+npm run test:coverage
 
 # 代码质量
-npm run lint             # ESLint 检查
-npm run preview          # 预览构建产物
+npm run lint
 ```
 
-## Project Structure
+打包命令会先执行 `prepare-python`。该脚本会下载 standalone Python 到 `embedded-python/runtime/`，并把 `../nanobot[api]` 安装进去。
 
+## 运行环境要求
+
+开发环境：
+
+- Node.js 20+
+- npm
+- 同级目录存在 `../nanobot`
+- 已安装 nanobot 虚拟环境：
+
+```bash
+cd ../nanobot
+python3 -m venv venv
+venv/bin/pip install -e ".[api]"
 ```
+
+打包后的应用：
+
+- 用户不需要安装 Node。
+- 如果 `prepare-python` 成功，用户不需要安装系统 Python。
+- 用户仍然需要配置模型 API Key 或 OAuth。
+
+当前打包目标支持情况：
+
+- macOS arm64/x64 standalone Python 已支持。
+- Windows x64 standalone Python 已支持。
+- Linux 打包脚本存在，但 `scripts/download-python.mjs` 里还没有配置 Linux standalone Python target。
+
+## 项目结构
+
+```text
+electron/
+  main.ts             # 主进程、窗口生命周期、IPC
+  preload.ts          # Renderer bridge
+  pythonBridge.ts     # 启动/停止 nanobot gateway
+  nanobotConfig.ts    # 将 GUI 设置同步到 gateway 配置
+
 src/
-├── main.tsx             # 入口文件
-├── App.tsx              # 主应用组件
-├── components/          # React 组件
-│   ├── chat/           # 聊天相关组件 (ChatView, MessageList, InputArea 等)
-│   ├── common/         # 通用组件 (Button, Dialog, Tooltip 等)
-│   ├── customize/      # 自定义面板 (Agents/Skills/MCP 管理)
-│   ├── panel/          # 右侧面板 (文件预览、任务进度、便签等)
-│   ├── preview/        # 文件预览组件 (PDF, DOCX, Excel, 图片等)
-│   ├── schedule/       # 定时任务组件
-│   ├── settings/       # 设置面板 (API、模型、权限、外观等)
-│   ├── sidebar/        # 侧边栏 (会话列表、工作区切换)
-│   └── ui/             # UI 基础组件 (shadcn/ui)
-├── core/               # 核心逻辑
-│   ├── nanobotClient.ts    # Python 核心 WebSocket 客户端
-│   ├── api.ts              # REST API 封装
-│   ├── context/        # 上下文管理 (会话上下文、工作区上下文)
-│   ├── mcp/            # MCP 协议实现
-│   ├── sandbox/        # 沙箱执行环境
-│   ├── scheduler/      # 定时任务调度器
-│   ├── search/         # 搜索功能
-│   ├── session/        # 会话管理
-│   ├── skill/          # 技能系统
-│   ├── updates/        # 应用更新检查
-│   └── capabilities.ts # 能力定义
-├── stores/             # Zustand 状态管理
-│   ├── chatStore.ts            # 聊天状态 (消息、会话)
-│   ├── settingsStore.ts        # 设置状态 (API、模型、权限)
-│   ├── workspaceStore.ts       # 工作区状态
-│   ├── mcpStore.ts             # MCP 服务器状态
-│   ├── scheduleStore.ts        # 定时任务状态
-│   ├── taskExecutionStore.ts   # 任务执行状态
-│   ├── taskProgressStore.ts    # 任务进度状态
-│   ├── scratchpadStore.ts      # 便签状态
-│   ├── previewStore.ts         # 预览状态
-│   ├── permissionStore.ts      # 权限状态
-│   ├── customizeStore.ts       # 自定义状态
-│   ├── discoveryStore.ts       # 发现状态
-│   └── toastStore.ts           # Toast 通知状态
-├── hooks/              # React Hooks
-│   ├── useAutoScroll.ts        # 自动滚动
-│   ├── useFileDragDrop.ts      # 文件拖拽
-│   └── useItemName.ts          # 项目名称
-├── i18n/               # 国际化 (中文/英文)
-├── utils/              # 工具函数
-└── types/              # TypeScript 类型定义
+  App.tsx             # 应用启动和顶层视图路由
+  components/
+    chat/             # 聊天 UI、消息渲染、工具进度 UI
+    sidebar/          # 会话/侧栏导航
+    settings/         # 系统设置和工具箱视图容器
+    customize/        # Skills 和 MCP 工具箱内容
+    schedule/         # 定时任务 UI
+    panel/            # 右侧面板
+    preview/          # 文件预览组件
+    ui/               # 基础 UI 控件
+  core/
+    api.ts            # nanobot REST API 封装
+    bootstrap.ts      # bootstrap token / WebSocket URL 辅助
+    types.ts          # gateway payload 类型
+    nanobotClient.ts  # gateway bootstrap、WebSocket client、同步辅助
+    nanobot/          # 聊天桥和 GUI 事件适配
+    net/              # app fetch 兼容辅助
+    runtime/          # 行为传感、computer use 权限辅助
+    safety/           # GUI 侧路径/命令安全辅助
+    search/           # 搜索服务设置辅助
+    context/          # UI/本地上下文和 token 工具
+  stores/             # Zustand stores
+  i18n/               # 国际化文案
+  utils/              # 平台、路径、通知、存储工具
 
-electron/               # Electron 主进程
-├── main.ts             # 主进程入口
-├── preload.ts          # 预加载脚本
-└── ...
-
-builtin-skills/         # 内置技能
-├── schedule/           # 定时任务技能
-├── weekly-report/      # 周报生成技能
-├── theme-factory/      # 主题工厂技能
-├── doc-coauthoring/    # 文档协作技能
-├── translate/          # 翻译技能
-└── ...
-
-builtin-agents/         # 内置 Agent (待实现)
-
-docs/                   # 文档
-website/                # 官网
+builtin-agents/       # 预留 Agent 定义
+embedded-python/      # prepare-python 后的 standalone Python runtime
+dist/installers/      # 打包产物输出目录
 ```
 
-## Architecture
+## 主要数据流
 
-### Nanobot 后端集成流程
+### 应用启动
 
-1. **后端托管 Agent 循环**:
-   - 所有的 Agent 主循环、思考逻辑（Reasoning）和工具调用（Tool Calling）均由 Python 后端 (`nanobot-gateway`) 负责。
-   - 客户端（GUI）不运行独立的 Agent 决策循环。
+1. Electron 主进程创建窗口。
+2. 主进程通过 `PythonBridge` 启动 nanobot，nanobot 内部启动 `CronService`。
+3. Renderer 使用本地 GUI 设置调用 `syncNanobotSettings()`。
+4. Renderer 调用 `bootstrapNanobotGateway()`。
+5. Renderer 从 gateway 同步设置和会话。
 
-2. **通信与流式传输**:
-   - 客户端通过 `src/core/nanobotClient.ts` 中的 `nanobotStream` 与后端建立 WebSocket 多路复用连接。
-   - 实时监听后端的 `delta`（文本片段）、`turn_end`（交互结束）和 `toolEvents`（工具调用进度）。
-   - 将流式状态解包并映射存入 Zustand `chatStore` 中。
+### 一轮聊天
 
-3. **工具系统与安全**:
-   - 工具的安全检查（命令白名单、沙箱隔离）、MCP 工具注册和内置工具执行全都在 Python 后端进程中运行。
-   - 前端通过 `mcpStore` 获取可用 MCP 服务列表，但具体的调用请求仍然下发至后端网关处理。
+1. `ChatView` 调用 `sendNanobotMessage()`。
+2. GUI 先乐观写入用户消息。
+3. `NanobotClient.sendMessage()` 通过 WebSocket 发送本轮输入。
+4. gateway 持续推送事件：
+   - `delta`
+   - `reasoning_delta`
+   - 带 `tool_hint` / `progress` 的 `message`
+   - `file_edit`
+   - `turn_end`
+   - `error`
+5. GUI 将这些事件映射到 `chatStore` 和 `taskExecutionStore`。
+6. 完成后，把执行步骤快照写入当前会话。
 
-### 状态管理
+### 设置
 
-使用 Zustand 管理全局状态，主要 stores:
+系统设置通过 `src/core/api.ts` 调用 gateway REST API。
 
-- **chatStore**: 聊天消息、会话列表、当前会话
-- **settingsStore**: API 配置、模型选择、权限设置、外观主题
-- **workspaceStore**: 工作区路径、项目信息
-- **mcpStore**: MCP 服务器连接状态
-- **scheduleStore**: 定时任务列表和执行状态
-- **taskExecutionStore**: 任务执行队列和结果
-- **taskProgressStore**: 任务进度追踪
-- **scratchpadStore**: 便签内容
-- **permissionStore**: 工具权限管理
+必须显式传入 gateway base URL：
 
-### 技能系统
+```ts
+const base = `http://127.0.0.1:${status.port}`;
+await fetchSettings(token, base);
+```
 
-- **技能定义**: 每个技能包含 `SKILL.md` 描述文件
-- **内置技能**:
-  - `schedule` - 定时任务管理
-  - `weekly-report` - 周报生成
-  - `theme-factory` - 主题定制
-  - `doc-coauthoring` - 文档协作
-  - `translate` - 翻译助手
-- **技能加载**: 从 `builtin-skills/` 目录动态加载
-- **技能执行**: 通过 Agent 调用技能提示词
+不要在 renderer 中直接调用相对路径 `/api/...`，否则可能打到 WebUI/renderer origin，返回 HTML 而不是 JSON。
 
-### MCP 协议
+系统设置负责：
 
-- **协议版本**: Model Context Protocol 1.27
-- **通信方式**: stdio 传输
-- **服务器管理**: `mcpStore` 管理连接状态
-- **工具集成**: MCP 工具自动注册到工具注册表
+- provider 凭证 / OAuth
+- 模型预设
+- 联网搜索
+- 图像生成
+- 安全边界
+- GUI 通用偏好
+- gateway 运行信息
 
-### 沙箱执行
+工具箱负责：
 
-- **隔离环境**: 命令在受控环境中执行
-- **安全检查**:
-  - 危险命令拦截 (rm -rf, sudo 等)
-  - 路径遍历防护
-  - 权限验证
-- **执行监控**: 实时输出、超时控制、错误处理
+- Skills
+- MCP
+- 自定义工具 / server
 
-### 定时任务
+不要把工具箱职责移回系统设置。
 
-- **调度器**: `src/core/scheduler/` 实现 cron 风格调度
-- **任务类型**:
-  - 一次性任务
-  - 周期性任务 (每天、每周、每月)
-- **任务管理**: 创建、暂停、恢复、删除
-- **执行历史**: 记录任务执行结果和日志
+定时任务负责：
 
-## Conventions
+- 定时任务的存储、触发和运行历史由 nanobot cron 负责。
+- GUI 只调用 `/api/schedule/*` 展示、编辑、暂停/恢复、删除和手动触发任务。
+- 不要重新引入 GUI 本地 tick/scheduler。
 
-### 代码风格
+## 状态管理
 
-#### 组件命名
-- 组件文件: PascalCase (如 `ChatView.tsx`)
-- 组件目录: 组件名作为目录名 (如 `chat/ChatView.tsx`)
-- Hooks: camelCase with `use` prefix (如 `useAutoScroll.ts`)
-- Stores: camelCase with `Store` suffix (如 `chatStore.ts`)
+重要 store：
 
-#### 文件组织
-- 每个组件一个文件
-- 相关组件放在同一目录下
-- 测试文件与源文件同目录 (如 `chatStore.test.ts`)
-- 类型定义优先使用 `types/` 目录
+- `chatStore`：会话、消息、流式状态、侧栏同步数据
+- `settingsStore`：GUI 设置、当前视图、从 gateway 镜像来的模型设置
+- `workspaceStore`：工作区/项目状态
+- `taskExecutionStore`：进行中的工具/任务步骤，用于 UI 渲染
+- `permissionStore`：命令/路径权限 UI 状态
+- `discoveryStore`：从 nanobot gateway 读取可用 skills，并发现本地专家入口
+- `toastStore`：通知
 
-### 样式规范
+## Electron IPC
 
-- **CSS 框架**: Tailwind CSS 4.2
-- **组件库**: Radix UI + shadcn/ui
-- **样式工具**:
-  - `cn()` 函数 (tailwind-merge + clsx) 用于条件样式
-  - `cva()` (class-variance-authority) 用于变体样式
-- **主题**: 支持亮色/暗色主题，使用 CSS 变量
-- **响应式**: 移动优先，使用 Tailwind 断点
+`electron/main.ts` 仍然暴露一些兼容 IPC，用于文件系统、shell、通知、窗口控制，以及部分旧 LLM helper。新的聊天执行不应该使用旧的 `llm:chat` 路径，必须走 nanobot。
 
-### TypeScript 规范
+gateway 相关 IPC：
 
-- **严格模式**: 启用所有严格类型检查
-- **类型定义**:
-  - 优先使用 `interface` 定义对象类型
-  - 使用 `type` 定义联合类型和工具类型
-  - 避免使用 `any`，使用 `unknown` 代替
-- **运行时验证**: 使用 Zod 进行数据验证
-- **类型导出**: 从 `types/` 目录统一导出
+- `nanobot:status`
+- `nanobot:sync-config`
+- gateway 生命周期由 `pythonBridge` 处理
 
-### 测试规范
+## 打包
 
-- **测试框架**: Vitest + Happy DOM
-- **测试覆盖**:
-  - 核心逻辑必须有单元测试
-  - Store 必须有测试覆盖
-  - 工具函数必须有测试
-- **测试文件**: 与源文件同目录，`.test.ts` 后缀
-- **测试命名**: `describe` + `it` 风格，描述清晰
+`package.json` 的 build 配置会打入：
 
-### Git 规范
+- `out/**/*`
+- `package.json`
+- `embedded-python/runtime/` -> `resources/python/`
+- `../nanobot/` 运行时文件 -> `resources/nanobot-src/`
 
-- **分支策略**:
-  - `main` - 主分支，稳定版本
-  - `dev` - 开发分支
-  - `feature/*` - 功能分支
-  - `fix/*` - 修复分支
-- **提交信息**:
-  - 格式: `<type>: <description>`
-  - 类型: feat, fix, docs, style, refactor, test, chore
-  - 示例: `feat: add weekly report skill`
+macOS 当前目标输出 `zip`。
 
-## Development Guidelines
+Windows 目标输出 `portable` 和 `nsis`。
 
-### 添加新功能
+输出目录：
 
-1. **规划**: 在 `docs/` 中创建设计文档
-2. **类型定义**: 在 `types/` 中定义相关类型
-3. **核心逻辑**: 在 `core/` 中实现核心功能
-4. **状态管理**: 在 `stores/` 中添加状态管理
-5. **UI 组件**: 在 `components/` 中实现界面
-6. **测试**: 编写单元测试和集成测试
-7. **文档**: 更新 README 和相关文档
+```text
+dist/installers/
+```
 
-### 添加新工具
+## 开发准则
 
-1. 在 `src/core/tools/builtins.ts` 中定义工具
-2. 实现工具执行逻辑
-3. 添加安全检查 (如需要)
-4. 在 `registry.ts` 中注册工具
-5. 编写工具测试
-6. 更新工具文档
+新增执行能力时：
 
-### 添加新技能
+1. 优先在 nanobot 中实现。
+2. 增加或调整 gateway REST / WebSocket payload。
+3. 在 `src/core/types.ts` 增加 TypeScript payload 类型。
+4. 在 `src/core/api.ts` 或 `src/core/nanobotClient.ts` 增加 client wrapper。
+5. 在 React/Zustand 中渲染状态。
 
-1. 在 `builtin-skills/` 创建技能目录
-2. 编写 `SKILL.md` 描述文件
-3. 定义技能提示词和参数
-4. 实现技能逻辑 (如需要)
-5. 测试技能执行
-6. 更新技能列表
+新增纯 UI 能力时：
 
-### 添加新 Agent
+1. 遵循 `src/components` 里的现有组件风格。
+2. 使用简洁卡片、暖色中性色、紧凑的操作型布局。
+3. 优先复用现有 `Input`、`Select`、`Toggle`、`Button`、`Textarea`。
+4. 工具/MCP 放在工具箱，不放系统设置。
+5. 定时任务不要再加 GUI 本地 tick，必须通过 nanobot cron API。
 
-1. 在 `builtin-agents/` 创建 Agent 目录
-2. 编写 Agent 配置文件
-3. 定义 Agent 能力和工具
-4. 实现 Agent 逻辑
-5. 在 `registry.ts` 中注册 Agent
-6. 测试 Agent 执行
+新增设置项时：
 
-### 性能优化
+1. 先确认 nanobot 是否已经拥有该配置。
+2. 增加 gateway API wrapper。
+3. 显式传入 gateway base URL。
+4. 如果本地 store 需要镜像，保存成功后调用 `syncGatewaySettingsToStore()`。
 
-- **React 优化**:
-  - 使用 `React.memo` 避免不必要的重渲染
-  - 使用 `useMemo` 和 `useCallback` 缓存计算结果
-  - 虚拟滚动处理长列表
-- **状态优化**:
-  - Zustand 使用 selector 避免过度订阅
-  - 使用 immer 简化不可变更新
-- **打包优化**:
-  - 代码分割和懒加载
-  - Tree shaking 移除未使用代码
-  - 压缩和混淆
+## 测试说明
 
-### 安全最佳实践
+运行全部测试：
 
-- **命令执行**:
-  - 始终使用 `commandSafety.ts` 检查
-  - 避免直接执行用户输入
-  - 使用白名单而非黑名单
-- **文件操作**:
-  - 使用 `pathSafety.ts` 验证路径
-  - 防止路径遍历攻击
-  - 限制文件大小和类型
-- **API 调用**:
-  - 不在前端存储敏感信息
-  - 使用环境变量管理 API Key
-  - 实现请求限流和重试
+```bash
+npm run test
+```
 
-## Important Notes
+常用定向测试：
 
-### 环境要求
-- **Node.js**: 20.19+ 或 22.12+
-- **操作系统**: macOS 10.15+, Windows 10+
+```bash
+npm run test -- src/core/nanobotClient.test.ts
+npm run test -- src/core/search/providers.test.ts
+npm run test -- src/core/sandbox/config.test.ts
+npm run test -- src/core/nanobotClient.test.ts
+```
 
-### 开发注意事项
-- MCP 工具在运行时通过 stdio 传输连接
-- 内置 Skills 和 Agents 打包在 resources 中
-- Electron 窗口使用 Overlay 标题栏样式
-- 默认窗口大小: 1200x800，最小: 900x600
-- CSP 策略: 允许 https/http 连接，内联样式
+交付较大改动前运行构建：
 
-### 构建配置
-- **前端构建**: Vite 构建到 `dist/` 目录
-- **桌面构建**:
-  - macOS: DMG 安装包
-  - Windows: NSIS 安装程序 (当前用户安装)
-- **资源打包**: builtin-skills 和 builtin-agents 自动打包
-- **图标**: 支持多尺寸 PNG、ICNS (macOS)、ICO (Windows)
+```bash
+npm run build
+```
 
-### 调试技巧
+## 已知架构说明
 
-- 使用 `npm run dev` 启动前端开发服务器
-- 使用 `npm run electron:dev` 启动桌面应用调试
-- 浏览器开发者工具可在 Electron 窗口中使用
+- GUI 中仍有一些兼容模块和旧 IPC surface。除非明确清理，否则把它们视作兼容层。
+- `settingsStore` 仍然镜像部分模型、搜索、沙箱值，用于 UI 兼容；运行时 source of truth 是 nanobot。
+- 技能列表、启停、详情和工作区技能删除走 nanobot `/api/settings/skills`；不要恢复 GUI 本地 skill loader。
+- 会话历史应该来自 gateway 同步，而不是只依赖本地乐观状态。
 
-### 常见问题
+## 常见问题
 
-- **端口占用**: 确保 5173 端口未被占用
-- **依赖安装失败**: 清除 node_modules 和 package-lock.json 重新安装
-
-## Resources
-
-- **官方文档**: `docs/`
-- **官网**: `website/`
-- **GitHub**: (待添加)
-- **问题反馈**: (待添加)
-- **更新日志**: `CHANGELOG.md`
-
-## License
-
-(待添加)
+- `Gateway returned WebUI HTML instead of JSON`：renderer API 请求很可能用了相对 `/api/...`，而不是显式 gateway base URL。
+- `Python binary not found`：开发环境 nanobot virtualenv 缺失，或打包前没有准备 embedded Python。
+- 端口 `8900` 被占用：`PythonBridge` 会尝试清理外部监听进程，但受保护进程可能需要手动停止。
+- 打包应用启动后 gateway 失败：查看应用 userData 目录下的 `nanobot.log`。

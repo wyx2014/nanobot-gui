@@ -1,333 +1,255 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { useSettingsStore } from '@/stores/settingsStore';
-import { useI18n } from '@/i18n';
-import { skillTemplates } from '@/data/marketplace/skills';
-import { skillLoader } from '@/core/skill/loader';
-import MarketplaceCard from './MarketplaceCard';
+import { fetchSkillDetail, fetchSkills, runSkillAction } from '@/core/api';
+import { getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/nanobotClient';
+import type { NanobotSkillInfo, SkillsPayload } from '@/core/types';
 import SubTabBar from './SubTabBar';
-import SkillDetailModal from './SkillDetailModal';
-import SkillEditor from './SkillEditor';
 import { Toggle } from '@/components/ui/toggle';
-import { Trash2, AlertCircle } from 'lucide-react';
-import { fsBridge, osBridge } from '@/lib/ipc-factory';
-import { joinPath, getParentDir } from '@/utils/pathUtils';
-import type { Skill } from '@/types';
-import type { MarketplaceItem } from '@/types/marketplace';
+import { AlertCircle, FileText, Loader2, Trash2, X } from 'lucide-react';
 
-function getCategoryKey(category: string): string {
-  const lower = category.toLowerCase();
-  if (lower.includes('document') || lower.includes('文档')) return 'document';
-  if (lower.includes('design') || lower.includes('设计')) return 'design';
-  if (lower.includes('develop') || lower.includes('开发')) return 'development';
-  return lower;
+type SkillTab = 'builtin' | 'workspace';
+
+async function getSkillsAuth(): Promise<{ token: string; baseUrl: string }> {
+  const status = await getNanobotStatus();
+  if (!status.ready) {
+    throw new Error('nanobot 服务尚未就绪');
+  }
+  const baseUrl = `http://127.0.0.1:${status.port}`;
+  const token = getNanobotToken();
+  if (token) return { token, baseUrl };
+  const refreshed = await refreshNanobotAuth();
+  return { token: refreshed.token, baseUrl: refreshed.baseUrl };
 }
 
-// Build a set of system skill names from marketplace templates
-const systemSkillNames = new Set(
-  skillTemplates.filter((t) => t.isBuiltin).map((t) => t.name)
-);
+function sourceLabel(source: string): string {
+  if (source === 'builtin') return '内置';
+  if (source === 'workspace') return '工作区';
+  return source || '未知';
+}
 
-// Check if a skill is a system (builtin) skill
-function isSystemSkill(item: Skill | MarketplaceItem): boolean {
-  if ('filePath' in item) {
-    return item.filePath.includes('builtin-skills') || systemSkillNames.has(item.name);
-  }
-  return item.isBuiltin === true;
+function sourceClass(source: string): string {
+  if (source === 'builtin') return 'bg-blue-50 text-blue-700 border-blue-100';
+  if (source === 'workspace') return 'bg-emerald-50 text-emerald-700 border-emerald-100';
+  return 'bg-neutral-100 text-neutral-600 border-neutral-200';
 }
 
 export default function SkillsSection({ manualCreateTrigger }: { manualCreateTrigger?: number }) {
-  const { skills, refresh } = useDiscoveryStore();
-  const { installingItem, setInstallingItem, toolboxSearchQuery, disabledSkills, toggleSkillEnabled } = useSettingsStore();
-  const { t } = useI18n();
-
-  const [installedSkills, setInstalledSkills] = useState<Skill[]>([]);
+  const { refresh: refreshDiscovery } = useDiscoveryStore();
+  const { toolboxSearchQuery } = useSettingsStore();
+  const [payload, setPayload] = useState<SkillsPayload | null>(null);
+  const [activeSubTab, setActiveSubTab] = useState<SkillTab>('builtin');
+  const [detail, setDetail] = useState<NanobotSkillInfo | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [actingName, setActingName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [activeSubTab, setActiveSubTab] = useState<'system' | 'custom'>('system');
-  const [categoryFilter, setCategoryFilter] = useState<string>('all');
-  const [detailItem, setDetailItem] = useState<
-    | { kind: 'skill'; data: Skill }
-    | { kind: 'template'; data: MarketplaceItem }
-    | null
-  >(null);
-  const [editorSkill, setEditorSkill] = useState<Skill | 'new' | null>(null);
 
-  // Open blank editor when manual create is triggered from parent
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { token, baseUrl } = await getSkillsAuth();
+      const next = await fetchSkills(token, baseUrl);
+      setPayload(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
   useEffect(() => {
     if (manualCreateTrigger && manualCreateTrigger > 0) {
-      setEditorSkill('new');
+      setError('技能创建已交给 nanobot 原生 workspace/skills。当前面板先提供查看、启停和删除。');
     }
   }, [manualCreateTrigger]);
 
-  // Load full skill details for source info
-  useEffect(() => {
-    const loadSkillDetails = async () => {
-      const fullSkills: Skill[] = [];
-      for (const meta of skills) {
-        const full = skillLoader.getSkill(meta.name);
-        if (full) fullSkills.push(full);
-      }
-      setInstalledSkills(fullSkills);
-    };
-    loadSkillDetails();
-  }, [skills]);
-
-  const installedNames = useMemo(() => new Set(skills.map((s) => s.name)), [skills]);
-  const disabledSet = useMemo(() => new Set(disabledSkills), [disabledSkills]);
-
-  // Filter by search
-  const searchLower = toolboxSearchQuery.toLowerCase();
-  const matchesSearch = (name: string, description: string, tags?: string[]) => {
-    if (!toolboxSearchQuery) return true;
-    const tagStr = (tags ?? []).join(' ').toLowerCase();
-    return name.toLowerCase().includes(searchLower) ||
-      description.toLowerCase().includes(searchLower) ||
-      tagStr.includes(searchLower);
-  };
-
-  // Separate system and custom skills from marketplace templates
-  const systemTemplates = skillTemplates.filter((t) => {
-    if (!isSystemSkill(t)) return false;
-    if (!matchesSearch(t.name, t.description)) return false;
-    if (categoryFilter !== 'all' && getCategoryKey(t.category) !== categoryFilter) return false;
-    return true;
-  });
-
-  // Custom skills = installed skills that are NOT builtin
-  const customInstalledSkills = installedSkills.filter(
-    (s) => !isSystemSkill(s) && matchesSearch(s.name, s.description, s.tags)
-  );
-
-  // Install a skill from marketplace
-  const handleInstall = async (template: (typeof skillTemplates)[0]) => {
-    if (!template.content) return;
-
-    setInstallingItem(template.id);
-    setError(null);
-
-    try {
-      const home = await osBridge.homeDir();
-      const skillDir = joinPath(home, '.ruyi/skills', template.name);
-      await fsBridge.mkdir(skillDir, { recursive: true });
-      await fsBridge.writeTextFile(joinPath(skillDir, 'SKILL.md'), template.content);
-      await refresh();
-    } catch (err) {
-      console.error('[Skills] Failed to install:', err);
-      setError(`${t.toolbox.installFailed}: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setInstallingItem(null);
-    }
-  };
-
-  // Delete a user-installed skill
-  const handleDelete = async (skill: Skill) => {
-    if (skill.filePath.includes('builtin-skills')) return;
-
-    try {
-      const skillDir = getParentDir(skill.filePath);
-      await fsBridge.remove(skillDir, { recursive: true });
-      await refresh();
-    } catch (err) {
-      console.error('Failed to delete skill:', err);
-    }
-  };
-
-  const handleCardClick = (template: MarketplaceItem) => {
-    // Try to get full skill data if installed
-    const installed = installedSkills.find((s) => s.name === template.name);
-    if (installed) {
-      setDetailItem({ kind: 'skill', data: installed });
-    } else {
-      setDetailItem({ kind: 'template', data: template });
-    }
-  };
-
-  const handleCustomSkillClick = (skill: Skill) => {
-    setDetailItem({ kind: 'skill', data: skill });
-  };
-
-  const handleEditSkill = (skill: Skill) => {
-    setEditorSkill(skill);
-    setDetailItem(null);
-  };
-
-  const handleEditorClose = () => {
-    setEditorSkill(null);
-  };
-
-  const handleEditorSave = async () => {
-    await refresh();
-    setEditorSkill(null);
-  };
-
-  const getSourceLabel = (skill: Skill) => {
-    if (skill.filePath.includes('builtin-skills') || systemSkillNames.has(skill.name))
-      return { label: t.toolbox.sourceBuiltin, color: 'bg-blue-100 text-blue-600' };
-    if (skill.filePath.includes('.ruyi/skills')) {
-      if (skill.filePath.startsWith('.ruyi/'))
-        return { label: t.toolbox.sourceProject, color: 'bg-purple-100 text-purple-600' };
-      return { label: t.toolbox.sourceUser, color: 'bg-green-100 text-green-600' };
-    }
-    return { label: t.toolbox.sourceUnknown, color: 'bg-neutral-100 text-neutral-500' };
-  };
+  const skills = payload?.skills ?? [];
+  const search = toolboxSearchQuery.trim().toLowerCase();
+  const filtered = useMemo(() => {
+    return skills.filter((skill) => {
+      if (activeSubTab === 'builtin' && skill.source !== 'builtin') return false;
+      if (activeSubTab === 'workspace' && skill.source !== 'workspace') return false;
+      if (!search) return true;
+      return [
+        skill.name,
+        skill.description,
+        skill.source,
+        ...(skill.tags ?? []),
+      ].some((value) => value.toLowerCase().includes(search));
+    });
+  }, [activeSubTab, search, skills]);
 
   const subTabs = [
-    { id: 'system', label: t.toolbox.tabSystem, count: systemTemplates.length },
-    { id: 'custom', label: t.toolbox.tabCustom, count: customInstalledSkills.length },
+    { id: 'builtin', label: '内置技能', count: skills.filter((skill) => skill.source === 'builtin').length },
+    { id: 'workspace', label: '工作区技能', count: skills.filter((skill) => skill.source === 'workspace').length },
   ];
 
-  const categoryTabs = [
-    { id: 'all', label: t.toolbox.categoryAll },
-    { id: 'document', label: t.toolbox.categoryDocument },
-    { id: 'design', label: t.toolbox.categoryDesign },
-    { id: 'development', label: t.toolbox.categoryDevelopment },
-  ];
+  const applyPayload = async (next: SkillsPayload) => {
+    setPayload(next);
+    await refreshDiscovery();
+  };
 
-  // If editor is open, show editor
-  if (editorSkill !== null) {
-    return (
-      <SkillEditor
-        skill={editorSkill === 'new' ? null : editorSkill}
-        onClose={handleEditorClose}
-        onSave={handleEditorSave}
-      />
-    );
-  }
+  const handleToggle = async (skill: NanobotSkillInfo) => {
+    setActingName(skill.name);
+    setError(null);
+    try {
+      const { token, baseUrl } = await getSkillsAuth();
+      const next = await runSkillAction(token, skill.enabled ? 'disable' : 'enable', skill.name, baseUrl);
+      await applyPayload(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setActingName(null);
+    }
+  };
+
+  const handleDelete = async (skill: NanobotSkillInfo) => {
+    if (skill.source !== 'workspace') return;
+    setActingName(skill.name);
+    setError(null);
+    try {
+      const { token, baseUrl } = await getSkillsAuth();
+      const next = await runSkillAction(token, 'delete', skill.name, baseUrl);
+      await applyPayload(next);
+      if (detail?.name === skill.name) setDetail(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setActingName(null);
+    }
+  };
+
+  const openDetail = async (skill: NanobotSkillInfo) => {
+    setDetail(skill);
+    setError(null);
+    try {
+      const { token, baseUrl } = await getSkillsAuth();
+      const next = await fetchSkillDetail(token, skill.name, baseUrl);
+      setDetail(next.skills[0] ?? skill);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      {/* Sub-tab bar */}
+    <div className="flex h-full flex-col overflow-hidden">
       <div className="shrink-0 px-4 pt-4 pb-2">
         <SubTabBar
           tabs={subTabs}
           activeTab={activeSubTab}
-          onChange={(id) => setActiveSubTab(id as 'system' | 'custom')}
+          onChange={(id) => setActiveSubTab(id as SkillTab)}
         />
       </div>
 
-      {/* Category filter for system tab */}
-      {activeSubTab === 'system' && (
-        <div className="shrink-0 px-4 pb-2 flex gap-1.5 flex-wrap">
-          {categoryTabs.map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => setCategoryFilter(cat.id)}
-              className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors ${
-                categoryFilter === cat.id
-                  ? 'bg-[#29261b] text-[#faf9f5]'
-                  : 'bg-neutral-100 text-neutral-500 hover:bg-neutral-200'
-              }`}
-            >
-              {cat.label}
-            </button>
-          ))}
-        </div>
-      )}
-
       <div className="flex-1 overflow-y-auto px-4 pb-4">
-        {/* Error Display */}
         {error && (
-          <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 flex items-start gap-2">
-            <AlertCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+          <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
             <div className="text-sm text-red-700">{error}</div>
           </div>
         )}
 
-        {/* System tab: marketplace template grid */}
-        {activeSubTab === 'system' && (
-          <>
-            {systemTemplates.length === 0 ? (
-              <div className="text-sm text-neutral-400 py-8 text-center">{t.toolbox.noSkillsFound}</div>
-            ) : (
-              <div className="grid grid-cols-2 gap-3">
-                {systemTemplates.map((template) => {
-                  const isBuiltin = template.isBuiltin;
-                  const isInstalled = isBuiltin || installedNames.has(template.name);
-                  return (
-                    <MarketplaceCard
-                      key={template.id}
-                      item={template}
-                      isInstalled={isInstalled}
-                      isInstalling={installingItem === template.id}
-                      isEnabled={!disabledSet.has(template.name)}
-                      onInstall={isInstalled ? undefined : () => handleInstall(template)}
-                      onUninstall={
-                        !isBuiltin && installedNames.has(template.name)
-                          ? (() => {
-                              const skill = installedSkills.find((s) => s.name === template.name);
-                              if (skill && !skill.filePath.includes('builtin-skills')) {
-                                handleDelete(skill);
-                              }
-                            })
-                          : undefined
-                      }
-                      onToggleEnabled={
-                        isInstalled
-                          ? () => toggleSkillEnabled(template.name)
-                          : undefined
-                      }
-                      onClick={() => handleCardClick(template)}
-                    />
-                  );
-                })}
-              </div>
-            )}
-          </>
-        )}
-
-        {/* Custom tab: installed custom skills list */}
-        {activeSubTab === 'custom' && (
-          <>
-            {customInstalledSkills.length === 0 ? (
-              <div className="text-sm text-neutral-400 py-8 text-center">{t.toolbox.noCustomSkills}</div>
-            ) : (
-              <div className="space-y-2">
-                {customInstalledSkills.map((skill) => {
-                  const source = getSourceLabel(skill);
-                  const isEnabled = !disabledSet.has(skill.name);
-                  return (
-                    <div
-                      key={skill.name}
-                      onClick={() => handleCustomSkillClick(skill)}
-                      className={`group flex items-center gap-3 p-3 rounded-lg bg-white border border-neutral-200/60 cursor-pointer hover:border-neutral-300 ${
-                        !isEnabled ? 'opacity-60' : ''
-                      }`}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-sm text-neutral-900">/{skill.name}</span>
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${source.color}`}>
-                            {source.label}
-                          </span>
-                        </div>
-                        <p className="text-xs text-neutral-500 mt-1 truncate">{skill.description}</p>
-                      </div>
-                      <Toggle checked={isEnabled} onChange={() => toggleSkillEnabled(skill.name)} />
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleDelete(skill); }}
-                        className="shrink-0 p-1.5 text-neutral-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors opacity-0 group-hover:opacity-100"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 py-12 text-sm text-neutral-400">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            正在读取 nanobot 技能
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="py-8 text-center text-sm text-neutral-400">没有找到技能</div>
+        ) : (
+          <div className="space-y-2">
+            {filtered.map((skill) => {
+              const busy = actingName === skill.name;
+              return (
+                <div
+                  key={`${skill.source}:${skill.name}`}
+                  onClick={() => void openDetail(skill)}
+                  className={`group flex cursor-pointer items-center gap-3 rounded-lg border border-neutral-200/70 bg-white p-3 transition-colors hover:border-neutral-300 ${
+                    !skill.enabled ? 'opacity-60' : ''
+                  }`}
+                >
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-500">
+                    <FileText className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-sm font-medium text-neutral-900">/{skill.name}</span>
+                      <span className={`rounded border px-1.5 py-0.5 text-[10px] ${sourceClass(skill.source)}`}>
+                        {sourceLabel(skill.source)}
+                      </span>
+                      {!skill.available && (
+                        <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">
+                          依赖缺失
+                        </span>
+                      )}
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </>
+                    <p className="mt-1 truncate text-xs text-neutral-500">{skill.description}</p>
+                    {!skill.available && skill.missing && (
+                      <p className="mt-1 truncate text-[11px] text-amber-600">{skill.missing}</p>
+                    )}
+                  </div>
+                  <Toggle
+                    checked={skill.enabled}
+                    onChange={() => void handleToggle(skill)}
+                    disabled={busy}
+                  />
+                  {skill.source === 'workspace' && (
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void handleDelete(skill);
+                      }}
+                      disabled={busy}
+                      className="shrink-0 rounded p-1.5 text-neutral-400 opacity-0 transition-colors hover:bg-red-50 hover:text-red-500 group-hover:opacity-100 disabled:opacity-40"
+                      title="删除工作区技能"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
 
-      {/* Skill Detail Modal */}
-      {detailItem && (
-        <SkillDetailModal
-          skill={detailItem.kind === 'skill' ? detailItem.data : null}
-          template={detailItem.kind === 'template' ? detailItem.data : null}
-          isInstalled={detailItem.kind === 'skill' || installedNames.has(detailItem.data.name)}
-          onClose={() => setDetailItem(null)}
-          onInstall={detailItem.kind === 'template' ? () => handleInstall(detailItem.data as MarketplaceItem) : undefined}
-          onEdit={detailItem.kind === 'skill' ? () => handleEditSkill(detailItem.data as Skill) : undefined}
-        />
+      {detail && (
+        <div className="absolute inset-0 z-20 flex flex-col bg-[#faf9f5]">
+          <div className="flex shrink-0 items-center justify-between border-b border-neutral-200 px-5 py-4">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h3 className="truncate text-base font-semibold text-neutral-900">/{detail.name}</h3>
+                <span className={`rounded border px-1.5 py-0.5 text-[10px] ${sourceClass(detail.source)}`}>
+                  {sourceLabel(detail.source)}
+                </span>
+              </div>
+              <p className="mt-1 truncate text-xs text-neutral-500">{detail.path}</p>
+            </div>
+            <button
+              onClick={() => setDetail(null)}
+              className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+              title="关闭"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-5">
+            <p className="mb-4 text-sm leading-6 text-neutral-700">{detail.description}</p>
+            {!detail.available && detail.missing && (
+              <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                依赖缺失：{detail.missing}
+              </div>
+            )}
+            <pre className="whitespace-pre-wrap rounded-lg border border-neutral-200 bg-white p-4 text-xs leading-5 text-neutral-700">
+              {detail.content || '未读取到技能内容'}
+            </pre>
+          </div>
+        </div>
       )}
     </div>
   );

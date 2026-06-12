@@ -7,11 +7,12 @@ import SourceCard from './SourceCard';
 interface SourcesSectionProps {
   results: SearchResult[];
   highlightedIndex?: number | null;
+  defaultExpanded?: boolean;
 }
 
-export default function SourcesSection({ results, highlightedIndex }: SourcesSectionProps) {
+export default function SourcesSection({ results, highlightedIndex, defaultExpanded = false }: SourcesSectionProps) {
   const { t } = useI18n();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded);
 
   // Auto-expand when a citation is clicked
   useEffect(() => {
@@ -30,7 +31,7 @@ export default function SourcesSection({ results, highlightedIndex }: SourcesSec
         className="flex items-center gap-1.5 px-1 py-1 text-[12px] text-[#888579] hover:text-[#656358] transition-colors"
       >
         <Globe className="h-3 w-3" />
-        <span>{t.chat.sources}</span>
+        <span>{defaultExpanded ? '主要采信来源' : t.chat.sources}</span>
         <span className="text-[#b0ac9f]">{results.length}</span>
         {expanded ? (
           <ChevronUp className="h-3 w-3 ml-0.5" />

@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Copy, Pencil, RefreshCw, Check, Brain, Wand2, AtSign, X, ArrowUp } from 'lucide-react';
+import { ChevronDown, ChevronRight, Copy, Pencil, RefreshCw, Check, Brain, Wand2, AtSign, X, ArrowUp, Terminal, Plug } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import type { Message, MessageContent } from '@/types';
 import MarkdownRenderer from './MarkdownRenderer';
@@ -382,10 +382,26 @@ export default function MessageBubble({
             </div>
           )}
           {/* Delegate agent badge — above the bubble */}
-          {message.delegateAgent && (
-            <div className="flex items-center justify-end gap-1 text-[#9a9689]">
+          {(message.delegateAgent || !!message.cliApps?.length || !!message.mcpPresets?.length) && (
+            <div className="flex flex-wrap items-center justify-end gap-1.5 text-[#9a9689]">
+              {message.delegateAgent && (
+                <span className="inline-flex items-center gap-1">
               <AtSign className="h-3 w-3" />
               <span className="text-[11px] font-medium">{message.delegateAgent.name}</span>
+                </span>
+              )}
+              {message.cliApps?.map((app) => (
+                <span key={`cli-${app.name}`} className="inline-flex items-center gap-1 rounded-full bg-[#f3f2ee] px-2 py-0.5 text-[11px] font-medium text-[#656358]">
+                  <Terminal className="h-3 w-3" />
+                  {app.display_name || app.name}
+                </span>
+              ))}
+              {message.mcpPresets?.map((preset) => (
+                <span key={`mcp-${preset.name}`} className="inline-flex items-center gap-1 rounded-full bg-[#f3f2ee] px-2 py-0.5 text-[11px] font-medium text-[#656358]">
+                  <Plug className="h-3 w-3" />
+                  {preset.display_name || preset.name}
+                </span>
+              ))}
             </div>
           )}
           {isEditing ? (

@@ -1,178 +1,258 @@
 <div align="center">
 
-# TaiziRuyi (太资如意)
+# TpaRuyi (太资如意)
 
-**你的 AI 桌面办公搭子 — 交给太资如意就行啦**
+**本地运行的 AI 桌面办公助手**
 
-本地运行的 AI 桌面办公助手，灵感来自 Claude Code 的 Cowork 模式。
-你说需求，太资如意干活 — 读文件、跑命令、写文档、做报表，全在本地完成。
+TpaRuyi 是一个 Electron 桌面客户端，负责对话界面、设置、工具箱、文件预览和本地状态管理；真正的 Agent 循环、模型调用、记忆、工具执行、MCP、会话持久化由内置的 Python `nanobot` gateway 承接。
 
 </div>
 
 ---
 
-## 产品预览
+## 当前架构
 
-> 简洁直观的界面，强大灵活的能力
+```text
+Electron Main Process
+  ├─ 创建桌面窗口
+  ├─ 托管本地文件/系统 IPC
+  └─ PythonBridge 启动 nanobot gateway
+        ├─ 开发环境: ../nanobot/venv/bin/python3
+        └─ 打包环境: resources/python/bin/python3
 
-### 对话式交互
-用自然语言告诉太资如意你想做什么，对话即指令。
+Renderer (React)
+  ├─ Chat / Sidebar / Schedule / Toolbox / Settings / Preview
+  ├─ Zustand stores 管理 GUI 状态
+  ├─ WebSocket 连接 nanobot gateway
+  └─ REST API 读取/更新 gateway 设置
 
-<img src="website/assets/screenshot-home.png" width="800" />
+nanobot gateway (Python)
+  ├─ Agent loop
+  ├─ LLM provider / model routing
+  ├─ Memory / session persistence
+  ├─ Tool execution
+  ├─ MCP / app catalog
+  └─ Safety / sandbox policy
+```
 
-### 任务执行
-智能调用工具，自动完成文件整理等复杂任务。
+重点边界：
 
-<img src="website/assets/screenshot-task.png" width="800" />
-
-### 工具箱
-丰富的 Skills、Agents 和 MCP 工具，按需安装扩展能力。
-
-<img src="website/assets/screenshot-toolbox.png" width="800" />
-
-### 定时任务
-设定定时计划，让太资如意每天自动为你工作。
-
-<img src="website/assets/screenshot-schedule.png" width="800" />
-
-### 自定义模型
-支持自定义 API 和模型，灵活接入各类 LLM 服务。
-
-<img src="website/assets/screenshot-model.png" width="800" />
+- GUI 不再维护独立的本地 Agent loop。
+- GUI 不再维护独立的 LLM adapter、memory engine、tool registry。
+- GUI 的职责是桌面体验、状态展示、用户输入、设置管理和与 gateway 的协议适配。
+- nanobot 是执行侧的 source of truth。
 
 ## 核心特性
 
-- **Agent 自主执行** — 不只是聊天，能自主规划、调用工具、读写文件、执行命令，完成复杂任务
-- **Skill 技能系统** — 内置翻译、周报、代码审查、深度研究、文章写作等技能，一键安装，支持自定义
-- **MCP 工具协议** — 通过 Model Context Protocol 连接数据库、搜索引擎、GitHub 等外部服务
-- **定时任务** — 设定定时计划，让太资如意定期执行任务（如每天早上发送 AI 日报）
-- **多模型支持** — 支持 Anthropic Claude、DeepSeek、通义千问、豆包、Moonshot、智谱等主流模型
-- **沙箱安全** — macOS Seatbelt 沙箱隔离 + 敏感路径保护 + 命令安全检查
-- **本地优先** — 数据存在本地，API Key 存在本地，不经过第三方服务器
-- **跨平台** — 支持 macOS (Apple Silicon / Intel) 和 Windows
-
-## 快速开始
-
-1. 下载安装并打开 TaiziRuyi
-2. 点击左下角设置图标，进入「自定义模型」
-3. 选择 API 厂商，填入 API Key
-4. 回到主界面，开始对话
-
-**试试这些指令：**
-
-```
-帮我整理下桌面的文件，按类型分类放好
-```
-```
-把这个 PDF 里的表格提取出来，生成 Excel
-```
-```
-每天早上 9 点帮我搜索最新的 AI 新闻，生成日报
-```
+- **对话式任务执行**：用户在 GUI 输入需求，消息通过 WebSocket 交给 nanobot 执行。
+- **工具调用可视化**：gateway 返回 tool progress、reasoning、file edit 等事件，GUI 渲染为消息气泡和任务进度。
+- **会话同步**：启动后从 gateway 同步历史会话和 WebUI thread 快照，保证重启后能看到用户提问和模型回复。
+- **设置同步**：设置页通过 gateway REST API 管理模型服务、模型预设、联网搜索、图像生成和安全边界。
+- **定时任务**：定时任务由 nanobot CronService 存储和触发，GUI 只负责展示、编辑和手动触发。
+- **工具箱**：Skills 和 MCP 管理放在工具箱，不放在系统设置。
+- **本地优先**：桌面端启动本机 gateway，配置和工作区位于用户本地目录。
+- **可打包运行**：安装包内置 Python runtime 和 nanobot 源码，用户机器不需要安装 Node，理论上也不需要安装 Python。
 
 ## 技术栈
 
 | 层级 | 技术 |
-|------|------|
-| 桌面框架 | Electron 34.0 (TypeScript + Web) |
-| 前端 | React 19 + TypeScript + TailwindCSS v4 + Vite |
-| LLM | 多模型适配 (Anthropic / OpenAI-compatible) |
-| 状态管理 | Zustand + Immer |
-| 工具协议 | MCP (`@modelcontextprotocol/sdk`) |
-| 安全沙箱 | macOS Seatbelt + 路径/命令双重校验 |
-| UI | Radix UI + Lucide Icons |
+| --- | --- |
+| 桌面 | Electron 34 + electron-vite + electron-builder |
+| 前端 | React 19 + TypeScript 5.9 + Vite + Tailwind CSS v4 |
+| 状态 | Zustand + Immer |
+| 图标/UI | lucide-react + Radix/shadcn 风格基础组件 |
+| 后端执行 | Python nanobot gateway |
+| 通信 | WebSocket 多路复用 + REST API |
 | 测试 | Vitest + happy-dom |
+| 打包 | electron-builder + python-build-standalone |
 
-## 从源码构建
+## 快速开始
 
 ### 前置要求
 
-- Node.js >= 20
-- 操作系统依赖 (Git 等)
-
-### 开发
+- Node.js 20+
+- npm
+- 同级目录存在 `../nanobot`
+- 开发环境需要准备 nanobot Python 虚拟环境：
 
 ```bash
+cd ../nanobot
+python3 -m venv venv
+venv/bin/pip install -e ".[api]"
+```
 
-# 安装依赖
+### 安装依赖
+
+```bash
 npm install
+```
 
-# 启动桌面应用（推荐）
+### 启动桌面开发环境
+
+```bash
 npm run electron:dev
+```
 
-# 仅启动前端（开发服务器）
+仅启动 renderer 开发服务器：
+
+```bash
 npm run dev
 ```
 
-### 构建
+## 构建与打包
+
+普通构建：
 
 ```bash
+npm run build
 npm run electron:build
 ```
 
-构建产物位于 `dist/installers/` 或 `out/`。
-
-### 测试
+生成安装包：
 
 ```bash
-npm test              # 运行测试
-npm run test:watch    # 监听模式
-npm run test:coverage # 覆盖率报告
-npm run lint          # ESLint 检查
+# macOS
+npm run build:mac
+
+# Windows
+npm run build:win
+
+# Linux 当前脚本还未配置 standalone Python target，需补齐后再用
+npm run build:linux
 ```
 
-## 项目结构
+产物目录：
 
+```text
+dist/installers/
 ```
+
+打包脚本会执行：
+
+1. `npm run prepare-python`
+2. 下载 standalone Python 到 `embedded-python/runtime/`
+3. 将 `../nanobot[api]` 安装进这个 Python runtime
+4. `electron-vite build`
+5. `electron-builder`
+
+打包配置会把这些资源放入安装包：
+
+- `out/**/*`
+- `package.json`
+- `embedded-python/runtime/` -> `resources/python/`
+- `../nanobot/` 的运行源码 -> `resources/nanobot-src/`
+
+用户机器是否需要环境：
+
+- 不需要 Node。
+- 正常打包成功后不需要系统 Python。
+- 仍需要用户配置自己的模型 API Key 或 OAuth。
+
+## 常用命令
+
+```bash
+npm run electron:dev      # 启动 Electron 开发环境
+npm run dev               # 仅启动 Vite renderer
+npm run build             # TypeScript + Vite 构建
+npm run electron:build    # Electron main/preload/renderer 构建
+npm run build:mac         # 打 macOS 包
+npm run build:win         # 打 Windows 包
+npm run test              # 跑测试
+npm run test:watch        # 测试监听
+npm run test:coverage     # 覆盖率
+npm run lint              # ESLint
+```
+
+## 目录结构
+
+```text
+electron/
+  main.ts                 # Electron 主进程入口、窗口、IPC
+  preload.ts              # renderer 安全桥
+  pythonBridge.ts         # 启停内置 nanobot gateway
+  nanobotConfig.ts        # GUI 设置写入 gateway 配置
+
 src/
-├── components/       # React UI 组件
-│   ├── chat/         # 对话界面、消息气泡、Markdown 渲染
-│   ├── sidebar/      # 侧边栏导航
-│   ├── panel/        # 右侧详情面板
-│   ├── schedule/     # 定时任务视图
-│   ├── settings/     # 系统设置
-│   └── ui/           # 基础 UI 组件 (shadcn/Radix)
-├── core/             # 核心引擎（非 UI）
-│   ├── agent/        # Agent 循环、重试、记忆
-│   ├── llm/          # LLM 适配层 (Claude + OpenAI-compatible)
-│   ├── tools/        # 工具注册、内置工具、安全校验
-│   ├── mcp/          # MCP 客户端
-│   ├── skill/        # Skill 加载与预处理
-│   ├── scheduler/    # 定时调度引擎
-│   ├── context/      # 上下文管理与 Token 估算
-│   └── sandbox/      # 沙箱配置
-├── stores/           # Zustand 状态管理
-├── hooks/            # React Hooks
-├── i18n/             # 国际化 (中文 / English)
-├── types/            # TypeScript 类型定义
-└── utils/            # 工具函数
+  App.tsx                 # 应用入口，启动 gateway bootstrap 和同步流程
+  components/
+    chat/                 # 对话 UI、消息、工具调用渲染
+    sidebar/              # 会话/工作区侧栏
+    settings/             # 系统设置和工具箱视图容器
+    customize/            # Skills / MCP 工具箱内容
+    schedule/             # 定时任务 UI
+    panel/                # 右侧面板
+    preview/              # PDF/DOCX/XLSX/CSV 预览
+    ui/                   # 基础 UI 组件
+  core/
+    nanobotClient.ts      # bootstrap、WebSocket client、会话/设置同步
+    nanobot/              # GUI 到 nanobot 的聊天桥和事件适配
+    api.ts                # gateway REST API 封装
+    bootstrap.ts          # gateway bootstrap 请求和 WS URL 派生
+    types.ts              # gateway payload 类型
+    mcp/                  # GUI 侧 MCP 连接状态/辅助能力
+    safety/               # GUI 侧路径/命令展示安全辅助
+    runtime/              # 行为传感、computer use 权限辅助
+    context/              # UI/本地上下文工具
+  stores/                 # Zustand stores
+  i18n/                   # 中文/英文文案
+  utils/                  # 文件、平台、通知等工具
 
-builtin-skills/       # 内置技能定义 (翻译、周报、代码审查等)
-builtin-agents/       # 内置 Agent 定义
-electron/             # Electron 主进程代码
-ruyi-browser-bridge/   # 浏览器桥接服务
-ruyi-chrome-extension/ # Chrome 扩展
+builtin-agents/           # 预留 Agent 定义目录
+embedded-python/          # 打包时下载的 Python runtime
+dist/installers/          # electron-builder 输出
 ```
 
-## 贡献
+## 运行时流程
 
-欢迎提交 Issue 和 Pull Request！
+1. Electron main 创建窗口。
+2. `PythonBridge` 在 8900 端口启动 `python -m nanobot desktop-gateway`，gateway 内部启动 `CronService`。
+3. Renderer 调用 `syncNanobotSettings()` 写入/同步配置。
+4. Renderer 调用 `bootstrapNanobotGateway()` 获取 token 和 WebSocket 地址。
+5. Renderer 调用：
+   - `syncGatewaySettingsToStore()`
+   - `syncSessionsFromGateway()`
+6. 用户发送消息时，`sendNanobotMessage()`：
+   - 先把用户消息写入 GUI store
+   - 通过 `NanobotClient.sendMessage()` 发给 gateway
+   - 监听 `delta`、`reasoning_delta`、`message/tool_hint`、`file_edit`、`turn_end`
+   - 将事件映射为 GUI 消息、工具调用卡片和任务快照
 
-1. Fork 本仓库
-2. 创建你的分支：`git checkout -b feat/my-feature`
-3. 提交改动：`git commit -m 'feat: add my feature'`
-4. 推送分支：`git push origin feat/my-feature`
-5. 发起 Pull Request
+## 设置与工具箱分工
 
-## 反馈与交流
+系统设置：
 
-使用中遇到问题或有好的想法，欢迎扫码加微信交流：
+- 模型服务 Provider / API Key / OAuth
+- 模型预设
+- 联网搜索
+- 图像生成
+- 安全边界
+- 通用偏好
+- gateway 运行信息
 
-<img src="src/assets/wechat-qr.png" width="200" />
+工具箱：
 
-## 赞赏支持
+- Skills
+- MCP
+- 自定义工具相关管理
 
-如果太资如意对你有帮助，欢迎请作者喝杯咖啡：
+## 开发原则
 
-<img src="src/assets/sponsor-qr.png" width="200" />
+- 新的执行能力优先放到 nanobot gateway。
+- GUI 只做展示、输入、配置和协议适配。
+- 不要重新引入 GUI 本地 Agent loop、LLM adapter、memory engine、tool registry。
+- 不要重新引入 GUI 本地定时任务 tick；定时任务必须走 nanobot cron。
+- 所有 gateway REST 请求必须显式使用 `http://127.0.0.1:<gateway_port>`，不要用相对 `/api/...`。
+- 不要把工具/MCP 管理塞回设置页，应该放工具箱。
 
+## 测试
+
+```bash
+npm run test
+```
+
+重点测试：
+
+- `src/core/nanobotClient.test.ts`
+- `src/core/search/providers.test.ts`
+- `src/core/sandbox/config.test.ts`
+- `src/core/context/*.test.ts`

@@ -5,7 +5,6 @@ import { useScheduleStore } from '@/stores/scheduleStore';
 import { useI18n } from '@/i18n';
 import { Plus, Clock, Wrench, Trash2, Settings, Download, Pencil, Undo2, HelpCircle } from 'lucide-react';
 import GuideModal from '@/components/common/GuideModal';
-import ProfileEditModal from '@/components/common/ProfileEditModal';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
@@ -85,8 +84,6 @@ export default function Sidebar() {
     return unsub;
   }, []);
 
-  // Profile edit modal state
-  const [profileOpen, setProfileOpen] = useState(false);
   const userNickname = useSettingsStore((s) => s.userNickname);
   const userAvatar = useSettingsStore((s) => s.userAvatar);
 
@@ -280,23 +277,15 @@ export default function Sidebar() {
       {/* User Section */}
       <div className="px-5 py-4 shrink-0 border-t border-[#e5e2db]">
         <div className="flex items-center gap-2.5">
-          {/* User avatar + nickname (clickable to edit) */}
-          <button
-            onClick={() => setProfileOpen(true)}
-            className="w-8 h-8 rounded-full overflow-hidden shrink-0 hover:ring-2 hover:ring-[#d97757]/40 transition-shadow"
-            title={t.sidebar.editProfile}
-          >
+          {/* User avatar + nickname */}
+          <div className="w-8 h-8 rounded-full overflow-hidden shrink-0">
             <img src={userAvatar || ruyiAvatar} alt="Avatar" className="w-full h-full object-cover" />
-          </button>
-          <button
-            onClick={() => setProfileOpen(true)}
-            className="flex-1 min-w-0 text-left"
-            title={t.sidebar.editProfile}
-          >
+          </div>
+          <div className="flex-1 min-w-0 text-left">
             <div className="text-[13px] font-semibold text-[#29261b] truncate">
               {userNickname || t.sidebar.defaultNickname}
             </div>
-          </button>
+          </div>
           <button
             onClick={() => openSystemSettings(updateInfo ? 'about' : undefined)}
             className={cn(
@@ -361,8 +350,6 @@ export default function Sidebar() {
       {/* Guide modal */}
       <GuideModal open={guideOpen} onClose={() => { setGuideOpen(false); setGuideShown(true); }} />
 
-      {/* Profile edit modal */}
-      <ProfileEditModal open={profileOpen} onClose={() => setProfileOpen(false)} />
 
       {/* Undo delete toast */}
       {pendingDelete && (

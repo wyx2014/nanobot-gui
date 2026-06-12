@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ITEM_NAME_RE } from '@/utils/validation';
 
 /**
- * Shared name validation logic for AgentEditor and SkillEditor.
+ * Shared name validation logic for item editors.
  * Handles the "new vs rename vs unchanged" validation rules:
  * - New item or renamed: strict ITEM_NAME_RE check
  * - Unchanged name on existing item: always valid

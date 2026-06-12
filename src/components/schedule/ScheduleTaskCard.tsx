@@ -71,9 +71,9 @@ export default function ScheduleTaskCard({ task }: Props) {
   const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (isPaused) {
-      resumeTask(task.id);
+      void resumeTask(task.id);
     } else {
-      pauseTask(task.id);
+      void pauseTask(task.id);
     }
   };
 

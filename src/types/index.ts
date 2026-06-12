@@ -2,6 +2,14 @@
 // RUYI — Core Type Definitions
 // ============================================================
 
+import type {
+  MessageKind,
+  ToolProgressEvent,
+  UICliAppAttachment,
+  UIFileEdit,
+  UIMcpPresetAttachment,
+} from '@/core/types';
+
 // --- Messages & Conversations ---
 
 export interface ToolCall {
@@ -59,14 +67,20 @@ export interface ThinkingBlock {
 
 export interface Message {
   id: string;
-  role: 'user' | 'assistant' | 'system';
+  role: 'user' | 'assistant' | 'tool' | 'system';
   // Support both simple string and multimodal content array
   content: string | MessageContent[];
+  kind?: MessageKind;
   timestamp: number;
   isStreaming?: boolean;
+  traces?: string[];
+  toolEvents?: ToolProgressEvent[];
+  fileEdits?: UIFileEdit[];
+  activitySegmentId?: string;
   toolCalls?: ToolCall[];
   // Extended thinking content
   thinking?: string;
+  reasoningStreaming?: boolean;
   // Thinking duration in seconds
   thinkingDuration?: number;
   // Token usage for this message
@@ -86,10 +100,21 @@ export interface Message {
     name: string;
     description?: string;
   };
+  cliApps?: UICliAppAttachment[];
+  mcpPresets?: UIMcpPresetAttachment[];
   // Tool call context for LLM history (simplified, read-only)
   toolCallsForContext?: ToolCallContext[];
   // Persisted execution steps snapshot (for post-restart rich display)
   executionSteps?: import('./execution').ExecutionStepSnapshot[];
+  // Files or signed media returned by nanobot message/media events.
+  mediaAttachments?: MessageMediaAttachment[];
+}
+
+export interface MessageMediaAttachment {
+  path?: string;
+  url?: string;
+  name?: string;
+  kind?: 'image' | 'video' | 'file';
 }
 
 // Simplified tool call info for LLM context building

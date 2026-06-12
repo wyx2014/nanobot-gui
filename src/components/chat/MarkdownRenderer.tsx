@@ -1,5 +1,6 @@
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
+import remarkGfm from 'remark-gfm';
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import tsx from 'react-syntax-highlighter/dist/esm/languages/prism/tsx';
@@ -351,7 +352,7 @@ function CollapsibleCodeBlock({ codeString, language }: { codeString: string; la
 }
 
 // Stable references — avoid recreating on every render
-const remarkPluginsStable = [remarkBreaks];
+const remarkPluginsStable = [remarkGfm, remarkBreaks];
 const SAFE_URL_PATTERN = /^(https?:\/\/|mailto:|tel:|#)/i;
 
 type MarkdownVariant = 'assistant' | 'user';
@@ -440,19 +441,19 @@ function buildMarkdownComponents(
     },
     table({ children }: { children?: ReactNode }) {
       return (
-        <div className="my-3 overflow-x-auto rounded-lg bg-white shadow-sm">
-          <table className="w-full text-sm">{children}</table>
+        <div className="my-4 overflow-x-auto rounded-lg border border-[#e5e2db] bg-[#fffdf8]">
+          <table className="w-full border-collapse text-[14px] leading-6">{children}</table>
         </div>
       );
     },
     thead({ children }: { children?: ReactNode }) {
-      return <thead className="bg-neutral-50">{children}</thead>;
+      return <thead className="bg-[#f4f1e8]">{children}</thead>;
     },
     th({ children }: { children?: ReactNode }) {
-      return <th className="px-3 py-2 text-left font-medium text-neutral-700">{children}</th>;
+      return <th className="border-b border-[#e5e2db] px-3.5 py-2.5 text-left font-semibold text-[#29261b]">{children}</th>;
     },
     td({ children }: { children?: ReactNode }) {
-      return <td className="px-3 py-2 text-neutral-600">{children}</td>;
+      return <td className="border-t border-[#eeeae1] px-3.5 py-2.5 text-[#3d3929]">{children}</td>;
     },
     hr() {
       return <hr className={cn('my-7', isUser ? 'border-[#d4d0c7]' : 'border-[#dedbd3]')} />;

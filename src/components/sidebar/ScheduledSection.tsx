@@ -3,7 +3,8 @@ import { useChatStore } from '@/stores/chatStore';
 import { useScheduleStore } from '@/stores/scheduleStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useI18n } from '@/i18n';
-import { ChevronRight, Clock, Trash2 } from 'lucide-react';
+import { syncSessionsFromGateway } from '@/core/nanobotClient';
+import { ChevronRight, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ScheduledTaskRun } from '@/types/schedule';
 
@@ -35,11 +36,9 @@ export default function ScheduledSection() {
   const { t } = useI18n();
   const tasks = useScheduleStore((s) => s.tasks);
   const setSelectedTaskId = useScheduleStore((s) => s.setSelectedTaskId);
-  const removeRun = useScheduleStore((s) => s.removeRun);
   const conversations = useChatStore((s) => s.conversations);
   const activeConversationId = useChatStore((s) => s.activeConversationId);
   const switchConversation = useChatStore((s) => s.switchConversation);
-  const deleteConversation = useChatStore((s) => s.deleteConversation);
   const setViewMode = useSettingsStore((s) => s.setViewMode);
   const viewMode = useSettingsStore((s) => s.viewMode);
 
@@ -76,8 +75,11 @@ export default function ScheduledSection() {
     setViewMode('schedule');
   };
 
-  const handleRunClick = (conversationId: string) => {
-    if (conversations[conversationId]) {
+  const handleRunClick = async (conversationId: string) => {
+    if (!conversations[conversationId]) {
+      await syncSessionsFromGateway();
+    }
+    if (useChatStore.getState().conversations[conversationId]) {
       switchConversation(conversationId);
       setViewMode('chat');
     }
@@ -91,18 +93,6 @@ export default function ScheduledSection() {
     e.preventDefault();
     e.stopPropagation();
     setContextMenu({ x: e.clientX, y: e.clientY, taskId, run });
-  };
-
-  const handleArchiveRun = () => {
-    if (!contextMenu) return;
-    const { taskId, run } = contextMenu;
-    // Delete the associated conversation if it exists
-    if (conversations[run.conversationId]) {
-      deleteConversation(run.conversationId);
-    }
-    // Remove the run from the schedule task
-    removeRun(taskId, run.id);
-    setContextMenu(null);
   };
 
   const handleViewScheduledTask = () => {
@@ -160,7 +150,6 @@ export default function ScheduledSection() {
                 {isExpanded && (
                   <div className="ml-5 space-y-px">
                     {visibleRuns.map((run) => {
-                      const convExists = !!conversations[run.conversationId];
                       const isActive = run.conversationId === activeConversationId && viewMode === 'chat';
                       // Label: "M/D HH:mm - TaskName" like Cowork's "Mar 5 - Hello greeting"
                       const label = `${formatRunDate(run.startedAt)} - ${task.name}`;
@@ -168,16 +157,13 @@ export default function ScheduledSection() {
                       return (
                         <button
                           key={run.id}
-                          onClick={() => handleRunClick(run.conversationId)}
+                          onClick={() => void handleRunClick(run.conversationId)}
                           onContextMenu={(e) => handleRunContextMenu(e, task.id, run)}
-                          disabled={!convExists}
                           className={cn(
                             'flex items-center gap-1.5 w-full px-2 py-1 rounded-lg text-[12.5px] font-medium tracking-[-0.01em] truncate transition-colors',
                             isActive
                               ? 'bg-[#ecebe7] text-[#29261b]'
-                              : convExists
-                                ? 'text-[#656358] hover:bg-[#eeeeea] hover:text-[#3d3929]'
-                                : 'text-[#b0ad9f] cursor-not-allowed'
+                              : 'text-[#656358] hover:bg-[#eeeeea] hover:text-[#3d3929]'
                           )}
                         >
                           <RunStatusDot status={run.status} />
@@ -214,13 +200,6 @@ export default function ScheduledSection() {
           >
             <Clock className="h-3.5 w-3.5" />
             {t.sidebar.viewScheduledTask}
-          </button>
-          <button
-            onClick={handleArchiveRun}
-            className="flex items-center gap-2 w-full px-3 py-1.5 text-[13px] text-red-500 hover:bg-[#f0ede6]"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            {t.sidebar.archiveRun}
           </button>
         </div>
       )}

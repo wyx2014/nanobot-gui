@@ -1,7 +1,6 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import type { Message, MessageContent, ToolCall, ImageAttachment } from '@/types';
 import MessageBubble from './MessageBubble';
-import TaskBlock from './TaskBlock';
 import MarkdownRenderer from './MarkdownRenderer';
 import FileAttachment, { ImagePreviewCard, ImageThumbnail, isImageFile } from './FileAttachment';
 import SourcesSection from './SourcesSection';
@@ -12,6 +11,8 @@ import { parseSearchResults, stripSourcesBlock, parseSourcesFromText } from '@/u
 import { snapshotToExecutionSteps } from '@/core/nanobot/executionSnapshot';
 import { sendNanobotMessage } from '@/core/nanobot/chatBridge';
 import ThinkingIndicator from './ThinkingIndicator';
+import AgentActivityCluster from './AgentActivityCluster';
+import { isReasoningOnlyAssistant } from '@/core/nanobot/activityTimeline';
 
 interface MessageGroupProps {
   messages: Message[];
@@ -48,12 +49,30 @@ export default function MessageGroup({ messages }: MessageGroupProps) {
   // Separate user and assistant messages
   const userMsg = messages.find((m) => m.role === 'user');
   const assistantMsgs = messages.filter((m) => m.role === 'assistant');
+  const activityMessages = messages.filter((m) =>
+    m.role === 'tool'
+    || m.kind === 'trace'
+    || !!m.fileEdits?.length
+    || isReasoningOnlyAssistant(m)
+  );
   const agentStatus = useChatStore((s) => s.agentStatus);
   const activeConv = useActiveConversation();
   const { deleteMessagesFrom } = useChatStore();
 
   // Get loopId from messages (all messages in group share same loopId)
   const loopId = messages[0]?.loopId;
+  const loopMessages = useMemo(() => {
+    if (!loopId || !activeConv) return messages;
+    return activeConv.messages.filter((message) => message.loopId === loopId);
+  }, [activeConv, loopId, messages]);
+  const loopHasNanobotActivity = !!loopId && !!activeConv?.messages.some((message) =>
+    message.loopId === loopId
+    && (
+      message.role === 'tool'
+      || message.kind === 'trace'
+      || !!message.fileEdits?.length
+    )
+  );
 
   // Try to get execution from TaskExecutionStore (new architecture)
   const execution = useTaskExecutionStore((s) => {
@@ -87,17 +106,29 @@ export default function MessageGroup({ messages }: MessageGroupProps) {
   // Extract search results: prefer structured data from tool calls, fallback to text parsing
   const searchResults = useMemo(() => {
     // 1. Try structured SEARCH_JSON from tool call results
-    const fromTools = messages
+    const fromAssistantTools = loopMessages
       .filter((m) => m.role === 'assistant')
       .flatMap((m) => m.toolCalls || [])
       .flatMap((tc) => {
         if (tc.name !== 'web_search' || !tc.result) return [];
         return parseSearchResults(tc.result) ?? [];
       });
-    if (fromTools.length > 0) return fromTools;
+    if (fromAssistantTools.length > 0) return fromAssistantTools;
+
+    const fromTraceTools = loopMessages
+      .flatMap((m) => m.toolEvents || [])
+      .flatMap((event) => {
+        const name = event.name || (event as any).function?.name;
+        const result = typeof event.result === 'string'
+          ? event.result
+          : event.result ? JSON.stringify(event.result) : '';
+        if (name !== 'web_search' || !result) return [];
+        return parseSearchResults(result) ?? [];
+      });
+    if (fromTraceTools.length > 0) return fromTraceTools;
 
     // 2. Fallback: parse sources from the LLM's text output (e.g. Anthropic native web search)
-    for (const msg of messages) {
+    for (const msg of loopMessages) {
       if (msg.role !== 'assistant') continue;
       const text = typeof msg.content === 'string'
         ? msg.content
@@ -110,7 +141,7 @@ export default function MessageGroup({ messages }: MessageGroupProps) {
     }
 
     return [];
-  }, [messages]);
+  }, [loopMessages]);
 
   // Highlighted source index for citation click
   const [highlightedSource, setHighlightedSource] = useState<number | null>(null);
@@ -156,12 +187,25 @@ export default function MessageGroup({ messages }: MessageGroupProps) {
 
   // Extract file outputs for attachments
   const fileOutputs = extractFileOutputs(allToolCalls);
+  const mediaAttachments = messages.flatMap((m) => m.mediaAttachments ?? []);
+  const localMediaPaths = mediaAttachments
+    .map((item) => item.path)
+    .filter((path): path is string => !!path);
+  const remoteMediaAttachments = mediaAttachments.filter((item) => !item.path && item.url);
 
   // Check if any tool is executing
   const isAnyExecuting = allToolCalls.some((tc) => tc.isExecuting);
 
   // Check if any tool has error result
   const hasError = allToolCalls.some((tc) => tc.result?.toLowerCase().includes('error'));
+  const canUseExecutionStepFallback = !loopHasNanobotActivity || activityMessages.length > 0;
+  const activityExecutionSteps = canUseExecutionStepFallback && executionSteps && executionSteps.length > 0
+    ? executionSteps
+    : canUseExecutionStepFallback
+      ? persistedExecutionSteps
+      : undefined;
+  const hasActivity = !!thinkingContent || activityMessages.length > 0 || !!activityExecutionSteps?.length || allToolCalls.length > 0;
+  const shouldRenderAssistantBlock = assistantMsgs.length > 0 || hasActivity;
 
   // Handle retry - re-run the agent loop with the same user message (preserving images)
   const handleRetry = async () => {
@@ -194,6 +238,7 @@ export default function MessageGroup({ messages }: MessageGroupProps) {
 
   // Collect text content from all assistant messages
   const textContents = assistantMsgs
+    .filter((msg) => !isReasoningOnlyAssistant(msg))
     .map((msg) => getTextContent(msg.content))
     .filter(Boolean);
 
@@ -202,33 +247,25 @@ export default function MessageGroup({ messages }: MessageGroupProps) {
       {/* User message renders standalone */}
       {userMsg && <MessageBubble message={userMsg} />}
 
-      {/* Multiple assistant messages grouped with single avatar */}
-      {assistantMsgs.length > 0 && (
+      {/* Assistant text or agent activity grouped in arrival order by ChatView */}
+      {shouldRenderAssistantBlock && (
         <div className="flex w-full overflow-hidden group">
           {/* Content area: workflow chain -> text -> file attachments */}
           <div className="flex-1 min-w-0 overflow-hidden">
-            {/* 1. Task block (workflow progress) - prefer executionSteps > persisted snapshot > legacy */}
-            {(executionSteps && executionSteps.length > 0) ? (
-              <TaskBlock
-                executionSteps={executionSteps}
-                isActive={isThisExecutionActive}
-                onRetry={hasError && !isStreaming ? handleRetry : undefined}
-              />
-            ) : persistedExecutionSteps ? (
-              <TaskBlock
-                executionSteps={persistedExecutionSteps}
-                isActive={false}
-              />
-            ) : hasNonThinkingSteps && (
-              <TaskBlock
-                steps={workflowSteps}
-                isActive={isAnyExecuting}
+            {/* 1. Agent activity - nanobot webui-style thought/tool timeline */}
+            {hasActivity && (
+              <AgentActivityCluster
+                thinking={thinkingContent}
+                activityMessages={activityMessages}
+                executionSteps={activityExecutionSteps}
+                toolCalls={allToolCalls}
+                isActive={isThisExecutionActive || isAnyExecuting}
                 onRetry={hasError && !isStreaming ? handleRetry : undefined}
               />
             )}
 
             {/* Thinking indicator - when streaming but no content yet */}
-            {isStreaming && textContents.length === 0 && !hasNonThinkingSteps && !(executionSteps && executionSteps.length > 0) && !persistedExecutionSteps && (
+            {isStreaming && textContents.length === 0 && !hasNonThinkingSteps && !hasActivity && (
               <ThinkingIndicator />
             )}
 
@@ -263,30 +300,48 @@ export default function MessageGroup({ messages }: MessageGroupProps) {
             })}
 
             {/* 2.5. Sources section - prominent display below text */}
-            {searchResults.length > 0 && !isStreaming && (
-              <SourcesSection results={searchResults} highlightedIndex={highlightedSource} />
+            {searchResults.length > 0 && !isStreaming && textContents.length > 0 && (
+              <SourcesSection results={searchResults} highlightedIndex={highlightedSource} defaultExpanded />
             )}
 
             {/* Streaming cursor - only when text is actively being streamed */}
             {lastAssistantMsg?.isStreaming && textContents.length > 0 && <span className="streaming-cursor" />}
 
-            {/* 3. File attachments - show created/modified files */}
-            {fileOutputs.length > 0 && !isAnyExecuting && (() => {
-              const imageFiles = fileOutputs.filter((f) => isImageFile(f.path));
-              const otherFiles = fileOutputs.filter((f) => !isImageFile(f.path));
+            {/* 3. File/media attachments - show generated or returned files */}
+            {(fileOutputs.length > 0 || localMediaPaths.length > 0 || remoteMediaAttachments.length > 0) && !isAnyExecuting && (() => {
+              const outputPaths = fileOutputs.map((file) => file.path);
+              const allLocalPaths = Array.from(new Set([...outputPaths, ...localMediaPaths]));
+              const imageFiles = allLocalPaths.filter((path) => isImageFile(path));
+              const otherFiles = allLocalPaths.filter((path) => !isImageFile(path));
               return (
                 <>
                   {imageFiles.length > 0 && (
                     <div className="flex flex-wrap gap-3 mt-2">
-                      {imageFiles.map((file) => (
-                        <ImagePreviewCard key={file.path} filePath={file.path} />
+                      {imageFiles.map((path) => (
+                        <ImagePreviewCard key={path} filePath={path} />
                       ))}
                     </div>
                   )}
                   {otherFiles.length > 0 && (
                     <div className="flex flex-wrap gap-2 mt-2">
-                      {otherFiles.map((file) => (
-                        <FileAttachment key={file.path} filePath={file.path} operation={file.operation} />
+                      {otherFiles.map((path) => {
+                        const output = fileOutputs.find((file) => file.path === path);
+                        return <FileAttachment key={path} filePath={path} operation={output?.operation} />;
+                      })}
+                    </div>
+                  )}
+                  {remoteMediaAttachments.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {remoteMediaAttachments.map((item) => (
+                        <a
+                          key={item.url}
+                          href={item.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-2 rounded-lg border border-[#e5e2db] bg-white px-3 py-2 text-[13px] text-[#29261b] hover:border-[#d97757]/40 hover:shadow-sm"
+                        >
+                          {item.name || item.url}
+                        </a>
                       ))}
                     </div>
                   )}
@@ -295,7 +350,7 @@ export default function MessageGroup({ messages }: MessageGroupProps) {
             })()}
 
             {/* Actions - use lastAssistantMsg for regenerate/delete */}
-            {!isStreaming && activeConv?.status !== 'running' && lastAssistantMsg && (
+            {!isStreaming && activeConv?.status !== 'running' && lastAssistantMsg && textContents.length > 0 && (
               <div className="mb-1 group">
                 <MessageBubble message={lastAssistantMsg} hideAvatar={true} actionsOnly={true} />
               </div>

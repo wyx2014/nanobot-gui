@@ -463,7 +463,7 @@ export interface TranslationDict {
     // Server logs
     viewLogs: string;
     noLogs: string;
-    // MarketplaceCard i18n
+    // Marketplace/catalog card i18n
     installing: string;
     aiCreateSkillPrompt: string;
   };

@@ -9,15 +9,18 @@ import {
   Info,
   KeyRound,
   Loader2,
-  Package,
+  Plus,
   RefreshCw,
   Save,
   Shield,
   SlidersHorizontal,
+  Trash2,
 } from "lucide-react";
 
 import {
+  ApiError,
   createModelConfiguration,
+  deleteModelConfiguration,
   fetchProviderModels,
   fetchSettings,
   loginProviderOAuth,
@@ -33,6 +36,7 @@ import {
   bootstrapNanobotGateway,
   getNanobotStatus,
   getNanobotToken,
+  refreshNanobotAuth,
   syncGatewaySettingsToStore,
 } from "@/core/nanobotClient";
 import type {
@@ -112,7 +116,6 @@ type ActionKey = string;
 
 const tabs: Array<{ key: TabKey; label: string; description: string; icon: typeof Cpu }> = [
   { key: "providers", label: "模型服务", description: "Provider / API Key / OAuth", icon: Cpu },
-  { key: "models", label: "模型预设", description: "默认模型和上下文窗口", icon: SlidersHorizontal },
   { key: "search", label: "联网搜索", description: "搜索引擎和读取策略", icon: Globe },
   { key: "image", label: "图像生成", description: "图片模型和默认尺寸", icon: ImageIcon },
   { key: "safety", label: "安全边界", description: "本地网络和工作区访问", icon: Shield },
@@ -158,6 +161,10 @@ function toErrorMessage(error: unknown): string {
 function numberValue(value: string, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function isUnauthorized(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 401;
 }
 
 function StatusPill({ ok, children }: { ok: boolean; children: string }) {
@@ -258,7 +265,6 @@ export function SettingsView({
     model: "",
   });
   const [modelCatalog, setModelCatalog] = useState<ProviderModelsPayload | null>(null);
-  const [modelCatalogLoading, setModelCatalogLoading] = useState(false);
   const [webSearchForm, setWebSearchForm] = useState<WebSearchForm>({
     provider: "none",
     apiKey: "",
@@ -296,14 +302,6 @@ export function SettingsView({
     [selectedProvider, settings],
   );
 
-  const modelPresetOptions = useMemo(
-    () =>
-      (settings?.model_presets ?? []).map((preset) => ({
-        value: preset.name,
-        label: preset.active ? `${preset.label}（当前）` : preset.label,
-      })),
-    [settings],
-  );
 
   const selectedModelPreset = useMemo(
     () => settings?.model_presets.find((preset) => preset.name === selectedPreset) ?? null,
@@ -406,6 +404,26 @@ export function SettingsView({
     });
   }, []);
 
+  const refreshSettingsAuth = useCallback(async () => {
+    const refreshed = await refreshNanobotAuth();
+    setApiBase(refreshed.baseUrl);
+    setToken(refreshed.token);
+    return refreshed;
+  }, []);
+
+  const withGatewayAuth = useCallback(
+    async <T,>(task: (authToken: string, base: string) => Promise<T>): Promise<T> => {
+      try {
+        return await task(token, apiBase);
+      } catch (err) {
+        if (!isUnauthorized(err)) throw err;
+        const refreshed = await refreshSettingsAuth();
+        return await task(refreshed.token, refreshed.baseUrl);
+      }
+    },
+    [apiBase, refreshSettingsAuth, token],
+  );
+
   const loadSettings = useCallback(
     async (base = apiBase, authToken = token, silent = false) => {
       if (!base || !authToken) return;
@@ -413,7 +431,14 @@ export function SettingsView({
       else setLoading(true);
       setError("");
       try {
-        const settingsPayload = await fetchSettings(authToken, base);
+        let settingsPayload: SettingsPayload;
+        try {
+          settingsPayload = await fetchSettings(authToken, base);
+        } catch (err) {
+          if (!isUnauthorized(err)) throw err;
+          const refreshed = await refreshSettingsAuth();
+          settingsPayload = await fetchSettings(refreshed.token, refreshed.baseUrl);
+        }
         applyPayload(settingsPayload);
       } catch (err) {
         setError(toErrorMessage(err));
@@ -422,7 +447,7 @@ export function SettingsView({
         setRefreshing(false);
       }
     },
-    [apiBase, applyPayload, token],
+    [apiBase, applyPayload, refreshSettingsAuth, token],
   );
 
   const initializeGateway = useCallback(async () => {
@@ -475,21 +500,17 @@ export function SettingsView({
   useEffect(() => {
     if (!token || !apiBase || !modelForm.provider) return;
     let cancelled = false;
-    setModelCatalogLoading(true);
-    fetchProviderModels(token, modelForm.provider, apiBase)
+    withGatewayAuth((authToken, base) => fetchProviderModels(authToken, modelForm.provider, base))
       .then((payload) => {
         if (!cancelled) setModelCatalog(payload);
       })
       .catch(() => {
         if (!cancelled) setModelCatalog(null);
-      })
-      .finally(() => {
-        if (!cancelled) setModelCatalogLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [apiBase, modelForm.provider, token]);
+  }, [apiBase, modelForm.provider, token, withGatewayAuth]);
 
   const replaceSettings = useCallback(
     async (payload: SettingsPayload) => {
@@ -504,51 +525,57 @@ export function SettingsView({
     withAction(
       "provider",
       async () => {
-        const payload = await updateProviderSettings(
-          token,
-          {
-            provider: selectedProvider,
-            apiKey: providerForm.apiKey,
-            apiBase: providerForm.apiBase,
-            apiType: providerForm.apiType,
-          },
-          apiBase,
+        const payload = await withGatewayAuth((authToken, base) =>
+          updateProviderSettings(
+            authToken,
+            {
+              provider: selectedProvider,
+              apiKey: providerForm.apiKey,
+              apiBase: providerForm.apiBase,
+              apiType: providerForm.apiType,
+            },
+            base,
+          ),
         );
         await replaceSettings(payload);
       },
       "模型服务已保存",
     );
 
-  const setActiveProvider = () =>
-    withAction(
-      "active-provider",
-      async () => {
-        const payload = await updateSettings(token, { provider: selectedProvider }, apiBase);
-        await replaceSettings(payload);
-      },
-      "默认模型服务已切换",
-    );
 
   const oauthAction = (action: "login" | "logout") =>
     withAction(
       `oauth-${action}`,
       async () => {
-        const payload =
+        const payload = await withGatewayAuth((authToken, base) =>
           action === "login"
-            ? await loginProviderOAuth(token, selectedProvider, apiBase)
-            : await logoutProviderOAuth(token, selectedProvider, apiBase);
+            ? loginProviderOAuth(authToken, selectedProvider, base)
+            : logoutProviderOAuth(authToken, selectedProvider, base),
+        );
         await replaceSettings(payload);
       },
       action === "login" ? "OAuth 登录已发起" : "OAuth 已退出",
     );
 
-  const saveModelPreset = () =>
-    selectedModelPreset
-      ? withAction(
-          "model-save",
-          async () => {
-            const payload = await updateModelConfiguration(
-              token,
+  const saveModelPreset = () => {
+    if (!selectedModelPreset) return Promise.resolve();
+    return withAction(
+      "model-save",
+      async () => {
+        const payload = await withGatewayAuth((authToken, base) => {
+          if (selectedModelPreset.name === "default") {
+            return updateSettings(
+              authToken,
+              {
+                model: modelForm.model,
+                provider: modelForm.provider,
+                contextWindowTokens: modelForm.contextWindowTokens,
+              },
+              base,
+            );
+          } else {
+            return updateModelConfiguration(
+              authToken,
               {
                 name: selectedModelPreset.name,
                 label: modelForm.label,
@@ -556,52 +583,82 @@ export function SettingsView({
                 model: modelForm.model,
                 contextWindowTokens: modelForm.contextWindowTokens,
               },
-              apiBase,
+              base,
             );
-            await replaceSettings(payload);
-          },
-          "模型预设已保存",
-        )
-      : undefined;
+          }
+        });
+        await replaceSettings(payload);
+      },
+      "模型预设已保存",
+    );
+  };
 
-  const activateModelPreset = () =>
-    selectedModelPreset
-      ? withAction(
-          "model-active",
-          async () => {
-            const payload = await updateSettings(token, { modelPreset: selectedModelPreset.name }, apiBase);
-            await replaceSettings(payload);
-          },
-          "默认模型预设已切换",
-        )
-      : undefined;
+  const activateModelPreset = () => {
+    if (!selectedModelPreset) return Promise.resolve();
+    return withAction(
+      "model-active",
+      async () => {
+        const payload = await withGatewayAuth((authToken, base) =>
+          updateSettings(authToken, { modelPreset: selectedModelPreset.name }, base),
+        );
+        await replaceSettings(payload);
+      },
+      "默认模型预设已切换",
+    );
+  };
 
   const createModelPreset = () =>
     withAction(
       "model-create",
       async () => {
-        const payload = await createModelConfiguration(token, newModelForm, apiBase);
+        const payload = await withGatewayAuth((authToken, base) =>
+          createModelConfiguration(authToken, newModelForm, base),
+        );
         await replaceSettings(payload);
         setNewModelForm({ label: "", provider: newModelForm.provider, model: "" });
       },
       "模型预设已创建",
     );
 
+  const deleteModelPreset = () => {
+    if (!selectedModelPreset) return Promise.resolve();
+    if (!window.confirm(`确定要删除通道 "${selectedModelPreset.label}" 吗？`)) {
+      return Promise.resolve();
+    }
+    return withAction(
+      "model-delete",
+      async () => {
+        const payload = await withGatewayAuth((authToken, base) =>
+          deleteModelConfiguration(authToken, selectedModelPreset.name, base)
+        );
+        await replaceSettings(payload);
+        const activePreset = payload.model_presets.find((p) => p.active) || payload.model_presets[0];
+        if (activePreset) {
+          setSelectedPreset(activePreset.name);
+          setSelectedProvider(activePreset.provider);
+        }
+      },
+      "模型预设已删除",
+    );
+  };
+
   const saveWebSearch = () =>
     withAction(
       "web-search",
       async () => {
-        const payload = await updateWebSearchSettings(
-          token,
-          {
-            provider: webSearchForm.provider,
-            apiKey: webSearchForm.apiKey,
-            baseUrl: webSearchForm.baseUrl,
-            maxResults: webSearchForm.maxResults,
-            timeout: webSearchForm.timeout,
-            useJinaReader: webSearchForm.useJinaReader,
-          },
-          apiBase,
+        const payload = await withGatewayAuth((authToken, base) =>
+          updateWebSearchSettings(
+            authToken,
+            {
+              provider: webSearchForm.provider,
+              apiKey: webSearchForm.apiKey,
+              baseUrl: webSearchForm.baseUrl,
+              maxResults: webSearchForm.maxResults,
+              timeout: webSearchForm.timeout,
+              useJinaReader: webSearchForm.useJinaReader,
+            },
+            base,
+          ),
         );
         await replaceSettings(payload);
       },
@@ -612,7 +669,9 @@ export function SettingsView({
     withAction(
       "image",
       async () => {
-        const payload = await updateImageGenerationSettings(token, imageForm, apiBase);
+        const payload = await withGatewayAuth((authToken, base) =>
+          updateImageGenerationSettings(authToken, imageForm, base),
+        );
         await replaceSettings(payload);
       },
       "图像生成设置已保存",
@@ -622,7 +681,9 @@ export function SettingsView({
     withAction(
       "safety",
       async () => {
-        const payload = await updateNetworkSafetySettings(token, safetyForm, apiBase);
+        const payload = await withGatewayAuth((authToken, base) =>
+          updateNetworkSafetySettings(authToken, safetyForm, base),
+        );
         await replaceSettings(payload);
       },
       "安全设置已保存",
@@ -632,15 +693,17 @@ export function SettingsView({
     withAction(
       "general",
       async () => {
-        const payload = await updateSettings(
-          token,
-          {
-            timezone: generalForm.timezone,
-            botName: generalForm.botName,
-            botIcon: generalForm.botIcon,
-            toolHintMaxLength: generalForm.toolHintMaxLength,
-          },
-          apiBase,
+        const payload = await withGatewayAuth((authToken, base) =>
+          updateSettings(
+            authToken,
+            {
+              timezone: generalForm.timezone,
+              botName: generalForm.botName,
+              botIcon: generalForm.botIcon,
+              toolHintMaxLength: generalForm.toolHintMaxLength,
+            },
+            base,
+          ),
         );
         await replaceSettings(payload);
       },
@@ -738,38 +801,28 @@ export function SettingsView({
           ) : null}
 
           {activeTab === "providers" && settings && (
-            <ProvidersSection
+            <ModelManagerSection
+              settings={settings}
               providerOptions={providerOptions}
               selectedProvider={selectedProvider}
               setSelectedProvider={setSelectedProvider}
-              provider={selectedProviderInfo}
-              form={providerForm}
-              setForm={setProviderForm}
-              agentProvider={settings.agent.provider}
-              saving={saving}
-              onSave={saveProvider}
-              onActivate={setActiveProvider}
-              onOauth={oauthAction}
-            />
-          )}
-
-          {activeTab === "models" && settings && (
-            <ModelsSection
-              providerOptions={providerOptions}
-              presetOptions={modelPresetOptions}
               selectedPreset={selectedPreset}
               setSelectedPreset={setSelectedPreset}
               selectedModelPreset={selectedModelPreset}
-              form={modelForm}
-              setForm={setModelForm}
-              newForm={newModelForm}
+              providerForm={providerForm}
+              setProviderForm={setProviderForm}
+              modelForm={modelForm}
+              setModelForm={setModelForm}
+              newModelForm={newModelForm}
               setNewForm={setNewModelForm}
-              catalog={modelCatalog}
-              catalogLoading={modelCatalogLoading}
+              modelCatalog={modelCatalog}
               saving={saving}
-              onSave={saveModelPreset}
-              onActivate={activateModelPreset}
-              onCreate={createModelPreset}
+              onSaveProvider={saveProvider}
+              onSaveModelPreset={saveModelPreset}
+              onActivateModelPreset={activateModelPreset}
+              onCreateModelPreset={createModelPreset}
+              onDeleteModelPreset={deleteModelPreset}
+              onOauth={oauthAction}
             />
           )}
 
@@ -823,202 +876,417 @@ export function SettingsView({
   );
 }
 
-function ProvidersSection({
+function ModelManagerSection({
+  settings,
   providerOptions,
   selectedProvider,
   setSelectedProvider,
-  provider,
-  form,
-  setForm,
-  agentProvider,
-  saving,
-  onSave,
-  onActivate,
-  onOauth,
-}: {
-  providerOptions: Array<{ value: string; label: string }>;
-  selectedProvider: string;
-  setSelectedProvider: (value: string) => void;
-  provider: SettingsPayload["providers"][number] | null;
-  form: ProviderForm;
-  setForm: (form: ProviderForm) => void;
-  agentProvider: string;
-  saving: Record<ActionKey, boolean>;
-  onSave: () => void;
-  onActivate: () => void;
-  onOauth: (action: "login" | "logout") => void;
-}) {
-  const oauth = provider?.auth_type === "oauth";
-  return (
-    <SettingsCard
-      title="模型服务"
-      description="这些配置会直接写入 nanobot gateway，聊天、工具调用和图像生成都读取同一份配置。"
-      actions={<StatusPill ok={provider?.configured ?? false}>{provider?.configured ? "已配置" : "未配置"}</StatusPill>}
-    >
-      <div className="grid gap-4 md:grid-cols-2">
-        <Field label="服务商">
-          <Select value={selectedProvider} onChange={setSelectedProvider} options={providerOptions} />
-        </Field>
-        <Field label="API 类型">
-          <Select
-            value={form.apiType}
-            onChange={(value) => setForm({ ...form, apiType: value as ProviderForm["apiType"] })}
-            options={apiTypeOptions}
-          />
-        </Field>
-        <Field label="API Base" hint={provider?.default_api_base ? `默认：${provider.default_api_base}` : undefined}>
-          <Input value={form.apiBase} onChange={(event) => setForm({ ...form, apiBase: event.target.value })} />
-        </Field>
-        {!oauth ? (
-          <Field label="API Key" hint={provider?.api_key_hint ? `当前：${provider.api_key_hint}` : "留空表示不修改已有密钥。"}>
-            <Input
-              type="password"
-              value={form.apiKey}
-              onChange={(event) => setForm({ ...form, apiKey: event.target.value })}
-              placeholder="sk-..."
-            />
-          </Field>
-        ) : (
-          <div className="rounded-lg border border-[#e8e4dd] bg-[#faf9f7] p-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-medium">OAuth 账号</div>
-                <div className="mt-1 text-xs text-[#777267]">{provider?.oauth_account || "尚未登录"}</div>
-              </div>
-              <Button variant="outline" size="sm" onClick={() => onOauth(provider?.oauth_account ? "logout" : "login")}>
-                <KeyRound className="h-4 w-4" />
-                {provider?.oauth_account ? "退出" : "登录"}
-              </Button>
-            </div>
-          </div>
-        )}
-      </div>
-      <div className="mt-5 flex flex-wrap gap-3">
-        <Button className="bg-[#d97757] text-white hover:bg-[#c86647]" onClick={onSave} disabled={saving.provider}>
-          {saving.provider ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          保存服务配置
-        </Button>
-        <Button
-          variant="outline"
-          className="border-[#e1ddd5] bg-white"
-          onClick={onActivate}
-          disabled={agentProvider === selectedProvider || saving["active-provider"]}
-        >
-          设为默认服务
-        </Button>
-      </div>
-    </SettingsCard>
-  );
-}
-
-function ModelsSection({
-  providerOptions,
-  presetOptions,
   selectedPreset,
   setSelectedPreset,
   selectedModelPreset,
-  form,
-  setForm,
-  newForm,
+  providerForm,
+  setProviderForm,
+  modelForm,
+  setModelForm,
+  newModelForm,
   setNewForm,
-  catalog,
-  catalogLoading,
+  modelCatalog,
   saving,
-  onSave,
-  onActivate,
-  onCreate,
+  onSaveProvider,
+  onSaveModelPreset,
+  onActivateModelPreset,
+  onCreateModelPreset,
+  onDeleteModelPreset,
+  onOauth,
 }: {
+  settings: SettingsPayload;
   providerOptions: Array<{ value: string; label: string }>;
-  presetOptions: Array<{ value: string; label: string }>;
+  selectedProvider: string;
+  setSelectedProvider: (value: string) => void;
   selectedPreset: string;
   setSelectedPreset: (value: string) => void;
   selectedModelPreset: SettingsPayload["model_presets"][number] | null;
-  form: ModelForm;
-  setForm: (form: ModelForm) => void;
-  newForm: NewModelForm;
+  providerForm: ProviderForm;
+  setProviderForm: (form: ProviderForm) => void;
+  modelForm: ModelForm;
+  setModelForm: (form: ModelForm) => void;
+  newModelForm: NewModelForm;
   setNewForm: (form: NewModelForm) => void;
-  catalog: ProviderModelsPayload | null;
-  catalogLoading: boolean;
+  modelCatalog: ProviderModelsPayload | null;
   saving: Record<ActionKey, boolean>;
-  onSave: () => void;
-  onActivate: () => void;
-  onCreate: () => void;
+  onSaveProvider: () => Promise<void>;
+  onSaveModelPreset: () => Promise<void>;
+  onActivateModelPreset: () => Promise<void>;
+  onCreateModelPreset: () => Promise<void>;
+  onDeleteModelPreset: () => Promise<void>;
+  onOauth: (action: "login" | "logout") => void;
 }) {
-  const catalogOptions = (catalog?.models ?? []).map((model) => ({
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const selectedProviderInfo = useMemo(
+    () => settings.providers.find((provider) => provider.name === selectedProvider) ?? null,
+    [selectedProvider, settings],
+  );
+
+  const oauth = selectedProviderInfo?.auth_type === "oauth";
+
+  const catalogOptions = (modelCatalog?.models ?? []).map((model) => ({
     value: model.id,
     label: model.label ? `${model.label} (${model.id})` : model.id,
   }));
-  return (
-    <div className="space-y-5">
-      <SettingsCard title="编辑模型预设" description="预设用于控制默认模型、供应商和上下文窗口。">
-        <div className="grid gap-4 md:grid-cols-2">
-          <Field label="预设">
-            <Select value={selectedPreset} onChange={setSelectedPreset} options={presetOptions} />
-          </Field>
-          <Field label="显示名称">
-            <Input value={form.label} onChange={(event) => setForm({ ...form, label: event.target.value })} />
-          </Field>
-          <Field label="服务商">
-            <Select value={form.provider} onChange={(value) => setForm({ ...form, provider: value })} options={providerOptions} />
-          </Field>
-          <Field label="模型 ID">
-            <Input value={form.model} onChange={(event) => setForm({ ...form, model: event.target.value })} />
-          </Field>
-          <Field label="上下文窗口 Token">
-            <Input
-              type="number"
-              value={form.contextWindowTokens}
-              onChange={(event) =>
-                setForm({ ...form, contextWindowTokens: numberValue(event.target.value, form.contextWindowTokens) })
-              }
-            />
-          </Field>
-        </div>
-        <div className="mt-5 flex flex-wrap gap-3">
-          <Button className="bg-[#d97757] text-white hover:bg-[#c86647]" onClick={onSave} disabled={saving["model-save"]}>
-            {saving["model-save"] ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            保存预设
-          </Button>
-          <Button
-            variant="outline"
-            className="border-[#e1ddd5] bg-white"
-            onClick={onActivate}
-            disabled={!selectedModelPreset || selectedModelPreset.active || saving["model-active"]}
-          >
-            设为默认模型
-          </Button>
-        </div>
-      </SettingsCard>
 
-      <SettingsCard
-        title="新增模型预设"
-        description={catalogLoading ? "正在读取服务商模型列表..." : catalog?.message || "可以直接填写模型 ID，也可以从服务商目录选择。"}
-      >
-        <div className="grid gap-4 md:grid-cols-2">
-          <Field label="显示名称">
-            <Input value={newForm.label} onChange={(event) => setNewForm({ ...newForm, label: event.target.value })} />
-          </Field>
-          <Field label="服务商">
-            <Select value={newForm.provider} onChange={(value) => setNewForm({ ...newForm, provider: value })} options={providerOptions} />
-          </Field>
-          <Field label="模型 ID">
-            <Input value={newForm.model} onChange={(event) => setNewForm({ ...newForm, model: event.target.value })} />
-          </Field>
-          {catalogOptions.length ? (
-            <Field label="从目录选择">
-              <Select value={newForm.model} onChange={(value) => setNewForm({ ...newForm, model: value })} options={catalogOptions} />
-            </Field>
-          ) : null}
+  const handleSaveAll = async () => {
+    // 1. Save provider settings first
+    await onSaveProvider();
+    // 2. Save model preset configuration next
+    await onSaveModelPreset();
+  };
+
+  const handleActivateAll = async (presetName: string) => {
+    // Set selected preset
+    setSelectedPreset(presetName);
+    // Find preset and set its provider as selected
+    const preset = settings.model_presets.find(p => p.name === presetName);
+    if (preset) {
+      setSelectedProvider(preset.provider);
+      // Wait a tiny bit for state to propagate, then trigger activates
+      await onActivateModelPreset();
+    }
+  };
+
+  const onSelectPreset = (preset: SettingsPayload["model_presets"][number]) => {
+    setSelectedPreset(preset.name);
+    setSelectedProvider(preset.provider);
+  };
+
+  // Group presets by provider
+  const groupedPresets = useMemo(() => {
+    const groups: Record<string, typeof settings.model_presets> = {};
+    settings.model_presets.forEach((preset) => {
+      const providerLabel = settings.providers.find(p => p.name === preset.provider)?.label || preset.provider;
+      if (!groups[providerLabel]) {
+        groups[providerLabel] = [];
+      }
+      groups[providerLabel].push(preset);
+    });
+    return groups;
+  }, [settings.model_presets, settings.providers]);
+
+  return (
+    <div className="flex h-[600px] border border-[#e8e4dd] rounded-xl overflow-hidden bg-white shadow-sm">
+      {/* Left Column: Preset Channels List */}
+      <div className="w-[260px] border-r border-[#e8e4dd] bg-[#faf9f6] flex flex-col shrink-0">
+        <div className="p-4 border-b border-[#e8e4dd] flex items-center justify-between">
+          <span className="text-sm font-semibold text-[#29261b]">模型预设通道</span>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7 text-[#777267] hover:text-[#d97757]"
+            onClick={() => setShowCreateModal(true)}
+            title="添加自定义模型预设"
+          >
+            <Plus className="h-4 w-4" />
+          </Button>
         </div>
-        <Button
-          className="mt-5 bg-[#d97757] text-white hover:bg-[#c86647]"
-          onClick={onCreate}
-          disabled={!newForm.label || !newForm.provider || !newForm.model || saving["model-create"]}
-        >
-          {saving["model-create"] ? <Loader2 className="h-4 w-4 animate-spin" /> : <Package className="h-4 w-4" />}
-          创建预设
-        </Button>
-      </SettingsCard>
+
+        <div className="flex-1 overflow-y-auto p-2 space-y-3">
+          {Object.entries(groupedPresets).map(([providerLabel, presets]) => (
+            <div key={providerLabel} className="space-y-1">
+              <div className="px-2 py-1 text-[11px] font-semibold text-[#8b8578] uppercase tracking-wider">
+                {providerLabel}
+              </div>
+              {presets.map((preset) => {
+                const isSelected = selectedPreset === preset.name;
+                const correspondingProvider = settings.providers.find(
+                  (p) => p.name === preset.provider
+                );
+                const isConfigured = correspondingProvider?.configured ?? false;
+
+                return (
+                  <div
+                    key={preset.name}
+                    onClick={() => onSelectPreset(preset)}
+                    className={cn(
+                      "flex items-center justify-between p-2.5 rounded-lg cursor-pointer transition-all",
+                      isSelected
+                        ? "bg-white shadow-sm ring-1 ring-black/5"
+                        : "hover:bg-[#eeebe3]/55"
+                    )}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={cn(
+                            "w-1.5 h-1.5 rounded-full shrink-0",
+                            isConfigured ? "bg-emerald-500" : "bg-[#ccd0cf]"
+                          )}
+                          title={isConfigured ? "已配置 Key" : "未配置 Key"}
+                        />
+                        <span className={cn(
+                          "text-xs font-semibold truncate",
+                          isSelected ? "text-[#d97757]" : "text-[#29261b]"
+                        )}>
+                          {preset.label}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 text-[10px] text-[#777267] truncate ml-3">
+                        {preset.model}
+                      </div>
+                    </div>
+
+                    {/* Switch/Radio component to enable/activate */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleActivateAll(preset.name);
+                      }}
+                      className={cn(
+                        "ml-2 flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full border transition-all",
+                        preset.active
+                          ? "border-[#d97757] bg-[#d97757] text-white"
+                          : "border-[#ccd0cf] hover:border-[#d97757]"
+                      )}
+                    >
+                      {preset.active && <Check className="h-2.5 w-2.5" />}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Right Column: Configuration details */}
+      <div className="flex-1 overflow-y-auto bg-white flex flex-col">
+        {selectedModelPreset ? (
+          <div className="p-6 space-y-6 flex-1">
+            <div className="flex items-start justify-between gap-4 border-b border-[#faf9f5] pb-4">
+              <div>
+                <h3 className="text-lg font-semibold text-[#29261b]">
+                  {selectedModelPreset.label}
+                </h3>
+                <p className="mt-1 text-xs text-[#777267]">
+                  通道类型：{selectedProviderInfo?.label || selectedModelPreset.provider}
+                </p>
+              </div>
+              <StatusPill ok={selectedModelPreset.active}>
+                {selectedModelPreset.active ? "当前激活助手模型" : "未启用"}
+              </StatusPill>
+            </div>
+
+            {/* Section 1: Provider Credentials */}
+            <div className="space-y-4">
+              <h4 className="text-sm font-semibold text-[#403b2f] flex items-center gap-1.5 border-l-2 border-[#d97757] pl-2">
+                服务商认证配置
+              </h4>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="API 类型">
+                  <Select
+                    value={providerForm.apiType}
+                    onChange={(value) => setProviderForm({ ...providerForm, apiType: value as ProviderForm["apiType"] })}
+                    options={apiTypeOptions}
+                  />
+                </Field>
+                <Field
+                  label="API Base"
+                  hint={
+                    selectedProviderInfo?.default_api_base
+                      ? `默认：${selectedProviderInfo.default_api_base}`
+                      : undefined
+                  }
+                >
+                  <Input
+                    value={providerForm.apiBase}
+                    onChange={(e) => setProviderForm({ ...providerForm, apiBase: e.target.value })}
+                  />
+                </Field>
+                {!oauth ? (
+                  <Field
+                    label="API Key"
+                    hint={
+                      selectedProviderInfo?.api_key_hint
+                        ? `当前：${selectedProviderInfo.api_key_hint}`
+                        : "留空表示不修改已有密钥。"
+                    }
+                  >
+                    <Input
+                      type="password"
+                      value={providerForm.apiKey}
+                      onChange={(e) => setProviderForm({ ...providerForm, apiKey: e.target.value })}
+                      placeholder="sk-..."
+                    />
+                  </Field>
+                ) : (
+                  <div className="rounded-lg border border-[#e8e4dd] bg-[#faf9f7] p-3 md:col-span-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-medium">OAuth 账号</div>
+                        <div className="mt-1 text-xs text-[#777267]">
+                          {selectedProviderInfo?.oauth_account || "尚未登录"}
+                        </div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onOauth(selectedProviderInfo?.oauth_account ? "logout" : "login")}
+                      >
+                        <KeyRound className="h-4 w-4" />
+                        {selectedProviderInfo?.oauth_account ? "退出" : "登录"}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Section 2: Preset Parameters */}
+            <div className="space-y-4 pt-4 border-t border-[#faf9f5]">
+              <h4 className="text-sm font-semibold text-[#403b2f] flex items-center gap-1.5 border-l-2 border-[#d97757] pl-2">
+                模型预设参数
+              </h4>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="显示名称">
+                  <Input
+                    value={modelForm.label}
+                    onChange={(e) => setModelForm({ ...modelForm, label: e.target.value })}
+                  />
+                </Field>
+                <Field label="模型 ID">
+                  <Input
+                    value={modelForm.model}
+                    onChange={(e) => setModelForm({ ...modelForm, model: e.target.value })}
+                  />
+                </Field>
+                <Field label="上下文窗口 Token">
+                  <Input
+                    type="number"
+                    value={modelForm.contextWindowTokens}
+                    onChange={(e) =>
+                      setModelForm({
+                        ...modelForm,
+                        contextWindowTokens: numberValue(e.target.value, modelForm.contextWindowTokens),
+                      })
+                    }
+                  />
+                </Field>
+              </div>
+            </div>
+
+            {/* Unified Save and Activate buttons */}
+            <div className="pt-6 border-t border-[#e8e4dd] flex items-center justify-between">
+              <div className="flex gap-3">
+                <Button
+                  className="bg-[#d97757] text-white hover:bg-[#c86647]"
+                  onClick={handleSaveAll}
+                  disabled={saving.provider || saving["model-save"]}
+                >
+                  {saving.provider || saving["model-save"] ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4" />
+                  )}
+                  保存配置
+                </Button>
+                {!selectedModelPreset.active && (
+                  <Button
+                    variant="outline"
+                    className="border-[#e1ddd5] bg-white text-[#403b2f] hover:bg-[#f6f1eb]"
+                    onClick={() => handleActivateAll(selectedModelPreset.name)}
+                    disabled={saving["model-active"]}
+                  >
+                    启用当前通道
+                  </Button>
+                )}
+              </div>
+              {!selectedModelPreset.is_default && selectedModelPreset.name !== "default" && (
+                <Button
+                  variant="outline"
+                  className="border-red-200 bg-white text-red-600 hover:bg-red-50 hover:text-red-700"
+                  onClick={onDeleteModelPreset}
+                  disabled={saving["model-delete"]}
+                >
+                  {saving["model-delete"] ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-4 w-4" />
+                  )}
+                  删除通道
+                </Button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-[#777267]">
+            <Cpu className="h-10 w-10 text-[#ccd0cf] mb-2" />
+            <p className="text-sm">请在左侧选择或添加一个模型通道进行配置。</p>
+          </div>
+        )}
+      </div>
+
+      {/* Creation Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-xl w-[400px] p-6 animate-in zoom-in-95 duration-150">
+            <h3 className="text-[16px] font-semibold text-[#29261b] mb-4">创建自定义模型通道</h3>
+            <div className="space-y-4">
+              <Field label="通道显示名称">
+                <Input
+                  value={newModelForm.label}
+                  onChange={(e) => setNewForm({ ...newModelForm, label: e.target.value })}
+                  placeholder="例如: DeepSeek R1 (中转)"
+                />
+              </Field>
+              <Field label="供应商">
+                <Select
+                  value={newModelForm.provider}
+                  onChange={(value) => setNewForm({ ...newModelForm, provider: value })}
+                  options={providerOptions}
+                />
+              </Field>
+              <Field label="模型 ID">
+                <Input
+                  value={newModelForm.model}
+                  onChange={(e) => setNewForm({ ...newModelForm, model: e.target.value })}
+                  placeholder="deepseek-reasoner"
+                />
+              </Field>
+              {catalogOptions.length ? (
+                <Field label="从目录选择模型">
+                  <Select
+                    value={newModelForm.model}
+                    onChange={(value) => setNewForm({ ...newModelForm, model: value })}
+                    options={catalogOptions}
+                  />
+                </Field>
+              ) : null}
+            </div>
+            <div className="mt-6 flex gap-3">
+              <Button
+                variant="outline"
+                className="flex-1 border-[#e1ddd5] bg-white"
+                onClick={() => setShowCreateModal(false)}
+              >
+                取消
+              </Button>
+              <Button
+                className="flex-1 bg-[#d97757] text-white hover:bg-[#c86647]"
+                onClick={async () => {
+                  await onCreateModelPreset();
+                  setShowCreateModal(false);
+                }}
+                disabled={!newModelForm.label || !newModelForm.provider || !newModelForm.model || saving["model-create"]}
+              >
+                {saving["model-create"] ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  "创建通道"
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

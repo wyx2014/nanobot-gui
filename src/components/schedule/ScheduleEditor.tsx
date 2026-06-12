@@ -27,6 +27,7 @@ export default function ScheduleEditor() {
   const [dayOfWeek, setDayOfWeek] = useState(1);
   const [skillName, setSkillName] = useState('');
   const [workspacePath, setWorkspacePath] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   // Initialize form when editing task changes
   useEffect(() => {
@@ -87,7 +88,7 @@ export default function ScheduleEditor() {
   const showHourSelector = frequency !== 'hourly';
   const showDaySelector = frequency === 'weekly';
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!name.trim() || !prompt.trim()) return;
 
     const schedule: ScheduleConfig = {
@@ -96,27 +97,31 @@ export default function ScheduleEditor() {
       dayOfWeek: frequency === 'weekly' ? dayOfWeek : undefined,
     };
 
-    if (editingTaskId) {
-      updateTask(editingTaskId, {
-        name: name.trim(),
-        description: description.trim() || undefined,
-        prompt: prompt.trim(),
-        schedule,
-        skillName: skillName || undefined,
-        workspacePath: workspacePath || undefined,
-      });
-    } else {
-      createTask({
-        name: name.trim(),
-        description: description.trim() || undefined,
-        prompt: prompt.trim(),
-        schedule,
-        skillName: skillName || undefined,
-        workspacePath: workspacePath || undefined,
-      });
+    setIsSaving(true);
+    try {
+      if (editingTaskId) {
+        await updateTask(editingTaskId, {
+          name: name.trim(),
+          description: description.trim() || undefined,
+          prompt: prompt.trim(),
+          schedule,
+          skillName: skillName || undefined,
+          workspacePath: workspacePath || undefined,
+        });
+      } else {
+        await createTask({
+          name: name.trim(),
+          description: description.trim() || undefined,
+          prompt: prompt.trim(),
+          schedule,
+          skillName: skillName || undefined,
+          workspacePath: workspacePath || undefined,
+        });
+      }
+      closeEditor();
+    } finally {
+      setIsSaving(false);
     }
-
-    closeEditor();
   };
 
   return (
@@ -306,15 +311,15 @@ export default function ScheduleEditor() {
           </button>
           <button
             onClick={handleSave}
-            disabled={!name.trim() || !prompt.trim()}
+            disabled={isSaving || !name.trim() || !prompt.trim()}
             className={cn(
               'px-4 py-2 rounded-lg text-[13px] font-medium transition-colors',
-              name.trim() && prompt.trim()
+              !isSaving && name.trim() && prompt.trim()
                 ? 'bg-[#d97757] text-white hover:bg-[#c8664a]'
                 : 'bg-[#e8e4dd] text-[#656358] cursor-not-allowed'
             )}
           >
-            {t.common.save}
+            {isSaving ? t.common.loading : t.common.save}
           </button>
         </div>
       </div>

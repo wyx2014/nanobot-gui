@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useScheduleStore } from '@/stores/scheduleStore';
 import { useI18n, format } from '@/i18n';
-import { schedulerEngine } from '@/core/scheduler/scheduler';
 import {
   ArrowLeft,
   Pencil,
@@ -39,6 +38,7 @@ export default function ScheduleTaskDetail() {
     pauseTask,
     resumeTask,
     deleteTask,
+    runTaskNow,
     openEditor,
   } = useScheduleStore();
 
@@ -54,7 +54,7 @@ export default function ScheduleTaskDetail() {
   const handleRunNow = async () => {
     setIsRunning(true);
     try {
-      await schedulerEngine.runNow(task.id);
+      await runTaskNow(task.id);
     } finally {
       setIsRunning(false);
     }
@@ -66,7 +66,7 @@ export default function ScheduleTaskDetail() {
 
   const confirmDelete = () => {
     setShowDeleteConfirm(false);
-    deleteTask(task.id);
+    void deleteTask(task.id);
   };
 
   const handleEdit = () => {
@@ -203,7 +203,9 @@ export default function ScheduleTaskDetail() {
             </button>
 
             <button
-              onClick={() => isPaused ? resumeTask(task.id) : pauseTask(task.id)}
+              onClick={() => {
+                void (isPaused ? resumeTask(task.id) : pauseTask(task.id));
+              }}
               className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-[13px] font-medium bg-[#f5f3ee] text-[#3d3929] hover:bg-[#e8e5de] transition-colors"
             >
               {isPaused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}

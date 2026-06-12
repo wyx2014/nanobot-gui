@@ -28,7 +28,6 @@ import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { isMacOS } from '@/utils/platform';
 import { cn } from '@/lib/utils';
 import { initNotifications } from '@/utils/notifications';
-import { schedulerEngine } from '@/core/scheduler/scheduler';
 import { startBehaviorSensor, stopBehaviorSensor } from '@/core/runtime/behaviorSensor';
 import { useI18n } from '@/i18n';
 import CloseDialog from '@/components/common/CloseDialog';
@@ -109,12 +108,6 @@ function App() {
     });
 
   }, [refreshDiscovery]);
-
-  // Start scheduler engine
-  useEffect(() => {
-    schedulerEngine.start();
-    return () => schedulerEngine.stop();
-  }, []);
 
   // Behavior sensor — controlled by setting
   const behaviorSensorEnabled = useSettingsStore((s) => s.behaviorSensorEnabled);

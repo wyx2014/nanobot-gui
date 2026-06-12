@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 import { loadLocalImage, getBaseName, isLocalFilePath } from '@/utils/pathUtils';
 import { shellBridge } from '@/lib/ipc-factory';
 
-const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp']);
+const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
 
 // Get file type info for display
 function getFileTypeInfo(filePath: string): { icon: typeof File; label: string; category: string } {

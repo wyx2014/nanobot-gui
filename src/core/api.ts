@@ -8,15 +8,18 @@ import type {
   NetworkSafetySettingsUpdate,
   ProviderModelsPayload,
   ProviderSettingsUpdate,
+  ScheduleTasksPayload,
   SettingsPayload,
   SettingsUpdate,
   SidebarStatePayload,
   SlashCommand,
+  SkillsPayload,
   WebSearchSettingsUpdate,
   WorkspacesPayload,
   WebuiThreadPersistedPayload,
   WorkspaceScopePayload,
 } from "./types";
+import type { ScheduleConfig } from "@/types/schedule";
 import { fetchWithTimeout } from "./bootstrap";
 
 const API_READ_TIMEOUT_MS = 20_000;
@@ -81,10 +84,21 @@ function mcpValuesHeader(values: Record<string, unknown>): HeadersInit | undefin
   return { "X-Nanobot-MCP-Values": JSON.stringify(payload) };
 }
 
+function skillValuesHeader(values: Record<string, unknown>): HeadersInit | undefined {
+  const payload: Record<string, unknown> = {};
+  Object.entries(values).forEach(([key, value]) => {
+    if (value === null || value === undefined) return;
+    payload[key] = value;
+  });
+  if (!Object.keys(payload).length) return undefined;
+  return { "X-Nanobot-Skill-Values": JSON.stringify(payload) };
+}
+
 function splitKey(key: string): { channel: string; chatId: string } {
   const idx = key.indexOf(":");
   if (idx === -1) return { channel: "", chatId: key };
-  return { channel: key.slice(0, idx), chatId: key.slice(idx + 1) };
+  const channel = key.slice(0, idx);
+  return { channel, chatId: channel === "cron" ? key : key.slice(idx + 1) };
 }
 
 export async function listSessions(
@@ -170,6 +184,126 @@ export async function fetchWorkspaces(
   );
 }
 
+function appendScheduleParams(
+  query: URLSearchParams,
+  data: {
+    name?: string;
+    description?: string;
+    prompt?: string;
+    schedule?: ScheduleConfig;
+    skillName?: string;
+    workspacePath?: string;
+    timezone?: string;
+  },
+): void {
+  if (data.name !== undefined) query.set("name", data.name);
+  if (data.description !== undefined) query.set("description", data.description ?? "");
+  if (data.prompt !== undefined) query.set("prompt", data.prompt);
+  if (data.skillName !== undefined) query.set("skill_name", data.skillName ?? "");
+  if (data.workspacePath !== undefined) query.set("workspace_path", data.workspacePath ?? "");
+  if (data.timezone !== undefined) query.set("timezone", data.timezone);
+  if (data.schedule !== undefined) {
+    query.set("frequency", data.schedule.frequency);
+    if (data.schedule.time) {
+      query.set("hour", String(data.schedule.time.hour));
+      query.set("minute", String(data.schedule.time.minute));
+    }
+    if (data.schedule.dayOfWeek !== undefined) {
+      query.set("day_of_week", String(data.schedule.dayOfWeek));
+    }
+  }
+}
+
+export async function fetchScheduleTasks(
+  token: string,
+  base: string = "",
+): Promise<ScheduleTasksPayload> {
+  return request<ScheduleTasksPayload>(
+    `${base}/api/schedule/tasks`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
+  );
+}
+
+export async function createScheduleTask(
+  token: string,
+  data: {
+    name: string;
+    description?: string;
+    prompt: string;
+    schedule: ScheduleConfig;
+    skillName?: string;
+    workspacePath?: string;
+    timezone?: string;
+  },
+  base: string = "",
+): Promise<ScheduleTasksPayload> {
+  const query = new URLSearchParams();
+  appendScheduleParams(query, data);
+  return request<ScheduleTasksPayload>(`${base}/api/schedule/tasks/create?${query}`, token);
+}
+
+export async function updateScheduleTask(
+  token: string,
+  id: string,
+  data: {
+    name: string;
+    description?: string;
+    prompt: string;
+    schedule: ScheduleConfig;
+    skillName?: string;
+    workspacePath?: string;
+    timezone?: string;
+  },
+  base: string = "",
+): Promise<ScheduleTasksPayload> {
+  const query = new URLSearchParams();
+  query.set("id", id);
+  appendScheduleParams(query, data);
+  return request<ScheduleTasksPayload>(`${base}/api/schedule/tasks/update?${query}`, token);
+}
+
+export async function deleteScheduleTask(
+  token: string,
+  id: string,
+  base: string = "",
+): Promise<ScheduleTasksPayload> {
+  const query = new URLSearchParams();
+  query.set("id", id);
+  return request<ScheduleTasksPayload>(`${base}/api/schedule/tasks/delete?${query}`, token);
+}
+
+export async function pauseScheduleTask(
+  token: string,
+  id: string,
+  base: string = "",
+): Promise<ScheduleTasksPayload> {
+  const query = new URLSearchParams();
+  query.set("id", id);
+  return request<ScheduleTasksPayload>(`${base}/api/schedule/tasks/pause?${query}`, token);
+}
+
+export async function resumeScheduleTask(
+  token: string,
+  id: string,
+  base: string = "",
+): Promise<ScheduleTasksPayload> {
+  const query = new URLSearchParams();
+  query.set("id", id);
+  return request<ScheduleTasksPayload>(`${base}/api/schedule/tasks/resume?${query}`, token);
+}
+
+export async function runScheduleTaskNow(
+  token: string,
+  id: string,
+  base: string = "",
+): Promise<ScheduleTasksPayload> {
+  const query = new URLSearchParams();
+  query.set("id", id);
+  return request<ScheduleTasksPayload>(`${base}/api/schedule/tasks/run?${query}`, token);
+}
+
 export async function fetchCliApps(
   token: string,
   base: string = "",
@@ -191,6 +325,59 @@ export async function runCliAppAction(
   const query = new URLSearchParams();
   query.set("name", name);
   return request<CliAppsPayload>(`${base}/api/settings/cli-apps/${action}?${query}`, token);
+}
+
+export async function fetchSkills(
+  token: string,
+  base: string = "",
+): Promise<SkillsPayload> {
+  return request<SkillsPayload>(
+    `${base}/api/settings/skills`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
+  );
+}
+
+export async function fetchSkillDetail(
+  token: string,
+  name: string,
+  base: string = "",
+): Promise<SkillsPayload> {
+  const query = new URLSearchParams();
+  query.set("name", name);
+  return request<SkillsPayload>(
+    `${base}/api/settings/skills/detail?${query}`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
+  );
+}
+
+export async function runSkillAction(
+  token: string,
+  action: "enable" | "disable" | "delete",
+  name: string,
+  base: string = "",
+): Promise<SkillsPayload> {
+  const query = new URLSearchParams();
+  query.set("name", name);
+  return request<SkillsPayload>(`${base}/api/settings/skills/${action}?${query}`, token);
+}
+
+export async function saveSkill(
+  token: string,
+  name: string,
+  content: string,
+  base: string = "",
+): Promise<SkillsPayload> {
+  const query = new URLSearchParams();
+  query.set("name", name);
+  return request<SkillsPayload>(
+    `${base}/api/settings/skills/save?${query}`,
+    token,
+    { headers: skillValuesHeader({ content }) },
+  );
 }
 
 export async function fetchMcpPresets(
@@ -380,6 +567,19 @@ export async function updateModelConfiguration(
   }
   return request<SettingsPayload>(
     `${base}/api/settings/model-configurations/update?${query}`,
+    token,
+  );
+}
+
+export async function deleteModelConfiguration(
+  token: string,
+  name: string,
+  base: string = "",
+): Promise<SettingsPayload> {
+  const query = new URLSearchParams();
+  query.set("name", name);
+  return request<SettingsPayload>(
+    `${base}/api/settings/model-configurations/delete?${query}`,
     token,
   );
 }

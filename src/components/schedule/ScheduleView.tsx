@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useScheduleStore } from '@/stores/scheduleStore';
 import { useI18n } from '@/i18n';
 import { navigateToChatWithInput } from '@/utils/navigation';
@@ -9,7 +10,11 @@ import ScheduleEditor from './ScheduleEditor';
 
 export default function ScheduleView() {
   const { t } = useI18n();
-  const { tasks, selectedTaskId, openEditor } = useScheduleStore();
+  const { tasks, selectedTaskId, openEditor, loadTasks, loading, error } = useScheduleStore();
+
+  useEffect(() => {
+    void loadTasks();
+  }, [loadTasks]);
 
   const handleAskAbu = () => {
     navigateToChatWithInput(t.schedule.askAbuCreatePrompt);
@@ -59,7 +64,15 @@ export default function ScheduleView() {
       </div>
 
       {/* Task list or empty state */}
-      {sortedTasks.length === 0 ? (
+      {loading && sortedTasks.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center text-[13px] text-[#656358]">
+          正在从 nanobot 加载定时任务...
+        </div>
+      ) : error ? (
+        <div className="mx-6 mt-4 rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      ) : sortedTasks.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center text-center px-6">
           <div className="w-16 h-16 rounded-full bg-[#f0ede6] flex items-center justify-center mb-4">
             <Clock className="h-7 w-7 text-[#9a9689]" />

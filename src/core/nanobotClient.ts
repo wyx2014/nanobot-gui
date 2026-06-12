@@ -36,6 +36,21 @@ export function getNanobotToken(): string {
   return currentToken;
 }
 
+export async function refreshNanobotAuth(): Promise<{ token: string; baseUrl: string; wsUrl: string }> {
+  const status = await getNanobotStatus();
+  if (!status.ready) {
+    throw new Error('Nanobot backend process is not ready yet.');
+  }
+  const baseUrl = `http://127.0.0.1:${status.port}`;
+  const boot = await fetchBootstrap(baseUrl, status.tokenSecret);
+  currentToken = boot.token;
+
+  const wsUrl = deriveWsUrl(boot.ws_path, boot.token, boot.ws_url);
+  globalClient?.updateUrl(wsUrl);
+
+  return { token: currentToken, baseUrl, wsUrl };
+}
+
 /**
  * Initialize and authenticate with the Python nanobot gateway.
  */
@@ -47,10 +62,8 @@ export async function bootstrapNanobotGateway(): Promise<NanobotClient> {
 
   const baseUrl = `http://127.0.0.1:${status.port}`;
   console.log('[nanobotClient] Bootstrapping gateway at', baseUrl);
-  const boot = await fetchBootstrap(baseUrl, status.tokenSecret);
-  currentToken = boot.token;
+  const { wsUrl } = await refreshNanobotAuth();
 
-  const wsUrl = deriveWsUrl(boot.ws_path, boot.token, boot.ws_url);
   console.log('[nanobotClient] Connecting WebSocket to', wsUrl);
   
   globalClient = new NanobotClient({
@@ -191,10 +204,11 @@ export async function getNanobotSessionInfo(conversationId: string): Promise<{
 // ─── Session Synchronization ────────────────────────────────────────────────
 
 import type { UIMessage, ToolProgressEvent } from './types';
-import type { Message, MessageContent } from '@/types';
+import type { Message, MessageContent, MessageMediaAttachment, ToolCall } from '@/types';
 import { useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { listSessions, fetchWebuiThread, fetchSettings } from './api';
+import { normalizeFileEditToolTraces } from './nanobot/toolTraceMerge';
 
 export function normalizeToolProgressEvents(events: any): ToolProgressEvent[] {
   if (!Array.isArray(events)) return [];
@@ -209,6 +223,51 @@ export function normalizeToolProgressEvents(events: any): ToolProgressEvent[] {
     out.push(event);
   }
   return out;
+}
+
+function mediaKindFromName(name: string): MessageMediaAttachment['kind'] {
+  const ext = name.split(/[?#]/, 1)[0].split('.').pop()?.toLowerCase() || '';
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico'].includes(ext)) return 'image';
+  if (['mp4', 'webm', 'mov', 'm4v'].includes(ext)) return 'video';
+  return 'file';
+}
+
+function mediaAttachmentsFromUiMessage(msg: UIMessage): MessageMediaAttachment[] {
+  const out: MessageMediaAttachment[] = [];
+  for (const item of msg.media ?? []) {
+    const name = item.name || item.url?.split(/[/?#]/).filter(Boolean).pop() || item.url || '';
+    if (!item.url && !name) continue;
+    out.push({
+      url: item.url,
+      name,
+      kind: item.kind || mediaKindFromName(name),
+    });
+  }
+  return out;
+}
+
+function toolCallFromEvent(event: ToolProgressEvent): ToolCall | null {
+  const callId = event.call_id;
+  if (!callId) return null;
+  const toolName = event.name || (event as any).function?.name || 'tool';
+  const rawArgs = event.arguments || (event as any).function?.arguments;
+  let args: Record<string, unknown> = {};
+  if (typeof rawArgs === 'string') {
+    try { args = JSON.parse(rawArgs) as Record<string, unknown>; } catch {}
+  } else if (rawArgs && typeof rawArgs === 'object' && !Array.isArray(rawArgs)) {
+    args = rawArgs as Record<string, unknown>;
+  }
+  const result = typeof event.result === 'string'
+    ? event.result
+    : event.result ? JSON.stringify(event.result) : (event.error ? String(event.error) : '');
+  return {
+    id: callId,
+    name: toolName,
+    input: args,
+    result,
+    isExecuting: event.phase === 'start',
+    isError: event.phase === 'error',
+  };
 }
 
 export function mapWebuiThreadToGuiMessages(webuiMessages: UIMessage[]): Message[] {
@@ -244,6 +303,8 @@ export function mapWebuiThreadToGuiMessages(webuiMessages: UIMessage[]): Message
         content,
         timestamp,
         loopId: currentLoopId,
+        cliApps: msg.cliApps,
+        mcpPresets: msg.mcpPresets,
       });
     } 
     
@@ -254,8 +315,11 @@ export function mapWebuiThreadToGuiMessages(webuiMessages: UIMessage[]): Message
         content: msg.content || '',
         timestamp,
         thinking: msg.reasoning,
+        reasoningStreaming: msg.reasoningStreaming,
         isStreaming: msg.isStreaming,
         toolCalls: [],
+        mediaAttachments: mediaAttachmentsFromUiMessage(msg),
+        activitySegmentId: msg.activitySegmentId,
         loopId: currentLoopId,
       };
       guiMessages.push(guiMsg);
@@ -263,112 +327,116 @@ export function mapWebuiThreadToGuiMessages(webuiMessages: UIMessage[]): Message
     } 
     
     else if (msg.role === 'tool' || msg.kind === 'trace') {
-      if (lastAssistantMsg) {
-        if (msg.toolEvents) {
-          const events = normalizeToolProgressEvents(msg.toolEvents);
-          for (const ev of events) {
-            const callId = ev.call_id;
-            if (!callId) continue;
+      const events = normalizeToolProgressEvents(msg.toolEvents);
+      const traceMsg: Message = {
+        id: msg.id,
+        role: 'tool',
+        kind: 'trace',
+        content: msg.content || '',
+        traces: msg.traces,
+        toolEvents: events,
+        fileEdits: msg.fileEdits,
+        mediaAttachments: mediaAttachmentsFromUiMessage(msg),
+        activitySegmentId: msg.activitySegmentId,
+        timestamp,
+        loopId: currentLoopId,
+      };
+      guiMessages.push(traceMsg);
 
-            const toolName = ev.name || (ev as any).function?.name || 'tool';
-            const rawArgs = ev.arguments || (ev as any).function?.arguments;
-            let args: Record<string, any> = {};
-            if (typeof rawArgs === 'string') {
-              try { args = JSON.parse(rawArgs); } catch {}
-            } else if (rawArgs && typeof rawArgs === 'object') {
-              args = rawArgs;
-            }
-
-            const isExecuting = ev.phase === 'start';
-            const isError = ev.phase === 'error';
-            const result = typeof ev.result === 'string'
-              ? ev.result
-              : ev.result ? JSON.stringify(ev.result) : (ev.error ? String(ev.error) : '');
-
-            if (!lastAssistantMsg.toolCalls) {
-              lastAssistantMsg.toolCalls = [];
-            }
-
-            const existingIndex = lastAssistantMsg.toolCalls.findIndex(c => c.id === callId);
-            if (existingIndex === -1) {
-              lastAssistantMsg.toolCalls.push({
-                id: callId,
-                name: toolName,
-                input: args,
-                result,
-                isExecuting,
-                isError,
-              });
-            } else {
-              const tc = lastAssistantMsg.toolCalls[existingIndex];
-              tc.result = result;
-              tc.isExecuting = isExecuting;
-              tc.isError = isError;
-            }
+      if (lastAssistantMsg && events.length > 0) {
+        if (!lastAssistantMsg.toolCalls) lastAssistantMsg.toolCalls = [];
+        for (const ev of events) {
+          const call = toolCallFromEvent(ev);
+          if (!call) continue;
+          const existingIndex = lastAssistantMsg.toolCalls.findIndex(c => c.id === call.id);
+          if (existingIndex === -1) {
+            lastAssistantMsg.toolCalls.push(call);
+          } else {
+            lastAssistantMsg.toolCalls[existingIndex] = {
+              ...lastAssistantMsg.toolCalls[existingIndex],
+              ...call,
+            };
           }
         }
       }
     }
   }
 
-  return guiMessages;
+  return normalizeFileEditToolTraces(guiMessages);
 }
 
-function hasUserMessage(messages: Message[]): boolean {
-  return messages.some((message) => message.role === 'user');
+function getMessageText(message: Message): string {
+  if (typeof message.content === 'string') return message.content.trim();
+  return message.content
+    .filter((part) => part.type === 'text')
+    .map((part) => part.text.trim())
+    .join('\n')
+    .trim();
 }
 
-export function mergeGatewayMessagesWithLocal(localMessages: Message[], gatewayMessages: Message[]): Message[] {
-  if (!localMessages.length || hasUserMessage(gatewayMessages)) {
-    return gatewayMessages;
-  }
-  if (!hasUserMessage(localMessages)) {
-    return gatewayMessages;
-  }
+function isDuplicateMessage(a: Message, b: Message): boolean {
+  if (a.role !== b.role) return false;
+  if (a.kind !== b.kind) return false;
+  const aText = getMessageText(a);
+  const bText = getMessageText(b);
+  if (!aText || !bText || aText !== bText) return false;
+  return Math.abs((a.timestamp ?? 0) - (b.timestamp ?? 0)) < 5 * 60 * 1000;
+}
 
-  const merged: Message[] = localMessages.map((message) => ({
-    ...message,
-    isStreaming: false,
-    toolCalls: message.toolCalls?.map((toolCall) => ({ ...toolCall, isExecuting: false })),
-  }));
-
-  const localAssistantByLoop = new Map<string, number>();
-  merged.forEach((message, index) => {
-    if (message.role === 'assistant' && message.loopId) {
-      localAssistantByLoop.set(message.loopId, index);
-    }
-  });
-
-  const localAssistantCount = merged.filter((message) => message.role === 'assistant').length;
-  const gatewayAssistants = gatewayMessages.filter((message) => message.role === 'assistant');
-
-  gatewayAssistants.forEach((gatewayMessage, index) => {
-    const targetUser = merged.filter((message) => message.role === 'user')[index];
-    const targetLoopId = targetUser?.loopId || gatewayMessage.loopId;
-    const existingIndex = targetLoopId ? localAssistantByLoop.get(targetLoopId) : undefined;
-    const nextMessage: Message = {
-      ...gatewayMessage,
-      loopId: targetLoopId,
-      isStreaming: false,
-      toolCalls: gatewayMessage.toolCalls?.map((toolCall) => ({ ...toolCall, isExecuting: false })),
-    };
-
-    if (existingIndex !== undefined) {
-      merged[existingIndex] = {
-        ...merged[existingIndex],
-        ...nextMessage,
-        id: merged[existingIndex].id,
-        loopId: targetLoopId,
+function dedupeAdjacentMessages(messages: Message[]): Message[] {
+  const adjacentDedupe: Message[] = [];
+  for (const message of messages) {
+    const prev = adjacentDedupe[adjacentDedupe.length - 1];
+    if (prev && isDuplicateMessage(prev, message)) {
+      adjacentDedupe[adjacentDedupe.length - 1] = {
+        ...prev,
+        ...message,
+        id: prev.id,
+        loopId: prev.loopId || message.loopId,
+        toolCalls: message.toolCalls?.length ? message.toolCalls : prev.toolCalls,
+        mediaAttachments: message.mediaAttachments?.length ? message.mediaAttachments : prev.mediaAttachments,
       };
-      return;
+      continue;
     }
+    adjacentDedupe.push(message);
+  }
 
-    if (index >= localAssistantCount) {
-      merged.push(nextMessage);
+  const out: Message[] = [];
+  for (let i = 0; i < adjacentDedupe.length; i += 1) {
+    const message = adjacentDedupe[i];
+    const next = adjacentDedupe[i + 1];
+    const prevTurnUser = out[out.length - 2];
+    const prevTurnAssistant = out[out.length - 1];
+    if (
+      message?.role === 'user'
+      && next?.role === 'assistant'
+      && prevTurnUser?.role === 'user'
+      && prevTurnAssistant?.role === 'assistant'
+      && isDuplicateMessage(prevTurnUser, message)
+      && isDuplicateMessage(prevTurnAssistant, next)
+    ) {
+      i += 1;
+      continue;
     }
-  });
+    out.push(message);
+  }
+  return out;
+}
 
-  return merged;
+function finalizeReplayMessage(message: Message): Message {
+  const next: Message = {
+    ...message,
+  };
+  if (message.isStreaming) next.isStreaming = false;
+  if (message.reasoningStreaming) next.reasoningStreaming = false;
+  if (message.toolCalls) {
+    next.toolCalls = message.toolCalls.map((toolCall) => ({ ...toolCall, isExecuting: false }));
+  }
+  return next;
+}
+
+export function projectGatewayMessagesForHistory(gatewayMessages: Message[]): Message[] {
+  return dedupeAdjacentMessages(normalizeFileEditToolTraces(gatewayMessages.map(finalizeReplayMessage)));
 }
 
 export async function syncSessionsFromGateway(): Promise<void> {
@@ -388,8 +456,11 @@ export async function syncSessionsFromGateway(): Promise<void> {
       const thread = await fetchWebuiThread(token, session.key, baseUrl);
       if (thread) {
         const gatewayMessages = mapWebuiThreadToGuiMessages(thread.messages);
-        const localMessages = chatStore.conversations[chatId]?.messages ?? [];
-        const guiMessages = mergeGatewayMessagesWithLocal(localMessages, gatewayMessages);
+        const localStatus = chatStore.conversations[chatId]?.status;
+        if (localStatus === 'running') {
+          continue;
+        }
+        const guiMessages = projectGatewayMessagesForHistory(gatewayMessages);
         
         // Save to store using action or setState
         const createdAt = session.createdAt ? new Date(session.createdAt).getTime() : Date.now();

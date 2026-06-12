@@ -1,5 +1,7 @@
 export type Role = "user" | "assistant" | "tool" | "system";
 
+import type { ScheduledTask } from "@/types/schedule";
+
 /** "trace" rows are intermediate agent breadcrumbs (tool-call hints,
  * progress pings) that should not be rendered as conversational replies. */
 export type MessageKind = "message" | "trace";
@@ -157,6 +159,15 @@ export interface WorkspacesPayload {
   controls: {
     can_change_project: boolean;
     can_use_full_access: boolean;
+  };
+}
+
+export interface ScheduleTasksPayload {
+  tasks: ScheduledTask[];
+  status?: {
+    enabled: boolean;
+    jobs: number;
+    next_wake_at_ms?: number | null;
   };
 }
 
@@ -449,6 +460,31 @@ export interface CliAppsPayload {
     still_available?: boolean;
     verification?: string[];
     verification_failed?: string[];
+  };
+}
+
+export interface NanobotSkillInfo {
+  name: string;
+  description: string;
+  path: string;
+  source: "builtin" | "workspace" | string;
+  enabled: boolean;
+  available: boolean;
+  missing: string;
+  user_invocable: boolean;
+  always: boolean;
+  tags: string[];
+  metadata?: Record<string, unknown>;
+  content?: string;
+}
+
+export interface SkillsPayload {
+  skills: NanobotSkillInfo[];
+  disabled: string[];
+  installed_count: number;
+  last_action?: {
+    ok: boolean;
+    message: string;
   };
 }
 

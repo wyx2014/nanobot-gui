@@ -209,8 +209,6 @@ interface SettingsState {
   installingItem: string | null;
   // View mode
   viewMode: ViewMode;
-  // Disabled skills (persisted)
-  disabledSkills: string[];
   // Sandbox
   sandboxEnabled: boolean;
   // Network isolation
@@ -232,8 +230,6 @@ interface SettingsState {
   behaviorSensorEnabled: boolean;
   // Computer Use (screenshot + keyboard/mouse simulation)
   computerUseEnabled: boolean;
-  // Skill inline command execution (!`command` syntax)
-  allowSkillCommands: boolean;
   // New: Embedding settings
   embeddingProvider: 'local' | 'openai' | 'openai-compatible';
   embeddingModel: string;
@@ -285,8 +281,6 @@ interface SettingsActions {
   setInstallingItem: (itemId: string | null) => void;
   // View mode action
   setViewMode: (mode: ViewMode) => void;
-  // Skill enable/disable
-  toggleSkillEnabled: (skillName: string) => void;
   // Unified provider switch (sets provider + format + baseUrl + model atomically)
   switchProvider: (provider: LLMProvider) => void;
   // Sandbox
@@ -390,7 +384,6 @@ export const useSettingsStore = create<SettingsStore>()(
       toolboxSearchQuery: '',
       installingItem: null,
       viewMode: 'chat' as ViewMode,
-      disabledSkills: [],
       sandboxEnabled: true,
       networkIsolationEnabled: false,
       networkWhitelist: [],
@@ -406,7 +399,6 @@ export const useSettingsStore = create<SettingsStore>()(
       guideShown: false,
       behaviorSensorEnabled: false,
       computerUseEnabled: false,
-      allowSkillCommands: true,
       // Embedding settings
       embeddingProvider: 'local' as const,
       embeddingModel: 'hf:ggml-org/embeddinggemma-300m-qat-q8_0-GGUF/embeddinggemma-300m-qat-Q8_0.gguf',
@@ -472,11 +464,6 @@ export const useSettingsStore = create<SettingsStore>()(
       setToolboxSearchQuery: (query) => set({ toolboxSearchQuery: query }),
       setInstallingItem: (itemId) => set({ installingItem: itemId }),
       setViewMode: (viewMode) => set({ viewMode }),
-      toggleSkillEnabled: (skillName) => set((s) => ({
-        disabledSkills: s.disabledSkills.includes(skillName)
-          ? s.disabledSkills.filter((n) => n !== skillName)
-          : [...s.disabledSkills, skillName],
-      })),
       setSandboxEnabled: (sandboxEnabled) => set({ sandboxEnabled }),
       setNetworkIsolationEnabled: (networkIsolationEnabled) => set({ networkIsolationEnabled }),
       setNetworkWhitelist: (networkWhitelist) => set({ networkWhitelist }),
@@ -517,9 +504,6 @@ export const useSettingsStore = create<SettingsStore>()(
       version: 6,
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
-        if (version < 6) {
-          if (state.allowSkillCommands === undefined) state.allowSkillCommands = true;
-        }
         if (version < 5) {
           if (state.computerUseEnabled === undefined) state.computerUseEnabled = false;
         }
@@ -573,7 +557,6 @@ export const useSettingsStore = create<SettingsStore>()(
           }
 
           // Ensure new fields have defaults (defensive — shallow merge handles this too)
-          if (state.disabledSkills === undefined) state.disabledSkills = [];
           if (state.sandboxEnabled === undefined) state.sandboxEnabled = true;
           if (state.closeAction === undefined) state.closeAction = 'ask';
           if (state.lastUpdateCheck === undefined) state.lastUpdateCheck = 0;
@@ -606,7 +589,6 @@ export const useSettingsStore = create<SettingsStore>()(
         webSearchBaseUrl: state.webSearchBaseUrl,
         sidebarCollapsed: state.sidebarCollapsed,
         rightPanelCollapsed: state.rightPanelCollapsed,
-        disabledSkills: state.disabledSkills,
         sandboxEnabled: state.sandboxEnabled,
         networkIsolationEnabled: state.networkIsolationEnabled,
         networkWhitelist: state.networkWhitelist,
@@ -618,7 +600,6 @@ export const useSettingsStore = create<SettingsStore>()(
         guideShown: state.guideShown,
         behaviorSensorEnabled: state.behaviorSensorEnabled,
         computerUseEnabled: state.computerUseEnabled,
-        allowSkillCommands: state.allowSkillCommands,
         embeddingProvider: state.embeddingProvider,
         embeddingModel: state.embeddingModel,
         embeddingDimensions: state.embeddingDimensions,

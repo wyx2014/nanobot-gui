@@ -15,13 +15,22 @@ import { useI18n } from '@/i18n';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { ImageAttachment } from '@/types';
+import type { OutboundCliAppMention, OutboundMcpPresetMention } from '@/core/types';
+import type { CliAppInfo, McpPresetInfo } from '@/core/types';
+import { fetchCliApps, fetchMcpPresets } from '@/core/api';
+import { getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/nanobotClient';
 import { generateAttachmentId, readFileAsBase64, SUPPORTED_IMAGE_TYPES } from '@/utils/imageUtils';
 import PermissionDialog from '@/components/common/PermissionDialog';
 import FolderSelector from '@/components/common/FolderSelector';
 
+export interface ChatInputSendOptions {
+  cliApps?: OutboundCliAppMention[];
+  mcpPresets?: OutboundMcpPresetMention[];
+}
+
 interface ChatInputProps {
   variant: 'welcome' | 'chat';
-  onSend: (message: string, images?: ImageAttachment[], workspacePath?: string | null) => void;
+  onSend: (message: string, images?: ImageAttachment[], workspacePath?: string | null, options?: ChatInputSendOptions) => void;
   disabled?: boolean;
 }
 
@@ -29,6 +38,9 @@ interface SuggestionItem {
   name: string;
   description: string;
   trigger?: string;
+  kind?: 'agent' | 'skill' | 'cli' | 'mcp';
+  cliApp?: CliAppInfo;
+  mcpPreset?: McpPresetInfo;
 }
 
 interface FileAttachmentItem {
@@ -82,8 +94,12 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
   const [files, setFiles] = useState<FileAttachmentItem[]>([]);
   const [selectedSkill, setSelectedSkill] = useState<SuggestionItem | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<SuggestionItem | null>(null);
+  const [selectedCliApps, setSelectedCliApps] = useState<OutboundCliAppMention[]>([]);
+  const [selectedMcpPresets, setSelectedMcpPresets] = useState<OutboundMcpPresetMention[]>([]);
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [cliApps, setCliApps] = useState<CliAppInfo[]>([]);
+  const [mcpPresets, setMcpPresets] = useState<McpPresetInfo[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Welcome-only state (always declared for hook stability)
@@ -99,7 +115,6 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
   const activeConv = useActiveConversation();
   const skills = useDiscoveryStore((s) => s.skills);
   const agents = useDiscoveryStore((s) => s.agents);
-  const disabledSkills = useSettingsStore((s) => s.disabledSkills);
   const currentModel = useSettingsStore((s) => getEffectiveModel(s));
   const provider = useSettingsStore((s) => s.provider);
   const setModel = useSettingsStore((s) => s.setModel);
@@ -203,7 +218,38 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
     setPendingFolder(null);
   };
 
-  const disabledSkillSet = useMemo(() => new Set(disabledSkills), [disabledSkills]);
+  useEffect(() => {
+    let cancelled = false;
+    const loadCapabilities = async () => {
+      try {
+        const status = await getNanobotStatus();
+        if (!status.ready) return;
+        let token = getNanobotToken();
+        let base = `http://127.0.0.1:${status.port}`;
+        if (!token) {
+          const refreshed = await refreshNanobotAuth();
+          token = refreshed.token;
+          base = refreshed.baseUrl;
+        }
+        const [cliPayload, mcpPayload] = await Promise.all([
+          fetchCliApps(token, base),
+          fetchMcpPresets(token, base),
+        ]);
+        if (cancelled) return;
+        setCliApps(cliPayload.apps.filter((app) => app.installed && app.available));
+        setMcpPresets(mcpPayload.presets.filter((preset) => preset.configured && preset.available));
+      } catch {
+        if (!cancelled) {
+          setCliApps([]);
+          setMcpPresets([]);
+        }
+      }
+    };
+    loadCapabilities();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Suggestion type tracking: 'skill' for / prefix, 'agent' for @ prefix
   const suggestionType = useMemo((): 'skill' | 'agent' | null => {
@@ -222,7 +268,7 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
     // Agent suggestions when typing @
     if (suggestionType === 'agent') {
       const query = trimmed.slice(1).toLowerCase();
-      return agents
+      const agentItems: SuggestionItem[] = agents
         .filter((a) => a.name !== 'ruyi')
         .filter((a) => {
           if (!query) return true;
@@ -232,14 +278,44 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
         .map((a) => ({
           name: a.name,
           description: a.description,
+          kind: 'agent' as const,
         }));
+      const cliItems: SuggestionItem[] = cliApps
+        .filter((app) => {
+          if (selectedCliApps.some((selected) => selected.name === app.name)) return false;
+          if (!query) return true;
+          return app.name.toLowerCase().includes(query)
+            || app.display_name.toLowerCase().includes(query)
+            || app.description.toLowerCase().includes(query);
+        })
+        .map((app) => ({
+          name: app.name,
+          description: app.description || app.display_name,
+          kind: 'cli' as const,
+          cliApp: app,
+        }));
+      const mcpItems: SuggestionItem[] = mcpPresets
+        .filter((preset) => {
+          if (selectedMcpPresets.some((selected) => selected.name === preset.name)) return false;
+          if (!query) return true;
+          return preset.name.toLowerCase().includes(query)
+            || preset.display_name.toLowerCase().includes(query)
+            || preset.description.toLowerCase().includes(query);
+        })
+        .map((preset) => ({
+          name: preset.name,
+          description: preset.description || preset.display_name,
+          kind: 'mcp' as const,
+          mcpPreset: preset,
+        }));
+      return [...agentItems, ...cliItems, ...mcpItems];
     }
 
     // Skill suggestions when typing /
     if (suggestionType === 'skill') {
       const query = trimmed.slice(1).toLowerCase();
       return skills
-        .filter((s) => s.userInvocable !== false && !disabledSkillSet.has(s.name))
+        .filter((s) => s.userInvocable !== false)
         .filter((s) => {
           if (!query) return true;
           const tagStr = (s.tags ?? []).join(' ').toLowerCase();
@@ -251,10 +327,11 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
           name: s.name,
           description: s.description,
           trigger: s.trigger,
+          kind: 'skill' as const,
         }));
     }
     return [];
-  }, [text, skills, agents, suggestionType, disabledSkillSet]);
+  }, [text, skills, agents, suggestionType, cliApps, mcpPresets, selectedCliApps, selectedMcpPresets]);
 
   // Reset dismissed state when suggestions change
   useEffect(() => {
@@ -276,7 +353,27 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
   }, [text, maxHeight]);
 
   const applySuggestion = (item: SuggestionItem) => {
-    if (suggestionType === 'agent') {
+    if (item.kind === 'cli' && item.cliApp) {
+      setSelectedCliApps((prev) => [...prev, {
+        name: item.cliApp!.name,
+        display_name: item.cliApp!.display_name,
+        category: item.cliApp!.category,
+        entry_point: item.cliApp!.entry_point,
+        logo_url: item.cliApp!.logo_url,
+        brand_color: item.cliApp!.brand_color,
+      }]);
+    } else if (item.kind === 'mcp' && item.mcpPreset) {
+      setSelectedMcpPresets((prev) => [...prev, {
+        name: item.mcpPreset!.name,
+        display_name: item.mcpPreset!.display_name,
+        category: item.mcpPreset!.category,
+        transport: item.mcpPreset!.transport,
+        status: item.mcpPreset!.status,
+        configured: item.mcpPreset!.configured,
+        logo_url: item.mcpPreset!.logo_url,
+        brand_color: item.mcpPreset!.brand_color,
+      }]);
+    } else if (suggestionType === 'agent') {
       setSelectedAgent(item);
     } else {
       setSelectedSkill(item);
@@ -302,21 +399,28 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
     setFiles([]);
     setSelectedSkill(null);
     setSelectedAgent(null);
+    setSelectedCliApps([]);
+    setSelectedMcpPresets([]);
     setSuggestionsDismissed(false);
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
   };
 
   const handleSend = () => {
     const trimmed = text.trim();
-    if ((!trimmed && !selectedSkill && !selectedAgent && images.length === 0 && files.length === 0) || disabled) return;
+    if ((!trimmed && !selectedSkill && !selectedAgent && selectedCliApps.length === 0 && selectedMcpPresets.length === 0 && images.length === 0 && files.length === 0) || disabled) return;
 
     // Build file context prefix
     const fileContext = files.length > 0
       ? files.map((f) => `[Attachment: \`${f.path}\`]`).join('\n')
       : '';
 
+    const capabilityMentions = [
+      ...selectedCliApps.map((app) => `@${app.name}`),
+      ...selectedMcpPresets.map((preset) => `@${preset.name}`),
+    ].join(' ');
+
     // Compose parts, then join with newline
-    const bodyParts = [fileContext, trimmed].filter(Boolean).join('\n');
+    const bodyParts = [fileContext, capabilityMentions, trimmed].filter(Boolean).join('\n');
 
     let message: string;
     if (selectedAgent) {
@@ -327,7 +431,15 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
       message = bodyParts;
     }
 
-    onSend(message, images.length > 0 ? images : undefined, isWelcome ? localWorkspace : undefined);
+    onSend(
+      message,
+      images.length > 0 ? images : undefined,
+      isWelcome ? localWorkspace : undefined,
+      {
+        ...(selectedCliApps.length ? { cliApps: selectedCliApps } : {}),
+        ...(selectedMcpPresets.length ? { mcpPresets: selectedMcpPresets } : {}),
+      },
+    );
     resetInput();
   };
 
@@ -400,7 +512,7 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
   };
 
   const hasAttachments = images.length > 0 || files.length > 0;
-  const hasContent = text.trim().length > 0 || selectedSkill !== null || selectedAgent !== null || hasAttachments;
+  const hasContent = text.trim().length > 0 || selectedSkill !== null || selectedAgent !== null || selectedCliApps.length > 0 || selectedMcpPresets.length > 0 || hasAttachments;
 
   // Determine placeholder based on selected command
   const placeholder = disabled
@@ -430,7 +542,7 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
           <div className="absolute bottom-full left-0 right-0 mb-2 bg-white rounded-2xl border border-[#dedbd3] shadow-lg overflow-hidden z-20">
             {suggestions.map((item, idx) => (
               <button
-                key={item.name}
+                key={`${item.kind ?? suggestionType}-${item.name}`}
                 onClick={() => applySuggestion(item)}
                 className={cn(
                   'btn-ghost w-full flex flex-col gap-0.5 px-4 py-2.5 text-sm text-left',
@@ -445,6 +557,15 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
                     {suggestionType === 'agent' ? '@' : '/'}
                   </span>
                   <span className="font-medium text-[#29261b] text-[13px]">{item.name}</span>
+                  {item.kind === 'cli' && (
+                    <span className="rounded bg-[#eef2ff] px-1.5 py-0.5 text-[10px] font-medium text-[#4f46e5]">CLI</span>
+                  )}
+                  {item.kind === 'mcp' && (
+                    <span className="rounded bg-[#ecfdf5] px-1.5 py-0.5 text-[10px] font-medium text-[#047857]">MCP</span>
+                  )}
+                  {item.kind === 'agent' && (
+                    <span className="rounded bg-[#f3f2ee] px-1.5 py-0.5 text-[10px] font-medium text-[#656358]">Agent</span>
+                  )}
                   <span className="text-[12px] text-[#656358] truncate">{item.description}</span>
                 </div>
                 {item.trigger && (
@@ -536,6 +657,26 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
                 /{selectedSkill.name}
               </button>
             )}
+            {selectedCliApps.map((app) => (
+              <button
+                key={`selected-cli-${app.name}`}
+                onClick={() => setSelectedCliApps((prev) => prev.filter((item) => item.name !== app.name))}
+                className="shrink-0 mt-[3px] mr-1.5 rounded-full bg-[#eef2ff] px-2 py-0.5 text-[12px] font-medium text-[#4f46e5] hover:line-through"
+                title={t.common.close}
+              >
+                @{app.display_name || app.name}
+              </button>
+            ))}
+            {selectedMcpPresets.map((preset) => (
+              <button
+                key={`selected-mcp-${preset.name}`}
+                onClick={() => setSelectedMcpPresets((prev) => prev.filter((item) => item.name !== preset.name))}
+                className="shrink-0 mt-[3px] mr-1.5 rounded-full bg-[#ecfdf5] px-2 py-0.5 text-[12px] font-medium text-[#047857] hover:line-through"
+                title={t.common.close}
+              >
+                @{preset.display_name || preset.name}
+              </button>
+            ))}
             <textarea
               ref={textareaRef}
               value={text}

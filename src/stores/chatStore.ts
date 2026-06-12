@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
-import type { Message, Conversation, AgentStatus, TokenUsage, ConversationStatus, ToolCall, ToolCallContext, ToolResultContent } from '../types';
+import type { Message, Conversation, AgentStatus, TokenUsage, ConversationStatus, ToolCall, ToolCallContext, ToolResultContent, MessageMediaAttachment } from '../types';
 import type { ExecutionStepSnapshot } from '../types/execution';
 import { useWorkspaceStore } from './workspaceStore';
 import { useTaskExecutionStore } from './taskExecutionStore';
@@ -19,67 +19,22 @@ const abortControllers: Map<string, AbortController> = new Map();
 
 // Persistence limits
 const MAX_CONVERSATIONS = 50;
-const MAX_MESSAGES_PER_CONVERSATION = 200;
-const KEEP_FIRST_MESSAGES = 5;
 
 /**
- * Strip large base64 image data from resultContent before persisting to localStorage.
- * Screenshots are saved to disk; we replace base64 data with a placeholder to avoid
- * exceeding the ~5MB localStorage quota.
+ * Persist only conversation metadata. Nanobot's `/webui-thread` snapshot is the
+ * canonical chat transcript; keeping a second local message history causes
+ * post-restart pairing drift between user turns, assistant slices, tools, and media.
  */
-function stripImageDataForPersist(conversations: Record<string, Conversation>): Record<string, Conversation> {
+function stripMessagesForPersist(conversations: Record<string, Conversation>): Record<string, Conversation> {
   const result: Record<string, Conversation> = {};
   for (const [id, conv] of Object.entries(conversations)) {
-    const messages = conv.messages.map((msg) => {
-      const hasToolImages = msg.toolCalls?.some((tc) => tc.resultContent?.some((b) => b.type === 'image'));
-      const hasContextImages = msg.toolCallsForContext?.some((tc) => tc.resultContent?.some((b) => b.type === 'image'));
-      const hasContentImages = Array.isArray(msg.content) && msg.content.some((b) => b.type === 'image');
-      if (!hasToolImages && !hasContentImages && !hasContextImages) return msg;
-
-      const strippedMsg = { ...msg };
-
-      // Strip images from user message content (e.g. pasted screenshots)
-      if (hasContentImages && Array.isArray(msg.content)) {
-        strippedMsg.content = msg.content.map((block) =>
-          block.type === 'image'
-            ? { type: 'text' as const, text: '[image]' }
-            : block
-        );
-      }
-
-      // Strip images from tool result content
-      if (hasToolImages) {
-        strippedMsg.toolCalls = msg.toolCalls!.map((tc) => {
-          if (!tc.resultContent?.some((b) => b.type === 'image')) return tc;
-          return {
-            ...tc,
-            resultContent: tc.resultContent!.map((block) =>
-              block.type === 'image'
-                ? { type: 'text' as const, text: '[screenshot saved to disk]' }
-                : block
-            ),
-          };
-        });
-      }
-
-      // Strip images from toolCallsForContext too
-      if (hasContextImages) {
-        strippedMsg.toolCallsForContext = msg.toolCallsForContext!.map((tc) => {
-          if (!tc.resultContent?.some((b) => b.type === 'image')) return tc;
-          return {
-            ...tc,
-            resultContent: tc.resultContent!.map((block) =>
-              block.type === 'image'
-                ? { type: 'text' as const, text: '[screenshot saved to disk]' }
-                : block
-            ),
-          };
-        });
-      }
-
-      return strippedMsg;
-    });
-    result[id] = { ...conv, messages };
+    result[id] = {
+      ...conv,
+      messages: [],
+      status: conv.status === 'running' ? 'idle' : conv.status,
+      completedAt: undefined,
+      contextCache: undefined,
+    };
   }
   return result;
 }
@@ -108,9 +63,14 @@ interface ChatActions {
   renameConversation: (id: string, title: string) => void;
 
   addMessage: (convId: string, message: Message) => void;
+  updateConversationMessages: (convId: string, updater: (messages: Message[]) => Message[]) => void;
   appendToLastMessage: (convId: string, token: string) => void;
+  appendToMessage: (convId: string, messageId: string, token: string) => void;
   setLastMessageContent: (convId: string, content: string) => void;
+  setMessageContent: (convId: string, messageId: string, content: string) => void;
+  appendMessageMedia: (convId: string, messageId: string, media: MessageMediaAttachment[]) => void;
   finishStreaming: (convId: string) => void;
+  finishAllStreaming: (convId: string) => void;
   updateToolCall: (convId: string, messageId: string, toolCallId: string, result: string, resultContent?: ToolResultContent[], isError?: boolean, hideScreenshot?: boolean) => void;
 
   // New message operations
@@ -119,6 +79,7 @@ interface ChatActions {
   deleteMessagesFrom: (convId: string, messageId: string) => void;
   deleteLoopMessages: (convId: string, loopId: string) => void;
   updateMessageThinking: (convId: string, thinking: string) => void;
+  updateMessageThinkingById: (convId: string, messageId: string, thinking: string) => void;
   updateMessageThinkingDuration: (convId: string, duration: number) => void;
   updateMessageUsage: (convId: string, usage: TokenUsage) => void;
   appendToolCallContext: (convId: string, loopId: string, context: ToolCallContext) => void;
@@ -289,6 +250,15 @@ export const useChatStore = create<ChatStore>()(
         });
       },
 
+      updateConversationMessages: (convId, updater) => {
+        set((state) => {
+          const conv = state.conversations[convId];
+          if (!conv) return;
+          conv.messages = updater(conv.messages);
+          conv.updatedAt = Date.now();
+        });
+      },
+
       appendToLastMessage: (convId, token) => {
         set((state) => {
           const messages = state.conversations[convId]?.messages;
@@ -297,6 +267,15 @@ export const useChatStore = create<ChatStore>()(
             if (typeof lastMsg.content === 'string') {
               lastMsg.content += token;
             }
+          }
+        });
+      },
+
+      appendToMessage: (convId, messageId, token) => {
+        set((state) => {
+          const msg = state.conversations[convId]?.messages.find((m) => m.id === messageId);
+          if (msg && typeof msg.content === 'string') {
+            msg.content += token;
           }
         });
       },
@@ -311,11 +290,50 @@ export const useChatStore = create<ChatStore>()(
         });
       },
 
+      setMessageContent: (convId, messageId, content) => {
+        set((state) => {
+          const msg = state.conversations[convId]?.messages.find((m) => m.id === messageId);
+          if (msg) {
+            msg.content = content;
+          }
+        });
+      },
+
+      appendMessageMedia: (convId, messageId, media) => {
+        if (media.length === 0) return;
+        set((state) => {
+          const msg = state.conversations[convId]?.messages.find((m) => m.id === messageId);
+          if (!msg) return;
+          const seen = new Set((msg.mediaAttachments ?? []).map((item) => item.path || item.url || item.name || ''));
+          const next = media.filter((item) => {
+            const key = item.path || item.url || item.name || '';
+            if (!key || seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+          if (next.length === 0) return;
+          msg.mediaAttachments = [...(msg.mediaAttachments ?? []), ...next];
+        });
+      },
+
       finishStreaming: (convId) => {
         set((state) => {
           const messages = state.conversations[convId]?.messages;
           if (messages?.length) {
             messages[messages.length - 1].isStreaming = false;
+          }
+          state.agentStatus = 'idle';
+          state.currentTool = null;
+        });
+      },
+
+      finishAllStreaming: (convId) => {
+        set((state) => {
+          const messages = state.conversations[convId]?.messages;
+          if (messages?.length) {
+            messages.forEach((message) => {
+              if (message.isStreaming) message.isStreaming = false;
+            });
           }
           state.agentStatus = 'idle';
           state.currentTool = null;
@@ -421,6 +439,15 @@ export const useChatStore = create<ChatStore>()(
           const messages = state.conversations[convId]?.messages;
           if (messages?.length) {
             messages[messages.length - 1].thinking = thinking;
+          }
+        });
+      },
+
+      updateMessageThinkingById: (convId, messageId, thinking) => {
+        set((state) => {
+          const msg = state.conversations[convId]?.messages.find((m) => m.id === messageId);
+          if (msg) {
+            msg.thinking = thinking;
           }
         });
       },
@@ -683,9 +710,7 @@ export const useChatStore = create<ChatStore>()(
         return state;
       },
       partialize: (state) => ({
-        // Strip large base64 image data from resultContent before persisting to localStorage.
-        // Images are saved to disk separately; keeping them in localStorage would exceed quota.
-        conversations: stripImageDataForPersist(state.conversations),
+        conversations: stripMessagesForPersist(state.conversations),
         // activeConversationId not persisted — app always starts on welcome screen
       }),
       onRehydrateStorage: () => (state) => {
@@ -698,23 +723,7 @@ export const useChatStore = create<ChatStore>()(
           }
           conv.completedAt = undefined;
           conv.contextCache = undefined;  // Ephemeral — never restore from disk
-
-          // Clean up streaming flags
-          for (const msg of conv.messages) {
-            msg.isStreaming = false;
-            if (msg.toolCalls) {
-              for (const tc of msg.toolCalls) {
-                tc.isExecuting = false;
-              }
-            }
-          }
-
-          // Trim messages per conversation
-          if (conv.messages.length > MAX_MESSAGES_PER_CONVERSATION) {
-            const first = conv.messages.slice(0, KEEP_FIRST_MESSAGES);
-            const last = conv.messages.slice(-(MAX_MESSAGES_PER_CONVERSATION - KEEP_FIRST_MESSAGES));
-            conv.messages = [...first, ...last];
-          }
+          conv.messages = [];
         }
 
         // Limit total conversations (keep newest by updatedAt)

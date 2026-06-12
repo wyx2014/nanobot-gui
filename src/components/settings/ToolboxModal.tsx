@@ -5,11 +5,23 @@ import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { useI18n } from '@/i18n';
 import { Search, Sparkles, Server, Wrench, Plus, Upload, Wand2, PenLine, ChevronDown, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { fsBridge, osBridge, dialogBridge } from '@/lib/ipc-factory';
-import { joinPath, normalizeSeparators } from '@/utils/pathUtils';
+import { fsBridge, dialogBridge } from '@/lib/ipc-factory';
+import { normalizeSeparators } from '@/utils/pathUtils';
 import { ITEM_NAME_RE } from '@/utils/validation';
+import { saveSkill } from '@/core/api';
+import { getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/nanobotClient';
 import SkillsSection from '../customize/SkillsSection';
 import MCPSection from '../customize/MCPSection';
+
+async function getSkillsAuth(): Promise<{ token: string; baseUrl: string }> {
+  const status = await getNanobotStatus();
+  if (!status.ready) throw new Error('nanobot 服务尚未就绪');
+  const baseUrl = `http://127.0.0.1:${status.port}`;
+  const token = getNanobotToken();
+  if (token) return { token, baseUrl };
+  const refreshed = await refreshNanobotAuth();
+  return { token: refreshed.token, baseUrl: refreshed.baseUrl };
+}
 
 export default function ToolboxView() {
   const {
@@ -62,7 +74,6 @@ export default function ToolboxView() {
     setShowCreateMenu(false);
 
     const expectedFileName = 'SKILL.md';
-    const targetFolder = 'skills';
 
     try {
       const filePath = await dialogBridge.open({
@@ -100,14 +111,8 @@ export default function ToolboxView() {
         return;
       }
 
-      // Write to ~/.ruyi/skills/{name}/SKILL.md
-      const home = await osBridge.homeDir();
-      const targetDir = joinPath(home, '.ruyi', targetFolder, name);
-
-      await fsBridge.mkdir(targetDir, { recursive: true });
-
-      const targetPath = joinPath(targetDir, expectedFileName);
-      await fsBridge.writeTextFile(targetPath, content);
+      const { token, baseUrl } = await getSkillsAuth();
+      await saveSkill(token, name, content, baseUrl);
 
       // Refresh discovery
       await refresh();

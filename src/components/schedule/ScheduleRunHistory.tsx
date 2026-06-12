@@ -1,6 +1,7 @@
 import { useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useI18n } from '@/i18n';
+import { syncSessionsFromGateway } from '@/core/nanobotClient';
 import { ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ScheduledTaskRun } from '@/types/schedule';
@@ -30,8 +31,11 @@ export default function ScheduleRunHistory({ runs }: Props) {
   const setViewMode = useSettingsStore((s) => s.setViewMode);
   const conversations = useChatStore((s) => s.conversations);
 
-  const handleViewConversation = (conversationId: string) => {
-    if (conversations[conversationId]) {
+  const handleViewConversation = async (conversationId: string) => {
+    if (!conversations[conversationId]) {
+      await syncSessionsFromGateway();
+    }
+    if (useChatStore.getState().conversations[conversationId]) {
       switchConversation(conversationId);
       setViewMode('chat');
     }
@@ -82,9 +86,9 @@ export default function ScheduleRunHistory({ runs }: Props) {
           </span>
 
           {/* View conversation button */}
-          {conversations[run.conversationId] && (
+          {run.conversationId && (
             <button
-              onClick={() => handleViewConversation(run.conversationId)}
+              onClick={() => void handleViewConversation(run.conversationId)}
               className="text-[#656358] hover:text-[#d97757] p-0.5 shrink-0"
               title={t.schedule.viewConversation}
             >

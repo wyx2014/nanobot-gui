@@ -1,8 +1,8 @@
 {
-  "name": "taiziruyi",
+  "name": "tparuyi",
   "private": false,
   "version": "0.5.9",
-  "description": "TaiziRuyi - AI Desktop Office Assistant",
+  "description": "TpaRuyi - AI Desktop Office Assistant",
   "main": "./out/main/index.cjs",
   "type": "module",
   "scripts": {
@@ -22,7 +22,7 @@
     "build:linux": "npm run prepare-python && npm run electron:build && electron-builder --linux --config"
   },
   "build": {
-    "appId": "com.taiziruyi.app",
+    "appId": "com.tparuyi.app",
     "productName": "太资如意",
     "directories": {
       "output": "dist/installers"

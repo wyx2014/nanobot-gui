@@ -1,49 +1,64 @@
-import { useLayoutEffect } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { useChatStore, useActiveConversation } from '@/stores/chatStore';
-import type { Message, ImageAttachment } from '@/types';
+import type { ImageAttachment } from '@/types';
 import { useAutoScroll } from '@/hooks/useAutoScroll';
 import { sendNanobotMessage } from '@/core/nanobot/chatBridge';
+import { getNanobotClient } from '@/core/nanobotClient';
+import type { GoalStateWsPayload, WorkspaceScopePayload } from '@/core/types';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useI18n } from '@/i18n';
 import MessageGroup from './MessageGroup';
-import ChatInput from './ChatInput';
+import ChatInput, { type ChatInputSendOptions } from './ChatInput';
 import ActiveSkillsBar from './ActiveSkillsBar';
 import { ChevronDown, Settings } from 'lucide-react';
 import ruyiAvatar from '@/assets/ruyi-avatar.png';
 import ThinkingIndicator from './ThinkingIndicator';
+import { normalizeActivityTimeline } from '@/core/nanobot/activityTimeline';
 
-/**
- * Groups messages by loopId for rendering.
- * Messages with the same loopId are grouped together and rendered as one visual block.
- * Messages without loopId (legacy) are each treated as their own group.
- */
-function groupMessagesByLoop(messages: Message[]): Message[][] {
-  const groups: Message[][] = [];
-  let currentGroup: Message[] = [];
-  let currentLoopId: string | undefined | null = null;
+function workspaceScopeFromPath(path: string | null | undefined): WorkspaceScopePayload | null {
+  if (!path) return null;
+  const parts = path.split('/').filter(Boolean);
+  return {
+    project_path: path,
+    project_name: parts[parts.length - 1] || path,
+    access_mode: 'restricted',
+    restrict_to_workspace: true,
+  };
+}
 
-  for (const msg of messages) {
-    const msgLoopId = msg.loopId;
+function formatRunDuration(startedAt: number | null): string {
+  if (!startedAt) return '';
+  const startedMs = startedAt > 1_000_000_000_000 ? startedAt : startedAt * 1000;
+  const seconds = Math.max(0, Math.round((Date.now() - startedMs) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}m ${seconds % 60}s`;
+}
 
-    // If loopId changes, or message has no loopId (undefined !== undefined should start new group)
-    if (!msgLoopId || msgLoopId !== currentLoopId) {
-      if (currentGroup.length > 0) {
-        groups.push(currentGroup);
-      }
-      currentGroup = [msg];
-      currentLoopId = msgLoopId;
-    } else {
-      // Same loopId - add to current group
-      currentGroup.push(msg);
-    }
-  }
+function GoalStatusBar({
+  goalState,
+  runStartedAt,
+}: {
+  goalState?: GoalStateWsPayload;
+  runStartedAt: number | null;
+}) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!runStartedAt) return;
+    const timer = window.setInterval(() => tick((value) => value + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [runStartedAt]);
 
-  // Don't forget the last group
-  if (currentGroup.length > 0) {
-    groups.push(currentGroup);
-  }
-
-  return groups;
+  const text = goalState?.ui_summary || goalState?.objective;
+  if (!runStartedAt && !text) return null;
+  return (
+    <div className="mb-2 flex items-center gap-2 rounded-xl border border-[#e5e2db] bg-white/85 px-3 py-2 text-[12.5px] text-[#656358] shadow-sm">
+      <span className="h-2 w-2 rounded-full bg-[#d97757]" />
+      <span className="font-medium text-[#29261b]">{runStartedAt ? '执行中' : '目标'}</span>
+      {runStartedAt && <span>{formatRunDuration(runStartedAt)}</span>}
+      {text && <span className="min-w-0 truncate">{text}</span>}
+    </div>
+  );
 }
 
 export default function ChatView() {
@@ -51,6 +66,8 @@ export default function ChatView() {
   const { createConversation } = useChatStore();
   const messages = activeConv?.messages ?? [];
   const { t } = useI18n();
+  const [runStartedAt, setRunStartedAt] = useState<number | null>(null);
+  const [goalState, setGoalState] = useState<GoalStateWsPayload | undefined>(undefined);
 
   const { containerRef, endRef, isAtBottom, scrollToBottom, resetToBottom } = useAutoScroll();
 
@@ -64,7 +81,44 @@ export default function ChatView() {
     }
   }, [activeConvId, scrollToBottom]);
 
-  const handleSend = async (text: string, images?: ImageAttachment[], workspacePath?: string | null) => {
+  useEffect(() => {
+    if (!activeConvId) {
+      setRunStartedAt(null);
+      setGoalState(undefined);
+      return;
+    }
+    let client;
+    try {
+      client = getNanobotClient();
+    } catch {
+      setRunStartedAt(null);
+      setGoalState(undefined);
+      return;
+    }
+    setRunStartedAt(client.getRunStartedAt(activeConvId));
+    setGoalState(client.getGoalState(activeConvId));
+    const unsubscribeRun = client.onRunStatus((chatId, startedAt) => {
+      if (chatId === activeConvId) setRunStartedAt(startedAt);
+    });
+    const unsubscribeChat = client.onChat(activeConvId, (ev) => {
+      if (ev.event === 'goal_state') {
+        setGoalState(ev.goal_state);
+      } else if (ev.event === 'turn_end' && ev.goal_state != null && typeof ev.goal_state === 'object') {
+        setGoalState(ev.goal_state);
+      }
+    });
+    return () => {
+      unsubscribeRun();
+      unsubscribeChat();
+    };
+  }, [activeConvId]);
+
+  const handleSend = async (
+    text: string,
+    images?: ImageAttachment[],
+    workspacePath?: string | null,
+    options?: ChatInputSendOptions,
+  ) => {
     // Block sending if API key is not configured
     const currentApiKey = useSettingsStore.getState().apiKey;
     if (!currentApiKey?.trim()) {
@@ -84,7 +138,13 @@ export default function ChatView() {
     // Re-enable auto-scroll when user sends a message.
     // Don't scroll immediately — let MutationObserver scroll after the new message renders.
     resetToBottom();
-    await sendNanobotMessage(convId, text, { images });
+    const scopePath = workspacePath ?? activeConv?.workspacePath ?? null;
+    await sendNanobotMessage(convId, text, {
+      images,
+      workspaceScope: workspaceScopeFromPath(scopePath),
+      cliApps: options?.cliApps,
+      mcpPresets: options?.mcpPresets,
+    });
   };
 
 
@@ -146,9 +206,10 @@ export default function ChatView() {
     );
   }
 
-  // Chat view with messages
-  // Group messages by loopId for unified rendering
-  const messageGroups = groupMessagesByLoop(messages);
+  // Chat view with messages.
+  // Match nanobot webui's display model: preserve activity and assistant slices
+  // in arrival order instead of flattening an entire loop into one block.
+  const displayUnits = normalizeActivityTimeline(messages);
 
   return (
     <div className="flex flex-col h-full min-h-0 min-w-0 bg-[#fbfaf7]">
@@ -156,8 +217,13 @@ export default function ChatView() {
       <div className="relative flex-1 min-h-0 overflow-y-auto" ref={containerRef}>
         <div className="w-full max-w-4xl mx-auto px-6 md:px-10 py-8 overflow-hidden">
           <div className="space-y-10">
-            {messageGroups.map((group) => (
-              <MessageGroup key={group[0].id} messages={group} />
+            {displayUnits.map((unit, index) => (
+              <MessageGroup
+                key={unit.type === 'activity'
+                  ? `activity-${unit.messages[0]?.id ?? index}`
+                  : unit.message.id}
+                messages={unit.type === 'activity' ? unit.messages : [unit.message]}
+              />
             ))}
 
             {/* Thinking indicator - shown after user message but before assistant message appears */}
@@ -188,6 +254,7 @@ export default function ChatView() {
       <div className="shrink-0 px-6 md:px-10 pb-4 pt-2 bg-gradient-to-t from-[#fbfaf7] via-[#fbfaf7] to-[#fbfaf7]/80">
         <div className="max-w-4xl mx-auto">
           <ActiveSkillsBar />
+          <GoalStatusBar goalState={goalState} runStartedAt={runStartedAt} />
           <ChatInput variant="chat" onSend={handleSend} />
           <p className="text-center text-[13px] text-[#8a867c] mt-3">
             {t.chat.disclaimer}

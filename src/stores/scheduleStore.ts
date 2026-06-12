@@ -1,86 +1,63 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
+import {
+  createScheduleTask,
+  deleteScheduleTask,
+  fetchScheduleTasks,
+  pauseScheduleTask,
+  resumeScheduleTask,
+  runScheduleTaskNow,
+  updateScheduleTask,
+} from '@/core/api';
+import {
+  bootstrapNanobotGateway,
+  getNanobotStatus,
+  getNanobotToken,
+  refreshNanobotAuth,
+} from '@/core/nanobotClient';
+import type { ScheduleTasksPayload } from '@/core/types';
 import type {
   ScheduledTask,
-  ScheduledTaskRun,
   ScheduleConfig,
-  ScheduledTaskStatus,
 } from '../types/schedule';
 
-function generateId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
+function tasksById(tasks: ScheduledTask[]): Record<string, ScheduledTask> {
+  return Object.fromEntries(tasks.map((task) => [task.id, task]));
 }
 
-const MAX_RUNS_PER_TASK = 20;
-
-// --- nextRunAt computation ---
-
-export function computeNextRunAt(
-  schedule: ScheduleConfig,
-  status: ScheduledTaskStatus,
-  fromTime?: number
-): number | undefined {
-  if (status === 'paused' || schedule.frequency === 'manual') {
-    return undefined;
+async function gatewayAuth(): Promise<{ token: string; baseUrl: string }> {
+  let token = getNanobotToken();
+  let status = await getNanobotStatus();
+  if (!token) {
+    await bootstrapNanobotGateway();
+    token = getNanobotToken();
+    status = await getNanobotStatus();
   }
-
-  const now = fromTime ?? Date.now();
-  const base = new Date(now);
-  const hour = schedule.time?.hour ?? 0;
-  const minute = schedule.time?.minute ?? 0;
-
-  switch (schedule.frequency) {
-    case 'hourly': {
-      // Next occurrence of :minute
-      const next = new Date(base);
-      next.setMinutes(minute, 0, 0);
-      if (next.getTime() <= now) {
-        next.setHours(next.getHours() + 1);
-      }
-      return next.getTime();
-    }
-    case 'daily': {
-      const next = new Date(base);
-      next.setHours(hour, minute, 0, 0);
-      if (next.getTime() <= now) {
-        next.setDate(next.getDate() + 1);
-      }
-      return next.getTime();
-    }
-    case 'weekly': {
-      const targetDay = schedule.dayOfWeek ?? 1; // default Monday
-      const next = new Date(base);
-      next.setHours(hour, minute, 0, 0);
-      // Find next occurrence of targetDay
-      let daysUntil = targetDay - next.getDay();
-      if (daysUntil < 0) daysUntil += 7;
-      if (daysUntil === 0 && next.getTime() <= now) daysUntil = 7;
-      next.setDate(next.getDate() + daysUntil);
-      return next.getTime();
-    }
-    case 'weekdays': {
-      const next = new Date(base);
-      next.setHours(hour, minute, 0, 0);
-      if (next.getTime() <= now) {
-        next.setDate(next.getDate() + 1);
-      }
-      // Skip weekends
-      while (next.getDay() === 0 || next.getDay() === 6) {
-        next.setDate(next.getDate() + 1);
-      }
-      return next.getTime();
-    }
-    default:
-      return undefined;
+  if (!status.ready || !token) {
+    throw new Error('Nanobot gateway 还没有准备好。');
   }
+  return { token, baseUrl: `http://127.0.0.1:${status.port}` };
 }
 
-// --- Store types ---
+async function withScheduleAuth<T>(
+  task: (token: string, baseUrl: string) => Promise<T>,
+): Promise<T> {
+  const auth = await gatewayAuth();
+  try {
+    return await task(auth.token, auth.baseUrl);
+  } catch (err) {
+    if (!(err instanceof Error) || !err.message.includes('Unauthorized')) {
+      throw err;
+    }
+    const refreshed = await refreshNanobotAuth();
+    return await task(refreshed.token, refreshed.baseUrl);
+  }
+}
 
 interface ScheduleState {
   tasks: Record<string, ScheduledTask>;
-  // UI state (not persisted)
+  loading: boolean;
+  error: string | null;
   activeTaskId: string | null;
   selectedTaskId: string | null;
   showEditor: boolean;
@@ -88,7 +65,8 @@ interface ScheduleState {
 }
 
 interface ScheduleActions {
-  // CRUD
+  loadTasks: () => Promise<void>;
+  applyPayload: (payload: ScheduleTasksPayload) => void;
   createTask: (data: {
     name: string;
     description?: string;
@@ -96,35 +74,23 @@ interface ScheduleActions {
     schedule: ScheduleConfig;
     skillName?: string;
     workspacePath?: string;
-  }) => string;
+  }) => Promise<string>;
   updateTask: (
     id: string,
-    data: Partial<{
+    data: {
       name: string;
-      description: string | undefined;
+      description?: string;
       prompt: string;
       schedule: ScheduleConfig;
-      skillName: string | undefined;
-      workspacePath: string | undefined;
-    }>
-  ) => void;
-  deleteTask: (id: string) => void;
-
-  // Control
-  pauseTask: (id: string) => void;
-  resumeTask: (id: string) => void;
-
-  // Run tracking
-  startRun: (taskId: string, conversationId: string) => string;
-  completeRun: (taskId: string, runId: string) => void;
-  errorRun: (taskId: string, runId: string, error: string) => void;
-  removeRun: (taskId: string, runId: string) => void;
-
-  // Query
-  getDueTasks: (now: number) => ScheduledTask[];
+      skillName?: string;
+      workspacePath?: string;
+    },
+  ) => Promise<void>;
+  deleteTask: (id: string) => Promise<void>;
+  pauseTask: (id: string) => Promise<void>;
+  resumeTask: (id: string) => Promise<void>;
+  runTaskNow: (id: string) => Promise<void>;
   getActiveTaskCount: () => number;
-
-  // UI state
   setActiveTaskId: (id: string | null) => void;
   setSelectedTaskId: (id: string | null) => void;
   openEditor: (taskId?: string) => void;
@@ -134,222 +100,105 @@ interface ScheduleActions {
 export type ScheduleStore = ScheduleState & ScheduleActions;
 
 export const useScheduleStore = create<ScheduleStore>()(
-  persist(
-    immer((set, get) => ({
-      tasks: {},
-      activeTaskId: null,
-      selectedTaskId: null,
-      showEditor: false,
-      editingTaskId: null,
+  immer((set, get) => ({
+    tasks: {},
+    loading: false,
+    error: null,
+    activeTaskId: null,
+    selectedTaskId: null,
+    showEditor: false,
+    editingTaskId: null,
 
-      // CRUD
-      createTask: (data) => {
-        const id = generateId();
-        const now = Date.now();
-        const task: ScheduledTask = {
-          id,
-          name: data.name,
-          description: data.description,
-          prompt: data.prompt,
-          schedule: data.schedule,
-          status: 'active',
-          skillName: data.skillName,
-          workspacePath: data.workspacePath,
-          createdAt: now,
-          updatedAt: now,
-          nextRunAt: computeNextRunAt(data.schedule, 'active', now),
-          runs: [],
-          totalRuns: 0,
-        };
+    applyPayload: (payload) => {
+      set((state) => {
+        state.tasks = tasksById(payload.tasks);
+        state.error = null;
+        if (state.selectedTaskId && !state.tasks[state.selectedTaskId]) {
+          state.selectedTaskId = null;
+        }
+        if (state.activeTaskId && !state.tasks[state.activeTaskId]) {
+          state.activeTaskId = null;
+        }
+      });
+    },
+
+    loadTasks: async () => {
+      set((state) => {
+        state.loading = true;
+        state.error = null;
+      });
+      try {
+        const payload = await withScheduleAuth((token, baseUrl) => fetchScheduleTasks(token, baseUrl));
+        get().applyPayload(payload);
+      } catch (err) {
         set((state) => {
-          state.tasks[id] = task;
+          state.error = err instanceof Error ? err.message : String(err);
         });
-        return id;
-      },
-
-      updateTask: (id, data) => {
+      } finally {
         set((state) => {
-          const task = state.tasks[id];
-          if (!task) return;
-          if (data.name !== undefined) task.name = data.name;
-          if (data.description !== undefined) task.description = data.description;
-          if (data.prompt !== undefined) task.prompt = data.prompt;
-          if (data.skillName !== undefined) task.skillName = data.skillName;
-          if (data.workspacePath !== undefined) task.workspacePath = data.workspacePath;
-          if (data.schedule !== undefined) {
-            task.schedule = data.schedule;
-            task.nextRunAt = computeNextRunAt(data.schedule, task.status);
-          }
-          task.updatedAt = Date.now();
+          state.loading = false;
         });
-      },
+      }
+    },
 
-      deleteTask: (id) => {
-        set((state) => {
-          delete state.tasks[id];
-          if (state.activeTaskId === id) {
-            state.activeTaskId = null;
-          }
-          if (state.selectedTaskId === id) {
-            state.selectedTaskId = null;
-          }
-        });
-      },
+    createTask: async (data) => {
+      const payload = await withScheduleAuth((token, baseUrl) => createScheduleTask(token, data, baseUrl));
+      get().applyPayload(payload);
+      const created = payload.tasks.find((task) => task.name === data.name && task.prompt === data.prompt);
+      return created?.id ?? '';
+    },
 
-      // Control
-      pauseTask: (id) => {
-        set((state) => {
-          const task = state.tasks[id];
-          if (task) {
-            task.status = 'paused';
-            task.nextRunAt = undefined;
-            task.updatedAt = Date.now();
-          }
-        });
-      },
+    updateTask: async (id, data) => {
+      const payload = await withScheduleAuth((token, baseUrl) => updateScheduleTask(token, id, data, baseUrl));
+      get().applyPayload(payload);
+    },
 
-      resumeTask: (id) => {
-        set((state) => {
-          const task = state.tasks[id];
-          if (task) {
-            task.status = 'active';
-            task.nextRunAt = computeNextRunAt(task.schedule, 'active');
-            task.updatedAt = Date.now();
-          }
-        });
-      },
+    deleteTask: async (id) => {
+      const payload = await withScheduleAuth((token, baseUrl) => deleteScheduleTask(token, id, baseUrl));
+      get().applyPayload(payload);
+    },
 
-      // Run tracking
-      startRun: (taskId, conversationId) => {
-        const runId = generateId();
-        set((state) => {
-          const task = state.tasks[taskId];
-          if (!task) return;
-          const run: ScheduledTaskRun = {
-            id: runId,
-            scheduledTaskId: taskId,
-            conversationId,
-            startedAt: Date.now(),
-            status: 'running',
-          };
-          task.runs.unshift(run);
-          // Keep only last MAX_RUNS_PER_TASK
-          if (task.runs.length > MAX_RUNS_PER_TASK) {
-            task.runs = task.runs.slice(0, MAX_RUNS_PER_TASK);
-          }
-          task.totalRuns += 1;
-          task.lastRunAt = run.startedAt;
-        });
-        return runId;
-      },
+    pauseTask: async (id) => {
+      const payload = await withScheduleAuth((token, baseUrl) => pauseScheduleTask(token, id, baseUrl));
+      get().applyPayload(payload);
+    },
 
-      completeRun: (taskId, runId) => {
-        set((state) => {
-          const task = state.tasks[taskId];
-          if (!task) return;
-          const run = task.runs.find((r) => r.id === runId);
-          if (run) {
-            run.status = 'completed';
-            run.completedAt = Date.now();
-          }
-          // Recalculate nextRunAt
-          task.nextRunAt = computeNextRunAt(task.schedule, task.status);
-          task.updatedAt = Date.now();
-        });
-      },
+    resumeTask: async (id) => {
+      const payload = await withScheduleAuth((token, baseUrl) => resumeScheduleTask(token, id, baseUrl));
+      get().applyPayload(payload);
+    },
 
-      errorRun: (taskId, runId, error) => {
-        set((state) => {
-          const task = state.tasks[taskId];
-          if (!task) return;
-          const run = task.runs.find((r) => r.id === runId);
-          if (run) {
-            run.status = 'error';
-            run.completedAt = Date.now();
-            run.error = error;
-          }
-          // Recalculate nextRunAt
-          task.nextRunAt = computeNextRunAt(task.schedule, task.status);
-          task.updatedAt = Date.now();
-        });
-      },
+    runTaskNow: async (id) => {
+      const payload = await withScheduleAuth((token, baseUrl) => runScheduleTaskNow(token, id, baseUrl));
+      get().applyPayload(payload);
+    },
 
-      removeRun: (taskId, runId) => {
-        set((state) => {
-          const task = state.tasks[taskId];
-          if (!task) return;
-          task.runs = task.runs.filter((r) => r.id !== runId);
-          task.updatedAt = Date.now();
-        });
-      },
+    getActiveTaskCount: () => Object.values(get().tasks).filter((task) => task.status === 'active').length,
 
-      // Query
-      getDueTasks: (now) => {
-        const { tasks } = get();
-        return Object.values(tasks).filter(
-          (t) => t.status === 'active' && t.nextRunAt != null && t.nextRunAt <= now
-        );
-      },
+    setActiveTaskId: (id) => {
+      set((state) => {
+        state.activeTaskId = id;
+      });
+    },
 
-      getActiveTaskCount: () => {
-        const { tasks } = get();
-        return Object.values(tasks).filter((t) => t.status === 'active').length;
-      },
+    setSelectedTaskId: (id) => {
+      set((state) => {
+        state.selectedTaskId = id;
+      });
+    },
 
-      // UI state
-      setActiveTaskId: (id) => {
-        set((state) => {
-          state.activeTaskId = id;
-        });
-      },
+    openEditor: (taskId) => {
+      set((state) => {
+        state.showEditor = true;
+        state.editingTaskId = taskId ?? null;
+      });
+    },
 
-      setSelectedTaskId: (id) => {
-        set((state) => {
-          state.selectedTaskId = id;
-        });
-      },
-
-      openEditor: (taskId) => {
-        set((state) => {
-          state.showEditor = true;
-          state.editingTaskId = taskId ?? null;
-        });
-      },
-
-      closeEditor: () => {
-        set((state) => {
-          state.showEditor = false;
-          state.editingTaskId = null;
-        });
-      },
-    })),
-    {
-      name: 'ruyi-schedule',
-      version: 1,
-      partialize: (state) => ({
-        tasks: state.tasks,
-      }),
-      onRehydrateStorage: () => (state) => {
-        if (!state) return;
-        // Reset UI state
-        state.activeTaskId = null;
-        state.selectedTaskId = null;
+    closeEditor: () => {
+      set((state) => {
         state.showEditor = false;
         state.editingTaskId = null;
-        // Recalculate nextRunAt for all tasks
-        const now = Date.now();
-        for (const task of Object.values(state.tasks)) {
-          task.nextRunAt = computeNextRunAt(task.schedule, task.status, now);
-          // Reset any stuck running runs
-          for (const run of task.runs) {
-            if (run.status === 'running') {
-              run.status = 'error';
-              run.completedAt = now;
-              run.error = 'App restarted during execution';
-            }
-          }
-        }
-      },
-    }
-  )
+      });
+    },
+  })),
 );

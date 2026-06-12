@@ -13,7 +13,6 @@ import {
   RefreshCw,
   Save,
   Shield,
-  SlidersHorizontal,
   Trash2,
 } from "lucide-react";
 

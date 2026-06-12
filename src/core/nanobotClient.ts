@@ -174,10 +174,19 @@ export async function* nanobotStream(
 /** Read MEMORY.md content from nanobot */
 export async function readNanobotMemory(): Promise<string> {
   const status = await getNanobotStatus();
-  const token = getNanobotToken();
-  const resp = await fetch(`http://127.0.0.1:${status.port}/v1/memory`, {
+  let token = getNanobotToken();
+  let resp = await fetch(`http://127.0.0.1:${status.port}/v1/memory`, {
     headers: { Authorization: `Bearer ${token}` }
   });
+  if (resp.status === 401) {
+    try {
+      const refreshed = await refreshNanobotAuth();
+      token = refreshed.token;
+      resp = await fetch(`http://127.0.0.1:${status.port}/v1/memory`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+    } catch {}
+  }
   if (!resp.ok) return '';
   const data = await resp.json().catch(() => null);
   return data?.content ?? '';
@@ -189,10 +198,19 @@ export async function getNanobotSessionInfo(conversationId: string): Promise<{
   lastSummary: string;
 }> {
   const status = await getNanobotStatus();
-  const token = getNanobotToken();
-  const resp = await fetch(`http://127.0.0.1:${status.port}/v1/session/websocket:${conversationId}/info`, {
+  let token = getNanobotToken();
+  let resp = await fetch(`http://127.0.0.1:${status.port}/v1/session/websocket:${conversationId}/info`, {
     headers: { Authorization: `Bearer ${token}` }
   });
+  if (resp.status === 401) {
+    try {
+      const refreshed = await refreshNanobotAuth();
+      token = refreshed.token;
+      resp = await fetch(`http://127.0.0.1:${status.port}/v1/session/websocket:${conversationId}/info`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+    } catch {}
+  }
   if (!resp.ok) return { messageCount: 0, lastSummary: '' };
   const data = await resp.json().catch(() => null);
   return {
@@ -207,8 +225,14 @@ import type { UIMessage, ToolProgressEvent } from './types';
 import type { Message, MessageContent, MessageMediaAttachment, ToolCall } from '@/types';
 import { useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
-import { listSessions, fetchWebuiThread, fetchSettings } from './api';
+import { listSessions, fetchWebuiThread, fetchSettings, registerTokenProvider } from './api';
 import { normalizeFileEditToolTraces } from './nanobot/toolTraceMerge';
+
+// Register token provider to automatically refresh and retry REST API calls on 401 Unauthorized
+registerTokenProvider(async () => {
+  const refreshed = await refreshNanobotAuth();
+  return refreshed.token;
+});
 
 export function normalizeToolProgressEvents(events: any): ToolProgressEvent[] {
   if (!Array.isArray(events)) return [];

@@ -33,24 +33,52 @@ export class ApiError extends Error {
   }
 }
 
+let tokenProvider: (() => Promise<string>) | null = null;
+
+export function registerTokenProvider(provider: () => Promise<string>) {
+  tokenProvider = provider;
+}
+
 async function request<T>(
   url: string,
   token: string,
   init?: RequestInit,
   timeoutMs: number = 0,
 ): Promise<T> {
-  const res = await fetchWithTimeout(
+  let currentToken = token;
+  let res = await fetchWithTimeout(
     url,
     {
       ...(init ?? {}),
       headers: {
         ...(init?.headers ?? {}),
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${currentToken}`,
       },
       credentials: "same-origin",
     },
     timeoutMs,
   );
+
+  if (res.status === 401 && tokenProvider) {
+    try {
+      currentToken = await tokenProvider();
+      res = await fetchWithTimeout(
+        url,
+        {
+          ...(init ?? {}),
+          headers: {
+            ...(init?.headers ?? {}),
+            Authorization: `Bearer ${currentToken}`,
+          },
+          credentials: "same-origin",
+        },
+        timeoutMs,
+      );
+    } catch (refreshErr) {
+      console.error("Token refresh failed during 401 retry:", refreshErr);
+    }
+  }
+
   if (!res.ok) {
     const text = typeof res.text === "function" ? (await res.text()).trim() : "";
     throw new ApiError(res.status, text || `HTTP ${res.status}`);
@@ -139,10 +167,22 @@ export async function fetchWebuiThread(
   base: string = "",
 ): Promise<WebuiThreadPersistedPayload | null> {
   const url = `${base}/api/sessions/${encodeURIComponent(key)}/webui-thread`;
-  const res = await fetchWithTimeout(url, {
-    headers: { Authorization: `Bearer ${token}` },
+  let currentToken = token;
+  let res = await fetchWithTimeout(url, {
+    headers: { Authorization: `Bearer ${currentToken}` },
     credentials: "same-origin",
   });
+  if (res.status === 401 && tokenProvider) {
+    try {
+      currentToken = await tokenProvider();
+      res = await fetchWithTimeout(url, {
+        headers: { Authorization: `Bearer ${currentToken}` },
+        credentials: "same-origin",
+      });
+    } catch (err) {
+      console.error("Token refresh failed during fetchWebuiThread 401 retry:", err);
+    }
+  }
   if (res.status === 404) return null;
   if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}`);
   return (await res.json()) as WebuiThreadPersistedPayload;

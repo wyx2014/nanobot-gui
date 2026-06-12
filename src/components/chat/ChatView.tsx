@@ -7,13 +7,12 @@ import { getNanobotClient } from '@/core/nanobotClient';
 import type { GoalStateWsPayload, WorkspaceScopePayload } from '@/core/types';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useI18n } from '@/i18n';
-import MessageGroup from './MessageGroup';
+import ThreadMessages from './ThreadMessages';
 import ChatInput, { type ChatInputSendOptions } from './ChatInput';
 import ActiveSkillsBar from './ActiveSkillsBar';
 import { ChevronDown, Settings } from 'lucide-react';
 import ruyiAvatar from '@/assets/ruyi-avatar.png';
 import ThinkingIndicator from './ThinkingIndicator';
-import { normalizeActivityTimeline } from '@/core/nanobot/activityTimeline';
 
 function workspaceScopeFromPath(path: string | null | undefined): WorkspaceScopePayload | null {
   if (!path) return null;
@@ -206,25 +205,13 @@ export default function ChatView() {
     );
   }
 
-  // Chat view with messages.
-  // Match nanobot webui's display model: preserve activity and assistant slices
-  // in arrival order instead of flattening an entire loop into one block.
-  const displayUnits = normalizeActivityTimeline(messages);
-
   return (
     <div className="flex flex-col h-full min-h-0 min-w-0 bg-[#fbfaf7]">
       {/* Messages Area */}
       <div className="relative flex-1 min-h-0 overflow-y-auto" ref={containerRef}>
         <div className="w-full max-w-4xl mx-auto px-6 md:px-10 py-8 overflow-hidden">
-          <div className="space-y-10">
-            {displayUnits.map((unit, index) => (
-              <MessageGroup
-                key={unit.type === 'activity'
-                  ? `activity-${unit.messages[0]?.id ?? index}`
-                  : unit.message.id}
-                messages={unit.type === 'activity' ? unit.messages : [unit.message]}
-              />
-            ))}
+          <div>
+            <ThreadMessages messages={messages} isStreaming={activeConv.status === 'running'} />
 
             {/* Thinking indicator - shown after user message but before assistant message appears */}
             {activeConv?.status === 'running' && messages.length > 0 && messages.every((m) => m.role === 'user') && (

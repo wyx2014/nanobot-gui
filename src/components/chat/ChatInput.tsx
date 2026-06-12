@@ -115,6 +115,7 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
   const activeConv = useActiveConversation();
   const skills = useDiscoveryStore((s) => s.skills);
   const agents = useDiscoveryStore((s) => s.agents);
+  const refreshDiscovery = useDiscoveryStore((s) => s.refresh);
   const currentModel = useSettingsStore((s) => getEffectiveModel(s));
   const provider = useSettingsStore((s) => s.provider);
   const setModel = useSettingsStore((s) => s.setModel);
@@ -231,6 +232,10 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
           token = refreshed.token;
           base = refreshed.baseUrl;
         }
+
+        // Refresh the global discovery store (skills/agents list)
+        void refreshDiscovery();
+
         const [cliPayload, mcpPayload] = await Promise.all([
           fetchCliApps(token, base),
           fetchMcpPresets(token, base),
@@ -249,7 +254,7 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refreshDiscovery]);
 
   // Suggestion type tracking: 'skill' for / prefix, 'agent' for @ prefix
   const suggestionType = useMemo((): 'skill' | 'agent' | null => {

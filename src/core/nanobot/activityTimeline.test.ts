@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Message } from '@/types';
-import { normalizeActivityTimeline } from './activityTimeline';
+import { activityEvidenceFromMessageMedia, normalizeActivityTimeline } from './activityTimeline';
 
 function msg(partial: Partial<Message> & Pick<Message, 'id' | 'role'>): Message {
   return {
@@ -75,5 +75,41 @@ describe('normalizeActivityTimeline', () => {
     expect(units.map((unit) => unit.type)).toEqual(['message', 'activity', 'activity']);
     expect(units[1].type === 'activity' ? units[1].messages.map((message) => message.id) : []).toEqual(['r1']);
     expect(units[2].type === 'activity' ? units[2].messages.map((message) => message.id) : []).toEqual(['f1']);
+    expect(units[1].type === 'activity' ? units[1].items.map((item) => item.type) : []).toEqual(['reasoning']);
+    expect(units[2].type === 'activity' ? units[2].items.map((item) => item.type) : []).toEqual(['file_edit']);
+  });
+
+  it('classifies tool events and media attachments as structured activity items', () => {
+    const units = normalizeActivityTimeline([
+      msg({ id: 'u1', role: 'user', content: 'chart' }),
+      msg({
+        id: 't1',
+        role: 'tool',
+        kind: 'trace',
+        content: 'Using web_search',
+        toolEvents: [{ phase: 'end', call_id: 'call-1', name: 'web_search', result: 'ok' }],
+        mediaAttachments: [{ url: '/api/media/chart.svg', name: 'chart.svg', kind: 'image' }],
+      }),
+    ]);
+
+    expect(units[1].type === 'activity' ? units[1].items.map((item) => item.type) : []).toEqual(['tool', 'media']);
+    expect(units[1].type === 'activity' ? units[1].turnLatencyMs : undefined).toBeUndefined();
+  });
+
+  it('creates media evidence from message attachments', () => {
+    const message = msg({
+      id: 'm1',
+      role: 'tool',
+      mediaAttachments: [{ path: '/tmp/chart.svg', name: 'chart.svg', kind: 'image' }],
+    });
+
+    expect(activityEvidenceFromMessageMedia(message)).toEqual([
+      {
+        id: 'm1:media:0:/tmp/chart.svg',
+        attachment: { path: '/tmp/chart.svg', name: 'chart.svg', kind: 'image' },
+        caption: 'chart.svg',
+        source: 'media',
+      },
+    ]);
   });
 });

@@ -24,23 +24,29 @@ function LoadingIndicator({ label }: { label?: string }) {
 export default function PdfPreview({ filePath }: { filePath: string }) {
   const { t } = useI18n();
   const [error, setError] = useState<string | null>(null);
-  const [pdfData, setPdfData] = useState<Uint8Array | null>(null);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [numPages, setNumPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [scale, setScale] = useState(1.0);
 
   useEffect(() => {
     let cancelled = false;
+    let currentUrl: string | null = null;
 
     const load = async () => {
       setError(null);
-      setPdfData(null);
+      setPdfUrl(null);
       setCurrentPage(1);
       setNumPages(0);
       try {
         const data = await fsBridge.readFile(filePath);
         if (cancelled) return;
-        setPdfData(data);
+        const bytes = new Uint8Array(data.byteLength);
+        bytes.set(data);
+        const blob = new Blob([bytes.buffer], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        currentUrl = url;
+        setPdfUrl(url);
       } catch (err) {
         if (cancelled) return;
         console.error('[PdfPreview] Failed to read:', err);
@@ -49,10 +55,15 @@ export default function PdfPreview({ filePath }: { filePath: string }) {
     };
 
     load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      if (currentUrl) {
+        URL.revokeObjectURL(currentUrl);
+      }
+    };
   }, [filePath]);
 
-  const loading = !pdfData && !error;
+  const loading = !pdfUrl && !error;
 
   const onDocumentLoadSuccess = ({ numPages: n }: { numPages: number }) => {
     setNumPages(n);
@@ -135,9 +146,9 @@ export default function PdfPreview({ filePath }: { filePath: string }) {
           {loading && (
             <LoadingIndicator label={t.panel.loadingDocument} />
           )}
-          {pdfData && (
+          {pdfUrl && (
             <Document
-              file={{ data: pdfData }}
+              file={pdfUrl}
               onLoadSuccess={onDocumentLoadSuccess}
               onLoadError={onDocumentLoadError}
               loading={<LoadingIndicator label={t.panel.loadingDocument} />}

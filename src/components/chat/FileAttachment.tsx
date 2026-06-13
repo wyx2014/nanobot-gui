@@ -82,6 +82,16 @@ export default function FileAttachment({ filePath, operation }: FileAttachmentPr
     openPreview(filePath);
   };
 
+  const handleOpenFile = async (event: React.MouseEvent) => {
+    event.stopPropagation();
+    event.preventDefault();
+    try {
+      await shellBridge.openPath(filePath);
+    } catch {
+      await shellBridge.revealItemInDir(filePath);
+    }
+  };
+
   // Image file: show thumbnail card
   if (showThumbnail && thumbUrl) {
     return (
@@ -130,9 +140,14 @@ export default function FileAttachment({ filePath, operation }: FileAttachmentPr
 
       {/* File Info */}
       <div className="flex flex-col min-w-0">
-        <span className="text-[13px] font-medium text-[#29261b] truncate max-w-[160px]">
+        <button
+          type="button"
+          onClick={handleOpenFile}
+          className="max-w-[160px] truncate text-left text-[13px] font-medium text-[#29261b] hover:text-[#d97757] hover:underline"
+          title="打开文件"
+        >
           {fileName.replace(/\.[^/.]+$/, '') || fileName}
-        </span>
+        </button>
         <span className="text-[11px] text-[#888579]">
           {category} · {label}
         </span>

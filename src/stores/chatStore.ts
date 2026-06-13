@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import type { Message, Conversation, AgentStatus, TokenUsage, ConversationStatus, ToolCall, ToolCallContext, ToolResultContent, MessageMediaAttachment } from '../types';
 import type { ExecutionStepSnapshot } from '../types/execution';
+import type { WorkspaceScopePayload } from '@/core/types';
 import { useWorkspaceStore } from './workspaceStore';
 import { useTaskExecutionStore } from './taskExecutionStore';
 import { clearTodos } from '../core/nanobot/todoManager';
@@ -55,10 +56,11 @@ interface ChatState {
 }
 
 interface ChatActions {
-  createConversation: (workspacePath?: string | null, options?: { scheduledTaskId?: string; skipActivate?: boolean }) => string;
+  createConversation: (workspacePath?: string | null, options?: { scheduledTaskId?: string; skipActivate?: boolean; workspaceScope?: WorkspaceScopePayload | null }) => string;
   startNewConversation: () => void;
   switchConversation: (id: string) => void;
   setConversationWorkspace: (convId: string, path: string | null) => void;
+  setConversationWorkspaceScope: (convId: string, scope: WorkspaceScopePayload | null) => void;
   deleteConversation: (id: string) => void;
   renameConversation: (id: string, title: string) => void;
 
@@ -129,6 +131,8 @@ export const useChatStore = create<ChatStore>()(
       createConversation: (workspacePath, options) => {
         const id = generateId();
         const now = Date.now();
+        const scope = options?.workspaceScope ?? null;
+        const path = workspacePath ?? scope?.project_path ?? null;
         set((state) => {
           state.conversations[id] = {
             id,
@@ -137,7 +141,8 @@ export const useChatStore = create<ChatStore>()(
             createdAt: now,
             updatedAt: now,
             status: 'idle',
-            workspacePath: workspacePath ?? null,
+            workspacePath: path,
+            workspaceScope: scope,
             ...(options?.scheduledTaskId ? { scheduledTaskId: options.scheduledTaskId } : {}),
           };
           if (!options?.skipActivate) {
@@ -145,8 +150,8 @@ export const useChatStore = create<ChatStore>()(
           }
         });
         // Sync global workspace to match the new conversation
-        if (workspacePath && !options?.skipActivate) {
-          useWorkspaceStore.getState().setWorkspace(workspacePath);
+        if (path && !options?.skipActivate) {
+          useWorkspaceStore.getState().setWorkspace(path);
         }
         return id;
       },
@@ -178,6 +183,17 @@ export const useChatStore = create<ChatStore>()(
           const conv = state.conversations[convId];
           if (conv) {
             conv.workspacePath = path;
+            conv.workspaceScope = null;
+          }
+        });
+      },
+
+      setConversationWorkspaceScope: (convId, scope) => {
+        set((state) => {
+          const conv = state.conversations[convId];
+          if (conv) {
+            conv.workspaceScope = scope;
+            conv.workspacePath = scope?.project_path ?? null;
           }
         });
       },

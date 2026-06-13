@@ -73,7 +73,6 @@
     }
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.78.0",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@mozilla/readability": "^0.6.0",
     "@radix-ui/react-dialog": "^1.1.16",

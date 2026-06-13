@@ -8,6 +8,7 @@ import type {
   UICliAppAttachment,
   UIFileEdit,
   UIMcpPresetAttachment,
+  WorkspaceScopePayload,
 } from '@/core/types';
 
 // --- Messages & Conversations ---
@@ -150,6 +151,7 @@ export interface Conversation {
   activeSkills?: string[];  // Skill names active in this conversation
   activeSkillArgs?: Record<string, string>;  // Per-skill invocation arguments
   workspacePath?: string | null;  // Workspace bound to this conversation
+  workspaceScope?: WorkspaceScopePayload | null;  // Full nanobot workspace scope for this conversation
   enabledMCPServers?: string[];  // Per-session MCP server filter (undefined = all enabled)
   scheduledTaskId?: string;  // If set, this conversation was created by a scheduled task
   contextCache?: ContextCache;  // Ephemeral compression cache (not persisted)

@@ -4,7 +4,7 @@ import type { ImageAttachment } from '@/types';
 import { useAutoScroll } from '@/hooks/useAutoScroll';
 import { sendNanobotMessage } from '@/core/nanobot/chatBridge';
 import { getNanobotClient } from '@/core/nanobotClient';
-import type { GoalStateWsPayload, WorkspaceScopePayload } from '@/core/types';
+import type { GoalStateWsPayload, WorkspaceScopePayload, WorkspacesPayload } from '@/core/types';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useI18n } from '@/i18n';
 import ThreadMessages from './ThreadMessages';
@@ -13,17 +13,6 @@ import ActiveSkillsBar from './ActiveSkillsBar';
 import { ChevronDown, Settings } from 'lucide-react';
 import ruyiAvatar from '@/assets/ruyi-avatar.png';
 import ThinkingIndicator from './ThinkingIndicator';
-
-function workspaceScopeFromPath(path: string | null | undefined): WorkspaceScopePayload | null {
-  if (!path) return null;
-  const parts = path.split('/').filter(Boolean);
-  return {
-    project_path: path,
-    project_name: parts[parts.length - 1] || path,
-    access_mode: 'restricted',
-    restrict_to_workspace: true,
-  };
-}
 
 function formatRunDuration(startedAt: number | null): string {
   if (!startedAt) return '';
@@ -60,7 +49,19 @@ function GoalStatusBar({
   );
 }
 
-export default function ChatView() {
+export default function ChatView({
+  workspaceScope,
+  workspaceDefaultScope: _workspaceDefaultScope,
+  workspaceControls,
+  workspaceError: _workspaceError,
+  onWorkspaceScopeChange: _onWorkspaceScopeChange,
+}: {
+  workspaceScope?: WorkspaceScopePayload | null;
+  workspaceDefaultScope?: WorkspaceScopePayload | null;
+  workspaceControls?: WorkspacesPayload['controls'] | null;
+  workspaceError?: string | null;
+  onWorkspaceScopeChange?: (scope: WorkspaceScopePayload) => void;
+}) {
   const activeConv = useActiveConversation();
   const { createConversation } = useChatStore();
   const messages = activeConv?.messages ?? [];
@@ -115,7 +116,7 @@ export default function ChatView() {
   const handleSend = async (
     text: string,
     images?: ImageAttachment[],
-    workspacePath?: string | null,
+    welcomeWorkspacePath?: string | null,
     options?: ChatInputSendOptions,
   ) => {
     // Block sending if API key is not configured
@@ -128,19 +129,30 @@ export default function ChatView() {
     let convId = activeConv?.id;
     const isNewConversation = !convId;
     if (!convId) {
-      convId = createConversation(workspacePath);
+      convId = createConversation(welcomeWorkspacePath ?? workspaceScope?.project_path ?? null, {
+        workspaceScope: workspaceScope ?? null,
+      });
     }
-    // Auto-collapse sidebar when sending first message in a new conversation
     if (isNewConversation && !useSettingsStore.getState().sidebarCollapsed) {
       useSettingsStore.getState().toggleSidebar();
     }
-    // Re-enable auto-scroll when user sends a message.
-    // Don't scroll immediately — let MutationObserver scroll after the new message renders.
     resetToBottom();
-    const scopePath = workspacePath ?? activeConv?.workspacePath ?? null;
+
+    // Use gateway-provided scope; fall back to welcome path if provided
+    let effectiveScope: WorkspaceScopePayload | null = workspaceScope ?? null;
+    if (!effectiveScope && welcomeWorkspacePath) {
+      const parts = welcomeWorkspacePath.split('/').filter(Boolean);
+      effectiveScope = {
+        project_path: welcomeWorkspacePath,
+        project_name: parts[parts.length - 1] || welcomeWorkspacePath,
+        access_mode: 'restricted',
+        restrict_to_workspace: true,
+      };
+    }
+
     await sendNanobotMessage(convId, text, {
       images,
-      workspaceScope: workspaceScopeFromPath(scopePath),
+      workspaceScope: effectiveScope,
       cliApps: options?.cliApps,
       mcpPresets: options?.mcpPresets,
     });
@@ -197,7 +209,13 @@ export default function ChatView() {
 
             {/* Main input */}
             <div>
-              <ChatInput variant="welcome" onSend={handleSend} />
+              <ChatInput
+                variant="welcome"
+                onSend={handleSend}
+                workspaceScope={workspaceScope}
+                workspaceControls={workspaceControls}
+                onWorkspaceScopeChange={_onWorkspaceScopeChange}
+              />
             </div>
           </div>
         </div>
@@ -242,7 +260,13 @@ export default function ChatView() {
         <div className="max-w-4xl mx-auto">
           <ActiveSkillsBar />
           <GoalStatusBar goalState={goalState} runStartedAt={runStartedAt} />
-          <ChatInput variant="chat" onSend={handleSend} />
+          <ChatInput
+            variant="chat"
+            onSend={handleSend}
+            workspaceScope={workspaceScope}
+            workspaceControls={workspaceControls}
+            onWorkspaceScopeChange={_onWorkspaceScopeChange}
+          />
           <p className="text-center text-[13px] text-[#8a867c] mt-3">
             {t.chat.disclaimer}
           </p>

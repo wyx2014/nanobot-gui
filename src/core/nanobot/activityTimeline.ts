@@ -38,25 +38,18 @@ export type ChatDisplayUnit =
   | { type: 'activity'; messages: Message[]; items: ActivityItem[]; turnLatencyMs?: number }
   | { type: 'message'; message: Message };
 
-function textContent(message: Message): string {
-  if (typeof message.content === 'string') return message.content;
-  const textBlock = message.content.find((block) => block.type === 'text');
-  return textBlock?.type === 'text' ? textBlock.text : '';
-}
-
-function messageTimestampMs(message: Message): number | undefined {
-  const value = message.timestamp;
-  return Number.isFinite(value) ? value : undefined;
-}
-
 export function isReasoningOnlyAssistant(message: Message): boolean {
   if (message.role !== 'assistant' || message.kind === 'trace') return false;
-  if (textContent(message).trim().length > 0) return false;
+  if (typeof message.content === 'string' && message.content.trim().length > 0) return false;
+  if (Array.isArray(message.content)) {
+    const textBlock = message.content.find((block) => block.type === 'text');
+    if (textBlock?.type === 'text' && textBlock.text.trim().length > 0) return false;
+  }
   return !!(message.thinking?.length || message.reasoningStreaming || message.isStreaming);
 }
 
 export function isAgentActivityMember(message: Message): boolean {
-  return isReasoningOnlyAssistant(message) || message.kind === 'trace' || message.role === 'tool';
+  return isReasoningOnlyAssistant(message) || message.kind === 'trace';
 }
 
 export function normalizeActivityTimeline(messages: Message[]): ChatDisplayUnit[] {
@@ -168,60 +161,72 @@ function isFileEditActivityMessage(message: Message): boolean {
   return message.kind === 'trace' && !!message.fileEdits?.length;
 }
 
-function assistantHasInlineReasoning(message: Message): boolean {
-  return (
-    message.role === 'assistant'
-    && message.kind !== 'trace'
-    && textContent(message).trim().length > 0
-    && (!!message.thinking?.trim() || !!message.reasoningStreaming)
-  );
+/** Empty assistant placeholder rows are created by chatBridge.ts for tool events
+ * that arrive before the first delta. Skip them in the timeline — the tool events
+ * themselves are captured by the activity group. */
+function isEmptyAssistantPlaceholder(message: Message): boolean {
+  if (message.role !== 'assistant' || message.kind === 'trace') return false;
+  if (isAgentActivityMember(message)) return false;
+  const text = typeof message.content === 'string' ? message.content.trim() : '';
+  if (text.length > 0) return false;
+  if (Array.isArray(message.content)) {
+    const textBlock = message.content.find((block) => block.type === 'text');
+    if (textBlock?.type === 'text' && textBlock.text.trim().length > 0) return false;
+  }
+  if (message.thinking?.trim()) return false;
+  if (message.reasoningStreaming) return false;
+  if (message.mediaAttachments?.length) return false;
+  return true;
 }
 
-function isEmptyAssistantPlaceholder(message: Message): boolean {
-  return (
-    message.role === 'assistant'
-    && message.kind !== 'trace'
-    && textContent(message).trim().length === 0
-    && !message.thinking?.trim()
-    && !message.reasoningStreaming
-    && !message.mediaAttachments?.length
-  );
+function assistantHasInlineReasoning(message: Message): boolean {
+  if (message.role !== 'assistant' || message.kind === 'trace') return false;
+  const text = typeof message.content === 'string' ? message.content.trim() : '';
+  if (text.length === 0 && Array.isArray(message.content)) {
+    const textBlock = message.content.find((block) => block.type === 'text');
+    if (textBlock?.type === 'text') {
+      return textBlock.text.trim().length > 0 && (!!message.thinking?.trim() || !!message.reasoningStreaming);
+    }
+  }
+  return text.length > 0 && (!!message.thinking?.trim() || !!message.reasoningStreaming);
 }
 
 function reasoningOnlyMessageFromAnswer(message: Message): Message {
   return {
-    ...message,
     id: `${message.id}-reasoning`,
+    role: 'assistant',
     content: '',
-    isStreaming: message.reasoningStreaming || message.isStreaming,
-    toolCalls: undefined,
-    mediaAttachments: undefined,
+    timestamp: message.timestamp,
+    thinking: message.thinking,
+    reasoningStreaming: message.reasoningStreaming,
+    isStreaming: !!(message.reasoningStreaming || message.isStreaming),
+    activitySegmentId: message.activitySegmentId,
+    thinkingDuration: message.thinkingDuration,
   };
 }
 
 function stripInlineReasoning(message: Message): Message {
-  return {
-    ...message,
-    thinking: undefined,
-    reasoningStreaming: undefined,
-  };
+  const next = { ...message };
+  delete (next as any).thinking;
+  delete (next as any).reasoningStreaming;
+  return next;
 }
 
 function activityItemsForMessage(message: Message): ActivityItem[] {
   if (isReasoningOnlyAssistant(message)) {
     return [{ type: 'reasoning', message }];
   }
-  if (message.kind !== 'trace' && message.role !== 'tool') return [];
+  if (message.kind !== 'trace') return [];
 
   const items: ActivityItem[] = [];
   if (message.fileEdits?.length) {
     items.push({ type: 'file_edit', message });
   }
   for (const event of message.toolEvents ?? []) {
-    const name = toolEventName(event).toLowerCase();
+    const name = String(event.name ?? '').toLowerCase();
     if (name === 'run_cli_app') {
       items.push({ type: 'cli', message });
-    } else if (name === 'mcp' || name.startsWith('mcp_')) {
+    } else if (name === 'mcp') {
       items.push({ type: 'mcp', message });
     } else {
       items.push({ type: 'tool', message });
@@ -236,22 +241,21 @@ function activityItemsForMessage(message: Message): ActivityItem[] {
   return items;
 }
 
-function activityTurnLatencyMs(activityMessages: Message[], visibleMessages: Message[]): number | undefined {
-  for (let i = activityMessages.length - 1; i >= 0; i -= 1) {
-    const latency = latencyMsFromMessage(activityMessages[i]);
-    if (isValidLatency(latency)) return latency;
-  }
-  for (let i = visibleMessages.length - 1; i >= 0; i -= 1) {
-    const latency = latencyMsFromMessage(visibleMessages[i]);
-    if (isValidLatency(latency)) return latency;
-  }
-  return undefined;
+function textContent(message: Message): string {
+  if (typeof message.content === 'string') return message.content;
+  const textBlock = message.content.find((block) => block.type === 'text');
+  return textBlock?.type === 'text' ? textBlock.text : '';
 }
 
-function latencyMsFromMessage(message: Message): number | undefined {
-  if (message.thinkingDuration !== undefined) return Math.max(0, Math.round(message.thinkingDuration * 1000));
-  const timestamp = messageTimestampMs(message);
-  if (message.isStreaming || timestamp === undefined) return undefined;
+function activityTurnLatencyMs(activityMessages: Message[], visibleMessages: Message[]): number | undefined {
+  for (let i = activityMessages.length - 1; i >= 0; i -= 1) {
+    const latency = activityMessages[i].thinkingDuration;
+    if (isValidLatency(latency)) return Math.round(latency * 1000);
+  }
+  for (let i = visibleMessages.length - 1; i >= 0; i -= 1) {
+    const latency = visibleMessages[i].thinkingDuration;
+    if (isValidLatency(latency)) return Math.round(latency * 1000);
+  }
   return undefined;
 }
 

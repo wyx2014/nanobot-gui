@@ -56,21 +56,6 @@ if (typeof window !== 'undefined') {
 (globalThis as any).window.ipc = mockIpc;
 
 // ── External SDKs ──
-vi.mock('@anthropic-ai/sdk', () => ({
-  default: vi.fn().mockImplementation(() => ({
-    messages: {
-      create: vi.fn(),
-      stream: vi.fn(),
-    },
-  })),
-  Anthropic: vi.fn().mockImplementation(() => ({
-    messages: {
-      create: vi.fn(),
-      stream: vi.fn(),
-    },
-  })),
-}));
-
 vi.mock('@modelcontextprotocol/sdk', () => ({}));
 vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({}));
 vi.mock('@modelcontextprotocol/sdk/client/stdio.js', () => ({}));

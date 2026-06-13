@@ -13,7 +13,7 @@ import { useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useTaskExecutionStore } from '@/stores/taskExecutionStore';
 import { notifyTaskError } from '@/utils/notifications';
-import { getNanobotClient, normalizeToolProgressEvents } from '@/core/nanobotClient';
+import { getNanobotClient, getGatewayBaseUrl, normalizeToolProgressEvents } from '@/core/nanobotClient';
 import { snapshotExecutionSteps } from './executionSnapshot';
 import {
   filterCoveredFileEditToolEvents,
@@ -266,6 +266,16 @@ function mediaKindFromName(name: string): MessageMediaAttachment['kind'] {
   return 'file';
 }
 
+function resolveMediaUrl(url: string): string {
+  if (!url || url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:') || url.startsWith('blob:')) {
+    return url;
+  }
+  // Relative /api/media/... paths need the gateway base URL in Electron
+  const base = getGatewayBaseUrl();
+  if (!base) return url;
+  return `${base}${url.startsWith('/') ? url : `/${url}`}`;
+}
+
 function mediaFromEvent(ev: Extract<InboundEvent, { event: 'message' }>): MessageMediaAttachment[] {
   const out: MessageMediaAttachment[] = [];
   for (const path of ev.media ?? []) {
@@ -278,11 +288,12 @@ function mediaFromEvent(ev: Extract<InboundEvent, { event: 'message' }>): Messag
   }
   for (const item of ev.media_urls ?? []) {
     if (!item?.url) continue;
-    const name = item.name || item.url.split(/[/?#]/).filter(Boolean).pop() || item.url;
+    const resolvedUrl = resolveMediaUrl(item.url);
+    const name = item.name || resolvedUrl.split(/[/?#]/).filter(Boolean).pop() || resolvedUrl;
     out.push({
-      url: item.url,
+      url: resolvedUrl,
       name,
-      kind: mediaKindFromName(name || item.url),
+      kind: mediaKindFromName(name || resolvedUrl),
     });
   }
   return out;

@@ -98,6 +98,9 @@ export const shellBridge = {
   open: async (url: string): Promise<void> => {
     return window.ipc.invoke('shell:open', url);
   },
+  openPath: async (path: string): Promise<void> => {
+    return window.ipc.invoke('shell:openPath', path);
+  },
   revealItemInDir: async (path: string): Promise<void> => {
     return window.ipc.invoke('shell:reveal', path);
   }

@@ -3,7 +3,6 @@ import { join } from 'path'
 import fs from 'fs/promises'
 import { exec, spawn, ChildProcess } from 'child_process'
 import os from 'os'
-import Anthropic from '@anthropic-ai/sdk'
 import { pythonBridge } from './pythonBridge'
 import { syncNanobotConfig, type NanobotConfigInput } from './nanobotConfig'
 
@@ -88,97 +87,6 @@ app.whenReady().then(() => {
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
-
-  console.log('[Main] Registering LLM handlers...')
-  function convertMessages(messages: any[]): Anthropic.MessageParam[] {
-    const result: Anthropic.MessageParam[] = [];
-    for (const msg of messages) {
-      if (msg.role === 'system') continue;
-      if (msg.role === 'user') {
-        const content: Anthropic.ContentBlockParam[] = [];
-        if (typeof msg.content === 'string') {
-          content.push({ type: 'text', text: msg.content || ' ' });
-        } else if (Array.isArray(msg.content)) {
-          for (const block of msg.content) {
-            if (block.type === 'text') {
-              content.push({ type: 'text', text: block.text || ' ' });
-            } else if (block.type === 'image') {
-              content.push({
-                type: 'image',
-                source: {
-                  type: 'base64',
-                  media_type: block.source.media_type,
-                  data: block.source.data,
-                },
-              });
-            }
-          }
-        }
-        result.push({ role: 'user', content: content.length > 0 ? content : ' ' });
-      } else if (msg.role === 'assistant') {
-        const content: Anthropic.ContentBlockParam[] = [];
-        if (msg.thinking) {
-          content.push({ type: 'thinking', thinking: msg.thinking } as any);
-        }
-        if (typeof msg.content === 'string') {
-          if (msg.content) content.push({ type: 'text', text: msg.content });
-        } else if (Array.isArray(msg.content)) {
-          for (const block of msg.content) {
-            if (block.type === 'text' && block.text) {
-              content.push({ type: 'text', text: block.text });
-            }
-          }
-        }
-        const toolCallsSource = msg.toolCallsForContext || msg.toolCalls;
-        if (toolCallsSource && toolCallsSource.length > 0) {
-          const toolUseBlocks: Anthropic.ToolUseBlockParam[] = [];
-          const toolResultBlocks: Anthropic.ToolResultBlockParam[] = [];
-          for (const tc of toolCallsSource) {
-            toolUseBlocks.push({
-              type: 'tool_use',
-              id: tc.id,
-              name: tc.name,
-              input: tc.input,
-            });
-            if (tc.result !== undefined) {
-              let resContent: Anthropic.ToolResultBlockParam['content'];
-              if (Array.isArray(tc.resultContent) && tc.resultContent.length > 0) {
-                resContent = tc.resultContent.map((block: any) => {
-                  if (block.type === 'image') {
-                    return {
-                      type: 'image' as const,
-                      source: {
-                        type: 'base64' as const,
-                        media_type: block.source.media_type,
-                        data: block.source.data,
-                      },
-                    };
-                  }
-                  return { type: 'text' as const, text: block.text || ' ' };
-                });
-              } else {
-                resContent = tc.result || ' ';
-              }
-              toolResultBlocks.push({
-                type: 'tool_result',
-                tool_use_id: tc.id,
-                content: resContent,
-                is_error: tc.isError,
-              });
-            }
-          }
-          content.push(...toolUseBlocks);
-          result.push({ role: 'assistant', content: content.length > 0 ? content : ' ' });
-          if (toolResultBlocks.length > 0) {
-            result.push({ role: 'user', content: toolResultBlocks });
-          }
-        } else {
-          result.push({ role: 'assistant', content: content.length > 0 ? content : ' ' });
-        }
-      }
-    }
-    return result;
-  }
 
   function formatLogData(data: any): string {
     if (data === undefined || data === null) return '';
@@ -295,53 +203,13 @@ app.whenReady().then(() => {
     return new Uint8Array(buffer);
   });
 
-  ipcMain.handle('llm:chat', async (event, { messages, options }) => {
-    const { apiKey, model, maxTokens, systemPrompt, temperature, topP, stream } = options;
-    const client = new Anthropic({
-      apiKey: apiKey,
-      baseURL: options.baseUrl || undefined,
-    });
-    const anthropicMessages = convertMessages(messages);
-    try {
-      if (stream) {
-        const streamResponse = await client.messages.create({
-          model,
-          max_tokens: maxTokens || 4096,
-          messages: anthropicMessages,
-          system: systemPrompt,
-          temperature,
-          top_p: topP,
-          tools: options.tools,
-          tool_choice: options.tool_choice,
-          stream: true,
-        });
-        for await (const chunk of streamResponse) {
-          event.sender.send('llm:stream-chunk', { type: 'chunk', data: chunk });
-        }
-        event.sender.send('llm:stream-chunk', { type: 'done' });
-        return;
-      } else {
-        const response = await client.messages.create({
-          model,
-          max_tokens: maxTokens || 4096,
-          messages: anthropicMessages,
-          system: systemPrompt,
-          temperature,
-          top_p: topP,
-          tools: options.tools,
-          tool_choice: options.tool_choice,
-          stream: false,
-        });
-        return response;
-      }
-    } catch (error: any) {
-      console.error('LLM Main Process Error:', error);
-      throw error;
-    }
-  });
-
   ipcMain.handle('shell:open', async (_, url: string) => {
     shell.openExternal(url)
+  })
+
+  ipcMain.handle('shell:openPath', async (_, path: string) => {
+    const error = await shell.openPath(path)
+    if (error) throw new Error(error)
   })
 
   ipcMain.handle('shell:reveal', async (_, path: string) => {

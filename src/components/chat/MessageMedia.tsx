@@ -169,6 +169,17 @@ function LocalImageTile({
     }
   };
 
+  const openFile = async (event: React.MouseEvent) => {
+    event.stopPropagation();
+    event.preventDefault();
+    if (!item.path) return;
+    try {
+      await shellBridge.openPath(item.path);
+    } catch {
+      await shellBridge.revealItemInDir(item.path);
+    }
+  };
+
   if (!imageUrl) {
     return <ImagePlaceholder label={failed ? `${label} 加载失败` : label} compact={compact} />;
   }
@@ -189,12 +200,19 @@ function LocalImageTile({
         <img src={imageUrl} alt={label} className={cn('w-full rounded-lg object-contain', compact ? 'max-h-28' : 'max-h-80')} draggable={false} />
       </button>
       <div className="flex items-center gap-1.5 px-2.5 pb-2 text-[12px] text-[#29261b]">
-        <span className="min-w-0 flex-1 truncate">{label}</span>
+        <button
+          type="button"
+          onClick={openFile}
+          className="min-w-0 flex-1 truncate text-left transition-colors hover:text-[#d97757] hover:underline"
+          title="打开原文件"
+        >
+          {label}
+        </button>
         {item.path ? (
           <button
             type="button"
             onClick={reveal}
-            className="rounded p-1 text-[#888579] opacity-0 transition-opacity hover:bg-[#f5f3ee] hover:text-[#29261b] group-hover/media:opacity-100"
+            className="rounded p-1 text-[#888579] transition-colors hover:bg-[#f5f3ee] hover:text-[#29261b]"
             title="在 Finder 中显示"
           >
             <ExternalLink className="h-3 w-3" />

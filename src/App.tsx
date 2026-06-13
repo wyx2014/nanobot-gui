@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { ipc, windowBridge, eventBridge } from '@/lib/ipc-factory';
 import Sidebar from '@/components/sidebar/Sidebar';
 import ChatView from '@/components/chat/ChatView';
@@ -11,6 +11,11 @@ import { useToastStore } from '@/stores/toastStore';
 import { initPlatform } from '@/utils/platform';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { initNetworkProxy } from '@/core/sandbox/config';
+import type { WorkspaceScopePayload, WorkspacesPayload } from '@/core/types';
+import { fetchWorkspaces } from '@/core/api';
+import { getNanobotClient, getNanobotToken, getNanobotStatus } from '@/core/nanobotClient';
+import { projectNameFromPath } from '@/core/workspace';
+import { useChatStore } from '@/stores/chatStore';
 
 // Initialize platform detection at module load time (before any component renders)
 // so that isWindows()/isMacOS() return correct values immediately
@@ -35,6 +40,16 @@ import { checkForUpdate } from '@/core/updates/checker';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
 import { syncNanobotSettings, bootstrapNanobotGateway, syncSessionsFromGateway, syncGatewaySettingsToStore } from '@/core/nanobotClient';
 
+function normalizeWorkspaceScope(scope: WorkspaceScopePayload): WorkspaceScopePayload {
+  const accessMode = scope.access_mode === 'restricted' ? 'restricted' : 'full';
+  return {
+    ...scope,
+    project_name: scope.project_name ?? projectNameFromPath(scope.project_path),
+    access_mode: accessMode,
+    restrict_to_workspace: accessMode === 'restricted',
+  };
+}
+
 function App() {
   const refreshDiscovery = useDiscoveryStore((s) => s.refresh);
   const sidebarCollapsed = useSettingsStore((s) => s.sidebarCollapsed);
@@ -42,6 +57,72 @@ function App() {
   const viewMode = useSettingsStore((s) => s.viewMode);
   const { t } = useI18n();
   const [showCloseDialog, setShowCloseDialog] = useState(false);
+
+  // Workspace state — synced from nanobot gateway
+  const [workspaces, setWorkspaces] = useState<WorkspacesPayload | null>(null);
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
+  const [draftWorkspaceScope, setDraftWorkspaceScope] = useState<WorkspaceScopePayload | null>(null);
+  const [workspaceOverrides, setWorkspaceOverrides] = useState<Record<string, WorkspaceScopePayload>>({});
+
+  const activeConvId = useChatStore((s) => s.activeConversationId);
+  const activeConvWorkspacePath = useChatStore((s) =>
+    s.activeConversationId ? s.conversations[s.activeConversationId]?.workspacePath ?? null : null
+  );
+  const activeConvWorkspaceScope = useChatStore((s) =>
+    s.activeConversationId ? s.conversations[s.activeConversationId]?.workspaceScope ?? null : null
+  );
+
+  const activeWorkspaceScope = useMemo<WorkspaceScopePayload | null>(() => {
+    if (activeConvId && workspaceOverrides[activeConvId]) {
+      return workspaceOverrides[activeConvId];
+    }
+    if (activeConvWorkspaceScope) {
+      return normalizeWorkspaceScope(activeConvWorkspaceScope);
+    }
+    if (activeConvWorkspacePath) {
+      const parts = activeConvWorkspacePath.split('/').filter(Boolean);
+      return {
+        project_path: activeConvWorkspacePath,
+        project_name: parts[parts.length - 1] || activeConvWorkspacePath,
+        access_mode: 'restricted',
+        restrict_to_workspace: true,
+      };
+    }
+    return draftWorkspaceScope ?? workspaces?.default_scope ?? null;
+  }, [activeConvId, activeConvWorkspacePath, activeConvWorkspaceScope, draftWorkspaceScope, workspaceOverrides, workspaces?.default_scope]);
+
+  const refreshWorkspaces = useCallback(async () => {
+    try {
+      const status = await getNanobotStatus();
+      if (!status.ready) return;
+      const token = getNanobotToken();
+      const base = `http://127.0.0.1:${status.port}`;
+      const payload = await fetchWorkspaces(token, base);
+      setWorkspaces(payload);
+    } catch {
+      setWorkspaces(null);
+    }
+  }, []);
+
+  // Fetch workspaces once gateway is ready (after syncNanobotSettings resolves)
+  // We do this in the bootstrap effect below; also refresh on session updates.
+
+  const applyWorkspaceScope = useCallback((scope: WorkspaceScopePayload) => {
+    const next = normalizeWorkspaceScope(scope);
+    setWorkspaceError(null);
+    if (activeConvId) {
+      try {
+        const client = getNanobotClient();
+        client.setWorkspaceScope(activeConvId, next);
+      } catch {
+        // client not ready yet — just update local state
+      }
+      useChatStore.getState().setConversationWorkspaceScope(activeConvId, next);
+      setWorkspaceOverrides((current) => ({ ...current, [activeConvId]: next }));
+      return;
+    }
+    setDraftWorkspaceScope(next);
+  }, [activeConvId]);
 
   const handleQuit = useCallback(() => {
     setShowCloseDialog(false);
@@ -96,6 +177,32 @@ function App() {
       unlistenFn?.();
     };
   }, []);
+
+  // Listen for workspace scope updates pushed from nanobot gateway
+  useEffect(() => {
+    let client;
+    try { client = getNanobotClient(); } catch { return; }
+    return client.onSessionUpdate((_chatId, _scope, workspaceScope) => {
+      if (!workspaceScope) return;
+      const next = normalizeWorkspaceScope(workspaceScope);
+      useChatStore.getState().setConversationWorkspaceScope(_chatId, next);
+      setWorkspaceOverrides((current) => ({ ...current, [_chatId]: next }));
+      setDraftWorkspaceScope(next);
+      setWorkspaceError(null);
+      void refreshWorkspaces();
+    });
+  });
+
+  // Handle workspace_scope_rejected errors from nanobot gateway
+  useEffect(() => {
+    let client;
+    try { client = getNanobotClient(); } catch { return; }
+    return client.onError((error) => {
+      if (error.kind !== 'workspace_scope_rejected') return;
+      setWorkspaceError('工作区路径被拒绝，请确认路径有效且 nanobot 有权访问');
+      void refreshWorkspaces();
+    });
+  });
 
   useEffect(() => {
     refreshDiscovery();
@@ -178,6 +285,7 @@ function App() {
           syncSessionsFromGateway().then(() => {
             console.log('[App] Session history sync completed');
           });
+          void refreshWorkspaces();
         }).catch((err) => {
           console.error('[App] Nanobot gateway bootstrap failed:', err);
         });
@@ -203,6 +311,7 @@ function App() {
     sandboxEnabled,
     networkWhitelist,
     allowPrivateNetworks,
+    refreshWorkspaces,
   ]);
 
   // macOS uses overlay title bar (content behind traffic lights); Windows uses native title bar
@@ -246,7 +355,15 @@ function App() {
             {viewMode === 'schedule' && <ScheduleView />}
             {viewMode === 'toolbox' && <ToolboxView />}
             {viewMode === 'settings' && <SystemSettingsView />}
-            {(viewMode === 'chat' || !viewMode) && <ChatView />}
+            {(viewMode === 'chat' || !viewMode) && (
+              <ChatView
+                workspaceScope={activeWorkspaceScope}
+                workspaceDefaultScope={workspaces?.default_scope ?? null}
+                workspaceControls={workspaces?.controls ?? null}
+                workspaceError={workspaceError}
+                onWorkspaceScopeChange={applyWorkspaceScope}
+              />
+            )}
           </main>
 
           {/* Right panel */}

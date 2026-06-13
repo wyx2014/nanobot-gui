@@ -24,6 +24,7 @@ export interface NanobotSyncResult {
 
 let globalClient: NanobotClient | null = null;
 let currentToken = '';
+let currentBaseUrl = '';
 
 export function getNanobotClient(): NanobotClient {
   if (!globalClient) {
@@ -34,6 +35,10 @@ export function getNanobotClient(): NanobotClient {
 
 export function getNanobotToken(): string {
   return currentToken;
+}
+
+export function getGatewayBaseUrl(): string {
+  return currentBaseUrl;
 }
 
 export async function refreshNanobotAuth(): Promise<{ token: string; baseUrl: string; wsUrl: string }> {
@@ -61,6 +66,7 @@ export async function bootstrapNanobotGateway(): Promise<NanobotClient> {
   }
 
   const baseUrl = `http://127.0.0.1:${status.port}`;
+  currentBaseUrl = baseUrl;
   console.log('[nanobotClient] Bootstrapping gateway at', baseUrl);
   const { wsUrl } = await refreshNanobotAuth();
 
@@ -227,6 +233,8 @@ import { useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { listSessions, fetchWebuiThread, fetchSettings, registerTokenProvider } from './api';
 import { normalizeFileEditToolTraces } from './nanobot/toolTraceMerge';
+import { scrubSubagentUiMessages } from './nanobot/subagent-channel-display';
+import { normalizeLegacyLongTaskMessages } from './nanobot/thread-display-compat';
 
 // Register token provider to automatically refresh and retry REST API calls on 401 Unauthorized
 registerTokenProvider(async () => {
@@ -256,13 +264,23 @@ function mediaKindFromName(name: string): MessageMediaAttachment['kind'] {
   return 'file';
 }
 
+function resolveMediaUrl(url: string | undefined): string | undefined {
+  if (!url || url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:') || url.startsWith('blob:')) {
+    return url;
+  }
+  const base = getGatewayBaseUrl();
+  if (!base) return url;
+  return `${base}${url.startsWith('/') ? url : `/${url}`}`;
+}
+
 function mediaAttachmentsFromUiMessage(msg: UIMessage): MessageMediaAttachment[] {
   const out: MessageMediaAttachment[] = [];
   for (const item of msg.media ?? []) {
-    const name = item.name || item.url?.split(/[/?#]/).filter(Boolean).pop() || item.url || '';
-    if (!item.url && !name) continue;
+    const resolvedUrl = resolveMediaUrl(item.url);
+    const name = item.name || resolvedUrl?.split(/[/?#]/).filter(Boolean).pop() || resolvedUrl || '';
+    if (!resolvedUrl && !name) continue;
     out.push({
-      url: item.url,
+      url: resolvedUrl,
       name,
       kind: item.kind || mediaKindFromName(name),
     });
@@ -479,7 +497,7 @@ export async function syncSessionsFromGateway(): Promise<void> {
       const chatId = session.chatId;
       const thread = await fetchWebuiThread(token, session.key, baseUrl);
       if (thread) {
-        const gatewayMessages = mapWebuiThreadToGuiMessages(thread.messages);
+        const gatewayMessages = mapWebuiThreadToGuiMessages(scrubSubagentUiMessages(normalizeLegacyLongTaskMessages(thread.messages)));
         const localStatus = chatStore.conversations[chatId]?.status;
         if (localStatus === 'running') {
           continue;
@@ -498,6 +516,7 @@ export async function syncSessionsFromGateway(): Promise<void> {
           updatedAt,
           status: 'idle',
           workspacePath: thread.workspace_scope?.project_path ?? null,
+          workspaceScope: thread.workspace_scope ?? session.workspaceScope ?? null,
         });
       }
     }

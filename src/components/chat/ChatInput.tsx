@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Plus, ArrowUp, ArrowRight, Square, X, ChevronDown, Check, FileText } from 'lucide-react';
+import { Plus, ArrowUp, ArrowRight, Square, X, ChevronDown, Check, FileText, AlertTriangle, Hand } from 'lucide-react';
 import { dialogBridge, fsBridge } from '@/lib/ipc-factory';
 import { useFileDragDrop } from '@/hooks/useFileDragDrop';
 import { uint8ArrayToBase64 } from '@/utils/base64';
@@ -13,10 +13,16 @@ import { usePermissionStore } from '@/stores/permissionStore';
 import type { PermissionDuration } from '@/stores/permissionStore';
 import { useI18n } from '@/i18n';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import type { ImageAttachment } from '@/types';
-import type { OutboundCliAppMention, OutboundMcpPresetMention } from '@/core/types';
-import type { CliAppInfo, McpPresetInfo } from '@/core/types';
+import type { OutboundCliAppMention, OutboundMcpPresetMention, WorkspaceAccessMode, WorkspacesPayload } from '@/core/types';
+import type { CliAppInfo, McpPresetInfo, WorkspaceScopePayload } from '@/core/types';
 import { fetchCliApps, fetchMcpPresets } from '@/core/api';
 import { getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/nanobotClient';
 import { generateAttachmentId, readFileAsBase64, SUPPORTED_IMAGE_TYPES } from '@/utils/imageUtils';
@@ -32,6 +38,9 @@ interface ChatInputProps {
   variant: 'welcome' | 'chat';
   onSend: (message: string, images?: ImageAttachment[], workspacePath?: string | null, options?: ChatInputSendOptions) => void;
   disabled?: boolean;
+  workspaceScope?: WorkspaceScopePayload | null;
+  workspaceControls?: WorkspacesPayload['controls'] | null;
+  onWorkspaceScopeChange?: (scope: WorkspaceScopePayload) => void;
 }
 
 interface SuggestionItem {
@@ -47,6 +56,76 @@ interface FileAttachmentItem {
   id: string;
   path: string;
   name: string;
+}
+
+function scopeWithAccessMode(scope: WorkspaceScopePayload, accessMode: WorkspaceAccessMode): WorkspaceScopePayload {
+  return {
+    ...scope,
+    access_mode: accessMode,
+    restrict_to_workspace: accessMode === 'restricted',
+  };
+}
+
+function WorkspaceAccessMenu({
+  scope,
+  disabled,
+  canUseFullAccess,
+  onChange,
+}: {
+  scope: WorkspaceScopePayload;
+  disabled?: boolean;
+  canUseFullAccess: boolean;
+  onChange?: (scope: WorkspaceScopePayload) => void;
+}) {
+  const mode = scope.access_mode === 'full' ? 'full' : 'restricted';
+  const isFull = mode === 'full';
+
+  const setMode = (value: WorkspaceAccessMode) => {
+    if (value === 'full' && !canUseFullAccess) return;
+    if (value === mode) return;
+    onChange?.(scopeWithAccessMode(scope, value));
+  };
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild disabled={disabled || !onChange}>
+        <Button
+          type="button"
+          variant="ghost"
+          aria-label="工作区访问权限"
+          className={cn(
+            'h-8 max-w-[8.5rem] rounded-xl px-2.5 text-[12px] font-semibold shadow-none',
+            isFull
+              ? 'text-orange-600 hover:bg-orange-500/10 hover:text-orange-700'
+              : 'text-[#656358] hover:bg-[#eeeeea] hover:text-[#29261b]',
+          )}
+        >
+          {isFull ? <AlertTriangle className="mr-1.5 h-3.5 w-3.5 shrink-0" /> : <Hand className="mr-1.5 h-3.5 w-3.5 shrink-0" />}
+          <span className="truncate">{isFull ? '完全访问' : '默认权限'}</span>
+          <ChevronDown className="ml-1 h-3 w-3 shrink-0" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-48">
+        <DropdownMenuItem
+          onSelect={() => setMode('restricted')}
+          className="flex h-10 items-center gap-3 rounded-xl px-3 text-[13px] font-semibold"
+        >
+          <Hand className="h-4 w-4" />
+          <span className="min-w-0 flex-1 truncate">默认权限</span>
+          {mode === 'restricted' ? <Check className="h-4 w-4 shrink-0" /> : null}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          disabled={!canUseFullAccess}
+          onSelect={() => setMode('full')}
+          className="flex h-10 items-center gap-3 rounded-xl px-3 text-[13px] font-semibold text-orange-600 focus:text-orange-600"
+        >
+          <AlertTriangle className="h-4 w-4" />
+          <span className="min-w-0 flex-1 truncate">完全访问权限</span>
+          {mode === 'full' ? <Check className="h-4 w-4 shrink-0" /> : null}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 /** Read a local image file path into an ImageAttachment via bridge */
@@ -86,7 +165,7 @@ async function processFilePaths(
   }
 }
 
-export default function ChatInput({ variant, onSend, disabled }: ChatInputProps) {
+export default function ChatInput({ variant, onSend, disabled, workspaceScope, workspaceControls, onWorkspaceScopeChange }: ChatInputProps) {
   const isWelcome = variant === 'welcome';
 
   const [text, setText] = useState('');
@@ -196,7 +275,17 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
 
   // Welcome-only: folder & permission handlers
   const handleSelectFolder = (folderPath: string) => {
-    if (hasPermission(folderPath, 'read')) {
+    if (onWorkspaceScopeChange) {
+      const parts = folderPath.split('/').filter(Boolean);
+      const base = workspaceScope ?? { access_mode: 'restricted' as const, restrict_to_workspace: true };
+      onWorkspaceScopeChange({
+        ...base,
+        project_path: folderPath,
+        project_name: parts[parts.length - 1] || folderPath,
+        access_mode: base.access_mode === 'full' ? 'full' : 'restricted',
+        restrict_to_workspace: base.access_mode !== 'full',
+      });
+    } else if (hasPermission(folderPath, 'read')) {
       setLocalWorkspace(folderPath);
     } else {
       setPendingFolder(folderPath);
@@ -204,6 +293,10 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
   };
 
   const handleClearWorkspace = () => {
+    if (onWorkspaceScopeChange && workspaceScope) {
+      // Clearing to the default — signal with an empty project path won't work,
+      // so just clear local state; App layer handles default
+    }
     setLocalWorkspace(null);
   };
 
@@ -710,11 +803,19 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
             /* Welcome variant: FolderSelector + [+] + --- + Start button */
             <div className="flex items-center gap-2 px-5 pb-4">
               <FolderSelector
-                currentPath={localWorkspace}
+                currentPath={workspaceScope?.project_path ?? localWorkspace}
                 recentPaths={recentPaths}
                 onSelect={handleSelectFolder}
                 onClear={handleClearWorkspace}
               />
+              {workspaceScope && (
+                <WorkspaceAccessMenu
+                  scope={workspaceScope}
+                  canUseFullAccess={workspaceControls?.can_use_full_access ?? true}
+                  disabled={disabled}
+                  onChange={onWorkspaceScopeChange}
+                />
+              )}
               <Button
                 variant="ghost"
                 size="icon"
@@ -741,7 +842,7 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
               </button>
             </div>
           ) : (
-            /* Chat variant: [+] + --- + Model label + Stop/Send */
+            /* Chat variant: [+] + workspace chip + --- + Model label + Stop/Send */
             <div className="flex items-center justify-between px-4 pb-3 pt-1">
               {/* Left Actions */}
               <div className="flex items-center gap-0.5">
@@ -754,6 +855,22 @@ export default function ChatInput({ variant, onSend, disabled }: ChatInputProps)
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
+                {workspaceScope && (
+                  <>
+                    <FolderSelector
+                      currentPath={workspaceScope.project_path}
+                      recentPaths={recentPaths}
+                      onSelect={handleSelectFolder}
+                      onClear={handleClearWorkspace}
+                    />
+                    <WorkspaceAccessMenu
+                      scope={workspaceScope}
+                      canUseFullAccess={workspaceControls?.can_use_full_access ?? true}
+                      disabled={disabled}
+                      onChange={onWorkspaceScopeChange}
+                    />
+                  </>
+                )}
               </div>
 
               <div className="flex items-center gap-2">

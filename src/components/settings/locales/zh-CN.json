@@ -7,18 +7,18 @@
     },
     "error": {
       "title": "无法连接到 nanobot",
-      "gatewayHint": "请确认 gateway 已启动（`nanobot gateway`），并且当前页面与 gateway 运行在同一台机器上。"
+      "gatewayHint": "请确认网关已启动（`nanobot gateway`），并且当前页面与网关运行在同一台机器上。"
     },
     "auth": {
       "title": "需要验证",
-      "hint": "请输入 gateway 配置中的 tokenIssueSecret。",
+      "hint": "请输入网关配置中的 tokenIssueSecret。",
       "placeholder": "密码",
       "submit": "连接",
       "invalid": "密码无效，请重试。"
     },
     "account": {
       "section": "账户",
-      "logoutHint": "断开此浏览器与 gateway 的连接。",
+      "logoutHint": "断开此浏览器与网关的连接。",
       "logout": "退出登录"
     },
     "system": {

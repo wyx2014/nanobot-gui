@@ -119,7 +119,7 @@ const tabs: Array<{ key: TabKey; label: string; description: string; icon: typeo
   { key: "image", label: "图像生成", description: "图片模型和默认尺寸", icon: ImageIcon },
   { key: "safety", label: "安全边界", description: "本地网络和工作区访问", icon: Shield },
   { key: "general", label: "通用", description: "语言、关闭行为、助手信息", icon: Bot },
-  { key: "about", label: "运行信息", description: "Gateway 状态和配置路径", icon: Info },
+  { key: "about", label: "运行信息", description: "网关状态和配置路径", icon: Info },
 ];
 
 const apiTypeOptions = [
@@ -466,7 +466,7 @@ export function SettingsView({
         status = await getNanobotStatus();
       }
       if (!status.ready || !currentToken) {
-        throw new Error("Nanobot gateway 还没有准备好，请稍后重试。");
+        throw new Error("Nanobot 网关还没有准备好，请稍后重试。");
       }
       const base = gatewayBase(status.port);
       setApiBase(base);
@@ -746,7 +746,7 @@ export function SettingsView({
       <aside className="w-72 shrink-0 border-r border-[#e8e4dd] bg-[#f6f1eb] p-4">
         <div className="mb-5 px-2">
           <h1 className="text-xl font-semibold">设置</h1>
-          <p className="mt-1 text-sm text-[#777267]">由 nanobot gateway 提供配置能力</p>
+          <p className="mt-1 text-sm text-[#777267]">由 nanobot 网关提供配置能力</p>
         </div>
         <nav className="space-y-1">
           {tabs.map((tab) => {
@@ -779,7 +779,7 @@ export function SettingsView({
             <div>
               <h2 className="text-2xl font-semibold">{tabs.find((tab) => tab.key === activeTab)?.label}</h2>
               <p className="mt-1 text-sm text-[#777267]">
-                {apiBase ? `当前连接：${apiBase}` : "正在读取 gateway 状态"}
+                {apiBase ? `当前连接：${apiBase}` : "正在读取网关状态"}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -1435,7 +1435,7 @@ function SafetySection({
 }) {
   const sandbox = settings.advanced.workspace_sandbox;
   return (
-    <SettingsCard title="安全边界" description="GUI 只暴露 nanobot 当前支持的安全配置；系统级沙箱状态由 gateway 汇报。">
+    <SettingsCard title="安全边界" description="GUI 只暴露 nanobot 当前支持的安全配置；系统级沙箱状态由网关汇报。">
       <div className="space-y-3">
         <div className="flex items-center justify-between rounded-lg border border-[#e8e4dd] bg-[#faf9f7] px-4 py-3">
           <div>
@@ -1506,7 +1506,7 @@ function GeneralSection({
         </div>
       </SettingsCard>
 
-      <SettingsCard title="助手显示和运行默认值" description="这些字段写入 gateway，模型回复和工具提示会使用它们。">
+      <SettingsCard title="助手显示和运行默认值" description="这些字段写入网关，模型回复和工具提示会使用它们。">
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="时区">
             <Input value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })} />
@@ -1536,13 +1536,13 @@ function GeneralSection({
 
 function AboutSection({ settings, apiBase }: { settings: SettingsPayload; apiBase: string }) {
   return (
-    <SettingsCard title="运行信息" description="用于确认 GUI 当前连接的是嵌入式 nanobot gateway，而不是 WebUI 页面。">
+    <SettingsCard title="运行信息" description="用于确认 GUI 当前连接的是嵌入式 nanobot 网关，而不是 WebUI 页面。">
       <div className="grid gap-3 md:grid-cols-2">
-        <InfoBlock label="Gateway API" value={apiBase} />
+        <InfoBlock label="网关 API" value={apiBase} />
         <InfoBlock label="运行表面" value={(settings.runtime_surface || settings.surface || "native") === "native" ? "本地宿主 (native)" : (settings.runtime_surface || settings.surface)} />
         <InfoBlock label="配置文件" value={settings.runtime.config_path} wide />
         <InfoBlock label="工作区" value={settings.runtime.workspace_path} wide />
-        <InfoBlock label="Gateway 地址" value={`${settings.runtime.gateway_host}:${settings.runtime.gateway_port}`} />
+        <InfoBlock label="网关地址" value={`${settings.runtime.gateway_host}:${settings.runtime.gateway_port}`} />
         <InfoBlock label="统一会话" value={settings.runtime.unified_session ? "开启" : "关闭"} />
         <InfoBlock label="心跳" value={settings.runtime.heartbeat.enabled ? `${settings.runtime.heartbeat.interval_s}s` : "关闭"} />
         <InfoBlock label="需要重启" value={settings.requires_restart ? "是" : "否"} />

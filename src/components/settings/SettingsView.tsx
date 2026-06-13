@@ -973,7 +973,7 @@ function ModelManagerSection({
   }, [settings.model_presets, settings.providers]);
 
   return (
-    <div className="flex h-[720px] border border-[#e8e4dd] rounded-xl overflow-hidden bg-white shadow-sm">
+    <div className="flex h-[640px] border border-[#e8e4dd] rounded-xl overflow-hidden bg-white shadow-sm">
       {/* Left Column: Preset Channels List */}
       <div className="w-[200px] border-r border-[#e8e4dd] bg-[#faf9f6] flex flex-col shrink-0">
         <div className="p-4 border-b border-[#e8e4dd] flex items-center justify-between">

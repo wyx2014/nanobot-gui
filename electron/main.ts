@@ -1,7 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain, session } from 'electron'
 import { join } from 'path'
 import fs from 'fs/promises'
-import { exec, spawn, ChildProcess } from 'child_process'
+import { exec, spawn } from 'child_process'
 import os from 'os'
 import { pythonBridge } from './pythonBridge'
 import { syncNanobotConfig, type NanobotConfigInput } from './nanobotConfig'
@@ -351,8 +351,6 @@ app.whenReady().then(() => {
 
   ipcMain.on('ping', () => console.log('pong'))
 
-  const mcpProcesses = new Map<string, ChildProcess>()
-
   safeInvoke('run_shell_command', async (data) => {
     const { command, cwd, background, timeout } = data || {}
     return new Promise((resolve) => {
@@ -371,52 +369,6 @@ app.whenReady().then(() => {
       });
     })
   });
-
-  safeInvoke('mcp_spawn', async (data) => {
-    const { id, command, args, env } = data;
-    try {
-      console.log(`[Main] Spawning MCP server ${id}: ${command} ${args?.join(' ')}`)
-      const child = spawn(command, args || [], { env: { ...process.env, ...env }, shell: true });
-      mcpProcesses.set(id, child)
-      child.stdout?.on('data', (data) => {
-        const webContents = BrowserWindow.getAllWindows()[0]?.webContents;
-        webContents?.send(`event:mcp-msg-${id}`, data?.toString() || '')
-      })
-      child.stderr?.on('data', (data) => {
-        const webContents = BrowserWindow.getAllWindows()[0]?.webContents;
-        webContents?.send(`event:mcp-err-${id}`, data?.toString() || '')
-      })
-      child.on('close', (code) => {
-        const webContents = BrowserWindow.getAllWindows()[0]?.webContents;
-        webContents?.send(`event:mcp-close-${id}`, code)
-        mcpProcesses.delete(id)
-      })
-      return true
-    } catch (error) {
-      console.error(`[Main] Failed to spawn MCP server ${id}:`, error)
-      throw error
-    }
-  });
-
-  ipcMain.handle('mcp_write', async (_, { id, message }) => {
-    const child = mcpProcesses.get(id)
-    if (!child) throw new Error(`MCP process ${id} not found`)
-    return new Promise((resolve, reject) => {
-      child.stdin?.write(message + '\n', (err) => {
-        if (err) reject(err)
-        else resolve(true)
-      })
-    })
-  })
-
-  ipcMain.handle('mcp_kill', async (_, { id }) => {
-    const child = mcpProcesses.get(id)
-    if (child) {
-      child.kill('SIGKILL')
-      mcpProcesses.delete(id)
-    }
-    return true
-  })
 
   // ── nanobot Python bridge IPC handlers ──────────────────────────────────
 

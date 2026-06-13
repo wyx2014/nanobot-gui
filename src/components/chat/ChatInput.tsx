@@ -1,12 +1,11 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Plus, ArrowUp, ArrowRight, Square, X, ChevronDown, Check, FileText, AlertTriangle, Hand } from 'lucide-react';
+import { Plus, ArrowUp, ArrowRight, Square, X, ChevronDown, Check, FileText, AlertTriangle, Hand, CornerDownRight, Pencil, Trash2 } from 'lucide-react';
 import { dialogBridge, fsBridge } from '@/lib/ipc-factory';
 import { useFileDragDrop } from '@/hooks/useFileDragDrop';
 import { uint8ArrayToBase64 } from '@/utils/base64';
 import { getBaseName, IMAGE_MIME_MAP } from '@/utils/pathUtils';
 import { isImageFile } from '@/components/chat/FileAttachment';
 import { useChatStore, useActiveConversation } from '@/stores/chatStore';
-import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { useSettingsStore, getEffectiveModel, AVAILABLE_MODELS } from '@/stores/settingsStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { usePermissionStore } from '@/stores/permissionStore';
@@ -22,9 +21,19 @@ import {
 import { cn } from '@/lib/utils';
 import type { ImageAttachment } from '@/types';
 import type { OutboundCliAppMention, OutboundMcpPresetMention, WorkspaceAccessMode, WorkspacesPayload } from '@/core/types';
-import type { CliAppInfo, McpPresetInfo, WorkspaceScopePayload } from '@/core/types';
-import { fetchCliApps, fetchMcpPresets } from '@/core/api';
+import type { CliAppInfo, McpPresetInfo, SlashCommand, WorkspaceScopePayload } from '@/core/types';
+import { fetchCliApps, fetchMcpPresets, listSlashCommands } from '@/core/api';
 import { getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/nanobotClient';
+import {
+  CLI_APPS_CHANGED_EVENT,
+  installedCliAppsFromPayload,
+  isCliAppsPayload,
+} from '@/lib/cli-app-events';
+import {
+  MCP_PRESETS_CHANGED_EVENT,
+  installedMcpPresetsFromPayload,
+  isMcpPresetsPayload,
+} from '@/lib/mcp-preset-events';
 import { generateAttachmentId, readFileAsBase64, SUPPORTED_IMAGE_TYPES } from '@/utils/imageUtils';
 import PermissionDialog from '@/components/common/PermissionDialog';
 import FolderSelector from '@/components/common/FolderSelector';
@@ -37,6 +46,8 @@ export interface ChatInputSendOptions {
 interface ChatInputProps {
   variant: 'welcome' | 'chat';
   onSend: (message: string, images?: ImageAttachment[], workspacePath?: string | null, options?: ChatInputSendOptions) => void;
+  onStop?: () => void;
+  isStreaming?: boolean;
   disabled?: boolean;
   workspaceScope?: WorkspaceScopePayload | null;
   workspaceControls?: WorkspacesPayload['controls'] | null;
@@ -46,8 +57,9 @@ interface ChatInputProps {
 interface SuggestionItem {
   name: string;
   description: string;
-  trigger?: string;
-  kind?: 'agent' | 'skill' | 'cli' | 'mcp';
+  detail?: string;
+  kind: 'slash' | 'cli' | 'mcp';
+  slashCommand?: SlashCommand;
   cliApp?: CliAppInfo;
   mcpPreset?: McpPresetInfo;
 }
@@ -56,6 +68,136 @@ interface FileAttachmentItem {
   id: string;
   path: string;
   name: string;
+}
+
+interface ComposerDraft {
+  text?: string;
+  images?: ImageAttachment[];
+  files?: FileAttachmentItem[];
+  cliApps?: OutboundCliAppMention[];
+  mcpPresets?: OutboundMcpPresetMention[];
+}
+
+interface QueuedPrompt extends ComposerDraft {
+  id: string;
+}
+
+const MAX_IMAGES_PER_MESSAGE = 4;
+const DRAFT_STORAGE_PREFIX = 'nanobot.gui.composerDraft.v1:';
+const QUEUE_STORAGE_PREFIX = 'nanobot.gui.composerQueue.v1:';
+const QUEUED_PROMPTS_LIMIT = 20;
+
+function draftStorageKey(conversationId: string | null | undefined, variant: 'welcome' | 'chat'): string {
+  return `${DRAFT_STORAGE_PREFIX}${conversationId || variant}`;
+}
+
+function queueStorageKey(conversationId: string | null | undefined, variant: 'welcome' | 'chat'): string {
+  return `${QUEUE_STORAGE_PREFIX}${conversationId || variant}`;
+}
+
+function normalizeDraft(value: unknown): ComposerDraft | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as ComposerDraft;
+  return {
+    text: typeof record.text === 'string' ? record.text : '',
+    images: Array.isArray(record.images)
+      ? record.images.filter((image): image is ImageAttachment =>
+          !!image
+          && typeof image.id === 'string'
+          && typeof image.data === 'string'
+          && typeof image.mediaType === 'string',
+        ).slice(0, MAX_IMAGES_PER_MESSAGE)
+      : [],
+    files: Array.isArray(record.files)
+      ? record.files.filter((file): file is FileAttachmentItem =>
+          !!file
+          && typeof file.id === 'string'
+          && typeof file.path === 'string'
+          && typeof file.name === 'string',
+        )
+      : [],
+    cliApps: Array.isArray(record.cliApps) ? record.cliApps : [],
+    mcpPresets: Array.isArray(record.mcpPresets) ? record.mcpPresets : [],
+  };
+}
+
+function readDraft(key: string): ComposerDraft | null {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    return normalizeDraft(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+function hasDraftPayload(draft: ComposerDraft): boolean {
+  return !!draft.text?.trim()
+    || !!draft.images?.length
+    || !!draft.files?.length
+    || !!draft.cliApps?.length
+    || !!draft.mcpPresets?.length;
+}
+
+function writeDraft(key: string, draft: ComposerDraft): void {
+  try {
+    if (!hasDraftPayload(draft)) {
+      window.localStorage.removeItem(key);
+      return;
+    }
+    window.localStorage.setItem(key, JSON.stringify(draft));
+  } catch {
+    // Draft persistence is best-effort; sending still works without it.
+  }
+}
+
+function normalizeQueuedPrompt(value: unknown, index: number): QueuedPrompt | null {
+  const draft = normalizeDraft(value);
+  if (!draft || !hasDraftPayload(draft)) return null;
+  const id = typeof (value as { id?: unknown })?.id === 'string'
+    ? String((value as { id?: unknown }).id)
+    : `queued-restored-${index}`;
+  return { id, ...draft };
+}
+
+function readQueuedPrompts(key: string): QueuedPrompt[] {
+  try {
+    const raw = window.localStorage.getItem(key);
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item, index) => normalizeQueuedPrompt(item, index))
+      .filter((item): item is QueuedPrompt => item != null)
+      .slice(0, QUEUED_PROMPTS_LIMIT);
+  } catch {
+    return [];
+  }
+}
+
+function writeQueuedPrompts(key: string, prompts: QueuedPrompt[]): void {
+  try {
+    if (prompts.length === 0) {
+      window.localStorage.removeItem(key);
+      return;
+    }
+    window.localStorage.setItem(key, JSON.stringify(prompts.slice(0, QUEUED_PROMPTS_LIMIT)));
+  } catch {
+    // Queue persistence is best-effort.
+  }
+}
+
+function queuedPromptLabel(prompt: QueuedPrompt): string {
+  const text = prompt.text?.trim();
+  if (text) return text;
+  const files = prompt.files?.map((file) => file.name).filter(Boolean) ?? [];
+  if (files.length) return files.join(', ');
+  const images = prompt.images?.length ?? 0;
+  if (images) return `${images} 张图片`;
+  const caps = [
+    ...(prompt.cliApps?.map((app) => app.display_name || app.name) ?? []),
+    ...(prompt.mcpPresets?.map((preset) => preset.display_name || preset.name) ?? []),
+  ];
+  return caps.join(', ') || '排队指令';
 }
 
 function scopeWithAccessMode(scope: WorkspaceScopePayload, accessMode: WorkspaceAccessMode): WorkspaceScopePayload {
@@ -149,7 +291,8 @@ async function processFilePaths(
     (isImageFile(p) ? imgPaths : filePaths).push(p);
   }
   if (imgPaths.length > 0) {
-    const results = await Promise.allSettled(imgPaths.map(readLocalImage));
+    const remainingSlots = Math.max(0, MAX_IMAGES_PER_MESSAGE);
+    const results = await Promise.allSettled(imgPaths.slice(0, remainingSlots).map(readLocalImage));
     const newImages: ImageAttachment[] = [];
     results.forEach((r, i) => {
       if (r.status === 'fulfilled') {
@@ -158,6 +301,9 @@ async function processFilePaths(
         filePaths.push(imgPaths[i]);
       }
     });
+    if (imgPaths.length > remainingSlots) {
+      filePaths.push(...imgPaths.slice(remainingSlots));
+    }
     if (newImages.length > 0) addImages(newImages);
   }
   if (filePaths.length > 0) {
@@ -165,18 +311,18 @@ async function processFilePaths(
   }
 }
 
-export default function ChatInput({ variant, onSend, disabled, workspaceScope, workspaceControls, onWorkspaceScopeChange }: ChatInputProps) {
+export default function ChatInput({ variant, onSend, onStop, isStreaming: isStreamingProp, disabled, workspaceScope, workspaceControls, onWorkspaceScopeChange }: ChatInputProps) {
   const isWelcome = variant === 'welcome';
 
   const [text, setText] = useState('');
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const [files, setFiles] = useState<FileAttachmentItem[]>([]);
-  const [selectedSkill, setSelectedSkill] = useState<SuggestionItem | null>(null);
-  const [selectedAgent, setSelectedAgent] = useState<SuggestionItem | null>(null);
   const [selectedCliApps, setSelectedCliApps] = useState<OutboundCliAppMention[]>([]);
   const [selectedMcpPresets, setSelectedMcpPresets] = useState<OutboundMcpPresetMention[]>([]);
+  const [queuedPrompts, setQueuedPrompts] = useState<QueuedPrompt[]>([]);
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([]);
   const [cliApps, setCliApps] = useState<CliAppInfo[]>([]);
   const [mcpPresets, setMcpPresets] = useState<McpPresetInfo[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -186,15 +332,19 @@ export default function ChatInput({ variant, onSend, disabled, workspaceScope, w
   const [localWorkspace, setLocalWorkspace] = useState<string | null>(null);
   const [isComposing, setIsComposing] = useState(false);
   const lastCompositionEndTimeRef = useRef<number>(0);
+  const skipDraftPersistRef = useRef(false);
+  const skipQueuePersistRef = useRef(false);
+  const consumedPendingInputRef = useRef(false);
+  const wasStreamingRef = useRef(false);
+  const skipNextQueuedFlushRef = useRef(false);
 
   // Store hooks (always called)
   const cancelStreaming = useChatStore((s) => s.cancelStreaming);
   const pendingInput = useChatStore((s) => s.pendingInput);
   const setPendingInput = useChatStore((s) => s.setPendingInput);
   const activeConv = useActiveConversation();
-  const skills = useDiscoveryStore((s) => s.skills);
-  const agents = useDiscoveryStore((s) => s.agents);
-  const refreshDiscovery = useDiscoveryStore((s) => s.refresh);
+  const draftKey = useMemo(() => draftStorageKey(activeConv?.id, variant), [activeConv?.id, variant]);
+  const queueKey = useMemo(() => queueStorageKey(activeConv?.id, variant), [activeConv?.id, variant]);
   const currentModel = useSettingsStore((s) => getEffectiveModel(s));
   const provider = useSettingsStore((s) => s.provider);
   const setModel = useSettingsStore((s) => s.setModel);
@@ -205,7 +355,7 @@ export default function ChatInput({ variant, onSend, disabled, workspaceScope, w
 
   // Chat-only derived state
   const isRunning = activeConv?.status === 'running';
-  const isStreaming = !isWelcome && isRunning;
+  const isStreaming = isStreamingProp ?? (!isWelcome && isRunning);
   const availableModels = AVAILABLE_MODELS[provider] ?? [];
   const modelDisplay = availableModels.find((m) => m.id === currentModel)?.label
     ?? (currentModel ? currentModel.split('/').pop()?.split('-').slice(0, 2).join(' ') : 'Claude');
@@ -229,16 +379,21 @@ export default function ChatInput({ variant, onSend, disabled, workspaceScope, w
     const items = e.clipboardData?.items;
     if (!items) return;
 
+    const availableSlots = Math.max(0, MAX_IMAGES_PER_MESSAGE - images.length);
+    if (availableSlots <= 0) return;
+    let consumed = 0;
     for (const item of Array.from(items)) {
       if (SUPPORTED_IMAGE_TYPES.includes(item.type)) {
+        if (consumed >= availableSlots) break;
         e.preventDefault();
         const file = item.getAsFile();
         if (!file) continue;
         const { data, mediaType } = await readFileAsBase64(file);
-        setImages((prev) => [...prev, { id: generateAttachmentId(), data, mediaType }]);
+        setImages((prev) => [...prev, { id: generateAttachmentId(), data, mediaType }].slice(0, MAX_IMAGES_PER_MESSAGE));
+        consumed += 1;
       }
     }
-  }, []);
+  }, [images.length]);
 
   const removeImage = useCallback((id: string) => {
     setImages((prev) => prev.filter((img) => img.id !== id));
@@ -251,13 +406,62 @@ export default function ChatInput({ variant, onSend, disabled, workspaceScope, w
   // Consume pending input
   useEffect(() => {
     if (pendingInput) {
+      consumedPendingInputRef.current = true;
       setText(pendingInput);
       setPendingInput(null);
       textareaRef.current?.focus();
     }
   }, [pendingInput, setPendingInput]);
 
+  useEffect(() => {
+    if (consumedPendingInputRef.current) {
+      consumedPendingInputRef.current = false;
+      return;
+    }
+    skipDraftPersistRef.current = true;
+    const draft = readDraft(draftKey);
+    setText(draft?.text ?? '');
+    setImages(draft?.images ?? []);
+    setFiles(draft?.files ?? []);
+    setSelectedCliApps(draft?.cliApps ?? []);
+    setSelectedMcpPresets(draft?.mcpPresets ?? []);
+    window.setTimeout(() => {
+      skipDraftPersistRef.current = false;
+    }, 0);
+  }, [draftKey]);
+
+  useEffect(() => {
+    if (skipDraftPersistRef.current) return;
+    writeDraft(draftKey, {
+      text,
+      images,
+      files,
+      cliApps: selectedCliApps,
+      mcpPresets: selectedMcpPresets,
+    });
+  }, [draftKey, files, images, selectedCliApps, selectedMcpPresets, text]);
+
+  useEffect(() => {
+    skipQueuePersistRef.current = true;
+    setQueuedPrompts(readQueuedPrompts(queueKey));
+    window.setTimeout(() => {
+      skipQueuePersistRef.current = false;
+    }, 0);
+  }, [queueKey]);
+
+  useEffect(() => {
+    if (skipQueuePersistRef.current) return;
+    writeQueuedPrompts(queueKey, queuedPrompts);
+  }, [queueKey, queuedPrompts]);
+
   const handleStop = () => {
+    if (queuedPrompts.length > 0) {
+      skipNextQueuedFlushRef.current = true;
+    }
+    if (onStop) {
+      onStop();
+      return;
+    }
     if (activeConv?.id) {
       cancelStreaming(activeConv.id);
     }
@@ -267,7 +471,7 @@ export default function ChatInput({ variant, onSend, disabled, workspaceScope, w
   const { isDragging } = useFileDragDrop(async (paths) => {
     await processFilePaths(
       paths,
-      (imgs) => setImages((prev) => [...prev, ...imgs]),
+      (imgs) => setImages((prev) => [...prev, ...imgs].slice(0, MAX_IMAGES_PER_MESSAGE)),
       (items) => setFiles((prev) => [...prev, ...items]),
     );
     textareaRef.current?.focus();
@@ -326,58 +530,73 @@ export default function ChatInput({ variant, onSend, disabled, workspaceScope, w
           base = refreshed.baseUrl;
         }
 
-        // Refresh the global discovery store (skills/agents list)
-        void refreshDiscovery();
-
-        const [cliPayload, mcpPayload] = await Promise.all([
+        const [commands, cliPayload, mcpPayload] = await Promise.all([
+          listSlashCommands(token, base),
           fetchCliApps(token, base),
           fetchMcpPresets(token, base),
         ]);
         if (cancelled) return;
-        setCliApps(cliPayload.apps.filter((app) => app.installed && app.available));
-        setMcpPresets(mcpPayload.presets.filter((preset) => preset.configured && preset.available));
+        setSlashCommands(commands);
+        setCliApps(installedCliAppsFromPayload(cliPayload).filter((app) => app.available));
+        setMcpPresets(installedMcpPresetsFromPayload(mcpPayload).filter((preset) => preset.available));
       } catch {
         if (!cancelled) {
+          setSlashCommands([]);
           setCliApps([]);
           setMcpPresets([]);
         }
       }
     };
     loadCapabilities();
+
+    const refreshOnFocus = () => {
+      if (document.visibilityState === 'hidden') return;
+      void loadCapabilities();
+    };
+    const refreshOnCliAppsChanged = (event: Event) => {
+      const payload = (event as CustomEvent<unknown>).detail;
+      if (isCliAppsPayload(payload)) {
+        setCliApps(installedCliAppsFromPayload(payload).filter((app) => app.available));
+        return;
+      }
+      void loadCapabilities();
+    };
+    const refreshOnMcpPresetsChanged = (event: Event) => {
+      const payload = (event as CustomEvent<unknown>).detail;
+      if (isMcpPresetsPayload(payload)) {
+        setMcpPresets(installedMcpPresetsFromPayload(payload).filter((preset) => preset.available));
+        return;
+      }
+      void loadCapabilities();
+    };
+    window.addEventListener('focus', refreshOnFocus);
+    document.addEventListener('visibilitychange', refreshOnFocus);
+    window.addEventListener(CLI_APPS_CHANGED_EVENT, refreshOnCliAppsChanged);
+    window.addEventListener(MCP_PRESETS_CHANGED_EVENT, refreshOnMcpPresetsChanged);
     return () => {
       cancelled = true;
+      window.removeEventListener('focus', refreshOnFocus);
+      document.removeEventListener('visibilitychange', refreshOnFocus);
+      window.removeEventListener(CLI_APPS_CHANGED_EVENT, refreshOnCliAppsChanged);
+      window.removeEventListener(MCP_PRESETS_CHANGED_EVENT, refreshOnMcpPresetsChanged);
     };
-  }, [refreshDiscovery]);
+  }, []);
 
-  // Suggestion type tracking: 'skill' for / prefix, 'agent' for @ prefix
-  const suggestionType = useMemo((): 'skill' | 'agent' | null => {
+  // Suggestion type tracking: slash commands for /, capabilities for @
+  const suggestionType = useMemo((): 'slash' | 'mention' | null => {
     const trimmed = text.trim();
-    if (!selectedSkill && !selectedAgent) {
-      if (trimmed.startsWith('@')) return 'agent';
-      if (trimmed.startsWith('/')) return 'skill';
-    }
+    if (trimmed.startsWith('@')) return 'mention';
+    if (trimmed.startsWith('/')) return 'slash';
     return null;
-  }, [text, selectedSkill, selectedAgent]);
+  }, [text]);
 
-  // Skill/Agent suggestions
+  // Slash command and capability suggestions.
   const suggestions = useMemo((): SuggestionItem[] => {
     const trimmed = text.trim();
 
-    // Agent suggestions when typing @
-    if (suggestionType === 'agent') {
+    // Capability suggestions when typing @
+    if (suggestionType === 'mention') {
       const query = trimmed.slice(1).toLowerCase();
-      const agentItems: SuggestionItem[] = agents
-        .filter((a) => a.name !== 'ruyi')
-        .filter((a) => {
-          if (!query) return true;
-          return a.name.toLowerCase().includes(query) ||
-            a.description.toLowerCase().includes(query);
-        })
-        .map((a) => ({
-          name: a.name,
-          description: a.description,
-          kind: 'agent' as const,
-        }));
       const cliItems: SuggestionItem[] = cliApps
         .filter((app) => {
           if (selectedCliApps.some((selected) => selected.name === app.name)) return false;
@@ -389,6 +608,7 @@ export default function ChatInput({ variant, onSend, disabled, workspaceScope, w
         .map((app) => ({
           name: app.name,
           description: app.description || app.display_name,
+          detail: app.display_name,
           kind: 'cli' as const,
           cliApp: app,
         }));
@@ -403,33 +623,34 @@ export default function ChatInput({ variant, onSend, disabled, workspaceScope, w
         .map((preset) => ({
           name: preset.name,
           description: preset.description || preset.display_name,
+          detail: preset.display_name,
           kind: 'mcp' as const,
           mcpPreset: preset,
         }));
-      return [...agentItems, ...cliItems, ...mcpItems];
+      return [...cliItems, ...mcpItems];
     }
 
-    // Skill suggestions when typing /
-    if (suggestionType === 'skill') {
+    // Nanobot slash commands when typing /
+    if (suggestionType === 'slash') {
       const query = trimmed.slice(1).toLowerCase();
-      return skills
-        .filter((s) => s.userInvocable !== false)
-        .filter((s) => {
+      return slashCommands
+        .filter((command) => command.command !== '/stop' || isStreaming)
+        .filter((command) => {
           if (!query) return true;
-          const tagStr = (s.tags ?? []).join(' ').toLowerCase();
-          return s.name.toLowerCase().includes(query) ||
-            s.description.toLowerCase().includes(query) ||
-            tagStr.includes(query);
+          return command.command.toLowerCase().includes(query)
+            || command.title.toLowerCase().includes(query)
+            || command.description.toLowerCase().includes(query);
         })
-        .map((s) => ({
-          name: s.name,
-          description: s.description,
-          trigger: s.trigger,
-          kind: 'skill' as const,
+        .map((command) => ({
+          name: command.command,
+          description: command.description || command.title,
+          detail: command.argHint,
+          kind: 'slash' as const,
+          slashCommand: command,
         }));
     }
     return [];
-  }, [text, skills, agents, suggestionType, cliApps, mcpPresets, selectedCliApps, selectedMcpPresets]);
+  }, [text, suggestionType, cliApps, mcpPresets, slashCommands, selectedCliApps, selectedMcpPresets, isStreaming]);
 
   // Reset dismissed state when suggestions change
   useEffect(() => {
@@ -471,23 +692,14 @@ export default function ChatInput({ variant, onSend, disabled, workspaceScope, w
         logo_url: item.mcpPreset!.logo_url,
         brand_color: item.mcpPreset!.brand_color,
       }]);
-    } else if (suggestionType === 'agent') {
-      setSelectedAgent(item);
-    } else {
-      setSelectedSkill(item);
+    } else if (item.kind === 'slash' && item.slashCommand) {
+      setText(`${item.slashCommand.command}${item.slashCommand.argHint ? ' ' : ''}`);
+      setSuggestionsDismissed(true);
+      textareaRef.current?.focus();
+      return;
     }
     setText('');
     setSuggestionsDismissed(true);
-    textareaRef.current?.focus();
-  };
-
-  const removeSkill = () => {
-    setSelectedSkill(null);
-    textareaRef.current?.focus();
-  };
-
-  const removeAgent = () => {
-    setSelectedAgent(null);
     textareaRef.current?.focus();
   };
 
@@ -495,51 +707,114 @@ export default function ChatInput({ variant, onSend, disabled, workspaceScope, w
     setText('');
     setImages([]);
     setFiles([]);
-    setSelectedSkill(null);
-    setSelectedAgent(null);
     setSelectedCliApps([]);
     setSelectedMcpPresets([]);
     setSuggestionsDismissed(false);
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
   };
 
-  const handleSend = () => {
-    const trimmed = text.trim();
-    if ((!trimmed && !selectedSkill && !selectedAgent && selectedCliApps.length === 0 && selectedMcpPresets.length === 0 && images.length === 0 && files.length === 0) || disabled) return;
-
+  const submitDraft = (draft: ComposerDraft, workspacePath?: string | null) => {
+    const trimmed = draft.text?.trim() ?? '';
     // Build file context prefix
-    const fileContext = files.length > 0
-      ? files.map((f) => `[Attachment: \`${f.path}\`]`).join('\n')
+    const fileContext = draft.files?.length
+      ? [
+          '本地文件引用（请按路径读取这些文件；如果路径超出当前工作区权限，请先说明无法访问）：',
+          ...draft.files.map((f) => `- ${f.name}: ${f.path}`),
+        ].join('\n')
       : '';
 
     const capabilityMentions = [
-      ...selectedCliApps.map((app) => `@${app.name}`),
-      ...selectedMcpPresets.map((preset) => `@${preset.name}`),
+      ...(draft.cliApps?.map((app) => `@${app.name}`) ?? []),
+      ...(draft.mcpPresets?.map((preset) => `@${preset.name}`) ?? []),
     ].join(' ');
 
     // Compose parts, then join with newline
     const bodyParts = [fileContext, capabilityMentions, trimmed].filter(Boolean).join('\n');
 
-    let message: string;
-    if (selectedAgent) {
-      message = `@${selectedAgent.name}${bodyParts ? ' ' + bodyParts : ''}`;
-    } else if (selectedSkill) {
-      message = `/${selectedSkill.name}${bodyParts ? ' ' + bodyParts : ''}`;
-    } else {
-      message = bodyParts;
-    }
+    const message = bodyParts;
 
     onSend(
       message,
-      images.length > 0 ? images : undefined,
-      isWelcome ? localWorkspace : undefined,
+      draft.images?.length ? draft.images : undefined,
+      isWelcome ? workspacePath ?? localWorkspace : undefined,
       {
-        ...(selectedCliApps.length ? { cliApps: selectedCliApps } : {}),
-        ...(selectedMcpPresets.length ? { mcpPresets: selectedMcpPresets } : {}),
+        ...(draft.cliApps?.length ? { cliApps: draft.cliApps } : {}),
+        ...(draft.mcpPresets?.length ? { mcpPresets: draft.mcpPresets } : {}),
       },
     );
+  };
+
+  const currentDraft = (): ComposerDraft => ({
+    text,
+    images,
+    files,
+    cliApps: selectedCliApps,
+    mcpPresets: selectedMcpPresets,
+  });
+
+  const handleSend = () => {
+    const draft = currentDraft();
+    if (!hasDraftPayload(draft) || disabled) return;
+    if (isStreaming) {
+      setQueuedPrompts((items) => [
+        ...items,
+        {
+          id: `queued-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          ...draft,
+        },
+      ].slice(0, QUEUED_PROMPTS_LIMIT));
+      resetInput();
+      requestAnimationFrame(() => textareaRef.current?.focus());
+      return;
+    }
+
+    submitDraft(draft);
     resetInput();
   };
+
+  const sendQueuedPrompt = useCallback((prompt: QueuedPrompt) => {
+    setQueuedPrompts((items) => items.filter((item) => item.id !== prompt.id));
+    submitDraft(prompt);
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, [submitDraft]);
+
+  const editQueuedPrompt = useCallback((prompt: QueuedPrompt) => {
+    setQueuedPrompts((items) => items.filter((item) => item.id !== prompt.id));
+    setText(prompt.text ?? '');
+    setImages(prompt.images ?? []);
+    setFiles(prompt.files ?? []);
+    setSelectedCliApps(prompt.cliApps ?? []);
+    setSelectedMcpPresets(prompt.mcpPresets ?? []);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(prompt.text?.length ?? 0, prompt.text?.length ?? 0);
+    });
+  }, []);
+
+  const deleteQueuedPrompt = useCallback((id: string) => {
+    setQueuedPrompts((items) => items.filter((item) => item.id !== id));
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, []);
+
+  const sendNextQueuedPrompt = useCallback(() => {
+    const nextPrompt = queuedPrompts.find((prompt) => hasDraftPayload(prompt));
+    if (!nextPrompt) {
+      setQueuedPrompts([]);
+      return;
+    }
+    sendQueuedPrompt(nextPrompt);
+  }, [queuedPrompts, sendQueuedPrompt]);
+
+  useEffect(() => {
+    const wasStreaming = wasStreamingRef.current;
+    wasStreamingRef.current = isStreaming;
+    if (!wasStreaming || isStreaming || queuedPrompts.length === 0) return;
+    if (skipNextQueuedFlushRef.current) {
+      skipNextQueuedFlushRef.current = false;
+      return;
+    }
+    sendNextQueuedPrompt();
+  }, [isStreaming, queuedPrompts.length, sendNextQueuedPrompt]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (showSuggestions && suggestions.length > 0) {
@@ -564,18 +839,16 @@ export default function ChatInput({ variant, onSend, disabled, workspaceScope, w
         return;
       }
     }
-    // Backspace with empty text removes selected skill or agent
-    if (selectedAgent) {
-      if (e.key === 'Backspace' && text === '') {
+    // Backspace with empty text removes selected capabilities.
+    if (e.key === 'Backspace' && text === '') {
+      if (selectedMcpPresets.length > 0) {
         e.preventDefault();
-        removeAgent();
+        setSelectedMcpPresets((prev) => prev.slice(0, -1));
         return;
       }
-    }
-    if (selectedSkill) {
-      if (e.key === 'Backspace' && text === '') {
+      if (selectedCliApps.length > 0) {
         e.preventDefault();
-        removeSkill();
+        setSelectedCliApps((prev) => prev.slice(0, -1));
         return;
       }
     }
@@ -602,7 +875,7 @@ export default function ChatInput({ variant, onSend, disabled, workspaceScope, w
       const paths = Array.isArray(selected) ? selected : [selected];
       await processFilePaths(
         paths,
-        (imgs) => setImages((prev) => [...prev, ...imgs]),
+        (imgs) => setImages((prev) => [...prev, ...imgs].slice(0, MAX_IMAGES_PER_MESSAGE)),
         (items) => setFiles((prev) => [...prev, ...items]),
       );
       textareaRef.current?.focus();
@@ -610,18 +883,14 @@ export default function ChatInput({ variant, onSend, disabled, workspaceScope, w
   };
 
   const hasAttachments = images.length > 0 || files.length > 0;
-  const hasContent = text.trim().length > 0 || selectedSkill !== null || selectedAgent !== null || selectedCliApps.length > 0 || selectedMcpPresets.length > 0 || hasAttachments;
+  const hasContent = text.trim().length > 0 || selectedCliApps.length > 0 || selectedMcpPresets.length > 0 || hasAttachments;
 
   // Determine placeholder based on selected command
   const placeholder = disabled
     ? t.chat.inputPlaceholderBusy
     : isRunning
       ? t.chat.inputPlaceholderMidTask
-      : selectedAgent
-        ? selectedAgent.description
-        : selectedSkill
-          ? selectedSkill.description
-          : t.chat.inputPlaceholder;
+      : t.chat.inputPlaceholder;
 
   return (
     <>
@@ -635,7 +904,51 @@ export default function ChatInput({ variant, onSend, disabled, workspaceScope, w
       )}
 
       <div className="relative">
-        {/* Suggestions Popup (Skills / Agents) */}
+        {queuedPrompts.length > 0 && (
+          <div className="mb-2 rounded-2xl border border-[#dedbd3] bg-white/90 p-1.5 shadow-sm">
+            <div className="max-h-48 overflow-y-auto">
+              {queuedPrompts.map((prompt) => (
+                <div
+                  key={prompt.id}
+                  className="group flex min-h-8 items-center gap-1.5 rounded-xl px-2 py-1 text-[13px] transition-colors hover:bg-[#f5f3ee]"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="line-clamp-2 whitespace-pre-wrap break-words font-medium leading-snug text-[#29261b]">
+                      {queuedPromptLabel(prompt)}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => sendQueuedPrompt(prompt)}
+                    className="inline-flex h-7 shrink-0 items-center gap-1 rounded-full px-2 text-[11.5px] font-medium text-[#656358] transition-colors hover:bg-[#e8e5de] hover:text-[#29261b]"
+                    title="立即发送"
+                  >
+                    <CornerDownRight className="h-3 w-3" />
+                    发送
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => editQueuedPrompt(prompt)}
+                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[#656358] transition-colors hover:bg-[#e8e5de] hover:text-[#29261b]"
+                    title="编辑"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => deleteQueuedPrompt(prompt.id)}
+                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[#656358] transition-colors hover:bg-[#e8e5de] hover:text-red-600"
+                    title="删除"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Suggestions Popup (slash commands / capabilities) */}
         {showSuggestions && suggestions.length > 0 && (
           <div className="absolute bottom-full left-0 right-0 mb-2 bg-white rounded-2xl border border-[#dedbd3] shadow-lg overflow-hidden z-20">
             {suggestions.map((item, idx) => (
@@ -650,25 +963,25 @@ export default function ChatInput({ variant, onSend, disabled, workspaceScope, w
                 <div className="flex items-center gap-3">
                   <span className={cn(
                     'w-5 text-center font-mono text-[12px] shrink-0',
-                    suggestionType === 'agent' ? 'text-[#656358]' : 'text-[#656358]'
+                    suggestionType === 'mention' ? 'text-[#656358]' : 'text-[#656358]'
                   )}>
-                    {suggestionType === 'agent' ? '@' : '/'}
+                    {suggestionType === 'mention' ? '@' : '/'}
                   </span>
                   <span className="font-medium text-[#29261b] text-[13px]">{item.name}</span>
+                  {item.kind === 'slash' && (
+                    <span className="rounded bg-[#f3f2ee] px-1.5 py-0.5 text-[10px] font-medium text-[#656358]">Command</span>
+                  )}
                   {item.kind === 'cli' && (
                     <span className="rounded bg-[#eef2ff] px-1.5 py-0.5 text-[10px] font-medium text-[#4f46e5]">CLI</span>
                   )}
                   {item.kind === 'mcp' && (
                     <span className="rounded bg-[#ecfdf5] px-1.5 py-0.5 text-[10px] font-medium text-[#047857]">MCP</span>
                   )}
-                  {item.kind === 'agent' && (
-                    <span className="rounded bg-[#f3f2ee] px-1.5 py-0.5 text-[10px] font-medium text-[#656358]">Agent</span>
-                  )}
                   <span className="text-[12px] text-[#656358] truncate">{item.description}</span>
                 </div>
-                {item.trigger && (
+                {item.detail && (
                   <div className="pl-8 text-[11px] text-[#656358]/70 truncate">
-                    TRIGGER: {item.trigger}
+                    {item.detail}
                   </div>
                 )}
               </button>
@@ -737,24 +1050,6 @@ export default function ChatInput({ variant, onSend, disabled, workspaceScope, w
               : hasAttachments ? 'px-4 pt-1 pb-1' : 'px-4 pt-3.5 pb-1'
           )}>
             {/* Inline command prefix (unified for both variants) */}
-            {selectedAgent && (
-              <button
-                onClick={removeAgent}
-                className="shrink-0 mt-[3px] mr-1.5 text-[14px] font-medium text-blue-600 hover:text-blue-800 hover:line-through transition-colors cursor-pointer"
-                title={t.common.close}
-              >
-                @{selectedAgent.name}
-              </button>
-            )}
-            {selectedSkill && (
-              <button
-                onClick={removeSkill}
-                className="shrink-0 mt-[3px] mr-1.5 text-[14px] font-medium text-purple-600 hover:text-purple-800 hover:line-through transition-colors cursor-pointer"
-                title={t.common.close}
-              >
-                /{selectedSkill.name}
-              </button>
-            )}
             {selectedCliApps.map((app) => (
               <button
                 key={`selected-cli-${app.name}`}
@@ -909,15 +1204,32 @@ export default function ChatInput({ variant, onSend, disabled, workspaceScope, w
 
                 {/* Send / Stop Button */}
                 {isStreaming ? (
-                  <Button
-                    size="icon"
-                    onClick={handleStop}
-                    aria-label={t.chat.stop}
-                    className="btn-claude-primary h-8 w-8 rounded-xl bg-red-500 hover:bg-red-600 text-white shadow-sm"
-                    title={t.chat.stop}
-                  >
-                    <Square className="h-3 w-3" fill="currentColor" />
-                  </Button>
+                  <>
+                    <Button
+                      size="icon"
+                      onClick={handleSend}
+                      disabled={!hasContent || disabled}
+                      aria-label="加入队列"
+                      className={cn(
+                        'h-8 w-8 rounded-xl transition-colors',
+                        hasContent && !disabled
+                          ? 'bg-[#29261b] hover:bg-[#3d3a2f] text-[#faf9f5] shadow-sm'
+                          : 'bg-[#e8e5de] text-[#656358]/50 cursor-not-allowed hover:bg-[#e8e5de]',
+                      )}
+                      title="加入队列"
+                    >
+                      <CornerDownRight className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      onClick={handleStop}
+                      aria-label={t.chat.stop}
+                      className="btn-claude-primary h-8 w-8 rounded-xl bg-red-500 hover:bg-red-600 text-white shadow-sm"
+                      title={t.chat.stop}
+                    >
+                      <Square className="h-3 w-3" fill="currentColor" />
+                    </Button>
+                  </>
                 ) : (
                   <Button
                     size="icon"

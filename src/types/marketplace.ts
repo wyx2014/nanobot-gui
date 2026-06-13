@@ -1,7 +1,7 @@
 import type { LLMProvider, ApiFormat } from './index';
 
 // ============================================================
-// Marketplace Types for Skills, Agents, MCP
+// Marketplace Types for Skills, Agents, and model presets
 // ============================================================
 
 /** Marketplace item for Skills and Agents */
@@ -15,40 +15,6 @@ export interface MarketplaceItem {
   content?: string; // SKILL.md or AGENT.md content
   trigger?: string;  // Display-only trigger summary for marketplace cards
   tags?: string[];   // Display-only tags for marketplace cards
-}
-
-/** MCP Server template */
-export interface MCPTemplate {
-  id: string;
-  name: string;
-  description: string;
-  /** Transport type: 'stdio' (default) or 'http' */
-  transport?: 'stdio' | 'http';
-  /** Command for stdio transport */
-  command?: string;
-  /** Default args for stdio transport */
-  defaultArgs?: string[];
-  /** URL for HTTP transport */
-  url?: string;
-  /** Setup instructions shown to user (e.g. for HTTP servers that need manual startup) */
-  setupHint?: string;
-  /** Configurable args that user can customize during installation */
-  configurableArgs?: {
-    index: number;
-    label: string;
-    placeholder: string;
-  }[];
-  /** Required environment variables (e.g. API keys) prompted during installation */
-  requiredEnvVars?: {
-    name: string;
-    label: string;
-    placeholder: string;
-    description?: string;
-    secret?: boolean; // If true, display as password input (default: true)
-    defaultValue?: string; // Default value for the env var
-  }[];
-  /** Default timeout for tool calls in ms (default: 30000) */
-  defaultTimeout?: number;
 }
 
 /** Model preset for quick switching */

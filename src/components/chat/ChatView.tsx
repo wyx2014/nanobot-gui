@@ -1,10 +1,17 @@
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useChatStore, useActiveConversation } from '@/stores/chatStore';
-import type { ImageAttachment } from '@/types';
+import type { ImageAttachment, Message } from '@/types';
 import { useAutoScroll } from '@/hooks/useAutoScroll';
-import { sendNanobotMessage } from '@/core/nanobot/chatBridge';
-import { getNanobotClient } from '@/core/nanobotClient';
-import type { GoalStateWsPayload, WorkspaceScopePayload, WorkspacesPayload } from '@/core/types';
+import { useNanobotStream, type SendImage, type SendOptions } from '@/hooks/useNanobotStream';
+import {
+  getGatewayBaseUrl,
+  getNanobotClient,
+  getNanobotToken,
+  mapWebuiThreadToGuiMessages,
+  syncSessionsFromGateway,
+} from '@/core/nanobotClient';
+import type { GoalStateWsPayload, UIMessage, WorkspaceScopePayload, WorkspacesPayload } from '@/core/types';
+import { fetchWebuiThread } from '@/core/api';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useI18n } from '@/i18n';
 import ThreadMessages from './ThreadMessages';
@@ -13,6 +20,9 @@ import ActiveSkillsBar from './ActiveSkillsBar';
 import { ChevronDown, Settings } from 'lucide-react';
 import ruyiAvatar from '@/assets/ruyi-avatar.png';
 import ThinkingIndicator from './ThinkingIndicator';
+import StreamErrorNotice from './StreamErrorNotice';
+import { normalizeLegacyLongTaskMessages } from '@/core/nanobot/thread-display-compat';
+import { scrubSubagentUiMessages } from '@/core/nanobot/subagent-channel-display';
 
 function formatRunDuration(startedAt: number | null): string {
   if (!startedAt) return '';
@@ -49,6 +59,52 @@ function GoalStatusBar({
   );
 }
 
+interface PendingFirstMessage {
+  text: string;
+  images?: ImageAttachment[];
+  options?: ChatInputSendOptions;
+  workspaceScope?: WorkspaceScopePayload | null;
+}
+
+function imageAttachmentsToSendImages(images?: ImageAttachment[]): SendImage[] | undefined {
+  if (!images?.length) return undefined;
+  return images.map((image) => {
+    const dataUrl = `data:${image.mediaType};base64,${image.data}`;
+    return {
+      media: { data_url: dataUrl },
+      preview: { url: dataUrl },
+    };
+  });
+}
+
+function projectWebuiThreadMessages(messages: UIMessage[]): UIMessage[] {
+  return scrubSubagentUiMessages(normalizeLegacyLongTaskMessages(messages));
+}
+
+function lastMessageLooksPending(messages: UIMessage[]): boolean {
+  const last = messages[messages.length - 1];
+  return last?.kind === 'trace';
+}
+
+function sendImagesFromUiMessage(message: UIMessage): SendImage[] | undefined {
+  const images = message.images
+    ?.map((image) => image.url)
+    .filter((url): url is string => !!url && url.startsWith('data:image/'))
+    .map((dataUrl) => ({
+      media: { data_url: dataUrl },
+      preview: { url: dataUrl },
+    }));
+  return images?.length ? images : undefined;
+}
+
+function scopeWithAccessMode(scope: WorkspaceScopePayload, mode: 'restricted' | 'full'): WorkspaceScopePayload {
+  return {
+    ...scope,
+    access_mode: mode,
+    restrict_to_workspace: mode === 'restricted',
+  };
+}
+
 export default function ChatView({
   workspaceScope,
   workspaceDefaultScope: _workspaceDefaultScope,
@@ -63,11 +119,12 @@ export default function ChatView({
   onWorkspaceScopeChange?: (scope: WorkspaceScopePayload) => void;
 }) {
   const activeConv = useActiveConversation();
-  const { createConversation } = useChatStore();
-  const messages = activeConv?.messages ?? [];
+  const { createConversation, setConversationStatus } = useChatStore();
   const { t } = useI18n();
-  const [runStartedAt, setRunStartedAt] = useState<number | null>(null);
-  const [goalState, setGoalState] = useState<GoalStateWsPayload | undefined>(undefined);
+  const [historyMessages, setHistoryMessages] = useState<UIMessage[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyVersion, setHistoryVersion] = useState(0);
+  const pendingFirstRef = useRef<PendingFirstMessage | null>(null);
 
   const { containerRef, endRef, isAtBottom, scrollToBottom, resetToBottom } = useAutoScroll();
 
@@ -83,35 +140,82 @@ export default function ChatView({
 
   useEffect(() => {
     if (!activeConvId) {
-      setRunStartedAt(null);
-      setGoalState(undefined);
+      setHistoryMessages([]);
+      setHistoryLoading(false);
       return;
     }
-    let client;
-    try {
-      client = getNanobotClient();
-    } catch {
-      setRunStartedAt(null);
-      setGoalState(undefined);
-      return;
-    }
-    setRunStartedAt(client.getRunStartedAt(activeConvId));
-    setGoalState(client.getGoalState(activeConvId));
-    const unsubscribeRun = client.onRunStatus((chatId, startedAt) => {
-      if (chatId === activeConvId) setRunStartedAt(startedAt);
-    });
-    const unsubscribeChat = client.onChat(activeConvId, (ev) => {
-      if (ev.event === 'goal_state') {
-        setGoalState(ev.goal_state);
-      } else if (ev.event === 'turn_end' && ev.goal_state != null && typeof ev.goal_state === 'object') {
-        setGoalState(ev.goal_state);
+    let cancelled = false;
+    setHistoryLoading(true);
+    (async () => {
+      try {
+        const token = getNanobotToken();
+        const base = getGatewayBaseUrl();
+        const thread = await fetchWebuiThread(token, `websocket:${activeConvId}`, base);
+        if (cancelled) return;
+        const ui = projectWebuiThreadMessages((thread?.messages ?? []).map((message, index) => ({
+          ...message,
+          id: message.id ?? `hist-${index}`,
+          createdAt: typeof message.createdAt === 'number' ? message.createdAt : Date.now(),
+        })));
+        setHistoryMessages(ui);
+        setHistoryVersion((value) => value + 1);
+      } catch {
+        if (!cancelled) {
+          setHistoryMessages([]);
+          setHistoryVersion((value) => value + 1);
+        }
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
       }
-    });
+    })();
     return () => {
-      unsubscribeRun();
-      unsubscribeChat();
+      cancelled = true;
     };
   }, [activeConvId]);
+
+  const handleTurnEnd = useCallback(() => {
+    void syncSessionsFromGateway();
+  }, []);
+
+  const stream = useNanobotStream(
+    activeConvId ?? null,
+    historyMessages,
+    lastMessageLooksPending(historyMessages),
+    handleTurnEnd,
+  );
+
+  useEffect(() => {
+    if (!activeConvId || historyLoading) return;
+    stream.setMessages((current) => {
+      const projected = projectWebuiThreadMessages(historyMessages);
+      if (projected.length === 0 && current.length > 0) return current;
+      return projected;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeConvId, historyVersion, historyLoading]);
+
+  useEffect(() => {
+    if (!activeConvId) return;
+    setConversationStatus(activeConvId, stream.isStreaming ? 'running' : 'idle');
+  }, [activeConvId, setConversationStatus, stream.isStreaming]);
+
+  useEffect(() => {
+    if (!activeConvId) return;
+    const pending = pendingFirstRef.current;
+    if (!pending) return;
+    pendingFirstRef.current = null;
+    const options: SendOptions = {
+      workspaceScope: pending.workspaceScope,
+      ...(pending.options?.cliApps?.length ? { cliApps: pending.options.cliApps } : {}),
+      ...(pending.options?.mcpPresets?.length ? { mcpPresets: pending.options.mcpPresets } : {}),
+    };
+    stream.send(pending.text, imageAttachmentsToSendImages(pending.images), options);
+  }, [activeConvId, stream]);
+
+  const displayMessages = useMemo(
+    () => mapWebuiThreadToGuiMessages(stream.messages),
+    [stream.messages],
+  );
 
   const handleSend = async (
     text: string,
@@ -126,18 +230,6 @@ export default function ChatView({
       return;
     }
 
-    let convId = activeConv?.id;
-    const isNewConversation = !convId;
-    if (!convId) {
-      convId = createConversation(welcomeWorkspacePath ?? workspaceScope?.project_path ?? null, {
-        workspaceScope: workspaceScope ?? null,
-      });
-    }
-    if (isNewConversation && !useSettingsStore.getState().sidebarCollapsed) {
-      useSettingsStore.getState().toggleSidebar();
-    }
-    resetToBottom();
-
     // Use gateway-provided scope; fall back to welcome path if provided
     let effectiveScope: WorkspaceScopePayload | null = workspaceScope ?? null;
     if (!effectiveScope && welcomeWorkspacePath) {
@@ -150,13 +242,130 @@ export default function ChatView({
       };
     }
 
-    await sendNanobotMessage(convId, text, {
-      images,
+    const sendOptions: ChatInputSendOptions = {
+      ...(options?.cliApps?.length ? { cliApps: options.cliApps } : {}),
+      ...(options?.mcpPresets?.length ? { mcpPresets: options.mcpPresets } : {}),
+    };
+    const wireOptions: SendOptions = {
       workspaceScope: effectiveScope,
-      cliApps: options?.cliApps,
-      mcpPresets: options?.mcpPresets,
-    });
+      ...(sendOptions.cliApps?.length ? { cliApps: sendOptions.cliApps } : {}),
+      ...(sendOptions.mcpPresets?.length ? { mcpPresets: sendOptions.mcpPresets } : {}),
+    };
+
+    let convId = activeConv?.id;
+    const isNewConversation = !convId;
+    if (!convId) {
+      pendingFirstRef.current = {
+        text,
+        images,
+        options: sendOptions,
+        workspaceScope: effectiveScope,
+      };
+      convId = createConversation(welcomeWorkspacePath ?? effectiveScope?.project_path ?? null, {
+        workspaceScope: effectiveScope,
+      });
+    } else {
+      stream.send(text, imageAttachmentsToSendImages(images), wireOptions);
+    }
+    if (isNewConversation && !useSettingsStore.getState().sidebarCollapsed) {
+      useSettingsStore.getState().toggleSidebar();
+    }
+    resetToBottom();
   };
+
+  const runStartedAt = stream.runStartedAt;
+  const goalState = stream.goalState;
+
+  const resendFromUserMessage = useCallback((
+    userMessage: UIMessage,
+    content: string,
+    overrideWorkspaceScope?: WorkspaceScopePayload | null,
+  ) => {
+    const sendImages = sendImagesFromUiMessage(userMessage);
+    const effectiveScope = overrideWorkspaceScope ?? workspaceScope;
+    const options: SendOptions = {
+      workspaceScope: effectiveScope,
+      ...(userMessage.cliApps?.length ? { cliApps: userMessage.cliApps } : {}),
+      ...(userMessage.mcpPresets?.length ? { mcpPresets: userMessage.mcpPresets } : {}),
+    };
+    stream.setMessages((current) => {
+      const index = current.findIndex((message) => message.id === userMessage.id);
+      if (index < 0) return current;
+      return current.slice(0, index);
+    });
+    stream.send(content, sendImages, options);
+    resetToBottom();
+  }, [resetToBottom, stream, workspaceScope]);
+
+  const handleEditUserMessage = useCallback((message: Message, newContent: string) => {
+    const trimmed = newContent.trim();
+    if (!trimmed) return;
+    const userMessage = stream.messages.find((item) => item.id === message.id && item.role === 'user');
+    if (!userMessage) return;
+    resendFromUserMessage(userMessage, trimmed);
+  }, [resendFromUserMessage, stream.messages]);
+
+  const handleRegenerateAssistant = useCallback((message: Message) => {
+    const assistantIndex = stream.messages.findIndex((item) => item.id === message.id);
+    if (assistantIndex < 0) return;
+    for (let i = assistantIndex - 1; i >= 0; i -= 1) {
+      const candidate = stream.messages[i];
+      if (candidate.role !== 'user') continue;
+      resendFromUserMessage(candidate, candidate.content);
+      return;
+    }
+  }, [resendFromUserMessage, stream.messages]);
+
+  const handleAllowFullAccessAndRetry = useCallback(() => {
+    if (!workspaceScope) return;
+    const fullScope = scopeWithAccessMode(workspaceScope, 'full');
+    _onWorkspaceScopeChange?.(fullScope);
+    stream.dismissStreamError();
+    const retry = () => {
+      for (let i = stream.messages.length - 1; i >= 0; i -= 1) {
+        const candidate = stream.messages[i];
+        if (candidate.role !== 'user') continue;
+        resendFromUserMessage(candidate, candidate.content, fullScope);
+        return;
+      }
+    };
+    if (stream.isStreaming) {
+      stream.stop();
+      window.setTimeout(retry, 250);
+      return;
+    }
+    retry();
+  }, [_onWorkspaceScopeChange, resendFromUserMessage, stream, workspaceScope]);
+
+  useEffect(() => {
+    if (!activeConvId) return;
+    let client;
+    try {
+      client = getNanobotClient();
+    } catch {
+      return;
+    }
+    let cancelled = false;
+    const unsubscribe = client.onSessionUpdate((updatedChatId, scope) => {
+      if (cancelled || updatedChatId !== activeConvId || scope === 'metadata') return;
+      void (async () => {
+        try {
+          const token = getNanobotToken();
+          const base = getGatewayBaseUrl();
+          const thread = await fetchWebuiThread(token, `websocket:${activeConvId}`, base);
+          if (cancelled) return;
+          setHistoryMessages(projectWebuiThreadMessages(thread?.messages ?? []));
+          setHistoryVersion((value) => value + 1);
+        } catch {
+          // Keep live messages if canonical refresh fails.
+        }
+      })();
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [activeConvId]);
 
 
   // Welcome screen - new conversation state (activeConversationId is null)
@@ -229,10 +438,15 @@ export default function ChatView({
       <div className="relative flex-1 min-h-0 overflow-y-auto" ref={containerRef}>
         <div className="w-full max-w-4xl mx-auto px-6 md:px-10 py-8 overflow-hidden">
           <div>
-            <ThreadMessages messages={messages} isStreaming={activeConv.status === 'running'} />
+            <ThreadMessages
+              messages={displayMessages}
+              isStreaming={stream.isStreaming}
+              onEditUserMessage={handleEditUserMessage}
+              onRegenerateAssistant={handleRegenerateAssistant}
+            />
 
             {/* Thinking indicator - shown after user message but before assistant message appears */}
-            {activeConv?.status === 'running' && messages.length > 0 && messages.every((m) => m.role === 'user') && (
+            {stream.isStreaming && displayMessages.length > 0 && displayMessages.every((m) => m.role === 'user') && (
               <div className="pl-9">
                 <ThinkingIndicator />
               </div>
@@ -260,9 +474,19 @@ export default function ChatView({
         <div className="max-w-4xl mx-auto">
           <ActiveSkillsBar />
           <GoalStatusBar goalState={goalState} runStartedAt={runStartedAt} />
+          {stream.streamError ? (
+            <StreamErrorNotice
+              error={stream.streamError}
+              canUseFullAccess={workspaceControls?.can_use_full_access ?? true}
+              onDismiss={stream.dismissStreamError}
+              onAllowFullAccess={handleAllowFullAccessAndRetry}
+            />
+          ) : null}
           <ChatInput
             variant="chat"
             onSend={handleSend}
+            onStop={stream.stop}
+            isStreaming={stream.isStreaming}
             workspaceScope={workspaceScope}
             workspaceControls={workspaceControls}
             onWorkspaceScopeChange={_onWorkspaceScopeChange}

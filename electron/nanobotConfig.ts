@@ -6,7 +6,6 @@
  * Config format follows nanobot's Config schema (schema.py):
  *   providers.custom.apiKey / apiBase   (camelCase — matches nanobot's to_camel serializer)
  *   agents.defaults.model / provider
- *   tools.mcpServers
  */
 
 import path from 'path';
@@ -27,23 +26,12 @@ type GuiProvider =
   | 'local'
   | 'custom';
 
-export interface MCPServerEntry {
-  type?: 'stdio' | 'sse' | 'streamableHttp';
-  command?: string;
-  args?: string[];
-  env?: Record<string, string>;
-  url?: string;
-  headers?: Record<string, string>;
-  enabled?: boolean;
-}
-
 export interface NanobotConfigInput {
   apiKey: string;
   baseUrl: string;
   model: string;
   provider?: GuiProvider;
   apiFormat?: 'anthropic' | 'openai-compatible';
-  mcpServers?: Record<string, MCPServerEntry>;
   
   // Advanced LLM parameters
   temperature?: number;
@@ -215,18 +203,6 @@ export async function syncNanobotConfig(cfg: NanobotConfigInput): Promise<boolea
       },
     },
   };
-
-  // Inject MCP servers if provided
-  if (cfg.mcpServers && Object.keys(cfg.mcpServers).length > 0) {
-    const filteredMcp: Record<string, MCPServerEntry> = {};
-    for (const [name, srv] of Object.entries(cfg.mcpServers)) {
-      // Skip disabled servers
-      if (srv.enabled === false) continue;
-      const { enabled: _drop, ...rest } = srv;
-      filteredMcp[name] = rest;
-    }
-    patch.tools.mcpServers = filteredMcp;
-  }
 
   // Check if there are any logical changes between existing config and our new patch
   const hasChanges = hasLogicalChanges(existing, patch);

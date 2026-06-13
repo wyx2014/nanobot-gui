@@ -53,7 +53,7 @@ const zhCN: TranslationDict = {
     stop: '停止',
     welcomeTitle: '交给太资如意就行啦 ✨',
     welcomeSubtitle: '嘿～我是如意，你的智能小伙伴！',
-    disclaimer: '如意可能会犯小迷糊，重要信息记得核查哦～',
+    disclaimer: '如意可能会犯小迷糊。请核查重要信息。',
     thinking: '如意在想～',
     dropFilesHere: '拖放文件到这里',
     pasteOrDropImages: '粘贴或拖放图片',

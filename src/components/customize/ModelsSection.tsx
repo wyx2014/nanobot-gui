@@ -1,6 +1,6 @@
 import { useSettingsStore, AVAILABLE_MODELS, getEffectiveModel } from '@/stores/settingsStore';
 import { useI18n } from '@/i18n';
-import { modelPresets } from '@/data/marketplace/mcp';
+import { modelPresets } from '@/data/marketplace/models';
 import type { ModelPreset } from '@/types/marketplace';
 import { Cpu, Check, ExternalLink, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';

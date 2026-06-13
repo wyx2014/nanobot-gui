@@ -55,11 +55,6 @@ if (typeof window !== 'undefined') {
 (globalThis as any).window = globalThis.window || {};
 (globalThis as any).window.ipc = mockIpc;
 
-// ── External SDKs ──
-vi.mock('@modelcontextprotocol/sdk', () => ({}));
-vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({}));
-vi.mock('@modelcontextprotocol/sdk/client/stdio.js', () => ({}));
-
 // ── Polyfill localStorage for happy-dom ──
 // happy-dom may not fully implement the Storage API needed by Zustand persist
 if (typeof globalThis.localStorage === 'undefined' || !globalThis.localStorage?.setItem) {

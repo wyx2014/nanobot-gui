@@ -521,34 +521,7 @@ export const useSettingsStore = create<SettingsStore>()(
           if (state.guideShown === undefined) state.guideShown = false;
         }
         if (version === 0) {
-          // Cross-store migration: mcpServers → ruyi-mcp-store
-          // Must happen in migrate because Zustand writes back to localStorage
-          // after migrate completes — onRehydrateStorage would read stale data
-          const mcpServers = state.mcpServers as
-            | {
-              name: string; command?: string; args?: string[]; url?: string;
-              enabled?: boolean; transport?: string; env?: Record<string, string>;
-              headers?: Record<string, string>; timeout?: number
-            }[]
-            | undefined;
-          if (Array.isArray(mcpServers) && mcpServers.length > 0) {
-            try {
-              const mcpRaw = localStorage.getItem('ruyi-mcp-store');
-              const mcpParsed = mcpRaw ? JSON.parse(mcpRaw) : { state: { servers: {} } };
-              const existingServers = mcpParsed?.state?.servers ?? {};
-              for (const srv of mcpServers) {
-                if (srv.name && !existingServers[srv.name]) {
-                  existingServers[srv.name] = {
-                    config: { ...srv, enabled: srv.enabled ?? true },
-                    status: 'disconnected',
-                    tools: [],
-                  };
-                }
-              }
-              mcpParsed.state = { ...mcpParsed.state, servers: existingServers };
-              localStorage.setItem('ruyi-mcp-store', JSON.stringify(mcpParsed));
-            } catch { /* ignore */ }
-          }
+          // Legacy GUI-managed MCP was replaced by nanobot MCP presets.
           delete state.mcpServers;
 
           // Fix zhipu baseUrl (was /api/paas, now /api/paas/v4)

@@ -7,6 +7,8 @@ import { normalizeActivityTimeline, type ChatDisplayUnit } from '@/core/nanobot/
 interface ThreadMessagesProps {
   messages: Message[];
   isStreaming?: boolean;
+  onEditUserMessage?: (message: Message, newContent: string) => void;
+  onRegenerateAssistant?: (message: Message) => void;
 }
 
 export type DisplayUnit = ChatDisplayUnit;
@@ -35,6 +37,8 @@ export function assistantCopyFlags(units: DisplayUnit[]): boolean[] {
 export default function ThreadMessages({
   messages,
   isStreaming = false,
+  onEditUserMessage,
+  onRegenerateAssistant,
 }: ThreadMessagesProps) {
   const units = useMemo(() => buildDisplayUnits(messages), [messages]);
   const copyFlags = useMemo(() => assistantCopyFlags(units), [units]);
@@ -72,6 +76,8 @@ export default function ThreadMessages({
                     ? copyFlags[index]
                     : true
                 }
+                onEditUserMessage={onEditUserMessage}
+                onRegenerateAssistant={onRegenerateAssistant}
               />
             )}
           </div>

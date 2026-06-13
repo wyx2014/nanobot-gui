@@ -8,7 +8,6 @@ const PERSISTED_STORES = [
   { key: 'ruyi-scratchpad-store', minVersion: 1 },
   { key: 'ruyi-permissions', minVersion: 1 },
   { key: 'ruyi-workspace', minVersion: 1 },
-  { key: 'ruyi-mcp-store', minVersion: 1 },
   { key: 'ruyi-schedule', minVersion: 1 },
 ] as const;
 
@@ -19,7 +18,6 @@ beforeAll(async () => {
   await import('./scratchpadStore');
   await import('./permissionStore');
   await import('./workspaceStore');
-  await import('./mcpStore');
   await import('./scheduleStore');
 });
 

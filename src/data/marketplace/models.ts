@@ -1,0 +1,102 @@
+import type { ModelPreset } from '@/types/marketplace';
+
+export const modelPresets: ModelPreset[] = [
+  {
+    id: 'claude-sonnet',
+    name: 'Claude Sonnet 4.6',
+    provider: 'anthropic',
+    apiFormat: 'anthropic',
+    model: 'claude-sonnet-4-6',
+    description: '速度与智能的最佳平衡，适合大多数任务',
+  },
+  {
+    id: 'claude-opus',
+    name: 'Claude Opus 4.6',
+    provider: 'anthropic',
+    apiFormat: 'anthropic',
+    model: 'claude-opus-4-6',
+    description: '最强模型，适合复杂推理和编程',
+  },
+  {
+    id: 'claude-haiku',
+    name: 'Claude Haiku 4.5',
+    provider: 'anthropic',
+    apiFormat: 'anthropic',
+    model: 'claude-haiku-4-5-20251001',
+    description: '快速响应，适合简单任务和高频调用',
+  },
+  {
+    id: 'gpt-4o',
+    name: 'GPT-4o',
+    provider: 'openai',
+    apiFormat: 'openai-compatible',
+    model: 'gpt-4o',
+    description: 'OpenAI 旗舰多模态模型',
+  },
+  {
+    id: 'gpt-4o-mini',
+    name: 'GPT-4o Mini',
+    provider: 'openai',
+    apiFormat: 'openai-compatible',
+    model: 'gpt-4o-mini',
+    description: 'OpenAI 轻量快速模型',
+  },
+  {
+    id: 'deepseek-v3',
+    name: 'DeepSeek V3.2',
+    provider: 'deepseek',
+    apiFormat: 'openai-compatible',
+    model: 'deepseek-chat',
+    baseUrl: 'https://api.deepseek.com',
+    description: 'DeepSeek 旗舰模型，高性价比',
+  },
+  {
+    id: 'volcengine-doubao-seed',
+    name: 'Doubao Seed 2.0 Pro',
+    provider: 'volcengine',
+    apiFormat: 'openai-compatible',
+    model: 'doubao-seed-2-0-pro-260215',
+    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+    description: '豆包旗舰模型，字节跳动出品',
+  },
+  {
+    id: 'bailian-qwen-max',
+    name: 'Qwen Max',
+    provider: 'bailian',
+    apiFormat: 'openai-compatible',
+    model: 'qwen-max',
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    description: '通义千问旗舰模型，阿里百炼平台',
+  },
+  {
+    id: 'qiniu-deepseek-v3.2',
+    name: '七牛云 DeepSeek V3.2',
+    provider: 'qiniu',
+    apiFormat: 'openai-compatible',
+    model: 'deepseek/deepseek-v3.2-251201',
+    baseUrl: 'https://api.qnaigc.com',
+    description: '七牛云代理，50+ 模型统一接入',
+  },
+  {
+    id: 'ollama-llama',
+    name: 'Ollama Llama 3.2',
+    provider: 'local',
+    apiFormat: 'openai-compatible',
+    model: 'llama3.2',
+    baseUrl: 'http://localhost:11434/v1',
+    description: '本地运行 Llama 3.2 模型',
+  },
+  {
+    id: 'ollama-qwen',
+    name: 'Ollama Qwen 2.5',
+    provider: 'local',
+    apiFormat: 'openai-compatible',
+    model: 'qwen2.5',
+    baseUrl: 'http://localhost:11434/v1',
+    description: '本地运行 Qwen 2.5 模型',
+  },
+];
+
+export function getModelPreset(id: string): ModelPreset | undefined {
+  return modelPresets.find((preset) => preset.id === id);
+}

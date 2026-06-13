@@ -60,7 +60,8 @@ type RunStatusHandler = (chatId: string, startedAt: number | null) => void;
 
 export type StreamError =
   | { kind: "message_too_big" }
-  | { kind: "workspace_scope_rejected"; reason?: string; chatId?: string };
+  | { kind: "workspace_scope_rejected"; reason?: string; chatId?: string }
+  | { kind: "workspace_access_required"; reason?: string; chatId?: string };
 
 type ErrorHandler = (error: StreamError) => void;
 

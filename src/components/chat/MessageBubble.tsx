@@ -2,8 +2,7 @@ import { Check, Copy, Pencil, RefreshCw, Terminal, Plug, Wand2, X, ArrowUp, Chev
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Message, MessageContent } from '@/types';
 import MarkdownRenderer from './MarkdownRenderer';
-import { useChatStore, useActiveConversation } from '@/stores/chatStore';
-import { sendNanobotMessage } from '@/core/nanobot/chatBridge';
+import { useActiveConversation } from '@/stores/chatStore';
 import { useI18n } from '@/i18n';
 import { cn } from '@/lib/utils';
 import { MessageMedia, UserImageGrid } from './MessageMedia';
@@ -179,9 +178,13 @@ function TypingDots() {
 export default function MessageBubble({
   message,
   showAssistantCopyAction = true,
+  onEditUserMessage,
+  onRegenerateAssistant,
 }: {
   message: Message;
   showAssistantCopyAction?: boolean;
+  onEditUserMessage?: (message: Message, newContent: string) => void;
+  onRegenerateAssistant?: (message: Message) => void;
 }) {
   const { t } = useI18n();
   const isUser = message.role === 'user';
@@ -189,9 +192,7 @@ export default function MessageBubble({
   const imageBlocks = getImageBlocks(message.content);
   const mediaAttachments = message.mediaAttachments ?? [];
   const activeConv = useActiveConversation();
-  const { deleteMessagesFrom } = useChatStore();
   const isConvRunning = activeConv?.status === 'running';
-  const convId = activeConv?.id;
 
   const [isEditing, setIsEditing] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
@@ -229,40 +230,12 @@ export default function MessageBubble({
   }, [textContent]);
 
   const handleSaveEdit = async (newContent: string) => {
-    if (!convId) return;
-    const originalImages = getImageBlocks(message.content);
     setIsEditing(false);
-    deleteMessagesFrom(convId, message.id);
-    const imageAttachments = originalImages.map((img, index) => ({
-      id: `edit-${Date.now()}-${index}`,
-      data: img.source.data,
-      mediaType: img.source.media_type,
-    }));
-    await sendNanobotMessage(convId, newContent, imageAttachments.length > 0 ? { images: imageAttachments } : undefined);
+    onEditUserMessage?.(message, newContent);
   };
 
   const handleRegenerate = async () => {
-    if (!convId || !activeConv) return;
-    let userMsgToRegenerate: Message | undefined;
-    if (message.loopId) {
-      userMsgToRegenerate = activeConv.messages.find((m) => m.role === 'user' && m.loopId === message.loopId);
-    }
-    if (!userMsgToRegenerate) {
-      const idx = activeConv.messages.findIndex((m) => m.id === message.id);
-      if (idx > 0) {
-        userMsgToRegenerate = activeConv.messages.slice(0, idx).reverse().find((m) => m.role === 'user');
-      }
-    }
-    if (!userMsgToRegenerate) return;
-    deleteMessagesFrom(convId, userMsgToRegenerate.id);
-    const userContent = getTextContent(userMsgToRegenerate.content);
-    const originalImages = getImageBlocks(userMsgToRegenerate.content);
-    const imageAttachments = originalImages.map((img, index) => ({
-      id: `regen-${Date.now()}-${index}`,
-      data: img.source.data,
-      mediaType: img.source.media_type,
-    }));
-    await sendNanobotMessage(convId, userContent, imageAttachments.length > 0 ? { images: imageAttachments } : undefined);
+    onRegenerateAssistant?.(message);
   };
 
   if (message.kind === 'trace' || message.role === 'tool') {

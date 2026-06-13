@@ -1,941 +1,653 @@
-import { useState, useMemo, useEffect } from 'react';
-import { useSettingsStore } from '@/stores/settingsStore';
-import { useMCPStore, type MCPServerEntry } from '@/stores/mcpStore';
-import { useI18n } from '@/i18n';
-import { mcpTemplates } from '@/data/marketplace/mcp';
-import { mcpManager, type MCPServerConfig, type MCPLogEntry } from '@/core/mcp/client';
-import { parseArgs } from '@/utils/argsParser';
-import SubTabBar from './SubTabBar';
-import { Trash2, Plus, Loader2, Check, X, Plug, PlugZap, ChevronDown, ChevronRight, Wrench, Zap, AlertCircle, ScrollText, Server } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  AlertCircle,
+  Check,
+  Database,
+  Loader2,
+  PlayCircle,
+  Plus,
+  Server,
+  SlidersHorizontal,
+  Trash2,
+  X,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  fetchMcpPresets,
+  importMcpConfig,
+  runMcpPresetAction,
+  saveCustomMcpServer,
+  updateMcpServerTools,
+} from '@/core/api';
+import { getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/nanobotClient';
+import type { McpPresetInfo, McpPresetsPayload } from '@/core/types';
+import { notifyMcpPresetsChanged } from '@/lib/mcp-preset-events';
 import { cn } from '@/lib/utils';
-import { shellBridge } from '@/lib/ipc-factory';
+import { useSettingsStore } from '@/stores/settingsStore';
 
-type MCPSubTab = 'connected' | 'configured' | 'recommended';
-
-const urlPattern = /https?:\/\/[^\s]+/;
-
-/** Render setupHint text with URLs converted to clickable links */
-function renderSetupHint(text: string) {
-  const parts = text.split(/(https?:\/\/[^\s]+)/g);
-  return parts.map((part, i) =>
-    urlPattern.test(part) ? (
-      <a
-        key={i}
-        onClick={(e) => { e.preventDefault(); shellBridge.open(part); }}
-        className="underline text-amber-800 hover:text-amber-900 cursor-pointer break-all"
-      >
-        {part}
-      </a>
-    ) : (
-      <span key={i}>{part}</span>
-    )
-  );
-}
-
-/** Shared tool details list */
-function ToolDetailsList({ tools }: { tools: { name: string; description?: string }[] }) {
-  return (
-    <div className="mt-1.5 ml-5 space-y-1">
-      {tools.map((tool) => (
-        <div key={tool.name} className="flex items-start gap-2 py-1 px-2 rounded bg-neutral-50">
-          <Wrench className="h-3 w-3 text-neutral-400 mt-0.5 shrink-0" />
-          <div className="min-w-0">
-            <span className="text-xs font-medium text-neutral-700">{tool.name}</span>
-            {tool.description && (
-              <p className="text-[11px] text-neutral-500 truncate">{tool.description}</p>
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
+type MCPSubTab = 'enabled' | 'all' | 'custom';
+type McpAction = 'enable' | 'remove' | 'test';
+type CustomMcpTransport = 'stdio' | 'streamableHttp' | 'sse';
 
 interface MCPSectionProps {
   showAddForm?: boolean;
   onAddFormChange?: (open: boolean) => void;
 }
 
+const DEFAULT_CUSTOM_FORM = {
+  name: '',
+  transport: 'stdio' as CustomMcpTransport,
+  command: 'npx',
+  url: '',
+  args: '',
+  env: '',
+  headers: '',
+  toolTimeout: '',
+};
+
+async function nanobotAuth(): Promise<{ token: string; base: string }> {
+  const status = await getNanobotStatus();
+  if (status.ready) {
+    const token = getNanobotToken();
+    if (token) return { token, base: `http://127.0.0.1:${status.port}` };
+  }
+  const refreshed = await refreshNanobotAuth();
+  return { token: refreshed.token, base: refreshed.baseUrl };
+}
+
+function statusLabel(status: string): string {
+  if (status === 'configured') return '已配置';
+  if (status === 'missing_credentials') return '缺少密钥';
+  if (status === 'missing_dependency') return '缺少依赖';
+  if (status === 'coming_soon') return '暂不可用';
+  return '未启用';
+}
+
+function transportLabel(transport: string): string {
+  if (transport === 'streamableHttp') return 'HTTP';
+  return transport || 'mcp';
+}
+
+function presetReady(preset: McpPresetInfo): boolean {
+  return preset.installed && preset.configured;
+}
+
+function presetSearchText(preset: McpPresetInfo): string {
+  return [
+    preset.name,
+    preset.display_name,
+    preset.category,
+    preset.description,
+    preset.requires,
+    preset.note,
+    preset.transport,
+    preset.connection_summary,
+  ].join(' ').toLowerCase();
+}
+
+function parseMaybeJson(value: string, fallback: unknown): unknown {
+  const trimmed = value.trim();
+  if (!trimmed) return fallback;
+  return JSON.parse(trimmed);
+}
+
 export default function MCPSection({ showAddForm: externalShowAddForm, onAddFormChange }: MCPSectionProps = {}) {
   const toolboxSearchQuery = useSettingsStore((s) => s.toolboxSearchQuery);
-  const servers = useMCPStore((s) => s.servers);
-  const addServer = useMCPStore((s) => s.addServer);
-  const removeServer = useMCPStore((s) => s.removeServer);
-  const connectServer = useMCPStore((s) => s.connectServer);
-  const disconnectServer = useMCPStore((s) => s.disconnectServer);
-  const { t } = useI18n();
+  const [payload, setPayload] = useState<McpPresetsPayload | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [actionKey, setActionKey] = useState<string | null>(null);
+  const [activeSubTab, setActiveSubTab] = useState<MCPSubTab>('enabled');
+  const [expandedSetup, setExpandedSetup] = useState<string | null>(null);
+  const [expandedTools, setExpandedTools] = useState<string | null>(null);
+  const [fieldValues, setFieldValues] = useState<Record<string, Record<string, string>>>({});
+  const [customForm, setCustomForm] = useState(DEFAULT_CUSTOM_FORM);
+  const [importText, setImportText] = useState('');
+  const [customMode, setCustomMode] = useState<'custom' | 'import'>('custom');
 
-  const mcpServers = useMemo(() => Object.values(servers), [servers]);
-
-  const [activeSubTab, setActiveSubTab] = useState<MCPSubTab>('connected');
-
-  // Connection UI state
-  const [connectingServer, setConnectingServer] = useState<string | null>(null);
-  const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
-
-  // Tool list expansion state
-  const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
-  const toggleExpanded = (name: string) => {
-    setExpandedTools((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
-  };
-
-  // Test connection state
-  const [testingServer, setTestingServer] = useState<string | null>(null);
-  const [testResults, setTestResults] = useState<Record<string, { success: boolean; message: string }>>({});
-
-  // Server logs viewer
-  const [viewingLogs, setViewingLogs] = useState<string | null>(null);
-
-  // New server form - use external prop if provided, otherwise internal state
   const [internalShowAddForm, setInternalShowAddForm] = useState(false);
   const showAddForm = externalShowAddForm ?? internalShowAddForm;
   const setShowAddForm = (open: boolean) => {
     onAddFormChange?.(open);
     setInternalShowAddForm(open);
+    if (open) setActiveSubTab('custom');
   };
 
-  const [newServerName, setNewServerName] = useState('');
-  const [newTransportType, setNewTransportType] = useState<'stdio' | 'http'>('stdio');
-  const [newServerCommand, setNewServerCommand] = useState('');
-  const [newServerArgs, setNewServerArgs] = useState('');
-  const [newServerUrl, setNewServerUrl] = useState('');
-  const [newServerHeaders, setNewServerHeaders] = useState('');
-
-  // Template installation
-  const [installingTemplate, setInstallingTemplate] = useState<string | null>(null);
-  const [templateArgs, setTemplateArgs] = useState<Record<string, string>>({});
-  const [expandedTemplate, setExpandedTemplate] = useState<string | null>(null);
-
-  // Filter templates by search
-  const filteredTemplates = mcpTemplates.filter((t) => {
-    if (!toolboxSearchQuery) return true;
-    const lower = toolboxSearchQuery.toLowerCase();
-    return (
-      t.name.toLowerCase().includes(lower) ||
-      t.description.toLowerCase().includes(lower)
-    );
-  });
-
-  // Add custom server
-  const handleAddServer = async () => {
-    if (!newServerName.trim()) return;
-
-    const config: MCPServerConfig = {
-      name: newServerName.trim(),
-      transport: newTransportType,
-      enabled: true,
-    };
-
-    if (newTransportType === 'stdio') {
-      if (!newServerCommand.trim()) return;
-      config.command = newServerCommand.trim();
-      config.args = newServerArgs.trim() ? parseArgs(newServerArgs.trim()) : [];
-    } else {
-      if (!newServerUrl.trim()) return;
-      config.url = newServerUrl.trim();
-      if (newServerHeaders.trim()) {
-        try {
-          config.headers = JSON.parse(newServerHeaders.trim());
-        } catch {
-          // ignore invalid JSON
-        }
-      }
-    }
-
-    addServer(config);
-    setNewServerName('');
-    setNewTransportType('stdio');
-    setNewServerCommand('');
-    setNewServerArgs('');
-    setNewServerUrl('');
-    setNewServerHeaders('');
-    setShowAddForm(false);
-
-    // Connect in background with error feedback
-    setConnectingServer(config.name);
-    setServerErrors((prev) => { const next = { ...prev }; delete next[config.name]; return next; });
+  const loadPresets = async () => {
+    setLoading(true);
+    setError(null);
     try {
-      await connectServer(config.name);
+      const { token, base } = await nanobotAuth();
+      const next = await fetchMcpPresets(token, base);
+      setPayload(next);
+      notifyMcpPresetsChanged(next);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setServerErrors((prev) => ({ ...prev, [config.name]: msg }));
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setConnectingServer(null);
+      setLoading(false);
     }
   };
 
-  // Escape key to close add form modal
   useEffect(() => {
-    if (!showAddForm) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setShowAddForm(false);
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- setShowAddForm is a stable wrapper over setState
-  }, [showAddForm]);
+    void loadPresets();
+  }, []);
 
-  const handleCloseAddForm = () => {
-    setShowAddForm(false);
-    setNewServerName('');
-    setNewTransportType('stdio');
-    setNewServerCommand('');
-    setNewServerArgs('');
-    setNewServerUrl('');
-    setNewServerHeaders('');
-  };
-
-  // Install from template
-  const handleInstallTemplate = async (template: typeof mcpTemplates[0]) => {
-    setInstallingTemplate(template.id);
-
-    try {
-      let config: MCPServerConfig;
-
-      if (template.transport === 'http' && template.url) {
-        // HTTP transport template
-        config = {
-          name: template.name,
-          url: template.url,
-          enabled: true,
-        };
-      } else {
-        // Stdio transport template
-        const args = [...(template.defaultArgs ?? [])];
-        if (template.configurableArgs) {
-          for (const configArg of template.configurableArgs) {
-            const value = templateArgs[`${template.id}-${configArg.index}`];
-            if (value) {
-              args[configArg.index] = value;
-            }
-          }
-        }
-
-        // Collect env vars from requiredEnvVars inputs
-        const env: Record<string, string> = {};
-        if (template.requiredEnvVars) {
-          for (const envVar of template.requiredEnvVars) {
-            const value = templateArgs[`${template.id}-env-${envVar.name}`] || envVar.defaultValue;
-            if (value) {
-              env[envVar.name] = value;
-            }
-          }
-        }
-
-        config = {
-          name: template.name,
-          command: template.command ?? 'npx',
-          args,
-          env: Object.keys(env).length > 0 ? env : undefined,
-          enabled: true,
-          timeout: template.defaultTimeout,
-        };
-      }
-
-      addServer(config);
-
-      try {
-        await connectServer(config.name);
-      } catch (err) {
-        console.error('Failed to connect MCP server:', err);
-      }
-    } finally {
-      setInstallingTemplate(null);
-      setTemplateArgs({});
+  useEffect(() => {
+    if (externalShowAddForm) {
+      setActiveSubTab('custom');
+      setCustomMode('custom');
     }
-  };
+  }, [externalShowAddForm]);
 
-  // Remove server
-  const handleRemoveServer = (name: string) => {
-    removeServer(name);
-  };
+  const presets = payload?.presets ?? [];
+  const normalizedQuery = (toolboxSearchQuery || '').trim().toLowerCase();
+  const filteredPresets = useMemo(() => {
+    return presets
+      .filter((preset) => {
+        if (activeSubTab === 'enabled') return presetReady(preset);
+        if (activeSubTab === 'custom') return false;
+        return true;
+      })
+      .filter((preset) => !normalizedQuery || presetSearchText(preset).includes(normalizedQuery))
+      .sort((left, right) => Number(!presetReady(left)) - Number(!presetReady(right)) || left.display_name.localeCompare(right.display_name));
+  }, [activeSubTab, normalizedQuery, presets]);
 
-  // Toggle server connection
-  const handleToggleConnection = async (entry: MCPServerEntry) => {
-    const name = entry.config.name;
-    setConnectingServer(name);
-    setServerErrors((prev) => { const next = { ...prev }; delete next[name]; return next; });
-    try {
-      if (entry.status === 'connected') {
-        await disconnectServer(name);
-      } else {
-        await connectServer(name);
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setServerErrors((prev) => ({ ...prev, [name]: msg }));
-    } finally {
-      setConnectingServer(null);
-    }
-  };
-
-  // Test connection
-  const handleTestConnection = async (entry: MCPServerEntry) => {
-    const name = entry.config.name;
-    setTestingServer(name);
-    setTestResults((prev) => { const next = { ...prev }; delete next[name]; return next; });
-    try {
-      const result = await mcpManager.testConnection(entry.config);
-      const message = result.success
-        ? `${t.toolbox.testSuccess} (${result.toolCount ?? 0} tools)`
-        : (result.error ?? t.toolbox.testFailed);
-      setTestResults((prev) => ({ ...prev, [name]: { success: result.success, message } }));
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setTestResults((prev) => ({ ...prev, [name]: { success: false, message: msg } }));
-    } finally {
-      setTestingServer(null);
-    }
-  };
-
-  const installedNames = useMemo(() => new Set(mcpServers.map((s) => s.config.name)), [mcpServers]);
-  const templateNames = useMemo(() => new Set(mcpTemplates.map((t) => t.name)), []);
-  const customServers = useMemo(() => mcpServers.filter((s) => !templateNames.has(s.config.name)), [mcpServers, templateNames]);
-  const connectedServers = useMemo(() => mcpServers.filter((s) => s.status === 'connected'), [mcpServers]);
-
+  const enabledCount = presets.filter(presetReady).length;
   const subTabs = [
-    { id: 'connected', label: t.toolbox.tabConnected, count: connectedServers.length },
-    { id: 'configured', label: t.toolbox.tabCustom, count: customServers.length },
-    { id: 'recommended', label: t.toolbox.tabRecommended, count: filteredTemplates.length },
+    { id: 'enabled' as const, label: '已启用', count: enabledCount },
+    { id: 'all' as const, label: '全部', count: presets.length },
+    { id: 'custom' as const, label: '自定义', count: 0 },
   ];
 
+  const updatePayload = (next: McpPresetsPayload) => {
+    setPayload(next);
+    notifyMcpPresetsChanged(next);
+    if (next.requires_restart) {
+      setMessage('MCP 配置已更新，需要重启 nanobot 后连接新工具。');
+    } else if (next.hot_reload?.message) {
+      setMessage(next.hot_reload.message);
+    }
+  };
+
+  const runAction = async (action: McpAction, preset: McpPresetInfo) => {
+    const values = fieldValues[preset.name] ?? {};
+    const key = `${action}:${preset.name}`;
+    setActionKey(key);
+    setError(null);
+    setMessage(null);
+    try {
+      const { token, base } = await nanobotAuth();
+      const next = await runMcpPresetAction(token, action, preset.name, values, base);
+      updatePayload(next);
+      const last = next.last_action;
+      if (last?.message) {
+        if (last.ok) setMessage(last.message);
+        else setError(last.message);
+      }
+      if (action === 'enable') setExpandedSetup(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setActionKey(null);
+    }
+  };
+
+  const saveCustom = async () => {
+    const values: Record<string, string> = {
+      name: customForm.name.trim(),
+      transport: customForm.transport,
+      command: customForm.command.trim(),
+      url: customForm.url.trim(),
+      args: customForm.args.trim(),
+      env: customForm.env.trim(),
+      headers: customForm.headers.trim(),
+      tool_timeout: customForm.toolTimeout.trim(),
+    };
+    setActionKey('custom');
+    setError(null);
+    setMessage(null);
+    try {
+      const { token, base } = await nanobotAuth();
+      parseMaybeJson(values.args || '[]', []);
+      parseMaybeJson(values.env || '{}', {});
+      parseMaybeJson(values.headers || '{}', {});
+      const next = await saveCustomMcpServer(token, values, base);
+      updatePayload(next);
+      setCustomForm(DEFAULT_CUSTOM_FORM);
+      setShowAddForm(false);
+      setActiveSubTab('enabled');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setActionKey(null);
+    }
+  };
+
+  const importConfig = async () => {
+    setActionKey('import');
+    setError(null);
+    setMessage(null);
+    try {
+      JSON.parse(importText);
+      const { token, base } = await nanobotAuth();
+      const next = await importMcpConfig(token, importText, base);
+      updatePayload(next);
+      setImportText('');
+      setShowAddForm(false);
+      setActiveSubTab('enabled');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setActionKey(null);
+    }
+  };
+
+  const updateTools = async (preset: McpPresetInfo, enabledTools: string[]) => {
+    setActionKey(`tools:${preset.name}`);
+    setError(null);
+    setMessage(null);
+    try {
+      const { token, base } = await nanobotAuth();
+      const next = await updateMcpServerTools(token, preset.name, enabledTools, base);
+      updatePayload(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setActionKey(null);
+    }
+  };
+
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      {/* Sub-tab bar */}
+    <div className="flex h-full flex-col overflow-hidden">
       <div className="shrink-0 px-4 pt-4 pb-2">
-        <SubTabBar
-          tabs={subTabs}
-          activeTab={activeSubTab}
-          onChange={(id) => setActiveSubTab(id as MCPSubTab)}
-        />
+        <div className="flex rounded-xl bg-[#f3f2ee] p-1">
+          {subTabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveSubTab(tab.id)}
+              className={cn(
+                'flex-1 rounded-lg px-3 py-1.5 text-[12px] font-semibold transition-colors',
+                activeSubTab === tab.id ? 'bg-white text-[#29261b] shadow-sm' : 'text-[#656358] hover:text-[#29261b]',
+              )}
+            >
+              {tab.label}
+              {tab.count ? <span className="ml-1 text-[11px] text-[#888579]">{tab.count}</span> : null}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 pb-4">
-        {/* Connected tab: only connected servers with tools visible */}
-        {activeSubTab === 'connected' && (
-          <>
-            {connectedServers.length === 0 ? (
-              <div className="text-sm text-neutral-400 py-8 text-center">{t.toolbox.noServersConnected}</div>
-            ) : (
-              <div className="space-y-2">
-                {connectedServers.map((entry) => {
-                  const { config, tools } = entry;
-                  const toolDetails = tools as { name: string; description?: string }[];
-                  const toolsExpanded = expandedTools.has(config.name);
-                  return (
-                    <div key={config.name}>
-                      <div className="flex items-center gap-3 p-3 rounded-lg bg-white border border-neutral-200/60">
-                        <div className="h-2 w-2 rounded-full shrink-0 bg-green-500" />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-sm text-neutral-900">{config.name}</span>
-                            <span className="text-[10px] text-green-600">{t.toolbox.connected}</span>
-                            {toolDetails.length > 0 && (
-                              <button
-                                onClick={() => toggleExpanded(config.name)}
-                                className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-neutral-100 hover:bg-neutral-200 transition-colors"
-                              >
-                                <Wrench className="h-3 w-3 text-neutral-500" />
-                                <span className="text-[10px] font-medium text-neutral-600">{toolDetails.length}</span>
-                                {toolsExpanded
-                                  ? <ChevronDown className="h-3 w-3 text-neutral-400" />
-                                  : <ChevronRight className="h-3 w-3 text-neutral-400" />}
-                              </button>
-                            )}
-                          </div>
-                          <p className="text-xs text-neutral-500 mt-0.5 truncate font-mono">
-                            {config.url ? config.url : `${config.command} ${config.args?.join(' ') ?? ''}`}
-                          </p>
-                        </div>
-                      </div>
-                      {toolsExpanded && toolDetails.length > 0 && (
-                        <ToolDetailsList tools={toolDetails} />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+        {(error || message) && (
+          <div
+            className={cn(
+              'mb-3 flex items-start justify-between gap-3 rounded-xl border px-3 py-2 text-[12px]',
+              error ? 'border-red-200 bg-red-50 text-red-700' : 'border-amber-200 bg-amber-50 text-amber-800',
             )}
-          </>
+          >
+            <span className="min-w-0 break-words">{error || message}</span>
+            <button type="button" onClick={() => { setError(null); setMessage(null); }} className="shrink-0 rounded p-0.5 hover:bg-black/5">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
         )}
 
-        {/* Configured tab: servers list + add form + AI setup */}
-        {activeSubTab === 'configured' && (
-          <>
-            {customServers.length === 0 ? (
-              <div className="text-sm text-neutral-400 py-8 text-center">{t.toolbox.noServersConfigured}</div>
-            ) : (
-              <div className="space-y-2">
-                {customServers.map((entry) => {
-                  const { config, status, tools } = entry;
-                  const isConnected = status === 'connected';
-                  const isReconnecting = status === 'reconnecting';
-                  const isConnecting = connectingServer === config.name || status === 'connecting' || isReconnecting;
-                  const error = serverErrors[config.name] || (status === 'error' ? entry.error : undefined);
-                  const isTesting = testingServer === config.name;
-                  const testResult = testResults[config.name];
-                  const toolsExpanded = expandedTools.has(config.name);
-                  const toolDetails = tools as { name: string; description?: string }[];
-
-                  return (
-                    <div key={config.name}>
-                      <div
-                        className={cn(
-                          'group flex items-center gap-3 p-3 rounded-lg bg-white border',
-                          error ? 'border-red-200' : 'border-neutral-200/60'
-                        )}
-                      >
-                        <div
-                          className={cn(
-                            'h-2 w-2 rounded-full shrink-0',
-                            isReconnecting ? 'bg-orange-400 animate-pulse' :
-                            isConnecting ? 'bg-amber-400 animate-pulse' :
-                            isConnected ? 'bg-green-500' :
-                            status === 'error' ? 'bg-red-400' : 'bg-neutral-300'
-                          )}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-sm text-neutral-900">{config.name}</span>
-                            <span className="text-[10px] text-neutral-400">
-                              {isReconnecting ? t.toolbox.reconnecting :
-                               isConnecting ? t.toolbox.connecting :
-                               isConnected ? t.toolbox.connected : t.toolbox.disconnected}
-                            </span>
-                            {/* Tool count badge */}
-                            {isConnected && toolDetails.length > 0 && (
-                              <button
-                                onClick={() => toggleExpanded(config.name)}
-                                className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-neutral-100 hover:bg-neutral-200 transition-colors"
-                              >
-                                <Wrench className="h-3 w-3 text-neutral-500" />
-                                <span className="text-[10px] font-medium text-neutral-600">{toolDetails.length}</span>
-                                {toolsExpanded
-                                  ? <ChevronDown className="h-3 w-3 text-neutral-400" />
-                                  : <ChevronRight className="h-3 w-3 text-neutral-400" />}
-                              </button>
-                            )}
-                          </div>
-                          <p className="text-xs text-neutral-500 mt-0.5 truncate font-mono">
-                            {config.url ? config.url : `${config.command} ${config.args?.join(' ') ?? ''}`}
-                          </p>
-                        </div>
-                        {/* View logs button */}
-                        <button
-                          onClick={() => setViewingLogs(viewingLogs === config.name ? null : config.name)}
-                          className="shrink-0 p-1.5 text-neutral-400 hover:text-neutral-600 hover:bg-neutral-50 rounded transition-colors opacity-0 group-hover:opacity-100"
-                          title={t.toolbox.viewLogs}
-                        >
-                          <ScrollText className="h-4 w-4" />
-                        </button>
-                        {/* Test connection button */}
-                        <button
-                          onClick={() => handleTestConnection(entry)}
-                          disabled={isTesting || isConnecting}
-                          className="shrink-0 p-1.5 text-neutral-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors opacity-0 group-hover:opacity-100"
-                          title={t.toolbox.testConnection}
-                        >
-                          {isTesting
-                            ? <Loader2 className="h-4 w-4 animate-spin" />
-                            : <Zap className="h-4 w-4" />}
-                        </button>
-                        <button
-                          onClick={() => handleToggleConnection(entry)}
-                          disabled={isConnecting}
-                          className={cn(
-                            'shrink-0 p-1.5 rounded transition-colors',
-                            isConnecting
-                              ? 'text-amber-500 cursor-wait'
-                              : isConnected
-                                ? 'text-green-600 hover:text-green-700 hover:bg-green-50'
-                                : 'text-neutral-400 hover:text-neutral-600 hover:bg-neutral-50'
-                          )}
-                          title={isConnecting ? t.toolbox.connecting : isConnected ? t.toolbox.disconnect : t.toolbox.connect}
-                        >
-                          {isConnecting
-                            ? <Loader2 className="h-4 w-4 animate-spin" />
-                            : isConnected ? <PlugZap className="h-4 w-4" /> : <Plug className="h-4 w-4" />}
-                        </button>
-                        <button
-                          onClick={() => handleRemoveServer(config.name)}
-                          className="shrink-0 p-1.5 text-neutral-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors opacity-0 group-hover:opacity-100"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                      {/* Error message */}
-                      {error && (
-                        <p className="mt-1 px-3 text-xs text-red-500 break-words">{error}</p>
-                      )}
-                      {/* Test result */}
-                      {testResult && (
-                        <div className={cn(
-                          'mt-1 px-3 py-1.5 text-xs rounded-md flex items-center gap-1.5',
-                          testResult.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
-                        )}>
-                          {testResult.success ? <Check className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
-                          {testResult.message}
-                        </div>
-                      )}
-                      {/* Expanded tool list */}
-                      {toolsExpanded && toolDetails.length > 0 && (
-                        <ToolDetailsList tools={toolDetails} />
-                      )}
-                      {/* Server logs */}
-                      {viewingLogs === config.name && (
-                        <ServerLogsPanel serverName={config.name} />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-          </>
-        )}
-
-        {/* Recommended tab: MCP templates */}
-        {activeSubTab === 'recommended' && (
-          <>
-            {filteredTemplates.length === 0 ? (
-              <div className="text-sm text-neutral-400 py-8 text-center">{t.toolbox.noSkillsFound}</div>
-            ) : (
-              <div className="space-y-2">
-                {filteredTemplates.map((template) => {
-                  const isInstalled = installedNames.has(template.name);
-                  const isInstalling = installingTemplate === template.id;
-                  const isHttp = template.transport === 'http';
-                  const hasConfigurableArgs = template.configurableArgs && template.configurableArgs.length > 0;
-                  const hasEnvVars = template.requiredEnvVars && template.requiredEnvVars.length > 0;
-                  const hasSetupHint = !!template.setupHint;
-                  const hasInputs = hasConfigurableArgs || hasEnvVars || hasSetupHint;
-                  const isExpanded = expandedTemplate === template.id;
-
-                  // Get server entry for installed templates
-                  const serverEntry = isInstalled ? servers[template.name] : undefined;
-                  const serverStatus = serverEntry?.status;
-                  const isConnected = serverStatus === 'connected';
-                  const isReconnecting = serverStatus === 'reconnecting';
-                  const isConnecting = connectingServer === template.name || serverStatus === 'connecting' || isReconnecting;
-                  const error = serverEntry ? (serverErrors[template.name] || (serverStatus === 'error' ? serverEntry.error : undefined)) : undefined;
-                  const isTesting = testingServer === template.name;
-                  const testResult = testResults[template.name];
-                  const toolDetails = (serverEntry?.tools ?? []) as { name: string; description?: string }[];
-                  const toolsExpanded = expandedTools.has(template.name);
-
-                  return (
-                    <div
-                      key={template.id}
-                      className={cn(
-                        'p-3 rounded-lg border border-neutral-200/60 transition-colors',
-                        !isInstalled && 'hover:border-neutral-300'
-                      )}
-                    >
-                      <div className="flex items-start gap-3">
-                        {/* Status dot for installed servers */}
-                        {isInstalled && (
-                          <div className={cn(
-                            'h-2 w-2 rounded-full shrink-0 mt-1.5',
-                            isReconnecting ? 'bg-orange-400 animate-pulse' :
-                            isConnecting ? 'bg-amber-400 animate-pulse' :
-                            isConnected ? 'bg-green-500' :
-                            serverStatus === 'error' ? 'bg-red-400' : 'bg-neutral-300'
-                          )} />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-sm text-neutral-900">{template.name}</span>
-                            {isHttp && (
-                              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-600">HTTP</span>
-                            )}
-                            {isInstalled && (
-                              <span className="text-[10px] text-neutral-400">
-                                {isReconnecting ? t.toolbox.reconnecting :
-                                 isConnecting ? t.toolbox.connecting :
-                                 isConnected ? t.toolbox.connected : t.toolbox.disconnected}
-                              </span>
-                            )}
-                            {/* Tool count badge for installed & connected */}
-                            {isConnected && toolDetails.length > 0 && (
-                              <button
-                                onClick={() => toggleExpanded(template.name)}
-                                className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-neutral-100 hover:bg-neutral-200 transition-colors"
-                              >
-                                <Wrench className="h-3 w-3 text-neutral-500" />
-                                <span className="text-[10px] font-medium text-neutral-600">{toolDetails.length}</span>
-                                {toolsExpanded
-                                  ? <ChevronDown className="h-3 w-3 text-neutral-400" />
-                                  : <ChevronRight className="h-3 w-3 text-neutral-400" />}
-                              </button>
-                            )}
-                          </div>
-                          <p className="text-xs text-neutral-500 mt-1">{template.description}</p>
-                        </div>
-                        {isInstalled ? (
-                          <div className="shrink-0 flex items-center gap-1">
-                            {/* View logs */}
-                            <button
-                              onClick={() => setViewingLogs(viewingLogs === template.name ? null : template.name)}
-                              className="p-1.5 text-neutral-400 hover:text-neutral-600 hover:bg-neutral-50 rounded transition-colors"
-                              title={t.toolbox.viewLogs}
-                            >
-                              <ScrollText className="h-4 w-4" />
-                            </button>
-                            {/* Test connection */}
-                            <button
-                              onClick={() => serverEntry && handleTestConnection(serverEntry)}
-                              disabled={isTesting || isConnecting}
-                              className="p-1.5 text-neutral-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                              title={t.toolbox.testConnection}
-                            >
-                              {isTesting
-                                ? <Loader2 className="h-4 w-4 animate-spin" />
-                                : <Zap className="h-4 w-4" />}
-                            </button>
-                            {/* Connect / Disconnect */}
-                            <button
-                              onClick={() => serverEntry && handleToggleConnection(serverEntry)}
-                              disabled={isConnecting}
-                              className={cn(
-                                'p-1.5 rounded transition-colors',
-                                isConnecting
-                                  ? 'text-amber-500 cursor-wait'
-                                  : isConnected
-                                    ? 'text-green-600 hover:text-green-700 hover:bg-green-50'
-                                    : 'text-neutral-400 hover:text-neutral-600 hover:bg-neutral-50'
-                              )}
-                              title={isConnecting ? t.toolbox.connecting : isConnected ? t.toolbox.disconnect : t.toolbox.connect}
-                            >
-                              {isConnecting
-                                ? <Loader2 className="h-4 w-4 animate-spin" />
-                                : isConnected ? <PlugZap className="h-4 w-4" /> : <Plug className="h-4 w-4" />}
-                            </button>
-                            {/* Delete */}
-                            <button
-                              onClick={() => handleRemoveServer(template.name)}
-                              className="p-1.5 text-neutral-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => {
-                              if (hasInputs) {
-                                setExpandedTemplate(isExpanded ? null : template.id);
-                              } else {
-                                handleInstallTemplate(template);
-                              }
-                            }}
-                            disabled={isInstalling}
-                            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-[#d97757] text-white hover:bg-[#c5664a] disabled:opacity-50"
-                          >
-                            {isInstalling ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <Plus className="h-3.5 w-3.5" />
-                            )}
-                            {t.toolbox.install}
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Error message for installed servers */}
-                      {isInstalled && error && (
-                        <p className="mt-1 px-3 text-xs text-red-500 break-words">{error}</p>
-                      )}
-                      {/* Test result */}
-                      {isInstalled && testResult && (
-                        <div className={cn(
-                          'mt-1 px-3 py-1.5 text-xs rounded-md flex items-center gap-1.5',
-                          testResult.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
-                        )}>
-                          {testResult.success ? <Check className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
-                          {testResult.message}
-                        </div>
-                      )}
-                      {/* Expanded tool list */}
-                      {toolsExpanded && toolDetails.length > 0 && (
-                        <ToolDetailsList tools={toolDetails} />
-                      )}
-                      {/* Server logs */}
-                      {isInstalled && viewingLogs === template.name && (
-                        <ServerLogsPanel serverName={template.name} />
-                      )}
-
-                      {/* Configuration panel — only shown when expanded */}
-                      {isExpanded && hasInputs && !isInstalled && (
-                        <div className="mt-3 pt-3 border-t border-neutral-100 space-y-2">
-                          {template.setupHint && (
-                            <div className="p-2.5 rounded-md bg-amber-50 border border-amber-200/60">
-                              <p className="text-xs text-amber-700 leading-relaxed whitespace-pre-wrap break-words">
-                                {renderSetupHint(template.setupHint)}
-                              </p>
-                            </div>
-                          )}
-                          {template.configurableArgs?.map((arg) => (
-                            <input
-                              key={arg.index}
-                              type="text"
-                              placeholder={arg.placeholder}
-                              value={templateArgs[`${template.id}-${arg.index}`] || ''}
-                              onChange={(e) =>
-                                setTemplateArgs((prev) => ({
-                                  ...prev,
-                                  [`${template.id}-${arg.index}`]: e.target.value,
-                                }))
-                              }
-                              className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d97757]/30 focus:border-[#d97757]"
-                            />
-                          ))}
-                          {template.requiredEnvVars?.map((envVar) => (
-                            <div key={envVar.name}>
-                              <label className="block text-xs text-neutral-600 mb-1">{envVar.label}</label>
-                              <input
-                                type={envVar.secret !== false ? "password" : "text"}
-                                placeholder={envVar.placeholder}
-                                value={templateArgs[`${template.id}-env-${envVar.name}`] || envVar.defaultValue || ''}
-                                onChange={(e) =>
-                                  setTemplateArgs((prev) => ({
-                                    ...prev,
-                                    [`${template.id}-env-${envVar.name}`]: e.target.value,
-                                  }))
-                                }
-                                className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d97757]/30 focus:border-[#d97757] font-mono"
-                              />
-                              {envVar.description && (
-                                <p className="text-[11px] text-neutral-400 mt-0.5">{envVar.description}</p>
-                              )}
-                            </div>
-                          ))}
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => handleInstallTemplate(template)}
-                              disabled={isInstalling}
-                              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium bg-[#d97757] text-white hover:bg-[#c5664a] disabled:opacity-50"
-                            >
-                              {isInstalling ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <Plus className="h-4 w-4" />
-                              )}
-                              {t.toolbox.installAndConnect}
-                            </button>
-                            <button
-                              onClick={() => {
-                                setExpandedTemplate(null);
-                                // Clear this template's args
-                                setTemplateArgs((prev) => {
-                                  const next = { ...prev };
-                                  Object.keys(next).forEach((k) => {
-                                    if (k.startsWith(template.id)) delete next[k];
-                                  });
-                                  return next;
-                                });
-                              }}
-                              className="px-3 py-2 rounded-md text-sm text-neutral-600 hover:bg-neutral-100"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </>
+        {activeSubTab === 'custom' || showAddForm ? (
+          <CustomMcpPanel
+            mode={customMode}
+            setMode={setCustomMode}
+            form={customForm}
+            setForm={setCustomForm}
+            importText={importText}
+            setImportText={setImportText}
+            busy={actionKey === 'custom' || actionKey === 'import'}
+            onSave={saveCustom}
+            onImport={importConfig}
+          />
+        ) : loading ? (
+          <div className="flex h-40 items-center justify-center text-sm text-[#656358]">
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            正在加载 MCP presets...
+          </div>
+        ) : filteredPresets.length === 0 ? (
+          <div className="py-10 text-center text-sm text-[#888579]">没有匹配的 MCP 服务</div>
+        ) : (
+          <div className="space-y-2">
+            {filteredPresets.map((preset) => (
+              <McpPresetRow
+                key={preset.name}
+                preset={preset}
+                values={fieldValues[preset.name] ?? {}}
+                onValueChange={(field, value) => {
+                  setFieldValues((current) => ({
+                    ...current,
+                    [preset.name]: { ...(current[preset.name] ?? {}), [field]: value },
+                  }));
+                }}
+                setupOpen={expandedSetup === preset.name}
+                toolsOpen={expandedTools === preset.name}
+                setSetupOpen={(open) => setExpandedSetup(open ? preset.name : null)}
+                setToolsOpen={(open) => setExpandedTools(open ? preset.name : null)}
+                actionKey={actionKey}
+                onAction={runAction}
+                onToolsChange={(tools) => updateTools(preset, tools)}
+              />
+            ))}
+          </div>
         )}
       </div>
-
-      {/* Add Server Modal */}
-      {showAddForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={handleCloseAddForm}>
-          <div
-            className="bg-white rounded-2xl shadow-xl w-full max-w-md flex flex-col overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100">
-              <div className="flex items-center gap-2">
-                <Server className="h-5 w-5 text-[#d97757]" />
-                <h2 className="text-base font-semibold text-neutral-900">{t.toolbox.addCustomServer}</h2>
-              </div>
-              <button
-                onClick={handleCloseAddForm}
-                className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 transition-colors"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            {/* Body */}
-            <div className="px-5 py-4 space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-neutral-700 mb-1">{t.toolbox.serverName}</label>
-                <input
-                  type="text"
-                  placeholder={t.toolbox.serverName}
-                  value={newServerName}
-                  onChange={(e) => setNewServerName(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d97757]/30 focus:border-[#d97757]"
-                />
-              </div>
-
-              {/* Transport type toggle */}
-              <div>
-                <label className="block text-xs font-medium text-neutral-700 mb-1">{t.toolbox.transportType}</label>
-                <div className="flex gap-1 p-0.5 bg-neutral-100 rounded-md">
-                  <button
-                    onClick={() => setNewTransportType('stdio')}
-                    className={cn(
-                      'flex-1 py-1.5 text-xs font-medium rounded transition-colors',
-                      newTransportType === 'stdio'
-                        ? 'bg-white text-neutral-900 shadow-sm'
-                        : 'text-neutral-500 hover:text-neutral-700'
-                    )}
-                  >
-                    {t.toolbox.transportStdio}
-                  </button>
-                  <button
-                    onClick={() => setNewTransportType('http')}
-                    className={cn(
-                      'flex-1 py-1.5 text-xs font-medium rounded transition-colors',
-                      newTransportType === 'http'
-                        ? 'bg-white text-neutral-900 shadow-sm'
-                        : 'text-neutral-500 hover:text-neutral-700'
-                    )}
-                  >
-                    {t.toolbox.transportHttp}
-                  </button>
-                </div>
-              </div>
-
-              {/* Stdio fields */}
-              {newTransportType === 'stdio' && (
-                <>
-                  <div>
-                    <label className="block text-xs font-medium text-neutral-700 mb-1">{t.toolbox.serverCommand}</label>
-                    <input
-                      type="text"
-                      placeholder={t.toolbox.serverCommand}
-                      value={newServerCommand}
-                      onChange={(e) => setNewServerCommand(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d97757]/30 focus:border-[#d97757]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-neutral-700 mb-1">{t.toolbox.serverArgs}</label>
-                    <input
-                      type="text"
-                      placeholder={t.toolbox.serverArgs}
-                      value={newServerArgs}
-                      onChange={(e) => setNewServerArgs(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d97757]/30 focus:border-[#d97757]"
-                    />
-                  </div>
-                </>
-              )}
-
-              {/* HTTP fields */}
-              {newTransportType === 'http' && (
-                <>
-                  <div>
-                    <label className="block text-xs font-medium text-neutral-700 mb-1">URL</label>
-                    <input
-                      type="text"
-                      placeholder={t.toolbox.serverUrlPlaceholder}
-                      value={newServerUrl}
-                      onChange={(e) => setNewServerUrl(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d97757]/30 focus:border-[#d97757]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-neutral-700 mb-1">Headers (JSON)</label>
-                    <input
-                      type="text"
-                      placeholder={t.toolbox.serverHeadersPlaceholder}
-                      value={newServerHeaders}
-                      onChange={(e) => setNewServerHeaders(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d97757]/30 focus:border-[#d97757] font-mono"
-                    />
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-neutral-100">
-              <button
-                onClick={handleCloseAddForm}
-                className="px-4 py-1.5 rounded-lg text-sm font-medium text-neutral-600 hover:bg-neutral-100 transition-colors"
-              >
-                {t.common.cancel}
-              </button>
-              <button
-                onClick={handleAddServer}
-                disabled={
-                  !newServerName.trim() ||
-                  (newTransportType === 'stdio' && !newServerCommand.trim()) ||
-                  (newTransportType === 'http' && !newServerUrl.trim())
-                }
-                className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium bg-[#d97757] text-white hover:bg-[#c5664a] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                <Check className="h-3.5 w-3.5" />
-                {t.toolbox.add}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
 
-// --- Server Logs Panel ---
+function McpPresetRow({
+  preset,
+  values,
+  onValueChange,
+  setupOpen,
+  toolsOpen,
+  setSetupOpen,
+  setToolsOpen,
+  actionKey,
+  onAction,
+  onToolsChange,
+}: {
+  preset: McpPresetInfo;
+  values: Record<string, string>;
+  onValueChange: (field: string, value: string) => void;
+  setupOpen: boolean;
+  toolsOpen: boolean;
+  setSetupOpen: (open: boolean) => void;
+  setToolsOpen: (open: boolean) => void;
+  actionKey: string | null;
+  onAction: (action: McpAction, preset: McpPresetInfo) => void;
+  onToolsChange: (tools: string[]) => void;
+}) {
+  const ready = presetReady(preset);
+  const missingFields = preset.required_fields.filter((field) => field.required && !field.configured);
+  const needsSetup = missingFields.length > 0;
+  const hasFields = preset.required_fields.length > 0;
+  const toolNames = preset.tool_names ?? [];
+  const enabledTools = preset.enabled_tools ?? ['*'];
+  const allowAll = enabledTools.includes('*');
+  const enabledSet = new Set(allowAll ? toolNames : enabledTools);
+  const busy = actionKey?.endsWith(`:${preset.name}`) ?? false;
+  const enableBusy = actionKey === `enable:${preset.name}`;
+  const removeBusy = actionKey === `remove:${preset.name}`;
+  const testBusy = actionKey === `test:${preset.name}`;
+  const toolsBusy = actionKey === `tools:${preset.name}`;
+  const canEnable = preset.install_supported && (!needsSetup || missingFields.every((field) => Boolean(values[field.name]?.trim())));
+  const description = preset.description || preset.note || preset.requires || preset.connection_summary;
 
-function ServerLogsPanel({ serverName }: { serverName: string }) {
-  const { t } = useI18n();
-  const [logs, setLogs] = useState<MCPLogEntry[]>(() => mcpManager.getServerLogs(serverName));
+  const enable = () => {
+    if ((needsSetup || (preset.installed && !preset.configured && hasFields)) && !setupOpen) {
+      setSetupOpen(true);
+      return;
+    }
+    if (!canEnable) return;
+    onAction('enable', preset);
+  };
 
-  // Subscribe to mcpManager changes to keep logs fresh
-  useEffect(() => {
-    const update = () => setLogs([...mcpManager.getServerLogs(serverName)]);
-    const unsubscribe = mcpManager.subscribe(update);
-    // Also refresh on an interval for stderr logs that don't trigger notify
-    const timer = setInterval(update, 2000);
-    return () => { unsubscribe(); clearInterval(timer); };
-  }, [serverName]);
-
-  if (logs.length === 0) {
-    return (
-      <div className="mt-2 px-3 py-2 text-[11px] text-neutral-400 bg-neutral-50 rounded border border-neutral-200">
-        {t.toolbox.noLogs}
-      </div>
-    );
-  }
+  const toggleTool = (toolName: string) => {
+    const next = new Set(allowAll ? toolNames : enabledTools);
+    if (next.has(toolName)) next.delete(toolName);
+    else next.add(toolName);
+    const nextValues = Array.from(next);
+    onToolsChange(nextValues.length === toolNames.length ? ['*'] : nextValues);
+  };
 
   return (
-    <div className="mt-2 max-h-[200px] overflow-y-auto rounded border border-neutral-200 bg-neutral-900 p-2">
-      {logs.map((log, i) => (
-        <div key={i} className="flex gap-2 text-[11px] font-mono leading-4">
-          <span className="text-neutral-500 shrink-0">
-            {new Date(log.timestamp).toLocaleTimeString()}
-          </span>
-          <span className={cn(
-            log.level === 'error' ? 'text-red-400' :
-            log.level === 'warn' ? 'text-amber-400' : 'text-neutral-300'
-          )}>
-            {log.message}
-          </span>
+    <article className="rounded-xl border border-[#e5e2db] bg-white p-3 shadow-sm">
+      <div className="flex items-start gap-3">
+        <div
+          className={cn(
+            'mt-1 h-2.5 w-2.5 shrink-0 rounded-full',
+            ready ? 'bg-green-500' : preset.status === 'missing_credentials' ? 'bg-amber-400' : preset.status === 'coming_soon' ? 'bg-neutral-300' : 'bg-[#d5d1c8]',
+          )}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <h3 className="truncate text-sm font-semibold text-[#29261b]">{preset.display_name}</h3>
+            <span className="rounded-full bg-[#f3f2ee] px-2 py-0.5 text-[10px] font-semibold uppercase text-[#656358]">
+              {transportLabel(preset.transport)}
+            </span>
+            <span className="text-[10px] text-[#888579]">{statusLabel(preset.status)}</span>
+          </div>
+          <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#656358]">{description}</p>
+          {preset.error ? <p className="mt-1 text-xs text-red-600">{preset.error}</p> : null}
         </div>
-      ))}
-    </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {ready ? (
+            <>
+              <IconButton busy={testBusy} disabled={busy && !testBusy} title="测试" onClick={() => onAction('test', preset)}>
+                <PlayCircle className="h-4 w-4" />
+              </IconButton>
+              {toolNames.length ? (
+                <IconButton busy={toolsBusy} disabled={busy && !toolsBusy} title="工具范围" onClick={() => setToolsOpen(!toolsOpen)}>
+                  <SlidersHorizontal className="h-4 w-4" />
+                </IconButton>
+              ) : null}
+              <IconButton busy={removeBusy} disabled={busy && !removeBusy} danger title="移除" onClick={() => onAction('remove', preset)}>
+                <Trash2 className="h-4 w-4" />
+              </IconButton>
+            </>
+          ) : preset.install_supported ? (
+            <IconButton busy={enableBusy} disabled={busy || !canEnable} title={needsSetup ? '配置并启用' : '启用'} onClick={enable}>
+              <Plus className="h-4 w-4" />
+            </IconButton>
+          ) : (
+            <IconButton disabled title="暂不可用">
+              <AlertCircle className="h-4 w-4" />
+            </IconButton>
+          )}
+        </div>
+      </div>
+
+      {setupOpen && hasFields ? (
+        <div className="mt-3 rounded-xl border border-[#e8e4dd] bg-[#fbfaf7] p-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="text-xs font-semibold text-[#29261b]">连接 {preset.display_name}</span>
+            <button type="button" onClick={() => setSetupOpen(false)} className="rounded p-1 text-[#888579] hover:bg-[#eeeae2]">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <div className="grid gap-2">
+            {preset.required_fields.map((field) => (
+              <label key={field.name}>
+                <span className="mb-1 block text-[11px] font-medium text-[#656358]">
+                  {field.label}
+                  {field.configured ? <span className="ml-1 text-green-600">已配置</span> : null}
+                </span>
+                <Input
+                  type={field.secret ? 'password' : 'text'}
+                  value={values[field.name] ?? ''}
+                  onChange={(event) => onValueChange(field.name, event.target.value)}
+                  placeholder={field.configured ? '留空表示保持现有值' : field.placeholder}
+                  className="h-9 rounded-lg bg-white text-[12px]"
+                />
+              </label>
+            ))}
+          </div>
+          <div className="mt-3 flex justify-end">
+            <Button size="sm" disabled={!canEnable || enableBusy} onClick={() => onAction('enable', preset)} className="h-8 rounded-lg text-xs">
+              {enableBusy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Check className="mr-1.5 h-3.5 w-3.5" />}
+              保存并启用
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {toolsOpen && ready && toolNames.length ? (
+        <div className="mt-3 rounded-xl border border-[#e8e4dd] bg-[#fbfaf7] p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-xs font-semibold text-[#29261b]">工具范围</span>
+            <div className="flex gap-1">
+              <Button size="sm" variant={allowAll ? 'default' : 'outline'} disabled={toolsBusy} onClick={() => onToolsChange(['*'])} className="h-7 rounded-lg px-2 text-[11px]">全部</Button>
+              <Button size="sm" variant={!allowAll && enabledSet.size === 0 ? 'default' : 'outline'} disabled={toolsBusy} onClick={() => onToolsChange([])} className="h-7 rounded-lg px-2 text-[11px]">无</Button>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {toolNames.map((toolName) => {
+              const selected = enabledSet.has(toolName);
+              return (
+                <button
+                  key={toolName}
+                  type="button"
+                  disabled={toolsBusy}
+                  onClick={() => toggleTool(toolName)}
+                  className={cn(
+                    'max-w-full rounded-full border px-2.5 py-1 font-mono text-[11px] transition-colors',
+                    selected ? 'border-[#d97757]/30 bg-[#d97757]/10 text-[#9b4a2e]' : 'border-[#e5e2db] bg-white text-[#656358]',
+                  )}
+                >
+                  <span className="block max-w-[220px] truncate">{toolName}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function CustomMcpPanel({
+  mode,
+  setMode,
+  form,
+  setForm,
+  importText,
+  setImportText,
+  busy,
+  onSave,
+  onImport,
+}: {
+  mode: 'custom' | 'import';
+  setMode: (mode: 'custom' | 'import') => void;
+  form: typeof DEFAULT_CUSTOM_FORM;
+  setForm: (next: typeof DEFAULT_CUSTOM_FORM) => void;
+  importText: string;
+  setImportText: (value: string) => void;
+  busy: boolean;
+  onSave: () => void;
+  onImport: () => void;
+}) {
+  const remote = form.transport !== 'stdio';
+  const canSave = Boolean(form.name.trim()) && (remote ? Boolean(form.url.trim()) : Boolean(form.command.trim()));
+  const update = <K extends keyof typeof DEFAULT_CUSTOM_FORM>(key: K, value: (typeof DEFAULT_CUSTOM_FORM)[K]) => {
+    setForm({ ...form, [key]: value });
+  };
+
+  return (
+    <section className="rounded-xl border border-[#e5e2db] bg-white p-3 shadow-sm">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <Server className="h-4 w-4 text-[#656358]" />
+          <div>
+            <h3 className="text-sm font-semibold text-[#29261b]">更多 MCP 选项</h3>
+            <p className="text-xs text-[#888579]">添加自定义服务，或导入 mcp.json。</p>
+          </div>
+        </div>
+        <div className="flex gap-1">
+          <Button size="sm" variant={mode === 'custom' ? 'default' : 'outline'} onClick={() => setMode('custom')} className="h-8 rounded-lg text-xs">
+            <Server className="mr-1.5 h-3.5 w-3.5" />
+            自定义
+          </Button>
+          <Button size="sm" variant={mode === 'import' ? 'default' : 'outline'} onClick={() => setMode('import')} className="h-8 rounded-lg text-xs">
+            <Database className="mr-1.5 h-3.5 w-3.5" />
+            导入
+          </Button>
+        </div>
+      </div>
+
+      {mode === 'custom' ? (
+        <div className="space-y-3">
+          <div className="grid gap-2 md:grid-cols-[1fr_160px]">
+            <Input value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="服务名，例如 docs" className="h-9 rounded-lg" />
+            <Select
+              value={form.transport}
+              onChange={(value) => update('transport', value as CustomMcpTransport)}
+              options={[
+                { value: 'stdio', label: 'stdio' },
+                { value: 'streamableHttp', label: 'HTTP' },
+                { value: 'sse', label: 'SSE' },
+              ]}
+            />
+          </div>
+          {remote ? (
+            <Input value={form.url} onChange={(event) => update('url', event.target.value)} placeholder={form.transport === 'sse' ? 'https://example.com/sse' : 'https://example.com/mcp'} className="h-9 rounded-lg" />
+          ) : (
+            <Input value={form.command} onChange={(event) => update('command', event.target.value)} placeholder="npx" className="h-9 rounded-lg" />
+          )}
+          {!remote ? (
+            <Textarea value={form.args} onChange={(event) => update('args', event.target.value)} placeholder={'Args JSON，例如 ["-y", "docs-mcp"]'} className="min-h-[72px] font-mono text-xs" />
+          ) : (
+            <Textarea value={form.headers} onChange={(event) => update('headers', event.target.value)} placeholder={'Headers JSON，例如 {"Authorization":"Bearer ..."}'} className="min-h-[72px] font-mono text-xs" />
+          )}
+          <div className="grid gap-2 md:grid-cols-[1fr_160px]">
+            <Textarea value={form.env} onChange={(event) => update('env', event.target.value)} placeholder={'Env JSON，例如 {"API_KEY":"..."}'} className="min-h-[72px] font-mono text-xs" />
+            <Input value={form.toolTimeout} onChange={(event) => update('toolTimeout', event.target.value)} placeholder="超时 ms" inputMode="numeric" className="h-9 rounded-lg" />
+          </div>
+          <div className="flex justify-end">
+            <Button size="sm" disabled={!canSave || busy} onClick={onSave} className="h-8 rounded-lg text-xs">
+              {busy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Check className="mr-1.5 h-3.5 w-3.5" />}
+              保存 MCP
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <Textarea
+            value={importText}
+            onChange={(event) => setImportText(event.target.value)}
+            placeholder={'{"mcpServers":{"docs":{"command":"npx","args":["-y","docs-mcp"]}}}'}
+            className="min-h-[160px] font-mono text-xs"
+          />
+          <div className="flex justify-end">
+            <Button size="sm" disabled={!importText.trim() || busy} onClick={onImport} className="h-8 rounded-lg text-xs">
+              {busy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Database className="mr-1.5 h-3.5 w-3.5" />}
+              导入
+            </Button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function IconButton({
+  children,
+  title,
+  busy,
+  disabled,
+  danger,
+  onClick,
+}: {
+  children: React.ReactNode;
+  title: string;
+  busy?: boolean;
+  disabled?: boolean;
+  danger?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      disabled={disabled || busy}
+      onClick={onClick}
+      className={cn(
+        'inline-flex h-8 w-8 items-center justify-center rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+        danger ? 'text-red-500 hover:bg-red-50' : 'text-[#656358] hover:bg-[#f3f2ee] hover:text-[#29261b]',
+      )}
+    >
+      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : children}
+    </button>
   );
 }

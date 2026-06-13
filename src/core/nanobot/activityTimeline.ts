@@ -161,7 +161,7 @@ function isFileEditActivityMessage(message: Message): boolean {
   return message.kind === 'trace' && !!message.fileEdits?.length;
 }
 
-/** Empty assistant placeholder rows are created by chatBridge.ts for tool events
+  /** Empty assistant placeholder rows are created by the stream hook for tool events
  * that arrive before the first delta. Skip them in the timeline — the tool events
  * themselves are captured by the activity group. */
 function isEmptyAssistantPlaceholder(message: Message): boolean {

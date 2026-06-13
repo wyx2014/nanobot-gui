@@ -114,7 +114,7 @@ type SafetyForm = {
 type ActionKey = string;
 
 const tabs: Array<{ key: TabKey; label: string; description: string; icon: typeof Cpu }> = [
-  { key: "providers", label: "模型服务", description: "Provider / API Key / OAuth", icon: Cpu },
+  { key: "providers", label: "模型服务", description: "提供商 / API 密钥 / OAuth 授权", icon: Cpu },
   { key: "search", label: "联网搜索", description: "搜索引擎和读取策略", icon: Globe },
   { key: "image", label: "图像生成", description: "图片模型和默认尺寸", icon: ImageIcon },
   { key: "safety", label: "安全边界", description: "本地网络和工作区访问", icon: Shield },
@@ -124,8 +124,8 @@ const tabs: Array<{ key: TabKey; label: string; description: string; icon: typeo
 
 const apiTypeOptions = [
   { value: "auto", label: "自动" },
-  { value: "chat_completions", label: "Chat Completions" },
-  { value: "responses", label: "Responses" },
+  { value: "chat_completions", label: "对话补全 (Chat Completions)" },
+  { value: "responses", label: "原始响应 (Responses)" },
 ];
 
 const languageOptions: Array<{ value: LanguageSetting; label: string }> = [
@@ -146,7 +146,12 @@ const accessModeOptions = [
 ];
 
 const ratioOptions = ["1:1", "16:9", "9:16", "4:3", "3:4"].map((value) => ({ value, label: value }));
-const sizeOptions = ["1024x1024", "1536x1024", "1024x1536", "auto"].map((value) => ({ value, label: value }));
+const sizeOptions = [
+  { value: "1024x1024", label: "1024x1024" },
+  { value: "1536x1024", label: "1536x1024" },
+  { value: "1024x1536", label: "1024x1536" },
+  { value: "auto", label: "自动 (auto)" },
+];
 
 function gatewayBase(port: number): string {
   return `http://127.0.0.1:${port}`;
@@ -1534,7 +1539,7 @@ function AboutSection({ settings, apiBase }: { settings: SettingsPayload; apiBas
     <SettingsCard title="运行信息" description="用于确认 GUI 当前连接的是嵌入式 nanobot gateway，而不是 WebUI 页面。">
       <div className="grid gap-3 md:grid-cols-2">
         <InfoBlock label="Gateway API" value={apiBase} />
-        <InfoBlock label="运行表面" value={settings.runtime_surface || settings.surface || "native"} />
+        <InfoBlock label="运行表面" value={(settings.runtime_surface || settings.surface || "native") === "native" ? "本地宿主 (native)" : (settings.runtime_surface || settings.surface)} />
         <InfoBlock label="配置文件" value={settings.runtime.config_path} wide />
         <InfoBlock label="工作区" value={settings.runtime.workspace_path} wide />
         <InfoBlock label="Gateway 地址" value={`${settings.runtime.gateway_host}:${settings.runtime.gateway_port}`} />

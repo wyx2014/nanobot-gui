@@ -778,9 +778,6 @@ export function SettingsView({
           <div className="flex items-center justify-between gap-4">
             <div>
               <h2 className="text-2xl font-semibold">{tabs.find((tab) => tab.key === activeTab)?.label}</h2>
-              <p className="mt-1 text-sm text-[#777267]">
-                {apiBase ? `当前连接：${apiBase}` : "正在读取网关状态"}
-              </p>
             </div>
             <div className="flex items-center gap-2">
               {onBackToChat ? (
@@ -976,9 +973,9 @@ function ModelManagerSection({
   }, [settings.model_presets, settings.providers]);
 
   return (
-    <div className="flex h-[600px] border border-[#e8e4dd] rounded-xl overflow-hidden bg-white shadow-sm">
+    <div className="flex h-[720px] border border-[#e8e4dd] rounded-xl overflow-hidden bg-white shadow-sm">
       {/* Left Column: Preset Channels List */}
-      <div className="w-[260px] border-r border-[#e8e4dd] bg-[#faf9f6] flex flex-col shrink-0">
+      <div className="w-[200px] border-r border-[#e8e4dd] bg-[#faf9f6] flex flex-col shrink-0">
         <div className="p-4 border-b border-[#e8e4dd] flex items-center justify-between">
           <span className="text-sm font-semibold text-[#29261b]">模型预设通道</span>
           <Button
@@ -1238,7 +1235,7 @@ function ModelManagerSection({
                 <Input
                   value={newModelForm.label}
                   onChange={(e) => setNewForm({ ...newModelForm, label: e.target.value })}
-                  placeholder="例如: DeepSeek R1 (中转)"
+                  placeholder="例如: DeepSeek R1"
                 />
               </Field>
               <Field label="供应商">

@@ -44,10 +44,14 @@ export interface NanobotConfigInput {
   webSearchApiKey?: string;
   webSearchBaseUrl?: string;
   
-  // Sandbox & Network safety
+  // Workspace access & network safety
+  restrictToWorkspace?: boolean;
+  /** @deprecated Use restrictToWorkspace. Kept for persisted GUI compatibility. */
   sandboxEnabled?: boolean;
   networkIsolationEnabled?: boolean;
   networkWhitelist?: string[];
+  webuiAllowLocalServiceAccess?: boolean;
+  /** @deprecated Use webuiAllowLocalServiceAccess. */
   allowPrivateNetworks?: boolean;
 }
 
@@ -190,8 +194,8 @@ export async function syncNanobotConfig(cfg: NanobotConfigInput): Promise<boolea
       },
     },
     tools: {
-      restrictToWorkspace: cfg.sandboxEnabled ?? true,
-      webuiAllowLocalServiceAccess: cfg.allowPrivateNetworks ?? true,
+      restrictToWorkspace: cfg.restrictToWorkspace ?? cfg.sandboxEnabled ?? true,
+      webuiAllowLocalServiceAccess: cfg.webuiAllowLocalServiceAccess ?? cfg.allowPrivateNetworks ?? true,
       ssrfWhitelist: cfg.networkWhitelist ?? [],
       web: {
         enable: cfg.useBuiltinWebSearch ?? true,

@@ -1,20 +1,22 @@
 /**
- * Sandbox configuration — determines whether OS-level sandboxing is enabled.
- * On macOS, uses Seatbelt (sandbox-exec) to restrict shell command file access.
- * On other platforms, returns false (no OS-level sandbox available).
+ * Legacy GUI sandbox helpers.
+ *
+ * Runtime tool boundaries are enforced by nanobot gateway. These helpers only
+ * keep the older renderer-side network-proxy compatibility surface alive; they
+ * do not enable nanobot's OS-level exec sandbox.
  */
 
 import { isMacOS } from '@/utils/platform';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { ipc } from '@/lib/ipc-factory';
 
-/** Whether OS-level sandbox should be enabled for shell commands */
+/** Legacy workspace-restriction toggle mirrored from settingsStore. */
 export function isSandboxEnabled(): boolean {
   if (!isMacOS()) return false;
   return useSettingsStore.getState().sandboxEnabled;
 }
 
-/** Whether network isolation (proxy-based domain whitelist) is enabled */
+/** Whether the legacy proxy-based domain whitelist is enabled. */
 export function isNetworkIsolationEnabled(): boolean {
   if (!isMacOS()) return false;
   const state = useSettingsStore.getState();

@@ -107,7 +107,7 @@ function scopeWithAccessMode(scope: WorkspaceScopePayload, mode: 'restricted' | 
 
 export default function ChatView({
   workspaceScope,
-  workspaceDefaultScope: _workspaceDefaultScope,
+  workspaceDefaultScope,
   workspaceControls,
   workspaceError: _workspaceError,
   onWorkspaceScopeChange: _onWorkspaceScopeChange,
@@ -234,11 +234,12 @@ export default function ChatView({
     let effectiveScope: WorkspaceScopePayload | null = workspaceScope ?? null;
     if (!effectiveScope && welcomeWorkspacePath) {
       const parts = welcomeWorkspacePath.split('/').filter(Boolean);
+      const defaultAccessMode = workspaceDefaultScope?.access_mode === 'full' ? 'full' : 'restricted';
       effectiveScope = {
         project_path: welcomeWorkspacePath,
         project_name: parts[parts.length - 1] || welcomeWorkspacePath,
-        access_mode: 'restricted',
-        restrict_to_workspace: true,
+        access_mode: defaultAccessMode,
+        restrict_to_workspace: defaultAccessMode === 'restricted',
       };
     }
 

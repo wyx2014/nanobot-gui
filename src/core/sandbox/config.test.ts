@@ -11,18 +11,18 @@ vi.mock('@/utils/platform', () => ({
 import { isSandboxEnabled } from './config';
 import { useSettingsStore } from '@/stores/settingsStore';
 
-describe('sandbox/config', () => {
+describe('sandbox/config legacy helpers', () => {
   beforeEach(() => {
     mockPlatform = 'macos';
     useSettingsStore.setState({ sandboxEnabled: true });
   });
 
   describe('isSandboxEnabled', () => {
-    it('returns true on macOS when sandboxEnabled is true', () => {
+    it('returns true on macOS when the legacy workspace restriction toggle is true', () => {
       expect(isSandboxEnabled()).toBe(true);
     });
 
-    it('returns false on macOS when sandboxEnabled is false', () => {
+    it('returns false on macOS when the legacy workspace restriction toggle is false', () => {
       useSettingsStore.setState({ sandboxEnabled: false });
       expect(isSandboxEnabled()).toBe(false);
     });

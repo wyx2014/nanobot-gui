@@ -117,7 +117,7 @@ const tabs: Array<{ key: TabKey; label: string; description: string; icon: typeo
   { key: "providers", label: "模型服务", description: "提供商 / API 密钥 / OAuth 授权", icon: Cpu },
   { key: "search", label: "联网搜索", description: "搜索引擎和读取策略", icon: Globe },
   { key: "image", label: "图像生成", description: "图片模型和默认尺寸", icon: ImageIcon },
-  { key: "safety", label: "安全边界", description: "本地网络和工作区访问", icon: Shield },
+  { key: "safety", label: "访问边界", description: "工作区权限和本机服务访问", icon: Shield },
   { key: "general", label: "通用", description: "语言、关闭行为、助手信息", icon: Bot },
   { key: "about", label: "运行信息", description: "网关状态和配置路径", icon: Info },
 ];
@@ -141,8 +141,8 @@ const closeOptions = [
 ];
 
 const accessModeOptions = [
-  { value: "default", label: "默认受限" },
-  { value: "full", label: "默认完全访问" },
+  { value: "default", label: "默认权限" },
+  { value: "full", label: "Full Access" },
 ];
 
 const ratioOptions = ["1:1", "16:9", "9:16", "4:3", "3:4"].map((value) => ({ value, label: value }));
@@ -690,7 +690,7 @@ export function SettingsView({
         );
         await replaceSettings(payload);
       },
-      "安全设置已保存",
+      "访问设置已保存",
     );
 
   const saveGeneral = () =>
@@ -1430,21 +1430,39 @@ function SafetySection({
   saving?: boolean;
   onSave: () => void;
 }) {
-  const sandbox = settings.advanced.workspace_sandbox;
+  const workspaceSandbox = settings.advanced.workspace_sandbox;
+  const workspaceRestriction = workspaceSandbox?.restrict_to_workspace ?? settings.advanced.restrict_to_workspace;
+  const workspaceLevel =
+    workspaceSandbox?.level === "system"
+      ? "系统强制"
+      : workspaceSandbox?.level === "application"
+        ? "应用层限制"
+        : workspaceSandbox?.level === "off"
+          ? "关闭"
+          : workspaceSandbox?.level || "未知";
+  const workspaceSummary =
+    workspaceSandbox?.summary ??
+    (workspaceRestriction ? "工作区限制由 nanobot 工具层执行。" : "工作区限制已关闭。");
   return (
-    <SettingsCard title="安全边界" description="GUI 只暴露 nanobot 当前支持的安全配置；系统级沙箱状态由网关汇报。">
+    <SettingsCard
+      title="访问边界"
+      description=""
+    >
       <div className="space-y-3">
         <div className="flex items-center justify-between rounded-lg border border-[#e8e4dd] bg-[#faf9f7] px-4 py-3">
           <div>
-            <div className="text-sm font-medium">允许访问本机服务</div>
-            <div className="mt-1 text-xs text-[#777267]">关闭后，网页工具会阻止访问 localhost 和私有网络。</div>
+            <div className="text-sm font-medium">Full Access 可访问本机服务</div>
+            <div className="mt-1 text-xs text-[#777267]">开启后，Full Access 的 shell 命令可以访问此 Mac 上的 localhost 和私有网络服务。</div>
           </div>
           <Toggle
             checked={form.webuiAllowLocalServiceAccess}
             onChange={() => setForm({ ...form, webuiAllowLocalServiceAccess: !form.webuiAllowLocalServiceAccess })}
           />
         </div>
-        <Field label="默认工作区访问模式">
+        <Field
+          label="默认访问模式"
+          hint="默认权限会沿用 nanobot 的工作区限制；Full Access 会允许没有单独项目权限的聊天请求完整本机访问。"
+        >
           <Select
             value={form.webuiDefaultAccessMode}
             onChange={(value) => setForm({ ...form, webuiDefaultAccessMode: value as WebuiDefaultAccessMode })}
@@ -1452,16 +1470,16 @@ function SafetySection({
           />
         </Field>
         <div className="grid gap-3 md:grid-cols-2">
-          <InfoBlock label="工作区限制" value={settings.advanced.restrict_to_workspace ? "开启" : "关闭"} />
+          <InfoBlock label="工作区限制" value={workspaceRestriction ? "开启" : "关闭"} />
+          <InfoBlock label="工作区执行级别" value={workspaceLevel} />
           <InfoBlock label="私有服务保护" value={settings.advanced.private_service_protection_enabled ? "开启" : "关闭"} />
-          <InfoBlock label="执行沙箱" value={settings.advanced.exec_sandbox || "未启用"} />
+          <InfoBlock label="Shell 执行沙箱" value={settings.advanced.exec_sandbox || "未启用"} />
           <InfoBlock label="MCP 服务数" value={String(settings.advanced.mcp_server_count)} />
-          {sandbox ? <InfoBlock label="系统沙箱" value={`${sandbox.provider_label} · ${sandbox.summary}`} wide /> : null}
         </div>
       </div>
       <Button className="mt-5 bg-[#d97757] text-white hover:bg-[#c86647]" onClick={onSave} disabled={saving}>
         {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-        保存安全设置
+        保存访问设置
       </Button>
     </SettingsCard>
   );
@@ -1536,7 +1554,7 @@ function AboutSection({ settings, apiBase }: { settings: SettingsPayload; apiBas
     <SettingsCard title="运行信息" description="用于确认 GUI 当前连接的是嵌入式 nanobot 网关，而不是 WebUI 页面。">
       <div className="grid gap-3 md:grid-cols-2">
         <InfoBlock label="网关 API" value={apiBase} />
-        <InfoBlock label="运行表面" value={(settings.runtime_surface || settings.surface || "native") === "native" ? "本地宿主 (native)" : (settings.runtime_surface || settings.surface)} />
+        <InfoBlock label="运行表面" value={(settings.runtime_surface || settings.surface || "native") === "native" ? "本地宿主 (native)" : (settings.runtime_surface || settings.surface || "unknown")} />
         <InfoBlock label="配置文件" value={settings.runtime.config_path} wide />
         <InfoBlock label="工作区" value={settings.runtime.workspace_path} wide />
         <InfoBlock label="网关地址" value={`${settings.runtime.gateway_host}:${settings.runtime.gateway_port}`} />

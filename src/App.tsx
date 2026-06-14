@@ -81,11 +81,12 @@ function App() {
     }
     if (activeConvWorkspacePath) {
       const parts = activeConvWorkspacePath.split('/').filter(Boolean);
+      const defaultAccessMode = workspaces?.default_scope?.access_mode === 'full' ? 'full' : 'restricted';
       return {
         project_path: activeConvWorkspacePath,
         project_name: parts[parts.length - 1] || activeConvWorkspacePath,
-        access_mode: 'restricted',
-        restrict_to_workspace: true,
+        access_mode: defaultAccessMode,
+        restrict_to_workspace: defaultAccessMode === 'restricted',
       };
     }
     return draftWorkspaceScope ?? workspaces?.default_scope ?? null;
@@ -253,9 +254,9 @@ function App() {
   const webSearchProvider = useSettingsStore((s) => s.webSearchProvider);
   const webSearchApiKey = useSettingsStore((s) => s.webSearchApiKey);
   const webSearchBaseUrl = useSettingsStore((s) => s.webSearchBaseUrl);
-  const sandboxEnabled = useSettingsStore((s) => s.sandboxEnabled);
+  const restrictToWorkspace = useSettingsStore((s) => s.sandboxEnabled);
   const networkWhitelist = useSettingsStore((s) => s.networkWhitelist);
-  const allowPrivateNetworks = useSettingsStore((s) => s.allowPrivateNetworks);
+  const webuiAllowLocalServiceAccess = useSettingsStore((s) => s.allowPrivateNetworks);
 
   useEffect(() => {
     syncNanobotSettings({
@@ -271,9 +272,9 @@ function App() {
       webSearchProvider,
       webSearchApiKey,
       webSearchBaseUrl,
-      sandboxEnabled,
+      restrictToWorkspace,
       networkWhitelist,
-      allowPrivateNetworks,
+      webuiAllowLocalServiceAccess,
     }).then((res) => {
       if (res.ok) {
         console.log('[App] Nanobot settings synced and bridge started successfully');
@@ -308,9 +309,9 @@ function App() {
     webSearchProvider,
     webSearchApiKey,
     webSearchBaseUrl,
-    sandboxEnabled,
+    restrictToWorkspace,
     networkWhitelist,
-    allowPrivateNetworks,
+    webuiAllowLocalServiceAccess,
     refreshWorkspaces,
   ]);
 

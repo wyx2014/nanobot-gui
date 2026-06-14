@@ -6,9 +6,46 @@ import { getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/na
 import type { NanobotSkillInfo, SkillsPayload } from '@/core/types';
 import SubTabBar from './SubTabBar';
 import { Toggle } from '@/components/ui/toggle';
-import { AlertCircle, FileText, Loader2, Trash2, X } from 'lucide-react';
+import {
+  AlertCircle,
+  FileText,
+  Loader2,
+  Trash2,
+  X,
+  Clock,
+  Github,
+  Target,
+  User,
+  Terminal,
+  CloudSun,
+  Image,
+  BookOpen,
+  Cpu,
+  Code,
+  Download,
+  Brain
+} from 'lucide-react';
 
 type SkillTab = 'builtin' | 'workspace';
+
+function getSkillIcon(name: string) {
+  const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
+    'cron': Clock,
+    'github': Github,
+    'long-goal': Target,
+    'my': User,
+    'tmux': Terminal,
+    'weather': CloudSun,
+    'image-generation': Image,
+    'summarize': BookOpen,
+    'update-setup': Cpu,
+    'skill-creator': Code,
+    'clawhub': Download,
+    'memory': Brain,
+  };
+  const IconComponent = iconMap[name.toLowerCase()] || FileText;
+  return <IconComponent className="h-4 w-4" />;
+}
 
 async function getSkillsAuth(): Promise<{ token: string; baseUrl: string }> {
   const status = await getNanobotStatus();
@@ -174,7 +211,7 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
                   }`}
                 >
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-500">
-                    <FileText className="h-4 w-4" />
+                    {getSkillIcon(skill.name)}
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
@@ -223,6 +260,9 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
           <div className="flex shrink-0 items-center justify-between border-b border-neutral-200 px-5 py-4">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
+                <div className="text-neutral-500">
+                  {getSkillIcon(detail.name)}
+                </div>
                 <h3 className="truncate text-base font-semibold text-neutral-900">/{detail.name}</h3>
                 <span className={`rounded border px-1.5 py-0.5 text-[10px] ${sourceClass(detail.source)}`}>
                   {sourceLabel(detail.source)}

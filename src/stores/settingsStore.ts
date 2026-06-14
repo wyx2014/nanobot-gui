@@ -209,7 +209,7 @@ interface SettingsState {
   installingItem: string | null;
   // View mode
   viewMode: ViewMode;
-  // Sandbox
+  // Workspace access (legacy persisted key: sandboxEnabled)
   sandboxEnabled: boolean;
   // Network isolation
   networkIsolationEnabled: boolean;
@@ -283,7 +283,7 @@ interface SettingsActions {
   setViewMode: (mode: ViewMode) => void;
   // Unified provider switch (sets provider + format + baseUrl + model atomically)
   switchProvider: (provider: LLMProvider) => void;
-  // Sandbox
+  // Workspace access (legacy persisted key: sandboxEnabled)
   setSandboxEnabled: (enabled: boolean) => void;
   // Network isolation
   setNetworkIsolationEnabled: (enabled: boolean) => void;

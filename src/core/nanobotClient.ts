@@ -481,6 +481,18 @@ export function projectGatewayMessagesForHistory(gatewayMessages: Message[]): Me
   return dedupeAdjacentMessages(normalizeFileEditToolTraces(gatewayMessages.map(finalizeReplayMessage)));
 }
 
+function titleFromSession(sessionTitle: string | undefined, messages: Message[]): string {
+  const title = sessionTitle?.trim();
+  if (title) return title;
+  const firstUser = messages.find((message) => message.role === 'user');
+  const content = typeof firstUser?.content === 'string'
+    ? firstUser.content
+    : firstUser?.content.find((item) => item.type === 'text')?.text;
+  const trimmed = content?.trim();
+  if (trimmed) return trimmed.slice(0, 30) + (trimmed.length > 30 ? '...' : '');
+  return '新对话';
+}
+
 export async function syncSessionsFromGateway(): Promise<void> {
   try {
     const status = await getNanobotStatus();
@@ -503,6 +515,9 @@ export async function syncSessionsFromGateway(): Promise<void> {
           continue;
         }
         const guiMessages = projectGatewayMessagesForHistory(gatewayMessages);
+        if (guiMessages.length === 0) {
+          continue;
+        }
         
         // Save to store using action or setState
         const createdAt = session.createdAt ? new Date(session.createdAt).getTime() : Date.now();
@@ -510,7 +525,7 @@ export async function syncSessionsFromGateway(): Promise<void> {
         
         chatStore.upsertConversation(chatId, {
           id: chatId,
-          title: session.title || 'Conversation',
+          title: titleFromSession(session.title, guiMessages),
           messages: guiMessages,
           createdAt,
           updatedAt,

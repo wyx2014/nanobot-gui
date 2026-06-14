@@ -689,6 +689,7 @@ export function SettingsView({
           updateNetworkSafetySettings(authToken, safetyForm, base),
         );
         await replaceSettings(payload);
+        window.dispatchEvent(new CustomEvent("nanobot-gui:workspace-settings-changed"));
       },
       "访问设置已保存",
     );
@@ -1475,6 +1476,7 @@ function SafetySection({
           <InfoBlock label="私有服务保护" value={settings.advanced.private_service_protection_enabled ? "开启" : "关闭"} />
           <InfoBlock label="Shell 执行沙箱" value={settings.advanced.exec_sandbox || "未启用"} />
           <InfoBlock label="MCP 服务数" value={String(settings.advanced.mcp_server_count)} />
+          <InfoBlock label="边界说明" value={workspaceSummary} wide />
         </div>
       </div>
       <Button className="mt-5 bg-[#d97757] text-white hover:bg-[#c86647]" onClick={onSave} disabled={saving}>

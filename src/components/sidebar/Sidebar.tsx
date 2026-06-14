@@ -99,6 +99,7 @@ export default function Sidebar() {
   // Filter out conversations created by scheduled tasks — they appear in ScheduledSection
   const sortedConvs = Object.values(conversations)
     .filter((c) => !c.scheduledTaskId)
+    .filter((c) => c.messages.length > 0)
     .sort((a, b) => b.createdAt - a.createdAt);
 
   const handleDeleteConversation = (e: React.MouseEvent, convId: string) => {
@@ -166,7 +167,11 @@ export default function Sidebar() {
       {/* Top Navigation */}
       <nav className="px-4 pb-5 space-y-1" aria-label="Main navigation">
         <button
-          onClick={() => { startNewConversation(); setViewMode('chat'); }}
+          onClick={() => {
+            startNewConversation();
+            window.dispatchEvent(new CustomEvent('nanobot-gui:new-chat'));
+            setViewMode('chat');
+          }}
           className={cn(
             'btn-ghost flex items-center gap-3 w-full px-3 py-2.5 text-[15px] font-medium tracking-[-0.01em] rounded-xl',
             activeConversationId === null && viewMode === 'chat'

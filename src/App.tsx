@@ -188,11 +188,24 @@ function App() {
       const next = normalizeWorkspaceScope(workspaceScope);
       useChatStore.getState().setConversationWorkspaceScope(_chatId, next);
       setWorkspaceOverrides((current) => ({ ...current, [_chatId]: next }));
-      setDraftWorkspaceScope(next);
       setWorkspaceError(null);
       void refreshWorkspaces();
     });
   });
+
+  useEffect(() => {
+    const resetDraftWorkspace = () => {
+      setDraftWorkspaceScope(null);
+      setWorkspaceError(null);
+      void refreshWorkspaces();
+    };
+    window.addEventListener('nanobot-gui:new-chat', resetDraftWorkspace);
+    window.addEventListener('nanobot-gui:workspace-settings-changed', resetDraftWorkspace);
+    return () => {
+      window.removeEventListener('nanobot-gui:new-chat', resetDraftWorkspace);
+      window.removeEventListener('nanobot-gui:workspace-settings-changed', resetDraftWorkspace);
+    };
+  }, [refreshWorkspaces]);
 
   // Handle workspace_scope_rejected errors from nanobot gateway
   useEffect(() => {

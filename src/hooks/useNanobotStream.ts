@@ -492,8 +492,12 @@ export function useNanobotStream(
 
   useEffect(() => {
     if (!client) return;
-    return client.onError((err) => setStreamError(err));
-  }, [client]);
+    return client.onError((err) => {
+      const errorChatId = 'chatId' in err ? err.chatId : undefined;
+      if (errorChatId && errorChatId !== chatId) return;
+      setStreamError(err);
+    });
+  }, [chatId, client]);
 
   const dismissStreamError = useCallback(() => setStreamError(null), []);
 

@@ -93,6 +93,7 @@ export class NanobotClient {
   private runStartedAtByChatId = new Map<string, number>();
   private goalStateByChatId = new Map<string, GoalStateWsPayload>();
   private pendingNewChat: PendingNewChat | null = null;
+  private suppressNextWorkspaceScopeRejectedForChat: string | null = null;
   private sendQueue: Outbound[] = [];
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -309,6 +310,7 @@ export class NanobotClient {
 
   setWorkspaceScope(chatId: string, workspaceScope: WorkspaceScopePayload): void {
     this.knownChats.add(chatId);
+    this.suppressNextWorkspaceScopeRejectedForChat = chatId;
     this.queueSend({
       type: "set_workspace_scope",
       chat_id: chatId,
@@ -379,11 +381,15 @@ export class NanobotClient {
     }
 
     if (parsed.event === "error" && parsed.detail === "workspace_scope_rejected") {
-      this.emitError({
-        kind: "workspace_scope_rejected",
-        reason: parsed.reason,
-        chatId: parsed.chat_id,
-      });
+      if (parsed.chat_id && parsed.chat_id === this.suppressNextWorkspaceScopeRejectedForChat) {
+        this.suppressNextWorkspaceScopeRejectedForChat = null;
+      } else {
+        this.emitError({
+          kind: "workspace_scope_rejected",
+          reason: parsed.reason,
+          chatId: parsed.chat_id,
+        });
+      }
       if (this.pendingNewChat) {
         clearTimeout(this.pendingNewChat.timer);
         this.pendingNewChat.reject(new Error(`workspace_scope_rejected:${parsed.reason || ""}`));

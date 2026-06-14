@@ -51,7 +51,7 @@ const zhCN: TranslationDict = {
     inputPlaceholderMidTask: '追加指令（如意会在下轮读取）...',
     start: '开始',
     stop: '停止',
-    welcomeTitle: '交给太资如意就行啦 ✨',
+    welcomeTitle: '交给太资如意就行',
     welcomeSubtitle: '嘿～我是如意，你的智能小伙伴！',
     disclaimer: '如意可能会犯小迷糊。请核查重要信息。',
     thinking: '如意在想～',

@@ -671,8 +671,6 @@ const enUS: TranslationDict = {
     step2Desc: 'Click "New Task" to start chatting with Ruyi',
     step3Title: 'Use Tools & Skills',
     step3Desc: 'Enable skills, sub-agents, and MCP services in the Toolbox',
-    step4Title: 'Explore Settings',
-    step4Desc: 'Customize model, temperature, and other advanced options',
     dismiss: 'Got it',
   },
 

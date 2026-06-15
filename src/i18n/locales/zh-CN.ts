@@ -671,8 +671,6 @@ const zhCN: TranslationDict = {
     step2Desc: '点击「新建任务」开始向太资如意提问',
     step3Title: '使用工具与技能',
     step3Desc: '在工具箱中启用技能、子代理、MCP 服务',
-    step4Title: '探索设置',
-    step4Desc: '自定义模型、温度等高级选项',
     dismiss: '我知道了',
   },
 

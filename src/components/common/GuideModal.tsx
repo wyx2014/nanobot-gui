@@ -24,7 +24,6 @@ export default function GuideModal({ open, onClose }: GuideModalProps) {
     { title: t.guide.step1Title, desc: t.guide.step1Desc },
     { title: t.guide.step2Title, desc: t.guide.step2Desc },
     { title: t.guide.step3Title, desc: t.guide.step3Desc },
-    { title: t.guide.step4Title, desc: t.guide.step4Desc },
   ];
 
   return (

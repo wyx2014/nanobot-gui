@@ -337,6 +337,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   const consumedPendingInputRef = useRef(false);
   const wasStreamingRef = useRef(false);
   const skipNextQueuedFlushRef = useRef(false);
+  const isSubmittingRef = useRef(false);
 
   // Store hooks (always called)
   const cancelStreaming = useChatStore((s) => s.cancelStreaming);
@@ -432,6 +433,13 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
 
   useEffect(() => {
     if (skipDraftPersistRef.current) return;
+    if (isSubmittingRef.current) {
+      const hasPayload = text.trim() || images.length || files.length || selectedCliApps.length || selectedMcpPresets.length;
+      if (!hasPayload) {
+        isSubmittingRef.current = false;
+      }
+      return;
+    }
     writeDraft(draftKey, {
       text,
       images,
@@ -768,6 +776,8 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       return;
     }
 
+    isSubmittingRef.current = true;
+    writeDraft(draftKey, { text: '', images: [], files: [], cliApps: [], mcpPresets: [] });
     submitDraft(draft);
     resetInput();
   };

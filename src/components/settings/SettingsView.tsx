@@ -9,7 +9,6 @@ import {
   Info,
   KeyRound,
   Loader2,
-  Plus,
   RefreshCw,
   Save,
   Shield,
@@ -18,9 +17,7 @@ import {
 
 import {
   ApiError,
-  createModelConfiguration,
   deleteModelConfiguration,
-  fetchProviderModels,
   fetchSettings,
   loginProviderOAuth,
   logoutProviderOAuth,
@@ -39,7 +36,6 @@ import {
   syncGatewaySettingsToStore,
 } from "@/core/nanobotClient";
 import type {
-  ProviderModelsPayload,
   SettingsPayload,
   WebuiDefaultAccessMode,
 } from "@/core/types";
@@ -73,12 +69,6 @@ type ModelForm = {
   provider: string;
   model: string;
   contextWindowTokens: number;
-};
-
-type NewModelForm = {
-  label: string;
-  provider: string;
-  model: string;
 };
 
 type WebSearchForm = {
@@ -263,12 +253,6 @@ export function SettingsView({
     model: "",
     contextWindowTokens: 200000,
   });
-  const [newModelForm, setNewModelForm] = useState<NewModelForm>({
-    label: "",
-    provider: "",
-    model: "",
-  });
-  const [modelCatalog, setModelCatalog] = useState<ProviderModelsPayload | null>(null);
   const [webSearchForm, setWebSearchForm] = useState<WebSearchForm>({
     provider: "none",
     apiKey: "",
@@ -295,11 +279,6 @@ export function SettingsView({
     webuiAllowLocalServiceAccess: false,
     webuiDefaultAccessMode: "default",
   });
-
-  const providerOptions = useMemo(
-    () => (settings?.providers ?? []).map((provider) => ({ value: provider.name, label: provider.label })),
-    [settings],
-  );
 
   const selectedProviderInfo = useMemo(
     () => settings?.providers.find((provider) => provider.name === selectedProvider) ?? null,
@@ -363,20 +342,12 @@ export function SettingsView({
         model: activePreset.model,
         contextWindowTokens: activePreset.context_window_tokens,
       });
-      setNewModelForm((prev) => ({
-        ...prev,
-        provider: prev.provider || activePreset.provider,
-      }));
     } else {
       setModelForm((prev) => ({
         ...prev,
         provider: payload.agent.provider,
         model: payload.agent.model,
         contextWindowTokens: payload.agent.context_window_tokens,
-      }));
-      setNewModelForm((prev) => ({
-        ...prev,
-        provider: prev.provider || payload.agent.provider,
       }));
     }
 
@@ -501,21 +472,6 @@ export function SettingsView({
     });
   }, [selectedModelPreset]);
 
-  useEffect(() => {
-    if (!token || !apiBase || !modelForm.provider) return;
-    let cancelled = false;
-    withGatewayAuth((authToken, base) => fetchProviderModels(authToken, modelForm.provider, base))
-      .then((payload) => {
-        if (!cancelled) setModelCatalog(payload);
-      })
-      .catch(() => {
-        if (!cancelled) setModelCatalog(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [apiBase, modelForm.provider, token, withGatewayAuth]);
-
   const replaceSettings = useCallback(
     async (payload: SettingsPayload) => {
       applyPayload(payload);
@@ -525,11 +481,13 @@ export function SettingsView({
     [applyPayload, onModelNameChange],
   );
 
-  const saveProvider = () =>
-    withAction(
-      "provider",
+  const saveModelSettings = () => {
+    if (!selectedModelPreset) return Promise.resolve();
+    return withAction(
+      "model-save",
       async () => {
-        const payload = await withGatewayAuth((authToken, base) =>
+        // 1. Save provider settings first
+        await withGatewayAuth((authToken, base) =>
           updateProviderSettings(
             authToken,
             {
@@ -541,31 +499,7 @@ export function SettingsView({
             base,
           ),
         );
-        await replaceSettings(payload);
-      },
-      "模型服务已保存",
-    );
-
-
-  const oauthAction = (action: "login" | "logout") =>
-    withAction(
-      `oauth-${action}`,
-      async () => {
-        const payload = await withGatewayAuth((authToken, base) =>
-          action === "login"
-            ? loginProviderOAuth(authToken, selectedProvider, base)
-            : logoutProviderOAuth(authToken, selectedProvider, base),
-        );
-        await replaceSettings(payload);
-      },
-      action === "login" ? "OAuth 登录已发起" : "OAuth 已退出",
-    );
-
-  const saveModelPreset = () => {
-    if (!selectedModelPreset) return Promise.resolve();
-    return withAction(
-      "model-save",
-      async () => {
+        // 2. Save model preset configuration next
         const payload = await withGatewayAuth((authToken, base) => {
           if (selectedModelPreset.name === "default") {
             return updateSettings(
@@ -597,6 +531,23 @@ export function SettingsView({
     );
   };
 
+
+  const oauthAction = (action: "login" | "logout") =>
+    withAction(
+      `oauth-${action}`,
+      async () => {
+        const payload = await withGatewayAuth((authToken, base) =>
+          action === "login"
+            ? loginProviderOAuth(authToken, selectedProvider, base)
+            : logoutProviderOAuth(authToken, selectedProvider, base),
+        );
+        await replaceSettings(payload);
+      },
+      action === "login" ? "OAuth 登录已发起" : "OAuth 已退出",
+    );
+
+
+
   const activateModelPreset = () => {
     if (!selectedModelPreset) return Promise.resolve();
     return withAction(
@@ -610,19 +561,6 @@ export function SettingsView({
       "默认模型预设已切换",
     );
   };
-
-  const createModelPreset = () =>
-    withAction(
-      "model-create",
-      async () => {
-        const payload = await withGatewayAuth((authToken, base) =>
-          createModelConfiguration(authToken, newModelForm, base),
-        );
-        await replaceSettings(payload);
-        setNewModelForm({ label: "", provider: newModelForm.provider, model: "" });
-      },
-      "模型预设已创建",
-    );
 
   const deleteModelPreset = () => {
     if (!selectedModelPreset) return Promise.resolve();
@@ -805,7 +743,6 @@ export function SettingsView({
           {activeTab === "providers" && settings && (
             <ModelManagerSection
               settings={settings}
-              providerOptions={providerOptions}
               selectedProvider={selectedProvider}
               setSelectedProvider={setSelectedProvider}
               selectedPreset={selectedPreset}
@@ -815,14 +752,9 @@ export function SettingsView({
               setProviderForm={setProviderForm}
               modelForm={modelForm}
               setModelForm={setModelForm}
-              newModelForm={newModelForm}
-              setNewForm={setNewModelForm}
-              modelCatalog={modelCatalog}
               saving={saving}
-              onSaveProvider={saveProvider}
-              onSaveModelPreset={saveModelPreset}
+              onSave={saveModelSettings}
               onActivateModelPreset={activateModelPreset}
-              onCreateModelPreset={createModelPreset}
               onDeleteModelPreset={deleteModelPreset}
               onOauth={oauthAction}
             />
@@ -880,7 +812,6 @@ export function SettingsView({
 
 function ModelManagerSection({
   settings,
-  providerOptions,
   selectedProvider,
   setSelectedProvider,
   selectedPreset,
@@ -890,19 +821,13 @@ function ModelManagerSection({
   setProviderForm,
   modelForm,
   setModelForm,
-  newModelForm,
-  setNewForm,
-  modelCatalog,
   saving,
-  onSaveProvider,
-  onSaveModelPreset,
+  onSave,
   onActivateModelPreset,
-  onCreateModelPreset,
   onDeleteModelPreset,
   onOauth,
 }: {
   settings: SettingsPayload;
-  providerOptions: Array<{ value: string; label: string }>;
   selectedProvider: string;
   setSelectedProvider: (value: string) => void;
   selectedPreset: string;
@@ -912,18 +837,12 @@ function ModelManagerSection({
   setProviderForm: (form: ProviderForm) => void;
   modelForm: ModelForm;
   setModelForm: (form: ModelForm) => void;
-  newModelForm: NewModelForm;
-  setNewForm: (form: NewModelForm) => void;
-  modelCatalog: ProviderModelsPayload | null;
   saving: Record<ActionKey, boolean>;
-  onSaveProvider: () => Promise<void>;
-  onSaveModelPreset: () => Promise<void>;
+  onSave: () => Promise<void>;
   onActivateModelPreset: () => Promise<void>;
-  onCreateModelPreset: () => Promise<void>;
   onDeleteModelPreset: () => Promise<void>;
   onOauth: (action: "login" | "logout") => void;
 }) {
-  const [showCreateModal, setShowCreateModal] = useState(false);
   const selectedProviderInfo = useMemo(
     () => settings.providers.find((provider) => provider.name === selectedProvider) ?? null,
     [selectedProvider, settings],
@@ -931,16 +850,8 @@ function ModelManagerSection({
 
   const oauth = selectedProviderInfo?.auth_type === "oauth";
 
-  const catalogOptions = (modelCatalog?.models ?? []).map((model) => ({
-    value: model.id,
-    label: model.label ? `${model.label} (${model.id})` : model.id,
-  }));
-
   const handleSaveAll = async () => {
-    // 1. Save provider settings first
-    await onSaveProvider();
-    // 2. Save model preset configuration next
-    await onSaveModelPreset();
+    await onSave();
   };
 
   const handleActivateAll = async (presetName: string) => {
@@ -977,17 +888,8 @@ function ModelManagerSection({
     <div className="flex h-[640px] border border-[#e8e4dd] rounded-xl overflow-hidden bg-white shadow-sm">
       {/* Left Column: Preset Channels List */}
       <div className="w-[200px] border-r border-[#e8e4dd] bg-[#faf9f6] flex flex-col shrink-0">
-        <div className="p-4 border-b border-[#e8e4dd] flex items-center justify-between">
+        <div className="p-4 border-b border-[#e8e4dd]">
           <span className="text-sm font-semibold text-[#29261b]">模型预设通道</span>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-7 w-7 text-[#777267] hover:text-[#d97757]"
-            onClick={() => setShowCreateModal(true)}
-            title="添加自定义模型预设"
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-2 space-y-3">
@@ -1181,9 +1083,9 @@ function ModelManagerSection({
                 <Button
                   className="bg-[#d97757] text-white hover:bg-[#c86647]"
                   onClick={handleSaveAll}
-                  disabled={saving.provider || saving["model-save"]}
+                  disabled={saving["model-save"]}
                 >
-                  {saving.provider || saving["model-save"] ? (
+                  {saving["model-save"] ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <Save className="h-4 w-4" />
@@ -1221,74 +1123,10 @@ function ModelManagerSection({
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-[#777267]">
             <Cpu className="h-10 w-10 text-[#ccd0cf] mb-2" />
-            <p className="text-sm">请在左侧选择或添加一个模型通道进行配置。</p>
+            <p className="text-sm">请在左侧选择一个模型通道进行配置。</p>
           </div>
         )}
       </div>
-
-      {/* Creation Modal */}
-      {showCreateModal && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl shadow-xl w-[400px] p-6 animate-in zoom-in-95 duration-150">
-            <h3 className="text-[16px] font-semibold text-[#29261b] mb-4">创建自定义模型通道</h3>
-            <div className="space-y-4">
-              <Field label="通道显示名称">
-                <Input
-                  value={newModelForm.label}
-                  onChange={(e) => setNewForm({ ...newModelForm, label: e.target.value })}
-                  placeholder="例如: DeepSeek R1"
-                />
-              </Field>
-              <Field label="供应商">
-                <Select
-                  value={newModelForm.provider}
-                  onChange={(value) => setNewForm({ ...newModelForm, provider: value })}
-                  options={providerOptions}
-                />
-              </Field>
-              <Field label="模型 ID">
-                <Input
-                  value={newModelForm.model}
-                  onChange={(e) => setNewForm({ ...newModelForm, model: e.target.value })}
-                  placeholder="deepseek-reasoner"
-                />
-              </Field>
-              {catalogOptions.length ? (
-                <Field label="从目录选择模型">
-                  <Select
-                    value={newModelForm.model}
-                    onChange={(value) => setNewForm({ ...newModelForm, model: value })}
-                    options={catalogOptions}
-                  />
-                </Field>
-              ) : null}
-            </div>
-            <div className="mt-6 flex gap-3">
-              <Button
-                variant="outline"
-                className="flex-1 border-[#e1ddd5] bg-white"
-                onClick={() => setShowCreateModal(false)}
-              >
-                取消
-              </Button>
-              <Button
-                className="flex-1 bg-[#d97757] text-white hover:bg-[#c86647]"
-                onClick={async () => {
-                  await onCreateModelPreset();
-                  setShowCreateModal(false);
-                }}
-                disabled={!newModelForm.label || !newModelForm.provider || !newModelForm.model || saving["model-create"]}
-              >
-                {saving["model-create"] ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  "创建通道"
-                )}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -25,8 +25,35 @@ const pythonBin = process.platform === 'win32'
   ? path.join(destDir, 'python.exe')
   : path.join(destDir, 'bin', 'python3');
 
+function pruneRuntime(rootDir) {
+  const pruneDirNames = new Set(['__pycache__', 'test', 'tests']);
+  let removedDirs = 0;
+  let removedFiles = 0;
+
+  const visit = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const entryPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (pruneDirNames.has(entry.name)) {
+          fs.rmSync(entryPath, { recursive: true, force: true });
+          removedDirs += 1;
+        } else {
+          visit(entryPath);
+        }
+      } else if (entry.isFile() && /\.(pyc|pyo)$/.test(entry.name)) {
+        fs.rmSync(entryPath, { force: true });
+        removedFiles += 1;
+      }
+    }
+  };
+
+  visit(rootDir);
+  console.log(`Pruned Python runtime: removed ${removedDirs} directories and ${removedFiles} cache files.`);
+}
+
 if (fs.existsSync(pythonBin)) {
   console.log(`Python already present for ${key}, skipping download.`);
+  pruneRuntime(destDir);
   process.exit(0);
 }
 
@@ -54,6 +81,7 @@ try {
   const nanobotSrc = path.resolve(__dirname, '..', '..', 'nanobot');
   console.log(`Installing nanobot [api] dependencies from ${nanobotSrc}...`);
   execSync(`"${pip}" install --quiet "${nanobotSrc}[api]"`, { stdio: 'inherit' });
+  pruneRuntime(destDir);
   console.log('Done! Standalone Python is ready and configured.');
 } catch (err) {
   console.error('Failed to configure standalone Python:', err);

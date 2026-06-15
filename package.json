@@ -36,7 +36,12 @@
         "from": "embedded-python/runtime/",
         "to": "python/",
         "filter": [
-          "**/*"
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.pyc",
+          "!**/*.pyo",
+          "!**/test/**",
+          "!**/tests/**"
         ]
       },
       {
@@ -61,6 +66,7 @@
       "icon": "public/icon.icns"
     },
     "win": {
+      "compression": "store",
       "target": [
         "portable",
         "nsis"

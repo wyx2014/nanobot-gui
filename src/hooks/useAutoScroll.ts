@@ -21,7 +21,7 @@ export function useAutoScroll() {
   // Flag to skip scroll-handler check after programmatic scrolls.
   // Prevents a race where new content arrives between scrollTop assignment
   // and the async scroll event, causing checkIfAtBottom() to return false.
-  const isProgrammaticScroll = useRef(false);
+  const programmaticScrollMinTop = useRef<number | null>(null);
 
   const checkIfAtBottom = useCallback(() => {
     const container = containerRef.current;
@@ -34,7 +34,7 @@ export function useAutoScroll() {
   const scrollToBottom = useCallback(() => {
     const container = containerRef.current;
     if (!container) return;
-    isProgrammaticScroll.current = true;
+    programmaticScrollMinTop.current = Math.max(0, container.scrollHeight - container.clientHeight - 2);
     container.scrollTop = container.scrollHeight;
     isAtBottomRef.current = true;
     setIsAtBottom(true);
@@ -47,7 +47,7 @@ export function useAutoScroll() {
   const resetToBottom = useCallback(() => {
     const container = containerRef.current;
     if (container) {
-      isProgrammaticScroll.current = true;
+      programmaticScrollMinTop.current = Math.max(0, container.scrollHeight - container.clientHeight - 2);
       container.scrollTop = container.scrollHeight;
     }
     isAtBottomRef.current = true;
@@ -64,9 +64,10 @@ export function useAutoScroll() {
     const handleScroll = () => {
       // Skip check for programmatic scrolls — the race between scrollTop
       // assignment and this async event can cause false negatives.
-      if (isProgrammaticScroll.current) {
-        isProgrammaticScroll.current = false;
-        return;
+      const minTop = programmaticScrollMinTop.current;
+      if (minTop !== null) {
+        programmaticScrollMinTop.current = null;
+        if (container.scrollTop >= minTop) return;
       }
       const atBottom = checkIfAtBottom();
       // Only update state when the value actually changes to avoid re-renders
@@ -95,12 +96,12 @@ export function useAutoScroll() {
         rafId.current = 0;
         const c = containerRef.current;
         if (!c || !isAtBottomRef.current) return;
-        isProgrammaticScroll.current = true;
+        programmaticScrollMinTop.current = Math.max(0, c.scrollHeight - c.clientHeight - 2);
         c.scrollTop = c.scrollHeight;
         // Safety: clear the flag next frame if no scroll event fires
         // (e.g., scrollTop didn't actually change because we're already at bottom)
         requestAnimationFrame(() => {
-          isProgrammaticScroll.current = false;
+          programmaticScrollMinTop.current = null;
         });
       });
     };

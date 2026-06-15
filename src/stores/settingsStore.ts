@@ -372,7 +372,7 @@ export const useSettingsStore = create<SettingsStore>()(
       imageGenModel: 'dall-e-3',
       // Web search defaults
       useBuiltinWebSearch: true,
-      webSearchProvider: 'brave' as WebSearchProviderType,
+      webSearchProvider: 'duckduckgo' as WebSearchProviderType,
       webSearchApiKey: '',
       webSearchBaseUrl: '',
       // Language default

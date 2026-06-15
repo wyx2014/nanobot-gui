@@ -234,7 +234,7 @@ export function createSearXNGProvider(baseUrl: string): SearchProvider {
 
 // --- Provider factory ---
 
-export type WebSearchProviderType = 'bing' | 'brave' | 'tavily' | 'searxng';
+export type WebSearchProviderType = 'bing' | 'brave' | 'tavily' | 'searxng' | 'duckduckgo';
 
 export function createSearchProvider(
   providerType: WebSearchProviderType,
@@ -250,5 +250,7 @@ export function createSearchProvider(
       return createTavilyProvider(apiKey);
     case 'searxng':
       return createSearXNGProvider(baseUrl || '');
+    case 'duckduckgo':
+      throw new Error('DuckDuckGo search is handled by the nanobot gateway.');
   }
 }

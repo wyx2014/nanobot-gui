@@ -436,36 +436,39 @@ export default function ChatView({
   return (
     <div className="flex flex-col h-full min-h-0 min-w-0 bg-[#fbfaf7]">
       {/* Messages Area */}
-      <div className="relative flex-1 min-h-0 overflow-y-auto" ref={containerRef}>
-        <div className="w-full max-w-4xl mx-auto px-6 md:px-10 py-8 overflow-hidden">
-          <div>
-            <ThreadMessages
-              messages={displayMessages}
-              isStreaming={stream.isStreaming}
-              onEditUserMessage={handleEditUserMessage}
-              onRegenerateAssistant={handleRegenerateAssistant}
-            />
+      <div className="relative flex-1 min-h-0">
+        <div className="h-full overflow-y-auto" ref={containerRef}>
+          <div className="w-full max-w-4xl mx-auto px-6 md:px-10 py-8 overflow-hidden">
+            <div>
+              <ThreadMessages
+                messages={displayMessages}
+                isStreaming={stream.isStreaming}
+                onEditUserMessage={handleEditUserMessage}
+                onRegenerateAssistant={handleRegenerateAssistant}
+              />
 
-            {/* Thinking indicator - shown after user message but before assistant message appears */}
-            {stream.isStreaming && displayMessages.length > 0 && displayMessages.every((m) => m.role === 'user') && (
-              <div className="pl-9">
-                <ThinkingIndicator />
-              </div>
-            )}
+              {/* Thinking indicator - shown after user message but before assistant message appears */}
+              {stream.isStreaming && displayMessages.length > 0 && displayMessages.every((m) => m.role === 'user') && (
+                <div className="pl-9">
+                  <ThinkingIndicator />
+                </div>
+              )}
+            </div>
+
+            {/* Bottom sentinel */}
+            <div ref={endRef} className="h-px w-full" />
           </div>
-
-          {/* Bottom sentinel */}
-          <div ref={endRef} className="h-px w-full" />
         </div>
 
         {/* Scroll-to-bottom button */}
         {!isAtBottom && (
           <button
             onClick={scrollToBottom}
-            className="sticky bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/90 border border-[#706b5730] shadow-md text-[13px] text-[#656358] hover:text-[#29261b] hover:bg-white transition-all backdrop-blur-sm"
+            title={t.chat.scrollToBottom}
+            aria-label={t.chat.scrollToBottom}
+            className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center justify-center h-8 w-8 rounded-full bg-white/90 border border-[#706b5730] shadow-md text-[#656358] hover:text-[#29261b] hover:bg-white transition-all backdrop-blur-sm"
           >
-            <ChevronDown className="h-3.5 w-3.5" />
-            <span>{t.chat.scrollToBottom}</span>
+            <ChevronDown className="h-4 w-4" />
           </button>
         )}
       </div>

@@ -251,8 +251,8 @@ function App() {
   // Hide native title bar text on macOS (overlay mode — title shown in sidebar instead)
   // On Windows, show app name in native title bar
   useEffect(() => {
-    windowBridge.setTitle(isMacOS() ? '' : 'Ruyi');
-  }, []);
+    windowBridge.setTitle(isMacOS() ? '' : t.common.appName);
+  }, [t.common.appName]);
 
   // Sync settings and start nanobot bridge
   const apiKey = useSettingsStore((s) => s.apiKey);

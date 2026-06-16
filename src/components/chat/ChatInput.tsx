@@ -1095,7 +1095,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
               disabled={disabled}
               rows={isWelcome ? 2 : 1}
               className={cn(
-                'flex-1 bg-transparent resize-none outline-none text-[#29261b] leading-relaxed placeholder:text-[#8f8b82]',
+                'flex-1 bg-transparent resize-none outline-none text-[#29261b] leading-relaxed placeholder:text-[#8f8b82] font-user-message',
                 isWelcome
                   ? 'min-h-[64px] max-h-[180px] text-[18px]'
                   : 'min-h-[28px] max-h-[160px] py-0.5 text-[15px] disabled:opacity-40'

@@ -69,7 +69,7 @@ function EditInput({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
-          className="flex-1 resize-none overflow-hidden border-none bg-transparent py-1.5 text-[14.5px] leading-relaxed text-[#29261b] outline-none"
+          className="flex-1 resize-none overflow-hidden border-none bg-transparent py-1.5 text-[14.5px] leading-relaxed text-[#29261b] outline-none font-user-message"
           placeholder={t.chat.inputPlaceholder}
           autoFocus
           rows={1}
@@ -301,7 +301,7 @@ export default function MessageBubble({
                 event.stopPropagation();
                 setContextMenu({ x: event.clientX, y: event.clientY });
               }}
-              className="ml-auto w-fit rounded-[18px] bg-[#efede8] px-4 py-2 text-left text-[16px]/[1.75] text-[#191814] whitespace-pre-wrap break-words"
+              className="ml-auto w-fit rounded-[18px] bg-[#efede8] px-4 py-2 text-left text-[16px]/[1.75] text-[#191814] whitespace-pre-wrap break-words font-user-message"
             >
               <MarkdownRenderer content={textContent} variant="user" />
             </div>

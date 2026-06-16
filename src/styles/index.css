@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&display=swap');
 
 @custom-variant dark (&:is(.dark *));
 
@@ -136,6 +137,9 @@
 /* Light theme - Claude color palette */
 :root {
   --radius: 0.5rem;
+
+  --font-user-message: "Anthropic Sans", system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-claude-response: "Newsreader", "Anthropic Serif", Palatino, "Palatino Linotype", "Times New Roman", Times, "Arial Hebrew", "Noto Sans Hebrew", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "PingFang TC", "Microsoft JhengHei", "Noto Sans CJK TC", "Hiragino Sans", "Yu Gothic", Meiryo, "Noto Sans CJK JP", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans CJK KR", serif;
 
   /* Claude exact colors from source */
   --claude-bg: #fbfaf7;
@@ -325,7 +329,12 @@
     0 20px 48px rgba(41, 38, 27, 0.095);
 }
 
+.font-user-message {
+  font-family: var(--font-user-message);
+}
+
 .claude-markdown {
+  font-family: var(--font-claude-response);
   color: #191814;
   font-size: 18px;
   line-height: 1.8;
@@ -335,7 +344,7 @@
 .claude-markdown h1,
 .claude-markdown h2,
 .claude-markdown h3 {
-  font-family: var(--font-serif);
+  font-family: var(--font-claude-response);
   letter-spacing: -0.01em;
 }
 

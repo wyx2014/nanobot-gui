@@ -298,10 +298,13 @@ export default function Sidebar() {
           <div className="w-8 h-8 rounded-full overflow-hidden shrink-0">
             <img src={userAvatar || ruyiAvatar} alt="Avatar" className="w-full h-full object-cover" />
           </div>
-          <div className="flex-1 min-w-0 text-left">
+          <div className="flex-1 min-w-0 text-left flex items-center gap-1.5">
             <div className="text-[13px] font-semibold text-[#29261b] truncate">
               {userNickname || t.sidebar.defaultNickname}
             </div>
+            <span className="shrink-0 px-1 py-[2px] rounded border border-[#d97757]/30 text-[#d97757] bg-[#d97757]/8 text-[9.5px] font-semibold tracking-wide leading-none">
+              内测版
+            </span>
           </div>
           <button
             onClick={() => openSystemSettings(updateInfo ? 'about' : undefined)}

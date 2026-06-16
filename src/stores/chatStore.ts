@@ -10,6 +10,7 @@ import { clearTodos } from '../core/nanobot/todoManager';
 import { clearInputQueue } from '../core/nanobot/userInputQueue';
 import { getNanobotToken, getNanobotStatus } from '@/core/nanobotClient';
 import { deleteSession } from '@/core/api';
+import { conversationIdToSessionKey } from '@/core/sessionKey';
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
@@ -204,7 +205,7 @@ export const useChatStore = create<ChatStore>()(
           if (status.ready) {
             const token = getNanobotToken();
             const baseUrl = `http://127.0.0.1:${status.port}`;
-            deleteSession(token, `websocket:${id}`, baseUrl).catch((err) => {
+            deleteSession(token, conversationIdToSessionKey(id), baseUrl).catch((err) => {
               console.warn(`[chatStore] failed to delete session ${id} from gateway:`, err);
             });
           }

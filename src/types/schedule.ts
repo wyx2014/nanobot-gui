@@ -37,9 +37,12 @@ export interface ScheduledTask {
 
 export interface ScheduledTaskRun {
   id: string;
+  runId?: string;
   scheduledTaskId: string;
   /** Associated conversation ID for viewing results */
   conversationId: string;
+  /** Backend session key for this run. New runs use a per-run cron session. */
+  sessionKey?: string;
   startedAt: number;
   completedAt?: number;
   status: ScheduledRunStatus;

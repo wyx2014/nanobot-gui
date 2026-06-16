@@ -1,7 +1,7 @@
 import { useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useI18n } from '@/i18n';
-import { syncSessionsFromGateway } from '@/core/nanobotClient';
+import { syncSessionFromGateway } from '@/core/nanobotClient';
 import { ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ScheduledTaskRun } from '@/types/schedule';
@@ -31,12 +31,22 @@ export default function ScheduleRunHistory({ runs }: Props) {
   const setViewMode = useSettingsStore((s) => s.setViewMode);
   const conversations = useChatStore((s) => s.conversations);
 
-  const handleViewConversation = async (conversationId: string) => {
-    if (!conversations[conversationId]) {
-      await syncSessionsFromGateway();
+  const handleViewConversation = async (run: ScheduledTaskRun) => {
+    const sessionKey = run.sessionKey ?? run.conversationId;
+    if (!conversations[sessionKey]) {
+      await syncSessionFromGateway(sessionKey, {
+        scheduledTaskId: run.scheduledTaskId,
+      });
     }
-    if (useChatStore.getState().conversations[conversationId]) {
-      switchConversation(conversationId);
+    const conv = useChatStore.getState().conversations[sessionKey];
+    if (conv) {
+      if (conv.scheduledTaskId !== run.scheduledTaskId) {
+        useChatStore.getState().upsertConversation(sessionKey, {
+          ...conv,
+          scheduledTaskId: run.scheduledTaskId,
+        });
+      }
+      switchConversation(sessionKey);
       setViewMode('chat');
     }
   };
@@ -86,9 +96,9 @@ export default function ScheduleRunHistory({ runs }: Props) {
           </span>
 
           {/* View conversation button */}
-          {run.conversationId && (
+          {(run.sessionKey || run.conversationId) && (
             <button
-              onClick={() => void handleViewConversation(run.conversationId)}
+              onClick={() => void handleViewConversation(run)}
               className="text-[#656358] hover:text-[#d97757] p-0.5 shrink-0"
               title={t.schedule.viewConversation}
             >

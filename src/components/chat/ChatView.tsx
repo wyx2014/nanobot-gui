@@ -12,6 +12,7 @@ import {
 } from '@/core/nanobotClient';
 import type { GoalStateWsPayload, UIMessage, WorkspaceScopePayload, WorkspacesPayload } from '@/core/types';
 import { fetchWebuiThread } from '@/core/api';
+import { conversationIdToSessionKey } from '@/core/sessionKey';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useI18n } from '@/i18n';
 import ThreadMessages from './ThreadMessages';
@@ -150,7 +151,7 @@ export default function ChatView({
       try {
         const token = getNanobotToken();
         const base = getGatewayBaseUrl();
-        const thread = await fetchWebuiThread(token, `websocket:${activeConvId}`, base);
+        const thread = await fetchWebuiThread(token, conversationIdToSessionKey(activeConvId), base);
         if (cancelled) return;
         const ui = projectWebuiThreadMessages((thread?.messages ?? []).map((message, index) => ({
           ...message,
@@ -353,7 +354,7 @@ export default function ChatView({
         try {
           const token = getNanobotToken();
           const base = getGatewayBaseUrl();
-          const thread = await fetchWebuiThread(token, `websocket:${activeConvId}`, base);
+          const thread = await fetchWebuiThread(token, conversationIdToSessionKey(activeConvId), base);
           if (cancelled) return;
           setHistoryMessages(projectWebuiThreadMessages(thread?.messages ?? []));
           setHistoryVersion((value) => value + 1);

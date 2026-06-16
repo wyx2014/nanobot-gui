@@ -3,7 +3,7 @@ import { useChatStore } from '@/stores/chatStore';
 import { useScheduleStore } from '@/stores/scheduleStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useI18n } from '@/i18n';
-import { syncSessionsFromGateway } from '@/core/nanobotClient';
+import { syncSessionFromGateway } from '@/core/nanobotClient';
 import { ChevronRight, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ScheduledTaskRun } from '@/types/schedule';
@@ -35,6 +35,7 @@ function RunStatusDot({ status }: { status: ScheduledTaskRun['status'] }) {
 export default function ScheduledSection() {
   const { t } = useI18n();
   const tasks = useScheduleStore((s) => s.tasks);
+  const loadTasks = useScheduleStore((s) => s.loadTasks);
   const setSelectedTaskId = useScheduleStore((s) => s.setSelectedTaskId);
   const conversations = useChatStore((s) => s.conversations);
   const activeConversationId = useChatStore((s) => s.activeConversationId);
@@ -53,6 +54,10 @@ export default function ScheduledSection() {
     run: ScheduledTaskRun;
   } | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    void loadTasks();
+  }, [loadTasks]);
 
   // Close context menu when clicking outside
   useEffect(() => {
@@ -75,12 +80,23 @@ export default function ScheduledSection() {
     setViewMode('schedule');
   };
 
-  const handleRunClick = async (conversationId: string) => {
-    if (!conversations[conversationId]) {
-      await syncSessionsFromGateway();
+  const handleRunClick = async (taskId: string, run: ScheduledTaskRun) => {
+    const sessionKey = run.sessionKey ?? run.conversationId;
+    if (!conversations[sessionKey]) {
+      await syncSessionFromGateway(sessionKey, {
+        scheduledTaskId: taskId,
+        title: `${formatRunDate(run.startedAt)} - ${tasks[taskId]?.name ?? '定时任务'}`,
+      });
     }
-    if (useChatStore.getState().conversations[conversationId]) {
-      switchConversation(conversationId);
+    const conv = useChatStore.getState().conversations[sessionKey];
+    if (conv) {
+      if (conv.scheduledTaskId !== taskId) {
+        useChatStore.getState().upsertConversation(sessionKey, {
+          ...conv,
+          scheduledTaskId: taskId,
+        });
+      }
+      switchConversation(sessionKey);
       setViewMode('chat');
     }
   };
@@ -150,14 +166,15 @@ export default function ScheduledSection() {
                 {isExpanded && (
                   <div className="ml-5 space-y-px">
                     {visibleRuns.map((run) => {
-                      const isActive = run.conversationId === activeConversationId && viewMode === 'chat';
+                      const sessionKey = run.sessionKey ?? run.conversationId;
+                      const isActive = sessionKey === activeConversationId && viewMode === 'chat';
                       // Label: "M/D HH:mm - TaskName" like Cowork's "Mar 5 - Hello greeting"
                       const label = `${formatRunDate(run.startedAt)} - ${task.name}`;
 
                       return (
                         <button
                           key={run.id}
-                          onClick={() => void handleRunClick(run.conversationId)}
+                          onClick={() => void handleRunClick(task.id, run)}
                           onContextMenu={(e) => handleRunContextMenu(e, task.id, run)}
                           className={cn(
                             'flex items-center gap-1.5 w-full px-2 py-1 rounded-lg text-[12.5px] font-medium tracking-[-0.01em] truncate transition-colors',

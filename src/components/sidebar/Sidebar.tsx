@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState, useRef } from 'react';
+import { useEffect, useCallback, useMemo, useState, useRef } from 'react';
 import { useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useScheduleStore } from '@/stores/scheduleStore';
@@ -47,6 +47,7 @@ export default function Sidebar() {
   const setViewMode = useSettingsStore((s) => s.setViewMode);
   const updateInfo = useSettingsStore((s) => s.updateInfo);
   const activeTaskCount = useScheduleStore((s) => s.getActiveTaskCount());
+  const scheduledTasks = useScheduleStore((s) => s.tasks);
   const { t } = useI18n();
 
   // Context menu state
@@ -97,8 +98,19 @@ export default function Sidebar() {
 
   // Sort by createdAt to keep positions stable during status updates
   // Filter out conversations created by scheduled tasks — they appear in ScheduledSection
+  const scheduledConversationIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const task of Object.values(scheduledTasks)) {
+      for (const run of task.runs) {
+        const sessionKey = run.sessionKey ?? run.conversationId;
+        if (sessionKey) ids.add(sessionKey);
+      }
+    }
+    return ids;
+  }, [scheduledTasks]);
+
   const sortedConvs = Object.values(conversations)
-    .filter((c) => !c.scheduledTaskId)
+    .filter((c) => !c.scheduledTaskId && !scheduledConversationIds.has(c.id) && !c.id.startsWith('cron:'))
     .filter((c) => c.messages.length > 0)
     .sort((a, b) => b.createdAt - a.createdAt);
 

@@ -493,6 +493,45 @@ function titleFromSession(sessionTitle: string | undefined, messages: Message[])
   return '新对话';
 }
 
+export async function syncSessionFromGateway(
+  sessionKey: string,
+  options: { scheduledTaskId?: string; title?: string } = {},
+): Promise<boolean> {
+  try {
+    const status = await getNanobotStatus();
+    if (!status.ready) return false;
+
+    const token = getNanobotToken();
+    const baseUrl = `http://127.0.0.1:${status.port}`;
+    const thread = await fetchWebuiThread(token, sessionKey, baseUrl);
+    if (!thread) return false;
+
+    const gatewayMessages = mapWebuiThreadToGuiMessages(scrubSubagentUiMessages(normalizeLegacyLongTaskMessages(thread.messages)));
+    const guiMessages = projectGatewayMessagesForHistory(gatewayMessages);
+    if (guiMessages.length === 0) return false;
+
+    const firstTimestamp = guiMessages[0]?.timestamp ?? Date.now();
+    const lastTimestamp = guiMessages[guiMessages.length - 1]?.timestamp ?? firstTimestamp;
+    const savedAt = thread.savedAt ? new Date(thread.savedAt).getTime() : NaN;
+
+    useChatStore.getState().upsertConversation(sessionKey, {
+      id: sessionKey,
+      title: options.title ?? titleFromSession(undefined, guiMessages),
+      messages: guiMessages,
+      createdAt: firstTimestamp,
+      updatedAt: Number.isFinite(savedAt) ? savedAt : lastTimestamp,
+      status: 'idle',
+      workspacePath: thread.workspace_scope?.project_path ?? null,
+      workspaceScope: thread.workspace_scope ?? null,
+      ...(options.scheduledTaskId ? { scheduledTaskId: options.scheduledTaskId } : {}),
+    });
+    return true;
+  } catch (err) {
+    console.error('[nanobotClient] syncSessionFromGateway error:', err);
+    return false;
+  }
+}
+
 export async function syncSessionsFromGateway(): Promise<void> {
   try {
     const status = await getNanobotStatus();

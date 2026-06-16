@@ -453,6 +453,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   // Welcome-only state (always declared for hook stability)
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const categoryPanelRef = useRef<HTMLDivElement>(null);
+  const [hoverPrompt, setHoverPrompt] = useState<string | null>(null);
   const [pendingFolder, setPendingFolder] = useState<string | null>(null);
   const [localWorkspace, setLocalWorkspace] = useState<string | null>(null);
   const [isComposing, setIsComposing] = useState(false);
@@ -493,9 +494,19 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   };
 
   const handleShortcutOptionClick = (prompt: string) => {
-    setText(prompt);
+    const draft = {
+      text: prompt,
+      images: [],
+      files: [],
+      cliApps: [],
+      mcpPresets: [],
+    };
+    isSubmittingRef.current = true;
+    writeDraft(draftKey, { text: '', images: [], files: [], cliApps: [], mcpPresets: [] });
+    submitDraft(draft);
     setActiveCategory(null);
-    textareaRef.current?.focus();
+    setHoverPrompt(null);
+    resetInput();
   };
 
   // Close category panel on click outside
@@ -1043,11 +1054,13 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   const hasContent = text.trim().length > 0 || selectedCliApps.length > 0 || selectedMcpPresets.length > 0 || hasAttachments;
 
   // Determine placeholder based on selected command
-  const placeholder = disabled
-    ? t.chat.inputPlaceholderBusy
-    : isRunning
-      ? t.chat.inputPlaceholderMidTask
-      : t.chat.inputPlaceholder;
+  const placeholder = hoverPrompt
+    ? hoverPrompt
+    : disabled
+      ? t.chat.inputPlaceholderBusy
+      : isRunning
+        ? t.chat.inputPlaceholderMidTask
+        : t.chat.inputPlaceholder;
 
   return (
     <>
@@ -1444,6 +1457,8 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                   <button
                     key={opt.key}
                     onClick={() => handleShortcutOptionClick(isEn ? opt.promptEn : opt.promptZh)}
+                    onMouseEnter={() => setHoverPrompt(isEn ? opt.promptEn : opt.promptZh)}
+                    onMouseLeave={() => setHoverPrompt(null)}
                     className={cn(
                       "w-full text-left py-3.5 px-5 hover:bg-[#f5f3ee] text-[14px] text-[#29261b] transition-colors flex items-center justify-between group",
                       idx > 0 && "border-t border-[#f0ede6]"

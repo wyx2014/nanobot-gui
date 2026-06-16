@@ -333,6 +333,10 @@
   font-family: var(--font-user-message);
 }
 
+.font-claude-response {
+  font-family: var(--font-claude-response);
+}
+
 .claude-markdown {
   font-family: var(--font-claude-response);
   color: #191814;

@@ -43,6 +43,129 @@ export interface ChatInputSendOptions {
   mcpPresets?: OutboundMcpPresetMention[];
 }
 
+interface ShortcutOption {
+  key: string;
+  labelZh: string;
+  labelEn: string;
+  promptZh: string;
+  promptEn: string;
+}
+
+interface ShortcutCategory {
+  id: string;
+  icon: any;
+  labelKey: 'shortcutWrite' | 'shortcutLearn' | 'shortcutCode' | 'shortcutLife' | 'shortcutRuyi';
+  options: ShortcutOption[];
+}
+
+const SHORTCUT_CATEGORIES: ShortcutCategory[] = [
+  {
+    id: 'write',
+    icon: Pencil,
+    labelKey: 'shortcutWrite',
+    options: [
+      {
+        key: 'improve_style',
+        labelZh: '改进写作风格',
+        labelEn: 'Improve writing style',
+        promptZh: '嗨，如意！你能帮我改进一下写作风格吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或上传任何资料来帮助你更好地完成工作，也请告诉我。如果对你有帮助，可以使用任何你能访问的工具，比如网络搜索等等。',
+        promptEn: 'Hi Ruyi! Can you help me improve my writing style? If you need more information, please ask one or two key questions right away. If you think I should provide more context or upload any files to help you do a better job, please let me know. If it helps, you can use any tools you have access to, such as web search.',
+      },
+      {
+        key: 'write_speech',
+        labelZh: '写演讲稿',
+        labelEn: 'Write speech script',
+        promptZh: '嗨，如意！你能帮我写一下演讲稿吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或者上传一些资料来帮助你更好地完成演讲，也请告诉我。你可以使用任何你能访问的工具，比如网络搜索等等，只要它们对你有帮助。',
+        promptEn: 'Hi Ruyi! Can you help me write a speech? If you need more information, please ask one or two key questions right away. If you think I should provide more context or upload some files to help you do a better job, please let me know. You can use any tools you have access to, such as web search, as long as they help.',
+      },
+      {
+        key: 'project_proposal',
+        labelZh: '撰写项目申请书',
+        labelEn: 'Draft project proposal',
+        promptZh: '嗨，如意！你能帮我写项目申请书吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或上传任何资料来帮助你更好地完成申请，请告诉我。如果对你有帮助，你可以使用任何你能访问的工具，比如网络搜索等等。',
+        promptEn: 'Hi Ruyi! Can you help me write a project proposal? If you need more information, please ask one or two key questions right away. If you think I should provide more context or upload any files to help you do a better job, please let me know. If it helps, you can use any tools you have access to, such as web search.',
+      },
+    ],
+  },
+  {
+    id: 'learn',
+    icon: GraduationCap,
+    labelKey: 'shortcutLearn',
+    options: [
+      {
+        key: 'study_schedule',
+        labelZh: '规划学习时间表',
+        labelEn: 'Plan study schedule',
+        promptZh: '嗨，如意！你能帮我制作学习时间表吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或上传任何资料来帮助你更好地完成工作，请告诉我。你可以使用任何你能访问的工具，例如网络搜索等等，只要它们对你有帮助。',
+        promptEn: 'Hi Ruyi! Can you help me create a study schedule? If you need more information from me, please ask one or two key questions right away. If you think I should provide more context or upload any files to help you do a better job, please let me know. You can use any tools you have access to, such as web search, as long as they help.',
+      },
+    ],
+  },
+  {
+    id: 'code',
+    icon: Code,
+    labelKey: 'shortcutCode',
+    options: [
+      {
+        key: 'write_code',
+        labelZh: '编写算法/代码',
+        labelEn: 'Write code / algorithm',
+        promptZh: '嗨，如意！你能帮我编写一段代码吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或上传任何资料来帮助你更好地完成，请告诉我。如果对你有帮助，可以使用任何你能访问的工具，比如网络搜索等等。',
+        promptEn: 'Hi Ruyi! Can you help me write some code? If you need more information, please ask one or two key questions right away. If you think I should provide more context or upload any files, please let me know. If it helps, you can use any tools you have access to, such as web search.',
+      },
+      {
+        key: 'refactor_code',
+        labelZh: '解释/重构代码',
+        labelEn: 'Explain or refactor code',
+        promptZh: '嗨，如意！你能帮我解释或重构一段代码吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或上传任何资料来帮助你，请告诉我。可以使用任何你能访问的工具，比如网络搜索等等。',
+        promptEn: 'Hi Ruyi! Can you help me explain or refactor some code? If you need more information, please ask one or two key questions right away. If you think I should provide more context or upload any files, please let me know. If it helps, you can use any tools you have access to, such as web search.',
+      },
+      {
+        key: 'debug_code',
+        labelZh: '排查 Bug',
+        labelEn: 'Debug and fix bugs',
+        promptZh: '嗨，如意！你能帮我排查代码中的 Bug 吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或上传任何资料来帮助你更好地完成，请告诉我。如果对你有帮助，可以使用网络搜索等工具。',
+        promptEn: 'Hi Ruyi! Can you help me find and fix a bug in my code? If you need more information, please ask one or two key questions right away. If you think I should provide more context or upload any files, please let me know. If it helps, you can use any tools you have access to, such as web search.',
+      },
+    ],
+  },
+  {
+    id: 'life',
+    icon: Coffee,
+    labelKey: 'shortcutLife',
+    options: [
+      {
+        key: 'improve_habits',
+        labelZh: '改进习惯',
+        labelEn: 'Improve habits',
+        promptZh: '嗨，如意！你能帮我改进一下习惯吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或上传任何资料来帮助你更好地完成工作，请告诉我。如果有什么工具能帮到你，比如网络搜索等等，都可以用。',
+        promptEn: 'Hi Ruyi! Can you help me improve my habits? If you need more information, please ask one or two key questions right away. If you think I should provide more context or upload any files to help you do a better job, please let me know. If any tools can help, such as web search, feel free to use them.',
+      },
+    ],
+  },
+  {
+    id: 'ruyi',
+    icon: Lightbulb,
+    labelKey: 'shortcutRuyi',
+    options: [
+      {
+        key: 'casual_chat',
+        labelZh: '日常闲聊/咨询',
+        labelEn: 'Casual chat / consultation',
+        promptZh: '嗨，如意！我想找你随便聊聊，或者问你一些问题。如果你需要我提供更多背景信息，请告诉我。',
+        promptEn: 'Hi Ruyi! I want to have a casual chat with you or ask you some questions. If you need more context, please let me know.',
+      },
+      {
+        key: 'brainstorming',
+        labelZh: '如意推荐的创意启发',
+        labelEn: 'Creative brainstorming',
+        promptZh: '嗨，如意！你能帮我提供一些有创意的想法或灵感吗？如果你需要我提供更多背景，请告诉我。如果有什么工具能帮到你，都可以使用。',
+        promptEn: 'Hi Ruyi! Can you help me brainstorm some creative ideas or inspiration? If you need more context, please let me know. Feel free to use any tools, such as web search.',
+      },
+    ],
+  },
+];
+
 interface ChatInputProps {
   variant: 'welcome' | 'chat';
   onSend: (message: string, images?: ImageAttachment[], workspacePath?: string | null, options?: ChatInputSendOptions) => void;
@@ -328,6 +451,8 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Welcome-only state (always declared for hook stability)
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const categoryPanelRef = useRef<HTMLDivElement>(null);
   const [pendingFolder, setPendingFolder] = useState<string | null>(null);
   const [localWorkspace, setLocalWorkspace] = useState<string | null>(null);
   const [isComposing, setIsComposing] = useState(false);
@@ -364,28 +489,26 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   const modelPickerRef = useRef<HTMLDivElement>(null);
 
   const handleShortcut = (type: string) => {
-    const isEn = useSettingsStore.getState().language === 'en-US';
-    let prefix = '';
-    switch (type) {
-      case 'write':
-        prefix = isEn ? 'Help me write ' : '帮我写 ';
-        break;
-      case 'learn':
-        prefix = isEn ? 'Help me learn/analyze ' : '帮我学习/分析 ';
-        break;
-      case 'code':
-        prefix = isEn ? 'Help me write code to ' : '帮我编写一段代码 ';
-        break;
-      case 'life':
-        prefix = isEn ? 'Give me some advice or casual chat about: ' : '提供一些生活建议或日常闲聊：';
-        break;
-      case 'ruyi':
-        prefix = isEn ? 'Ruyi, what can you do for me?' : '如意，你能帮我做什么？';
-        break;
-    }
-    setText(prefix);
+    setActiveCategory(type);
+  };
+
+  const handleShortcutOptionClick = (prompt: string) => {
+    setText(prompt);
+    setActiveCategory(null);
     textareaRef.current?.focus();
   };
+
+  // Close category panel on click outside
+  useEffect(() => {
+    if (!activeCategory) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (categoryPanelRef.current && !categoryPanelRef.current.contains(e.target as Node)) {
+        setActiveCategory(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [activeCategory]);
 
   // Close model picker on click outside
   useEffect(() => {
@@ -1283,6 +1406,59 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
             </div>
           )}
         </div>
+
+        {isWelcome && activeCategory && (
+          <div
+            ref={categoryPanelRef}
+            className="absolute bottom-full left-0 right-0 mb-2.5 bg-[#fffefa] rounded-[24px] border border-[#dedbd3] shadow-lg overflow-hidden z-30 animate-in fade-in slide-in-from-bottom-2 duration-200"
+          >
+            {/* Header */}
+            {(() => {
+              const category = SHORTCUT_CATEGORIES.find((c) => c.id === activeCategory);
+              if (!category) return null;
+              const Icon = category.icon;
+              return (
+                <div className="flex items-center justify-between px-5 pt-4 pb-3 text-[#656358] text-[13px] font-medium border-b border-[#f0ede6]">
+                  <div className="flex items-center gap-2">
+                    <Icon className="h-4 w-4 text-[#656358]" />
+                    <span>{t.chat[category.labelKey]}</span>
+                  </div>
+                  <button
+                    onClick={() => setActiveCategory(null)}
+                    className="p-1 hover:bg-[#f5f3ee] rounded-lg transition-colors text-[#656358] hover:text-[#29261b]"
+                    title={t.common.close}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              );
+            })()}
+
+            {/* Options List */}
+            <div className="max-h-64 overflow-y-auto">
+              {(() => {
+                const category = SHORTCUT_CATEGORIES.find((c) => c.id === activeCategory);
+                if (!category) return null;
+                const isEn = useSettingsStore.getState().language === 'en-US';
+                return category.options.map((opt, idx) => (
+                  <button
+                    key={opt.key}
+                    onClick={() => handleShortcutOptionClick(isEn ? opt.promptEn : opt.promptZh)}
+                    className={cn(
+                      "w-full text-left py-3.5 px-5 hover:bg-[#f5f3ee] text-[14px] text-[#29261b] transition-colors flex items-center justify-between group",
+                      idx > 0 && "border-t border-[#f0ede6]"
+                    )}
+                  >
+                    <span className="font-medium group-hover:text-[#d97757] transition-colors">
+                      {isEn ? opt.labelEn : opt.labelZh}
+                    </span>
+                    <ArrowUp className="h-3.5 w-3.5 opacity-0 group-hover:opacity-100 text-[#d97757] transition-all transform translate-x-1 group-hover:translate-x-0 shrink-0 ml-2" />
+                  </button>
+                ));
+              })()}
+            </div>
+          </div>
+        )}
 
         {isWelcome && (
           <div className="flex flex-wrap items-center justify-center gap-2.5 mt-4">

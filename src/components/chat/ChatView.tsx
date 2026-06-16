@@ -16,10 +16,12 @@ import { conversationIdToSessionKey } from '@/core/sessionKey';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useI18n } from '@/i18n';
 import ThreadMessages from './ThreadMessages';
+import InteractivePromptCard, { type InteractivePromptSubmitPayload } from './InteractivePromptCard';
 import ChatInput, { type ChatInputSendOptions } from './ChatInput';
 import ActiveSkillsBar from './ActiveSkillsBar';
 import { ChevronDown, Settings } from 'lucide-react';
-import ruyiAvatar from '@/assets/ruyi-avatar.png';
+import { osBridge } from '@/lib/ipc-factory';
+import { extractUsername } from '@/utils/pathUtils';
 import ThinkingIndicator from './ThinkingIndicator';
 import StreamErrorNotice from './StreamErrorNotice';
 import { normalizeLegacyLongTaskMessages } from '@/core/nanobot/thread-display-compat';
@@ -120,19 +122,49 @@ export default function ChatView({
   onWorkspaceScopeChange?: (scope: WorkspaceScopePayload) => void;
 }) {
   const activeConv = useActiveConversation();
+  const activeConvId = activeConv?.id;
   const { createConversation, setConversationStatus } = useChatStore();
   const { t } = useI18n();
   const [historyMessages, setHistoryMessages] = useState<UIMessage[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyVersion, setHistoryVersion] = useState(0);
+  const [promptSubmitState, setPromptSubmitState] = useState<{
+    promptId: string;
+    status: 'submitting' | 'error';
+    error?: string;
+  } | null>(null);
   const pendingFirstRef = useRef<PendingFirstMessage | null>(null);
+
+  const [greeting, setGreeting] = useState('');
+  const [userName, setUserName] = useState('');
+
+  useEffect(() => {
+    if (activeConvId) return;
+
+    const hour = new Date().getHours();
+    const isEn = useSettingsStore.getState().language === 'en-US';
+    if (hour >= 5 && hour < 12) {
+      setGreeting(isEn ? 'Morning' : '早上好');
+    } else if (hour >= 12 && hour < 18) {
+      setGreeting(isEn ? 'Afternoon' : '下午好');
+    } else {
+      setGreeting(isEn ? 'Evening' : '晚上好');
+    }
+
+    osBridge.homeDir()
+      .then((home) => {
+        if (home) {
+          setUserName(extractUsername(home));
+        }
+      })
+      .catch((err) => console.error('Failed to get home dir:', err));
+  }, [activeConvId]);
 
   const { containerRef, endRef, isAtBottom, scrollToBottom, resetToBottom } = useAutoScroll();
 
   // Scroll to bottom when switching conversations.
   // useLayoutEffect runs after DOM commit but before paint,
   // so the user never sees the wrong scroll position.
-  const activeConvId = activeConv?.id;
   useLayoutEffect(() => {
     if (activeConvId) {
       scrollToBottom();
@@ -217,6 +249,14 @@ export default function ChatView({
     () => mapWebuiThreadToGuiMessages(stream.messages),
     [stream.messages],
   );
+  const pendingPromptMessage = useMemo(
+    () => displayMessages.find((message) => message.interactivePrompt?.status === 'pending') ?? null,
+    [displayMessages],
+  );
+  const timelineMessages = useMemo(
+    () => displayMessages.filter((message) => !message.interactivePrompt),
+    [displayMessages],
+  );
 
   const handleSend = async (
     text: string,
@@ -265,6 +305,7 @@ export default function ChatView({
       };
       convId = createConversation(welcomeWorkspacePath ?? effectiveScope?.project_path ?? null, {
         workspaceScope: effectiveScope,
+        title: text.slice(0, 30) + (text.length > 30 ? '...' : ''),
       });
     } else {
       stream.send(text, imageAttachmentsToSendImages(images), wireOptions);
@@ -317,6 +358,57 @@ export default function ChatView({
       return;
     }
   }, [resendFromUserMessage, stream.messages]);
+
+  const handleSubmitInteractivePromptAnswer = useCallback((
+    message: Message,
+    payload: InteractivePromptSubmitPayload,
+  ) => {
+    const prompt = message.interactivePrompt;
+    if (!prompt || prompt.status !== 'pending') return;
+    setPromptSubmitState({ promptId: prompt.promptId, status: 'submitting' });
+    try {
+      stream.send(payload.text, undefined, {
+        workspaceScope,
+        interactivePromptAnswer: payload.answer,
+      });
+      stream.setMessages((current) => current.map((item) => {
+        if (item.id !== message.id || item.role !== 'assistant' || !item.interactivePrompt) return item;
+        return {
+          ...item,
+          interactivePrompt: {
+            ...item.interactivePrompt,
+            status: payload.answer.answerType === 'skip' ? 'skipped' : 'answered',
+            answeredOptionId: payload.answer.optionId,
+            answeredText: payload.answeredText,
+          },
+        };
+      }));
+      resetToBottom();
+    } catch {
+      setPromptSubmitState({
+        promptId: prompt.promptId,
+        status: 'error',
+        error: '提交失败，请重试',
+      });
+    }
+  }, [resetToBottom, stream, workspaceScope]);
+
+  useEffect(() => {
+    if (!promptSubmitState) return;
+    const prompt = pendingPromptMessage?.interactivePrompt;
+    if (!prompt || prompt.promptId !== promptSubmitState.promptId) {
+      setPromptSubmitState(null);
+    }
+  }, [pendingPromptMessage, promptSubmitState]);
+
+  useEffect(() => {
+    if (!promptSubmitState || promptSubmitState.status !== 'submitting' || !stream.streamError) return;
+    setPromptSubmitState({
+      promptId: promptSubmitState.promptId,
+      status: 'error',
+      error: '提交失败，请重试',
+    });
+  }, [promptSubmitState, stream.streamError]);
 
   const handleAllowFullAccessAndRetry = useCallback(() => {
     if (!workspaceScope) return;
@@ -381,20 +473,17 @@ export default function ChatView({
           <div className="w-full max-w-3xl">
             {/* Title */}
             <div className="text-center mb-8">
-              {/* Mascot */}
-              <div className="w-20 h-20 mx-auto mb-4 rounded-full overflow-hidden">
-                <img src={ruyiAvatar} alt="Ruyi" className="w-full h-full object-cover" />
-              </div>
-
               {/* Slogan */}
-              <h1 className="text-[28px] font-semibold text-[#29261b] leading-tight mb-3">
-                {t.chat.welcomeTitle}
+              <h1 className="text-[28px] text-[#29261b] leading-tight mb-3 flex items-center justify-center gap-3.5 font-claude-response font-medium select-none">
+                <span>
+                  {greeting}
+                  {userName ? (
+                    useSettingsStore.getState().language === 'en-US' ? `, ${userName}` : `，${userName}`
+                  ) : ''}
+                  {useSettingsStore.getState().language === 'en-US' ? '. ' : '，'}
+                  {t.chat.welcomeTitle}
+                </span>
               </h1>
-
-              {/* Greeting */}
-              <p className="text-[15px] text-[#656358] leading-relaxed whitespace-pre-line">
-                {t.chat.welcomeSubtitle}
-              </p>
             </div>
 
             {/* First-run setup prompt */}
@@ -442,14 +531,14 @@ export default function ChatView({
           <div className="w-full max-w-4xl mx-auto px-6 md:px-10 py-8 overflow-hidden">
             <div>
               <ThreadMessages
-                messages={displayMessages}
+                messages={timelineMessages}
                 isStreaming={stream.isStreaming}
                 onEditUserMessage={handleEditUserMessage}
                 onRegenerateAssistant={handleRegenerateAssistant}
               />
 
               {/* Thinking indicator - shown after user message but before assistant message appears */}
-              {stream.isStreaming && displayMessages.length > 0 && displayMessages.every((m) => m.role === 'user') && (
+              {stream.isStreaming && timelineMessages.length > 0 && timelineMessages.every((m) => m.role === 'user') && (
                 <div className="pl-9">
                   <ThinkingIndicator />
                 </div>
@@ -487,11 +576,31 @@ export default function ChatView({
               onAllowFullAccess={handleAllowFullAccessAndRetry}
             />
           ) : null}
+          {pendingPromptMessage?.interactivePrompt ? (
+            <div className="mb-3">
+              <InteractivePromptCard
+                prompt={pendingPromptMessage.interactivePrompt}
+                compact
+                submitting={
+                  promptSubmitState?.promptId === pendingPromptMessage.interactivePrompt.promptId
+                  && promptSubmitState.status === 'submitting'
+                }
+                error={
+                  promptSubmitState?.promptId === pendingPromptMessage.interactivePrompt.promptId
+                    && promptSubmitState.status === 'error'
+                    ? promptSubmitState.error ?? '提交失败，请重试'
+                    : null
+                }
+                onSubmit={(payload) => handleSubmitInteractivePromptAnswer(pendingPromptMessage, payload)}
+              />
+            </div>
+          ) : null}
           <ChatInput
             variant="chat"
             onSend={handleSend}
             onStop={stream.stop}
             isStreaming={stream.isStreaming}
+            disabled={!!pendingPromptMessage}
             workspaceScope={workspaceScope}
             workspaceControls={workspaceControls}
             onWorkspaceScopeChange={_onWorkspaceScopeChange}

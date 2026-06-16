@@ -51,8 +51,7 @@ const enUS: TranslationDict = {
     inputPlaceholderMidTask: 'Add instructions (Ruyi reads next turn)...',
     start: 'Start',
     stop: 'Stop',
-    welcomeTitle: 'Leave it to Taizi Ruyi ✨',
-    welcomeSubtitle: "Hey~ I'm Ruyi, your desktop buddy!\nFrom now on, leave everything to me~",
+    welcomeTitle: 'Leave it to Taizi Ruyi',
     disclaimer: 'Ruyi may make mistakes. Please verify important information.',
     thinking: 'Ruyi is thinking...',
     dropFilesHere: 'Drop files here',
@@ -80,6 +79,11 @@ const enUS: TranslationDict = {
     inputTokens: 'Input',
     outputTokens: 'Output',
     addAttachment: 'Add images or files',
+    shortcutWrite: 'Write',
+    shortcutLearn: 'Learn',
+    shortcutCode: 'Code',
+    shortcutLife: 'Life stuff',
+    shortcutRuyi: "Ruyi's choice",
   },
 
   status: {

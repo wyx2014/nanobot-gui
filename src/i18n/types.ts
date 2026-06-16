@@ -94,6 +94,11 @@ export interface TranslationDict {
     inputTokens: string;
     outputTokens: string;
     addAttachment: string;
+    shortcutWrite: string;
+    shortcutLearn: string;
+    shortcutCode: string;
+    shortcutLife: string;
+    shortcutRuyi: string;
   };
 
   // Status Bar

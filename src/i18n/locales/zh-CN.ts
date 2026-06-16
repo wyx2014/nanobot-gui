@@ -52,9 +52,8 @@ const zhCN: TranslationDict = {
     start: '开始',
     stop: '停止',
     welcomeTitle: '交给太资如意就行',
-    welcomeSubtitle: '嘿～我是如意，你的智能小伙伴！',
     disclaimer: '如意可能会犯小迷糊。请核查重要信息。',
-    thinking: '如意在想～',
+    thinking: '如意在想',
     dropFilesHere: '拖放文件到这里',
     pasteOrDropImages: '粘贴或拖放图片',
     imageAdded: '已添加图片',
@@ -80,6 +79,11 @@ const zhCN: TranslationDict = {
     inputTokens: '输入',
     outputTokens: '输出',
     addAttachment: '添加图片或文件',
+    shortcutWrite: '写作',
+    shortcutLearn: '学习',
+    shortcutCode: '写代码',
+    shortcutLife: '日常事务',
+    shortcutRuyi: '如意推荐',
   },
 
   status: {

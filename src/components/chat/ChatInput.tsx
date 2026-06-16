@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Plus, ArrowUp, ArrowRight, Square, X, ChevronDown, Check, FileText, AlertTriangle, Hand, CornerDownRight, Pencil, Trash2 } from 'lucide-react';
+import { Plus, ArrowUp, ArrowRight, Square, X, ChevronDown, Check, FileText, AlertTriangle, Hand, CornerDownRight, Pencil, Trash2, GraduationCap, Code, Coffee, Lightbulb } from 'lucide-react';
 import { dialogBridge, fsBridge } from '@/lib/ipc-factory';
 import { useFileDragDrop } from '@/hooks/useFileDragDrop';
 import { uint8ArrayToBase64 } from '@/utils/base64';
@@ -362,6 +362,30 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     ?? (currentModel ? currentModel.split('/').pop()?.split('-').slice(0, 2).join(' ') : 'Claude');
   const [showModelPicker, setShowModelPicker] = useState(false);
   const modelPickerRef = useRef<HTMLDivElement>(null);
+
+  const handleShortcut = (type: string) => {
+    const isEn = useSettingsStore.getState().language === 'en-US';
+    let prefix = '';
+    switch (type) {
+      case 'write':
+        prefix = isEn ? 'Help me write ' : '帮我写 ';
+        break;
+      case 'learn':
+        prefix = isEn ? 'Help me learn/analyze ' : '帮我学习/分析 ';
+        break;
+      case 'code':
+        prefix = isEn ? 'Help me write code to ' : '帮我编写一段代码 ';
+        break;
+      case 'life':
+        prefix = isEn ? 'Give me some advice or casual chat about: ' : '提供一些生活建议或日常闲聊：';
+        break;
+      case 'ruyi':
+        prefix = isEn ? 'Ruyi, what can you do for me?' : '如意，你能帮我做什么？';
+        break;
+    }
+    setText(prefix);
+    textareaRef.current?.focus();
+  };
 
   // Close model picker on click outside
   useEffect(() => {
@@ -1259,6 +1283,46 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
             </div>
           )}
         </div>
+
+        {isWelcome && (
+          <div className="flex flex-wrap items-center justify-center gap-2.5 mt-4">
+            <button
+              onClick={() => handleShortcut('write')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#dedbd3] bg-white hover:bg-[#f5f3ee] text-[#29261b] text-[13px] font-medium shadow-sm transition-colors"
+            >
+              <Pencil className="h-3.5 w-3.5 text-[#656358]" />
+              <span>{t.chat.shortcutWrite}</span>
+            </button>
+            <button
+              onClick={() => handleShortcut('learn')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#dedbd3] bg-white hover:bg-[#f5f3ee] text-[#29261b] text-[13px] font-medium shadow-sm transition-colors"
+            >
+              <GraduationCap className="h-3.5 w-3.5 text-[#656358]" />
+              <span>{t.chat.shortcutLearn}</span>
+            </button>
+            <button
+              onClick={() => handleShortcut('code')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#dedbd3] bg-white hover:bg-[#f5f3ee] text-[#29261b] text-[13px] font-medium shadow-sm transition-colors"
+            >
+              <Code className="h-3.5 w-3.5 text-[#656358]" />
+              <span>{t.chat.shortcutCode}</span>
+            </button>
+            <button
+              onClick={() => handleShortcut('life')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#dedbd3] bg-white hover:bg-[#f5f3ee] text-[#29261b] text-[13px] font-medium shadow-sm transition-colors"
+            >
+              <Coffee className="h-3.5 w-3.5 text-[#656358]" />
+              <span>{t.chat.shortcutLife}</span>
+            </button>
+            <button
+              onClick={() => handleShortcut('ruyi')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#dedbd3] bg-white hover:bg-[#f5f3ee] text-[#29261b] text-[13px] font-medium shadow-sm transition-colors"
+            >
+              <Lightbulb className="h-3.5 w-3.5 text-[#656358]" />
+              <span>{t.chat.shortcutRuyi}</span>
+            </button>
+          </div>
+        )}
       </div>
     </>
   );

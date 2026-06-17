@@ -10,6 +10,7 @@ import {
 import type { StreamError } from "@/core/nanobot-client";
 import type {
   InboundEvent,
+  UIInteractivePromptAnswer,
   OutboundCliAppMention,
   OutboundImageGeneration,
   OutboundMcpPresetMention,
@@ -430,6 +431,7 @@ export interface SendOptions {
   cliApps?: OutboundCliAppMention[];
   mcpPresets?: OutboundMcpPresetMention[];
   workspaceScope?: WorkspaceScopePayload | null;
+  interactivePromptAnswer?: UIInteractivePromptAnswer;
 }
 
 export function useNanobotStream(
@@ -938,6 +940,7 @@ export function useNanobotStream(
               : undefined;
           return absorbCompleteAssistantMessage(filtered, {
             content,
+            ...(ev.interactive_prompt ? { interactivePrompt: ev.interactive_prompt } : {}),
             ...(hasMedia ? { media } : {}),
             ...(lat !== undefined ? { latencyMs: lat } : {}),
           });
@@ -1047,6 +1050,7 @@ export function useNanobotStream(
             content,
             createdAt: Date.now(),
             ...(previews ? { images: previews } : {}),
+            ...(options?.interactivePromptAnswer ? { interactivePromptAnswer: options.interactivePromptAnswer } : {}),
             ...(options?.cliApps?.length ? { cliApps: options.cliApps } : {}),
             ...(options?.mcpPresets?.length ? { mcpPresets: options.mcpPresets } : {}),
           },

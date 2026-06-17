@@ -4,6 +4,8 @@
 
 import type {
   MessageKind,
+  UIInteractivePrompt,
+  UIInteractivePromptAnswer,
   ToolProgressEvent,
   UICliAppAttachment,
   UIFileEdit,
@@ -84,6 +86,8 @@ export interface Message {
   reasoningStreaming?: boolean;
   // Thinking duration in seconds
   thinkingDuration?: number;
+  interactivePrompt?: UIInteractivePrompt;
+  interactivePromptAnswer?: UIInteractivePromptAnswer;
   // Token usage for this message
   usage?: {
     inputTokens?: number;

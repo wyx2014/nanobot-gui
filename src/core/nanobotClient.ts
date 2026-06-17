@@ -345,6 +345,7 @@ export function mapWebuiThreadToGuiMessages(webuiMessages: UIMessage[]): Message
         content,
         timestamp,
         loopId: currentLoopId,
+        interactivePromptAnswer: msg.interactivePromptAnswer,
         cliApps: msg.cliApps,
         mcpPresets: msg.mcpPresets,
       });
@@ -356,6 +357,7 @@ export function mapWebuiThreadToGuiMessages(webuiMessages: UIMessage[]): Message
         role: 'assistant',
         content: msg.content || '',
         timestamp,
+        interactivePrompt: msg.interactivePrompt,
         thinking: msg.reasoning,
         reasoningStreaming: msg.reasoningStreaming,
         isStreaming: msg.isStreaming,

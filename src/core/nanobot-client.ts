@@ -4,6 +4,7 @@ import type {
   Outbound,
   OutboundCliAppMention,
   OutboundImageGeneration,
+  UIInteractivePromptAnswer,
   OutboundMcpPresetMention,
   OutboundMedia,
   GoalStateWsPayload,
@@ -291,6 +292,7 @@ export class NanobotClient {
       cliApps?: OutboundCliAppMention[];
       mcpPresets?: OutboundMcpPresetMention[];
       workspaceScope?: WorkspaceScopePayload | null;
+      interactivePromptAnswer?: UIInteractivePromptAnswer;
     },
   ): void {
     this.knownChats.add(chatId);
@@ -303,6 +305,7 @@ export class NanobotClient {
       ...(options?.cliApps?.length ? { cli_apps: options.cliApps } : {}),
       ...(options?.mcpPresets?.length ? { mcp_presets: options.mcpPresets } : {}),
       ...(options?.workspaceScope ? { workspace_scope: options.workspaceScope } : {}),
+      ...(options?.interactivePromptAnswer ? { interactive_prompt_answer: options.interactivePromptAnswer } : {}),
       webui: true,
     };
     this.queueSend(frame);

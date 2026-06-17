@@ -111,7 +111,7 @@ export default function Sidebar() {
 
   const sortedConvs = Object.values(conversations)
     .filter((c) => !c.scheduledTaskId && !scheduledConversationIds.has(c.id) && !c.id.startsWith('cron:'))
-    .filter((c) => c.messages.length > 0)
+    .filter((c) => c.messages.length > 0 || c.status === 'running' || c.id === activeConversationId)
     .sort((a, b) => b.createdAt - a.createdAt);
 
   const handleDeleteConversation = (e: React.MouseEvent, convId: string) => {

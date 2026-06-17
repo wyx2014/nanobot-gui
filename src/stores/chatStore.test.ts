@@ -38,6 +38,11 @@ describe('chatStore', () => {
       const id = useChatStore.getState().createConversation('/Users/test/project');
       expect(useChatStore.getState().conversations[id].workspacePath).toBe('/Users/test/project');
     });
+
+    it('uses an initial title when provided', () => {
+      const id = useChatStore.getState().createConversation(null, { title: '美伊战争经济影响报告' });
+      expect(useChatStore.getState().conversations[id].title).toBe('美伊战争经济影响报告');
+    });
   });
 
   // ── startNewConversation ──

@@ -57,7 +57,7 @@ interface ChatState {
 }
 
 interface ChatActions {
-  createConversation: (workspacePath?: string | null, options?: { scheduledTaskId?: string; skipActivate?: boolean; workspaceScope?: WorkspaceScopePayload | null }) => string;
+  createConversation: (workspacePath?: string | null, options?: { scheduledTaskId?: string; skipActivate?: boolean; workspaceScope?: WorkspaceScopePayload | null; title?: string }) => string;
   startNewConversation: () => void;
   switchConversation: (id: string) => void;
   setConversationWorkspace: (convId: string, path: string | null) => void;
@@ -134,10 +134,11 @@ export const useChatStore = create<ChatStore>()(
         const now = Date.now();
         const scope = options?.workspaceScope ?? null;
         const path = workspacePath ?? scope?.project_path ?? null;
+        const title = options?.title?.trim() || '新对话';
         set((state) => {
           state.conversations[id] = {
             id,
-            title: '新对话',
+            title,
             messages: [],
             createdAt: now,
             updatedAt: now,

@@ -54,6 +54,10 @@ export interface UIMessage {
   reasoningStreaming?: boolean;
   /** End-to-end wall time for this assistant turn (persisted ``latency_ms`` / ``turn_end``). */
   latencyMs?: number;
+  /** Assistant turn: structured interactive prompt card persisted in transcript. */
+  interactivePrompt?: UIInteractivePrompt;
+  /** User turn: structured answer metadata for an interactive prompt. */
+  interactivePromptAnswer?: UIInteractivePromptAnswer;
 }
 
 export interface UICliAppAttachment {
@@ -74,6 +78,50 @@ export interface UIMcpPresetAttachment {
   configured?: boolean;
   logo_url?: string | null;
   brand_color?: string | null;
+}
+
+export type UIInteractivePromptStatus = "pending" | "answered" | "skipped" | "expired";
+
+export interface UIInteractivePromptOption {
+  id: string;
+  label: string;
+  description?: string;
+}
+
+export interface UIInteractivePromptQuestion {
+  id: string;
+  question: string;
+  options: UIInteractivePromptOption[];
+  allowFreeform?: boolean;
+  answeredOptionId?: string;
+  answeredText?: string;
+}
+
+export interface UIInteractivePrompt {
+  promptId: string;
+  title?: string;
+  question: string;
+  options: UIInteractivePromptOption[];
+  questions?: UIInteractivePromptQuestion[];
+  allowFreeform?: boolean;
+  allowSkip?: boolean;
+  stepIndex?: number;
+  totalSteps?: number;
+  status: UIInteractivePromptStatus;
+  answeredOptionId?: string;
+  answeredText?: string;
+}
+
+export interface UIInteractivePromptAnswer {
+  promptId: string;
+  answerType: "option" | "freeform" | "skip" | "group";
+  optionId?: string;
+  answers?: Array<{
+    questionId: string;
+    answerType: "option" | "freeform";
+    optionId?: string;
+    text: string;
+  }>;
 }
 
 /** Structured UI blob on ``progress`` WS frames; channels may add more ``kind`` values later. */
@@ -647,6 +695,8 @@ export type InboundEvent =
       latency_ms?: number;
       /** Optional structured payload on progress frames (channel-specific). */
       agent_ui?: AgentUIBlob;
+      /** Optional structured assistant prompt rendered as an inline card. */
+      interactive_prompt?: UIInteractivePrompt;
     }
   | {
       event: "file_edit";
@@ -760,5 +810,6 @@ export type Outbound =
       cli_apps?: OutboundCliAppMention[];
       mcp_presets?: OutboundMcpPresetMention[];
       workspace_scope?: WorkspaceScopePayload;
+      interactive_prompt_answer?: UIInteractivePromptAnswer;
       webui?: true;
     };

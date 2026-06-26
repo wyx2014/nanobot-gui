@@ -30,6 +30,14 @@ export function useAutoScroll() {
     return scrollTop + clientHeight >= scrollHeight - 100;
   }, []);
 
+  const refreshScrollState = useCallback(() => {
+    const atBottom = checkIfAtBottom();
+    if (atBottom !== isAtBottomRef.current) {
+      isAtBottomRef.current = atBottom;
+      setIsAtBottom(atBottom);
+    }
+  }, [checkIfAtBottom]);
+
   // Manual scroll-to-bottom (for the button)
   const scrollToBottom = useCallback(() => {
     const container = containerRef.current;
@@ -102,6 +110,11 @@ export function useAutoScroll() {
         // (e.g., scrollTop didn't actually change because we're already at bottom)
         requestAnimationFrame(() => {
           programmaticScrollMinTop.current = null;
+          const atBottom = checkIfAtBottom();
+          if (atBottom !== isAtBottomRef.current) {
+            isAtBottomRef.current = atBottom;
+            setIsAtBottom(atBottom);
+          }
         });
       });
     };
@@ -136,7 +149,7 @@ export function useAutoScroll() {
       mutationObserver.disconnect();
       resizeObserver.disconnect();
     };
-  }, []);
+  }, [checkIfAtBottom]);
 
   return {
     containerRef,
@@ -144,5 +157,6 @@ export function useAutoScroll() {
     isAtBottom,
     scrollToBottom,
     resetToBottom,
+    refreshScrollState,
   };
 }

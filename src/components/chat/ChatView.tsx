@@ -159,7 +159,7 @@ export default function ChatView({
       .catch((err) => console.error('Failed to get home dir:', err));
   }, [activeConvId]);
 
-  const { containerRef, endRef, isAtBottom, scrollToBottom, resetToBottom } = useAutoScroll();
+  const { containerRef, endRef, isAtBottom, scrollToBottom, resetToBottom, refreshScrollState } = useAutoScroll();
 
   // Scroll to bottom when switching conversations.
   // useLayoutEffect runs after DOM commit but before paint,
@@ -256,6 +256,12 @@ export default function ChatView({
     () => displayMessages.filter((message) => !message.interactivePrompt),
     [displayMessages],
   );
+
+  useLayoutEffect(() => {
+    if (!activeConvId || historyLoading) return;
+    const raf = window.requestAnimationFrame(refreshScrollState);
+    return () => window.cancelAnimationFrame(raf);
+  }, [activeConvId, historyLoading, historyVersion, timelineMessages.length, refreshScrollState]);
 
   const handleSend = async (
     text: string,

@@ -110,7 +110,6 @@ function scopeWithAccessMode(scope: WorkspaceScopePayload, mode: 'restricted' | 
 
 export default function ChatView({
   workspaceScope,
-  workspaceDefaultScope,
   workspaceControls,
   workspaceError: _workspaceError,
   onWorkspaceScopeChange: _onWorkspaceScopeChange,
@@ -275,12 +274,11 @@ export default function ChatView({
     let effectiveScope: WorkspaceScopePayload | null = workspaceScope ?? null;
     if (!effectiveScope && welcomeWorkspacePath) {
       const parts = welcomeWorkspacePath.split('/').filter(Boolean);
-      const defaultAccessMode = workspaceDefaultScope?.access_mode === 'full' ? 'full' : 'restricted';
       effectiveScope = {
         project_path: welcomeWorkspacePath,
         project_name: parts[parts.length - 1] || welcomeWorkspacePath,
-        access_mode: defaultAccessMode,
-        restrict_to_workspace: defaultAccessMode === 'restricted',
+        access_mode: 'full',
+        restrict_to_workspace: false,
       };
     }
 
@@ -513,7 +511,6 @@ export default function ChatView({
                 variant="welcome"
                 onSend={handleSend}
                 workspaceScope={workspaceScope}
-                workspaceControls={workspaceControls}
                 onWorkspaceScopeChange={_onWorkspaceScopeChange}
               />
             </div>
@@ -602,7 +599,6 @@ export default function ChatView({
             isStreaming={stream.isStreaming}
             disabled={!!pendingPromptMessage}
             workspaceScope={workspaceScope}
-            workspaceControls={workspaceControls}
             onWorkspaceScopeChange={_onWorkspaceScopeChange}
           />
           <p className="text-center text-[13px] text-[#8a867c] mt-3">

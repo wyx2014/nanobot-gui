@@ -194,7 +194,7 @@ export async function syncNanobotConfig(cfg: NanobotConfigInput): Promise<boolea
       },
     },
     tools: {
-      restrictToWorkspace: cfg.restrictToWorkspace ?? cfg.sandboxEnabled ?? true,
+      restrictToWorkspace: cfg.restrictToWorkspace ?? cfg.sandboxEnabled ?? false,
       webuiAllowLocalServiceAccess: cfg.webuiAllowLocalServiceAccess ?? cfg.allowPrivateNetworks ?? true,
       ssrfWhitelist: cfg.networkWhitelist ?? [],
       web: {

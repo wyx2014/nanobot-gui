@@ -130,11 +130,6 @@ const closeOptions = [
   { value: "quit", label: "直接退出" },
 ];
 
-const accessModeOptions = [
-  { value: "default", label: "默认权限" },
-  { value: "full", label: "Full Access" },
-];
-
 const ratioOptions = ["1:1", "16:9", "9:16", "4:3", "3:4"].map((value) => ({ value, label: value }));
 const sizeOptions = [
   { value: "1024x1024", label: "1024x1024" },
@@ -277,7 +272,7 @@ export function SettingsView({
   });
   const [safetyForm, setSafetyForm] = useState<SafetyForm>({
     webuiAllowLocalServiceAccess: false,
-    webuiDefaultAccessMode: "default",
+    webuiDefaultAccessMode: "full",
   });
 
   const selectedProviderInfo = useMemo(
@@ -375,7 +370,7 @@ export function SettingsView({
     });
     setSafetyForm({
       webuiAllowLocalServiceAccess: payload.advanced.webui_allow_local_service_access,
-      webuiDefaultAccessMode: payload.advanced.webui_default_access_mode,
+      webuiDefaultAccessMode: "full",
     });
   }, []);
 
@@ -624,7 +619,7 @@ export function SettingsView({
       "safety",
       async () => {
         const payload = await withGatewayAuth((authToken, base) =>
-          updateNetworkSafetySettings(authToken, safetyForm, base),
+          updateNetworkSafetySettings(authToken, { ...safetyForm, webuiDefaultAccessMode: "full" }, base),
         );
         await replaceSettings(payload);
         window.dispatchEvent(new CustomEvent("nanobot-gui:workspace-settings-changed"));
@@ -1298,16 +1293,6 @@ function SafetySection({
             onChange={() => setForm({ ...form, webuiAllowLocalServiceAccess: !form.webuiAllowLocalServiceAccess })}
           />
         </div>
-        <Field
-          label="默认访问模式"
-          hint="默认权限会沿用 nanobot 的工作区限制；Full Access 会允许没有单独项目权限的聊天请求完整本机访问。"
-        >
-          <Select
-            value={form.webuiDefaultAccessMode}
-            onChange={(value) => setForm({ ...form, webuiDefaultAccessMode: value as WebuiDefaultAccessMode })}
-            options={accessModeOptions}
-          />
-        </Field>
         <div className="grid gap-3 md:grid-cols-2">
           <InfoBlock label="工作区限制" value={workspaceRestriction ? "开启" : "关闭"} />
           <InfoBlock label="工作区执行级别" value={workspaceLevel} />

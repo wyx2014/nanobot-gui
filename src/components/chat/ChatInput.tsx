@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Plus, ArrowUp, ArrowRight, Square, X, ChevronDown, Check, FileText, AlertTriangle, Hand, CornerDownRight, Pencil, Trash2, GraduationCap, Code, Coffee, Lightbulb } from 'lucide-react';
+import { Plus, ArrowUp, ArrowRight, Square, X, ChevronDown, Check, FileText, CornerDownRight, Pencil, Trash2, GraduationCap, Code, Coffee, Lightbulb } from 'lucide-react';
 import { dialogBridge, fsBridge } from '@/lib/ipc-factory';
 import { useFileDragDrop } from '@/hooks/useFileDragDrop';
 import { uint8ArrayToBase64 } from '@/utils/base64';
@@ -12,15 +12,9 @@ import { usePermissionStore } from '@/stores/permissionStore';
 import type { PermissionDuration } from '@/stores/permissionStore';
 import { useI18n } from '@/i18n';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import type { ImageAttachment } from '@/types';
-import type { OutboundCliAppMention, OutboundMcpPresetMention, WorkspaceAccessMode, WorkspacesPayload } from '@/core/types';
+import type { OutboundCliAppMention, OutboundMcpPresetMention } from '@/core/types';
 import type { CliAppInfo, McpPresetInfo, SlashCommand, WorkspaceScopePayload } from '@/core/types';
 import { fetchCliApps, fetchMcpPresets, listSlashCommands } from '@/core/api';
 import { getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/nanobotClient';
@@ -173,7 +167,6 @@ interface ChatInputProps {
   isStreaming?: boolean;
   disabled?: boolean;
   workspaceScope?: WorkspaceScopePayload | null;
-  workspaceControls?: WorkspacesPayload['controls'] | null;
   onWorkspaceScopeChange?: (scope: WorkspaceScopePayload) => void;
 }
 
@@ -323,76 +316,6 @@ function queuedPromptLabel(prompt: QueuedPrompt): string {
   return caps.join(', ') || '排队指令';
 }
 
-function scopeWithAccessMode(scope: WorkspaceScopePayload, accessMode: WorkspaceAccessMode): WorkspaceScopePayload {
-  return {
-    ...scope,
-    access_mode: accessMode,
-    restrict_to_workspace: accessMode === 'restricted',
-  };
-}
-
-function WorkspaceAccessMenu({
-  scope,
-  disabled,
-  canUseFullAccess,
-  onChange,
-}: {
-  scope: WorkspaceScopePayload;
-  disabled?: boolean;
-  canUseFullAccess: boolean;
-  onChange?: (scope: WorkspaceScopePayload) => void;
-}) {
-  const mode = scope.access_mode === 'full' ? 'full' : 'restricted';
-  const isFull = mode === 'full';
-
-  const setMode = (value: WorkspaceAccessMode) => {
-    if (value === 'full' && !canUseFullAccess) return;
-    if (value === mode) return;
-    onChange?.(scopeWithAccessMode(scope, value));
-  };
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild disabled={disabled || !onChange}>
-        <Button
-          type="button"
-          variant="ghost"
-          aria-label="工作区访问权限"
-          className={cn(
-            'h-8 max-w-[8.5rem] rounded-xl px-2.5 text-[12px] font-semibold shadow-none',
-            isFull
-              ? 'text-orange-600 hover:bg-orange-500/10 hover:text-orange-700'
-              : 'text-[#656358] hover:bg-[#eeeeea] hover:text-[#29261b]',
-          )}
-        >
-          {isFull ? <AlertTriangle className="mr-1.5 h-3.5 w-3.5 shrink-0" /> : <Hand className="mr-1.5 h-3.5 w-3.5 shrink-0" />}
-          <span className="truncate">{isFull ? '完全访问' : '默认权限'}</span>
-          <ChevronDown className="ml-1 h-3 w-3 shrink-0" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-48">
-        <DropdownMenuItem
-          onSelect={() => setMode('restricted')}
-          className="flex h-10 items-center gap-3 rounded-xl px-3 text-[13px] font-semibold"
-        >
-          <Hand className="h-4 w-4" />
-          <span className="min-w-0 flex-1 truncate">默认权限</span>
-          {mode === 'restricted' ? <Check className="h-4 w-4 shrink-0" /> : null}
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          disabled={!canUseFullAccess}
-          onSelect={() => setMode('full')}
-          className="flex h-10 items-center gap-3 rounded-xl px-3 text-[13px] font-semibold text-orange-600 focus:text-orange-600"
-        >
-          <AlertTriangle className="h-4 w-4" />
-          <span className="min-w-0 flex-1 truncate">完全访问权限</span>
-          {mode === 'full' ? <Check className="h-4 w-4 shrink-0" /> : null}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
 /** Read a local image file path into an ImageAttachment via bridge */
 async function readLocalImage(filePath: string): Promise<ImageAttachment> {
   const bytes = await fsBridge.readFile(filePath);
@@ -434,7 +357,7 @@ async function processFilePaths(
   }
 }
 
-export default function ChatInput({ variant, onSend, onStop, isStreaming: isStreamingProp, disabled, workspaceScope, workspaceControls, onWorkspaceScopeChange }: ChatInputProps) {
+export default function ChatInput({ variant, onSend, onStop, isStreaming: isStreamingProp, disabled, workspaceScope, onWorkspaceScopeChange }: ChatInputProps) {
   const isWelcome = variant === 'welcome';
 
   const [text, setText] = useState('');
@@ -647,13 +570,13 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   const handleSelectFolder = (folderPath: string) => {
     if (onWorkspaceScopeChange) {
       const parts = folderPath.split('/').filter(Boolean);
-      const base = workspaceScope ?? { access_mode: 'restricted' as const, restrict_to_workspace: true };
+      const base = workspaceScope ?? { access_mode: 'full' as const, restrict_to_workspace: false };
       onWorkspaceScopeChange({
         ...base,
         project_path: folderPath,
         project_name: parts[parts.length - 1] || folderPath,
-        access_mode: base.access_mode === 'full' ? 'full' : 'restricted',
-        restrict_to_workspace: base.access_mode !== 'full',
+        access_mode: 'full',
+        restrict_to_workspace: false,
       });
     } else if (hasPermission(folderPath, 'read')) {
       setLocalWorkspace(folderPath);
@@ -1273,14 +1196,6 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                 onSelect={handleSelectFolder}
                 onClear={handleClearWorkspace}
               />
-              {workspaceScope && (
-                <WorkspaceAccessMenu
-                  scope={workspaceScope}
-                  canUseFullAccess={workspaceControls?.can_use_full_access ?? true}
-                  disabled={disabled}
-                  onChange={onWorkspaceScopeChange}
-                />
-              )}
               <Button
                 variant="ghost"
                 size="icon"
@@ -1327,12 +1242,6 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                       recentPaths={recentPaths}
                       onSelect={handleSelectFolder}
                       onClear={handleClearWorkspace}
-                    />
-                    <WorkspaceAccessMenu
-                      scope={workspaceScope}
-                      canUseFullAccess={workspaceControls?.can_use_full_access ?? true}
-                      disabled={disabled}
-                      onChange={onWorkspaceScopeChange}
                     />
                   </>
                 )}

@@ -384,7 +384,7 @@ export const useSettingsStore = create<SettingsStore>()(
       toolboxSearchQuery: '',
       installingItem: null,
       viewMode: 'chat' as ViewMode,
-      sandboxEnabled: true,
+      sandboxEnabled: false,
       networkIsolationEnabled: false,
       networkWhitelist: [],
       allowPrivateNetworks: true,
@@ -530,7 +530,7 @@ export const useSettingsStore = create<SettingsStore>()(
           }
 
           // Ensure new fields have defaults (defensive — shallow merge handles this too)
-          if (state.sandboxEnabled === undefined) state.sandboxEnabled = true;
+          if (state.sandboxEnabled === undefined) state.sandboxEnabled = false;
           if (state.closeAction === undefined) state.closeAction = 'ask';
           if (state.lastUpdateCheck === undefined) state.lastUpdateCheck = 0;
         }

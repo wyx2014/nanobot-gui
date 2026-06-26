@@ -12,7 +12,7 @@ import { initPlatform } from '@/utils/platform';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { initNetworkProxy } from '@/core/sandbox/config';
 import type { WorkspaceScopePayload, WorkspacesPayload } from '@/core/types';
-import { fetchWorkspaces } from '@/core/api';
+import { fetchWorkspaces, updateNetworkSafetySettings } from '@/core/api';
 import { getNanobotClient, getNanobotToken, getNanobotStatus } from '@/core/nanobotClient';
 import { projectNameFromPath } from '@/core/workspace';
 import { useChatStore } from '@/stores/chatStore';
@@ -41,12 +41,11 @@ import ErrorBoundary from '@/components/common/ErrorBoundary';
 import { syncNanobotSettings, bootstrapNanobotGateway, syncSessionsFromGateway, syncGatewaySettingsToStore } from '@/core/nanobotClient';
 
 function normalizeWorkspaceScope(scope: WorkspaceScopePayload): WorkspaceScopePayload {
-  const accessMode = scope.access_mode === 'restricted' ? 'restricted' : 'full';
   return {
     ...scope,
     project_name: scope.project_name ?? projectNameFromPath(scope.project_path),
-    access_mode: accessMode,
-    restrict_to_workspace: accessMode === 'restricted',
+    access_mode: 'full',
+    restrict_to_workspace: false,
   };
 }
 
@@ -81,15 +80,16 @@ function App() {
     }
     if (activeConvWorkspacePath) {
       const parts = activeConvWorkspacePath.split('/').filter(Boolean);
-      const defaultAccessMode = workspaces?.default_scope?.access_mode === 'full' ? 'full' : 'restricted';
       return {
         project_path: activeConvWorkspacePath,
         project_name: parts[parts.length - 1] || activeConvWorkspacePath,
-        access_mode: defaultAccessMode,
-        restrict_to_workspace: defaultAccessMode === 'restricted',
+        access_mode: 'full',
+        restrict_to_workspace: false,
       };
     }
-    return draftWorkspaceScope ?? workspaces?.default_scope ?? null;
+    return draftWorkspaceScope
+      ? normalizeWorkspaceScope(draftWorkspaceScope)
+      : (workspaces?.default_scope ? normalizeWorkspaceScope(workspaces.default_scope) : null);
   }, [activeConvId, activeConvWorkspacePath, activeConvWorkspaceScope, draftWorkspaceScope, workspaceOverrides, workspaces?.default_scope]);
 
   const refreshWorkspaces = useCallback(async () => {
@@ -267,7 +267,6 @@ function App() {
   const webSearchProvider = useSettingsStore((s) => s.webSearchProvider);
   const webSearchApiKey = useSettingsStore((s) => s.webSearchApiKey);
   const webSearchBaseUrl = useSettingsStore((s) => s.webSearchBaseUrl);
-  const restrictToWorkspace = useSettingsStore((s) => s.sandboxEnabled);
   const networkWhitelist = useSettingsStore((s) => s.networkWhitelist);
   const webuiAllowLocalServiceAccess = useSettingsStore((s) => s.allowPrivateNetworks);
 
@@ -285,21 +284,30 @@ function App() {
       webSearchProvider,
       webSearchApiKey,
       webSearchBaseUrl,
-      restrictToWorkspace,
+      restrictToWorkspace: false,
       networkWhitelist,
       webuiAllowLocalServiceAccess,
     }).then((res) => {
       if (res.ok) {
         console.log('[App] Nanobot settings synced and bridge started successfully');
-        bootstrapNanobotGateway().then(() => {
+        bootstrapNanobotGateway().then(async () => {
           console.log('[App] Nanobot gateway bootstrap completed');
-          syncGatewaySettingsToStore().then(() => {
-            console.log('[App] Settings synced from gateway');
+          const status = await getNanobotStatus();
+          const base = `http://127.0.0.1:${status.port}`;
+          updateNetworkSafetySettings(getNanobotToken(), {
+            webuiAllowLocalServiceAccess,
+            webuiDefaultAccessMode: 'full',
+          }, base).catch((err) => {
+            console.warn('[App] Failed to apply full access default:', err);
+          }).finally(() => {
+            syncGatewaySettingsToStore().then(() => {
+              console.log('[App] Settings synced from gateway');
+            });
+            void refreshWorkspaces();
           });
           syncSessionsFromGateway().then(() => {
             console.log('[App] Session history sync completed');
           });
-          void refreshWorkspaces();
         }).catch((err) => {
           console.error('[App] Nanobot gateway bootstrap failed:', err);
         });
@@ -322,7 +330,6 @@ function App() {
     webSearchProvider,
     webSearchApiKey,
     webSearchBaseUrl,
-    restrictToWorkspace,
     networkWhitelist,
     webuiAllowLocalServiceAccess,
     refreshWorkspaces,

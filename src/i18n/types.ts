@@ -33,6 +33,15 @@ export interface TranslationDict {
     scheduledTasks: string;
     toolbox: string;
     recents: string;
+    projects: string;
+    conversations: string;
+    expandProjectConversations: string;
+    collapseProject: string;
+    projectMore: string;
+    newProjectConversation: string;
+    openProjectLocation: string;
+    renameProject: string;
+    removeProject: string;
     noSessionsYet: string;
     hideSidebar: string;
     showSidebar: string;
@@ -595,6 +604,18 @@ export interface TranslationDict {
     clearWorkspace: string;
     loadFolder: string;
     selectOtherFolder: string;
+    chooseProject: string;
+    newProject: string;
+    searchProject: string;
+    noProjectsFound: string;
+    createBlankProject: string;
+    useExistingFolder: string;
+    dontUseProject: string;
+    selectNewProjectLocation: string;
+    enterNewProjectName: string;
+    nameProject: string;
+    nameProjectHint: string;
+    defaultProjectName: string;
   };
 
   // Scheduled Tasks

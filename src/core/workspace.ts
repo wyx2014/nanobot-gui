@@ -12,8 +12,22 @@ export function scopeWithAccessMode(
 }
 
 export function projectNameFromPath(path: string): string {
-  const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '');
+  const normalized = normalizeProjectPath(path);
   return normalized.split('/').filter(Boolean).pop() || path;
+}
+
+export function normalizeProjectPath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/\/+$/, '');
+}
+
+export function isDefaultWorkspacePath(path: string | null | undefined): boolean {
+  if (!path) return false;
+  return projectNameFromPath(path) === 'nanobot-workspace';
+}
+
+export function visibleProjectPath(path: string | null | undefined): string | null {
+  if (!path || isDefaultWorkspacePath(path)) return null;
+  return normalizeProjectPath(path);
 }
 
 export function shortWorkspacePath(path: string): string {
@@ -36,6 +50,5 @@ export function isAbsoluteWorkspacePath(path: string): boolean {
 
 export function sameWorkspacePath(a: string | null | undefined, b: string | null | undefined): boolean {
   if (!a || !b) return false;
-  const normalize = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '');
-  return normalize(a) === normalize(b);
+  return normalizeProjectPath(a) === normalizeProjectPath(b);
 }

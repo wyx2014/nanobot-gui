@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Plus, ArrowUp, ArrowRight, Square, X, ChevronDown, Check, FileText, CornerDownRight, Pencil, Trash2, GraduationCap, Code, Coffee, Lightbulb } from 'lucide-react';
+import { Plus, ArrowUp, ArrowRight, Square, X, ChevronDown, Check, FileText, CornerDownRight, Pencil, Trash2, GraduationCap, Code, Coffee, Lightbulb, Paperclip, ChevronRight, Puzzle, Globe } from 'lucide-react';
 import { dialogBridge, fsBridge } from '@/lib/ipc-factory';
 import { useFileDragDrop } from '@/hooks/useFileDragDrop';
 import { uint8ArrayToBase64 } from '@/utils/base64';
@@ -31,6 +31,7 @@ import {
 import { generateAttachmentId, readFileAsBase64, SUPPORTED_IMAGE_TYPES } from '@/utils/imageUtils';
 import PermissionDialog from '@/components/common/PermissionDialog';
 import FolderSelector from '@/components/common/FolderSelector';
+import { useDiscoveryStore } from '@/stores/discoveryStore';
 
 export interface ChatInputSendOptions {
   cliApps?: OutboundCliAppMention[];
@@ -167,7 +168,7 @@ interface ChatInputProps {
   isStreaming?: boolean;
   disabled?: boolean;
   workspaceScope?: WorkspaceScopePayload | null;
-  onWorkspaceScopeChange?: (scope: WorkspaceScopePayload) => void;
+  onWorkspaceScopeChange?: (scope: WorkspaceScopePayload | null) => void;
 }
 
 interface SuggestionItem {
@@ -373,6 +374,14 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   const [mcpPresets, setMcpPresets] = useState<McpPresetInfo[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  const [showPlusMenu, setShowPlusMenu] = useState(false);
+  const [activeSubmenu, setActiveSubmenu] = useState<'project' | 'skills' | 'connector' | null>(null);
+  const plusMenuRef = useRef<HTMLDivElement>(null);
+  const skills = useDiscoveryStore((s) => s.skills);
+  const useBuiltinWebSearch = useSettingsStore((s) => s.useBuiltinWebSearch);
+  const setUseBuiltinWebSearch = useSettingsStore((s) => s.setUseBuiltinWebSearch);
+
+
   // Welcome-only state (always declared for hook stability)
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const categoryPanelRef = useRef<HTMLDivElement>(null);
@@ -402,6 +411,8 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   const grantPermission = usePermissionStore((s) => s.grantPermission);
   const hasPermission = usePermissionStore((s) => s.hasPermission);
   const { t } = useI18n();
+  const language = useSettingsStore((s) => s.language);
+  const isEn = language === 'en-US';
 
   // Chat-only derived state
   const isRunning = activeConv?.status === 'running';
@@ -455,7 +466,6 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showModelPicker]);
-
   // Handle pasting images from clipboard
   const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items;
@@ -586,10 +596,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   };
 
   const handleClearWorkspace = () => {
-    if (onWorkspaceScopeChange && workspaceScope) {
-      // Clearing to the default — signal with an empty project path won't work,
-      // so just clear local state; App layer handles default
-    }
+    onWorkspaceScopeChange?.(null);
     setLocalWorkspace(null);
   };
 
@@ -960,7 +967,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     }
   };
 
-  const handleAttach = async () => {
+  const handleAttach = useCallback(async () => {
     const selected = await dialogBridge.open({ multiple: true, directory: false });
     if (selected) {
       const paths = Array.isArray(selected) ? selected : [selected];
@@ -971,10 +978,224 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       );
       textareaRef.current?.focus();
     }
+  }, []);
+
+  const renderPlusMenu = () => {
+    return (
+      <div
+        ref={plusMenuRef}
+        className={cn(
+          "absolute left-0 w-64 bg-white rounded-2xl border border-[#dedbd3] shadow-lg py-1.5 z-50 text-[13px] duration-150 animate-in fade-in",
+          isWelcome 
+            ? "top-full mt-2 slide-in-from-top-2" 
+            : "bottom-full mb-2 slide-in-from-bottom-2"
+        )}
+      >
+        {/* Add files or photos */}
+        <button
+          onClick={() => {
+            void handleAttach();
+            setShowPlusMenu(false);
+          }}
+          className="w-full flex items-center justify-between px-3.5 py-2.5 text-[#29261b] hover:bg-[#f5f3ee] transition-colors text-left font-medium cursor-pointer"
+        >
+          <div className="flex items-center gap-2.5">
+            <Paperclip className="h-4 w-4 text-[#656358]" />
+            <span>{isEn ? 'Add files or photos' : '添加文件或图片'}</span>
+          </div>
+          <span className="text-[#8a867c] text-[11px] font-sans">⌘U</span>
+        </button>
+
+
+        {/* Skills */}
+        <div
+          className="relative"
+          onMouseEnter={() => setActiveSubmenu('skills')}
+          onMouseLeave={() => setActiveSubmenu(null)}
+        >
+          <button
+            className={cn(
+              "w-full flex items-center justify-between px-3.5 py-2.5 text-[#29261b] hover:bg-[#f5f3ee] transition-colors text-left font-medium cursor-pointer",
+              activeSubmenu === 'skills' && "bg-[#f5f3ee]"
+            )}
+          >
+            <div className="flex items-center gap-2.5">
+              <GraduationCap className="h-4 w-4 text-[#656358]" />
+              <span>{isEn ? 'Skills' : '技能'}</span>
+            </div>
+            <ChevronRight className="h-3.5 w-3.5 text-[#8a867c]" />
+          </button>
+
+          {activeSubmenu === 'skills' && (
+            <div className={cn(
+              "absolute left-full ml-1 w-64 bg-white rounded-2xl border border-[#dedbd3] shadow-lg py-1.5 z-50 animate-in fade-in slide-in-from-left-1 duration-150",
+              isWelcome ? "top-0" : "bottom-0"
+            )}>
+              {skills.length === 0 ? (
+                <div className="px-3.5 py-2 text-[#8a867c] italic text-center">
+                  {isEn ? 'No skills available' : '无可用技能'}
+                </div>
+              ) : (
+                <div className="max-h-48 overflow-y-auto">
+                  {skills.map((skill) => (
+                    <button
+                      key={skill.name}
+                      onClick={() => {
+                        setText((prev) => {
+                          const commandStr = `/${skill.name} `;
+                          if (prev.startsWith('/')) {
+                            return prev.replace(/^\/\S*\s*/, commandStr);
+                          }
+                          return commandStr + prev;
+                        });
+                        setShowPlusMenu(false);
+                        setActiveSubmenu(null);
+                        textareaRef.current?.focus();
+                      }}
+                      className="w-full flex flex-col px-3.5 py-2 hover:bg-[#f5f3ee] transition-colors text-left cursor-pointer"
+                    >
+                      <span className="font-medium text-[#29261b]">/{skill.name}</span>
+                      <span className="text-[11px] text-[#8a867c] line-clamp-1">{skill.description}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Add connector */}
+        <div
+          className="relative"
+          onMouseEnter={() => setActiveSubmenu('connector')}
+          onMouseLeave={() => setActiveSubmenu(null)}
+        >
+          <button
+            className={cn(
+              "w-full flex items-center justify-between px-3.5 py-2.5 text-[#29261b] hover:bg-[#f5f3ee] transition-colors text-left font-medium cursor-pointer",
+              activeSubmenu === 'connector' && "bg-[#f5f3ee]"
+            )}
+          >
+            <div className="flex items-center gap-2.5">
+              <Puzzle className="h-4 w-4 text-[#656358]" />
+              <span>{isEn ? 'Add connector' : '添加连接器'}</span>
+            </div>
+            <ChevronRight className="h-3.5 w-3.5 text-[#8a867c]" />
+          </button>
+
+          {activeSubmenu === 'connector' && (
+            <div className={cn(
+              "absolute left-full ml-1 w-64 bg-white rounded-2xl border border-[#dedbd3] shadow-lg py-1.5 z-50 animate-in fade-in slide-in-from-left-1 duration-150",
+              isWelcome ? "top-0" : "bottom-0"
+            )}>
+              {mcpPresets.length === 0 ? (
+                <div className="px-3.5 py-2 text-[#8a867c] italic text-center">
+                  {isEn ? 'No connectors available' : '无可用连接器'}
+                </div>
+              ) : (
+                <div className="max-h-48 overflow-y-auto">
+                  {mcpPresets.map((preset) => {
+                    const isSelected = selectedMcpPresets.some((s) => s.name === preset.name);
+                    return (
+                      <button
+                        key={preset.name}
+                        onClick={() => {
+                          if (isSelected) {
+                            setSelectedMcpPresets((prev) => prev.filter((p) => p.name !== preset.name));
+                          } else {
+                            setSelectedMcpPresets((prev) => [...prev, {
+                              name: preset.name,
+                              display_name: preset.display_name,
+                              category: preset.category,
+                              transport: preset.transport,
+                              status: preset.status,
+                              configured: preset.configured,
+                              logo_url: preset.logo_url,
+                              brand_color: preset.brand_color,
+                            }]);
+                          }
+                          setShowPlusMenu(false);
+                          setActiveSubmenu(null);
+                          textareaRef.current?.focus();
+                        }}
+                        className="w-full flex items-center justify-between px-3.5 py-2 hover:bg-[#f5f3ee] transition-colors text-left cursor-pointer"
+                      >
+                        <div className="flex flex-col min-w-0">
+                          <span className="font-medium text-[#29261b] truncate">@{preset.display_name || preset.name}</span>
+                          <span className="text-[11px] text-[#8a867c] line-clamp-1 truncate">{preset.description}</span>
+                        </div>
+                        {isSelected && <Check className="h-3.5 w-3.5 text-[#d97757] shrink-0 ml-2" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-[#f0ede6] my-1.5" />
+
+        {/* Web search */}
+        <button
+          onClick={() => {
+            setUseBuiltinWebSearch(!useBuiltinWebSearch);
+          }}
+          className="w-full flex items-center justify-between px-3.5 py-2.5 text-[#29261b] hover:bg-[#f5f3ee] transition-colors text-left font-medium cursor-pointer"
+        >
+          <div className="flex items-center gap-2.5">
+            <Globe className="h-4 w-4 text-[#656358]" />
+            <span>{isEn ? 'Web search' : '网络搜索'}</span>
+          </div>
+          {useBuiltinWebSearch && <Check className="h-4 w-4 text-[#d97757]" />}
+        </button>
+      </div>
+    );
   };
+
+  // Global keydown listener for Cmd/Ctrl+U
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+      const isModifier = isMac ? e.metaKey : e.ctrlKey;
+      if (isModifier && e.key.toLowerCase() === 'u') {
+        e.preventDefault();
+        handleAttach();
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [handleAttach]);
+
+  // Close plus menu on click outside
+  useEffect(() => {
+    if (!showPlusMenu) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (plusMenuRef.current && !plusMenuRef.current.contains(e.target as Node)) {
+        setShowPlusMenu(false);
+        setActiveSubmenu(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showPlusMenu]);
+
+  // Close plus menu on Escape key
+  useEffect(() => {
+    if (!showPlusMenu) return;
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowPlusMenu(false);
+        setActiveSubmenu(null);
+      }
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [showPlusMenu]);
 
   const hasAttachments = images.length > 0 || files.length > 0;
   const hasContent = text.trim().length > 0 || selectedCliApps.length > 0 || selectedMcpPresets.length > 0 || hasAttachments;
+  const showProjectSelector = !activeConv?.workspacePath && !activeConv?.workspaceScope?.project_path;
 
   // Determine placeholder based on selected command
   const placeholder = hoverPrompt
@@ -1082,15 +1303,17 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
           </div>
         )}
 
-        {/* Input Card */}
-        <div
-          className={cn(
-            'relative claude-elevated claude-input-focus rounded-[24px] transition-all',
-            !isWelcome && isDragging
-              ? 'border-[#d97757] ring-2 ring-[#d97757]/20'
-              : ''
-          )}
-        >
+        {/* Unified Input Widget Container */}
+        <div className="relative rounded-[24px] bg-[#faf9f6] border border-[#e8e4dd] shadow-[0_6px_24px_rgba(0,0,0,0.06)] flex flex-col">
+          {/* Input Card */}
+          <div
+            className={cn(
+              'relative bg-white border border-[#e8e5de]/60 rounded-[24px] shadow-[0_4px_12px_rgba(0,0,0,0.03)] transition-all',
+              !isWelcome && isDragging
+                ? 'border-[#d97757] ring-2 ring-[#d97757]/20'
+                : ''
+            )}
+          >
           {/* Chat-only: Drag overlay */}
           {!isWelcome && isDragging && (
             <div className="absolute inset-0 flex items-center justify-center rounded-[24px] bg-[#fbfaf7]/90 z-10">
@@ -1188,23 +1411,23 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
 
           {/* Bottom Toolbar */}
           {isWelcome ? (
-            /* Welcome variant: FolderSelector + [+] + --- + Start button */
+            /* Welcome variant: [+] + --- + Start button */
             <div className="flex items-center gap-2 px-5 pb-4">
-              <FolderSelector
-                currentPath={workspaceScope?.project_path ?? localWorkspace}
-                recentPaths={recentPaths}
-                onSelect={handleSelectFolder}
-                onClear={handleClearWorkspace}
-              />
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleAttach}
-                aria-label={t.chat.addAttachment}
-                className="btn-ghost h-8 w-8 text-[#29261b] hover:text-[#29261b] hover:bg-[#eeeeea] rounded-xl"
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
+              <div className="relative">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setShowPlusMenu(!showPlusMenu)}
+                  aria-label={t.chat.addAttachment}
+                  className={cn(
+                    "btn-ghost h-8 w-8 text-[#29261b] hover:text-[#29261b] rounded-xl transition-colors",
+                    showPlusMenu ? "bg-[#eeeeea]" : "hover:bg-[#eeeeea]"
+                  )}
+                >
+                  <Plus className={cn("h-4 w-4 transition-transform duration-200", showPlusMenu && "rotate-45")} />
+                </Button>
+                {showPlusMenu && renderPlusMenu()}
+              </div>
               <div className="flex-1" />
 
               <button
@@ -1222,29 +1445,25 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
               </button>
             </div>
           ) : (
-            /* Chat variant: [+] + workspace chip + --- + Model label + Stop/Send */
+            /* Chat variant: [+] + --- + Model label + Stop/Send */
             <div className="flex items-center justify-between px-4 pb-3 pt-1">
               {/* Left Actions */}
               <div className="flex items-center gap-0.5">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleAttach}
-                  aria-label={t.chat.addAttachment}
-                  className="btn-ghost h-8 w-8 text-[#29261b] hover:text-[#29261b] hover:bg-[#eeeeea] rounded-xl"
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
-                {workspaceScope && (
-                  <>
-                    <FolderSelector
-                      currentPath={workspaceScope.project_path}
-                      recentPaths={recentPaths}
-                      onSelect={handleSelectFolder}
-                      onClear={handleClearWorkspace}
-                    />
-                  </>
-                )}
+                <div className="relative">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setShowPlusMenu(!showPlusMenu)}
+                    aria-label={t.chat.addAttachment}
+                    className={cn(
+                      "btn-ghost h-8 w-8 text-[#29261b] hover:text-[#29261b] rounded-xl transition-colors",
+                      showPlusMenu ? "bg-[#eeeeea]" : "hover:bg-[#eeeeea]"
+                    )}
+                  >
+                    <Plus className={cn("h-4 w-4 transition-transform duration-200", showPlusMenu && "rotate-45")} />
+                  </Button>
+                  {showPlusMenu && renderPlusMenu()}
+                </div>
               </div>
 
               <div className="flex items-center gap-2">
@@ -1328,6 +1547,21 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
             </div>
           )}
         </div>
+
+        {showProjectSelector && (
+          <div className="flex items-center gap-4 px-5 py-1 text-[#656358] text-[12.5px] select-none z-10 rounded-b-[24px]">
+            <FolderSelector
+              variant="pill"
+              currentPath={workspaceScope?.project_path ?? localWorkspace}
+              recentPaths={recentPaths}
+              onSelect={handleSelectFolder}
+              onClear={handleClearWorkspace}
+            />
+          </div>
+        )}
+      </div>
+
+
 
         {isWelcome && activeCategory && (
           <div

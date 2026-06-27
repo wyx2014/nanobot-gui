@@ -39,6 +39,7 @@ import CloseDialog from '@/components/common/CloseDialog';
 import { checkForUpdate } from '@/core/updates/checker';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
 import { syncNanobotSettings, bootstrapNanobotGateway, syncSessionsFromGateway, syncGatewaySettingsToStore } from '@/core/nanobotClient';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 
 function normalizeWorkspaceScope(scope: WorkspaceScopePayload): WorkspaceScopePayload {
   return {
@@ -61,7 +62,7 @@ function App() {
   const [workspaces, setWorkspaces] = useState<WorkspacesPayload | null>(null);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [draftWorkspaceScope, setDraftWorkspaceScope] = useState<WorkspaceScopePayload | null>(null);
-  const [workspaceOverrides, setWorkspaceOverrides] = useState<Record<string, WorkspaceScopePayload>>({});
+  const [workspaceOverrides, setWorkspaceOverrides] = useState<Record<string, WorkspaceScopePayload | null>>({});
 
   const activeConvId = useChatStore((s) => s.activeConversationId);
   const activeConvWorkspacePath = useChatStore((s) =>
@@ -72,8 +73,8 @@ function App() {
   );
 
   const activeWorkspaceScope = useMemo<WorkspaceScopePayload | null>(() => {
-    if (activeConvId && workspaceOverrides[activeConvId]) {
-      return workspaceOverrides[activeConvId];
+    if (activeConvId && Object.prototype.hasOwnProperty.call(workspaceOverrides, activeConvId)) {
+      return workspaceOverrides[activeConvId] ?? null;
     }
     if (activeConvWorkspaceScope) {
       return normalizeWorkspaceScope(activeConvWorkspaceScope);
@@ -87,10 +88,9 @@ function App() {
         restrict_to_workspace: false,
       };
     }
-    return draftWorkspaceScope
-      ? normalizeWorkspaceScope(draftWorkspaceScope)
-      : (workspaces?.default_scope ? normalizeWorkspaceScope(workspaces.default_scope) : null);
-  }, [activeConvId, activeConvWorkspacePath, activeConvWorkspaceScope, draftWorkspaceScope, workspaceOverrides, workspaces?.default_scope]);
+    if (activeConvId) return null;
+    return draftWorkspaceScope ? normalizeWorkspaceScope(draftWorkspaceScope) : null;
+  }, [activeConvId, activeConvWorkspacePath, activeConvWorkspaceScope, draftWorkspaceScope, workspaceOverrides]);
 
   const refreshWorkspaces = useCallback(async () => {
     try {
@@ -108,9 +108,20 @@ function App() {
   // Fetch workspaces once gateway is ready (after syncNanobotSettings resolves)
   // We do this in the bootstrap effect below; also refresh on session updates.
 
-  const applyWorkspaceScope = useCallback((scope: WorkspaceScopePayload) => {
-    const next = normalizeWorkspaceScope(scope);
+  const applyWorkspaceScope = useCallback((scope: WorkspaceScopePayload | null) => {
     setWorkspaceError(null);
+    if (!scope) {
+      if (activeConvId) {
+        useChatStore.getState().setConversationWorkspaceScope(activeConvId, null);
+        setWorkspaceOverrides((current) => ({ ...current, [activeConvId]: null }));
+        return;
+      }
+      setDraftWorkspaceScope(null);
+      return;
+    }
+
+    const next = normalizeWorkspaceScope(scope);
+    useWorkspaceStore.getState().setWorkspace(next.project_path);
     if (activeConvId) {
       try {
         const client = getNanobotClient();
@@ -194,8 +205,14 @@ function App() {
   });
 
   useEffect(() => {
-    const resetDraftWorkspace = () => {
-      setDraftWorkspaceScope(null);
+    const resetDraftWorkspace = (event: Event) => {
+      const projectPath = (event as CustomEvent<{ projectPath?: string }>).detail?.projectPath;
+      setDraftWorkspaceScope(projectPath ? {
+        project_path: projectPath,
+        project_name: projectNameFromPath(projectPath),
+        access_mode: 'full',
+        restrict_to_workspace: false,
+      } : null);
       setWorkspaceError(null);
       void refreshWorkspaces();
     };

@@ -2,8 +2,9 @@ import { useEffect, useCallback, useMemo, useState, useRef } from 'react';
 import { useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useScheduleStore } from '@/stores/scheduleStore';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useI18n } from '@/i18n';
-import { Plus, Clock, Wrench, Trash2, Settings, Download, Pencil, Undo2, HelpCircle } from 'lucide-react';
+import { Plus, Clock, Wrench, Trash2, Settings, Download, Pencil, Undo2, HelpCircle, ChevronRight, MoreHorizontal, SquarePen, FolderOpen, FolderClosed } from 'lucide-react';
 import GuideModal from '@/components/common/GuideModal';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -11,8 +12,10 @@ import { cn } from '@/lib/utils';
 import type { ConversationStatus } from '@/types';
 import ScheduledSection from '@/components/sidebar/ScheduledSection';
 import ruyiAvatar from '@/assets/ruyi-avatar.png';
-import { dialogBridge, fsBridge } from '@/lib/ipc-factory';
+import { dialogBridge, fsBridge, shellBridge } from '@/lib/ipc-factory';
 import { isMacOS } from '@/utils/platform';
+import { projectNameFromPath, visibleProjectPath } from '@/core/workspace';
+import type { Conversation } from '@/types';
 
 interface StatusIndicatorProps {
   status: ConversationStatus;
@@ -39,6 +42,18 @@ function StatusIndicator({ status, onComplete }: StatusIndicatorProps) {
   return null;
 }
 
+const PROJECT_VISIBLE_LIMIT = 5;
+const PROJECT_MENU_WIDTH = 150;
+const PROJECT_MENU_HEIGHT = 110;
+
+function projectPathForConversation(conv: Conversation): string | null {
+  return visibleProjectPath(conv.workspaceScope?.project_path ?? conv.workspacePath ?? null);
+}
+
+function projectNameForConversation(conv: Conversation, path: string): string {
+  return conv.workspaceScope?.project_name ?? projectNameFromPath(path);
+}
+
 export default function Sidebar() {
   const { conversations, activeConversationId, startNewConversation, switchConversation, deleteConversation, renameConversation, clearCompletedStatus, exportConversation, importConversation } = useChatStore();
   const openToolbox = useSettingsStore((s) => s.openToolbox);
@@ -48,10 +63,15 @@ export default function Sidebar() {
   const updateInfo = useSettingsStore((s) => s.updateInfo);
   const activeTaskCount = useScheduleStore((s) => s.getActiveTaskCount());
   const scheduledTasks = useScheduleStore((s) => s.tasks);
+  const recentWorkspacePaths = useWorkspaceStore((s) => s.recentPaths);
+  const projectNames = useWorkspaceStore((s) => s.projectNames);
+  const removeRecentPath = useWorkspaceStore((s) => s.removeRecentPath);
+  const setProjectName = useWorkspaceStore((s) => s.setProjectName);
   const { t } = useI18n();
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; convId: string } | null>(null);
+  const [projectMenu, setProjectMenu] = useState<{ x: number; y: number; path: string } | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
   // Undo delete state
@@ -60,6 +80,8 @@ export default function Sidebar() {
 
   // Inline rename state
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(() => new Set());
+  const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(() => new Set());
 
   // Guide modal state — auto-open on first launch only
   const setGuideShown = useSettingsStore((s) => s.setGuideShown);
@@ -90,11 +112,14 @@ export default function Sidebar() {
 
   // Close context menu when clicking outside
   useEffect(() => {
-    if (!contextMenu) return;
-    const handleClick = () => setContextMenu(null);
+    if (!contextMenu && !projectMenu) return;
+    const handleClick = () => {
+      setContextMenu(null);
+      setProjectMenu(null);
+    };
     document.addEventListener('click', handleClick);
     return () => document.removeEventListener('click', handleClick);
-  }, [contextMenu]);
+  }, [contextMenu, projectMenu]);
 
   // Sort by createdAt to keep positions stable during status updates
   // Filter out conversations created by scheduled tasks — they appear in ScheduledSection
@@ -113,6 +138,58 @@ export default function Sidebar() {
     .filter((c) => !c.scheduledTaskId && !scheduledConversationIds.has(c.id) && !c.id.startsWith('cron:'))
     .filter((c) => c.messages.length > 0 || c.status === 'running' || c.id === activeConversationId)
     .sort((a, b) => b.createdAt - a.createdAt);
+
+  const conversationGroups = useMemo(() => {
+    const recentOrder = new Map<string, number>();
+    const projectMap = new Map<string, { path: string; name: string; conversations: Conversation[]; latestUpdatedAt: number; recentIndex: number }>();
+    const unprojected: Conversation[] = [];
+
+    for (const [index, recentPath] of recentWorkspacePaths.entries()) {
+      const path = visibleProjectPath(recentPath);
+      if (!path || projectMap.has(path)) continue;
+      recentOrder.set(path, index);
+      projectMap.set(path, {
+        path,
+        name: projectNames[path] ?? projectNameFromPath(path),
+        conversations: [],
+        latestUpdatedAt: 0,
+        recentIndex: index,
+      });
+    }
+
+    for (const conv of sortedConvs) {
+      const path = projectPathForConversation(conv);
+      if (!path) {
+        unprojected.push(conv);
+        continue;
+      }
+      const existing = projectMap.get(path);
+      if (existing) {
+        existing.conversations.push(conv);
+        existing.latestUpdatedAt = Math.max(existing.latestUpdatedAt, conv.updatedAt);
+      } else {
+        projectMap.set(path, {
+          path,
+          name: projectNames[path] ?? projectNameForConversation(conv, path),
+          conversations: [conv],
+          latestUpdatedAt: conv.updatedAt,
+          recentIndex: recentOrder.get(path) ?? Number.MAX_SAFE_INTEGER,
+        });
+      }
+    }
+
+    const projects = [...projectMap.values()]
+      .map((project) => ({
+        ...project,
+        conversations: project.conversations.sort((a, b) => b.updatedAt - a.updatedAt),
+      }))
+      .sort((a, b) => a.recentIndex - b.recentIndex || b.latestUpdatedAt - a.latestUpdatedAt);
+
+    return {
+      projects,
+      unprojected: unprojected.sort((a, b) => b.updatedAt - a.updatedAt),
+    };
+  }, [projectNames, recentWorkspacePaths, sortedConvs]);
 
   const handleDeleteConversation = (e: React.MouseEvent, convId: string) => {
     e.stopPropagation();
@@ -167,6 +244,96 @@ export default function Sidebar() {
     }
     setContextMenu(null);
   };
+
+  const toggleProject = (path: string) => {
+    setCollapsedProjects((current) => {
+      const next = new Set(current);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  };
+
+  const openProjectMenu = (event: React.MouseEvent, path: string) => {
+    event.stopPropagation();
+    const x = Math.min(event.clientX, window.innerWidth - PROJECT_MENU_WIDTH - 8);
+    const y = Math.min(event.clientY, window.innerHeight - PROJECT_MENU_HEIGHT - 8);
+    setProjectMenu({ x, y, path });
+  };
+
+  const startProjectConversation = (path: string) => {
+    startNewConversation();
+    setViewMode('chat');
+    window.dispatchEvent(new CustomEvent('nanobot-gui:new-chat', { detail: { projectPath: path } }));
+  };
+
+  const renameProject = (path: string) => {
+    const next = window.prompt(t.sidebar.renameProject, projectNames[path] ?? projectNameFromPath(path));
+    if (!next?.trim()) return;
+    setProjectName(path, next.trim());
+  };
+
+  const removeProject = (path: string) => {
+    const project = conversationGroups.projects.find((item) => item.path === path);
+    const projectName = project?.name ?? projectNames[path] ?? projectNameFromPath(path);
+    const projectConversations = project?.conversations ?? [];
+    const message = projectConversations.length > 0
+      ? `移除项目「${projectName}」并删除其中 ${projectConversations.length} 个会话？`
+      : `移除项目「${projectName}」？`;
+    if (!window.confirm(message)) return;
+    for (const conv of projectConversations) {
+      deleteConversation(conv.id);
+    }
+    removeRecentPath(path);
+  };
+
+  const renderConversationButton = (conv: Conversation, nested = false) => (
+    <button
+      key={conv.id}
+      onClick={() => { switchConversation(conv.id); setViewMode('chat'); }}
+      onContextMenu={(e) => handleContextMenu(e, conv.id)}
+      aria-current={conv.id === activeConversationId && viewMode === 'chat' ? 'true' : undefined}
+      className={cn(
+        'group flex items-center gap-2 rounded-xl cursor-pointer transition-colors w-full text-left',
+        nested ? 'px-3 py-2 ml-7 w-[calc(100%-1.75rem)]' : 'px-3.5 py-2.5',
+        conv.id === activeConversationId && viewMode === 'chat'
+          ? 'bg-[#ecebe7] text-[#29261b]'
+          : 'text-[#34322d] hover:bg-[#eeeeea]'
+      )}
+    >
+      <StatusIndicator
+        status={conv.status ?? 'idle'}
+        onComplete={() => handleClearCompletedStatus(conv.id)}
+      />
+      {editingId === conv.id ? (
+        <input
+          autoFocus
+          defaultValue={conv.title}
+          className="flex-1 text-[13px] bg-transparent border-b border-[#d97757] outline-none min-w-0"
+          onClick={(e) => e.stopPropagation()}
+          onBlur={(e) => {
+            const val = e.target.value.trim();
+            if (val && val !== conv.title) renameConversation(conv.id, val);
+            setEditingId(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+            if (e.key === 'Escape') setEditingId(null);
+          }}
+        />
+      ) : (
+        <span className="flex-1 truncate text-[14px] font-medium tracking-[-0.01em]">{conv.title}</span>
+      )}
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={(e) => handleDeleteConversation(e, conv.id)}
+        className="h-5 w-5 opacity-0 group-hover:opacity-100 text-[#656358] hover:text-red-500 hover:bg-transparent shrink-0"
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </Button>
+    </button>
+  );
 
   return (
     <div className="flex flex-col h-full w-[260px] bg-[#f7f6f2] border-r border-[#e5e2db]">
@@ -228,65 +395,94 @@ export default function Sidebar() {
       {/* Scheduled Section */}
       <ScheduledSection />
 
-      {/* Recents Section */}
-      <div className="px-5 pt-3 pb-2 flex items-center justify-between">
-        <span className="text-[14px] font-medium tracking-[-0.01em] text-[#8a867c]">{t.sidebar.recents}</span>
-      </div>
-
       {/* Conversation List */}
       <ScrollArea className="flex-1 min-h-0 px-2">
-        {sortedConvs.length === 0 ? (
+        {conversationGroups.projects.length === 0 && conversationGroups.unprojected.length === 0 ? (
           <div className="px-4 py-3">
             <p className="text-[14px] text-[#8a867c]">{t.sidebar.noSessionsYet}</p>
           </div>
         ) : (
-          <div className="space-y-0.5">
-            {sortedConvs.map((conv) => (
-              <button
-                key={conv.id}
-                onClick={() => { switchConversation(conv.id); setViewMode('chat'); }}
-                onContextMenu={(e) => handleContextMenu(e, conv.id)}
-                aria-current={conv.id === activeConversationId && viewMode === 'chat' ? 'true' : undefined}
-                className={cn(
-                  'group flex items-center gap-2 px-3.5 py-2.5 rounded-xl cursor-pointer transition-colors w-full text-left',
-                  conv.id === activeConversationId && viewMode === 'chat'
-                    ? 'bg-[#ecebe7] text-[#29261b]'
-                    : 'text-[#34322d] hover:bg-[#eeeeea]'
-                )}
-              >
-                <StatusIndicator
-                  status={conv.status ?? 'idle'}
-                  onComplete={() => handleClearCompletedStatus(conv.id)}
-                />
-                {editingId === conv.id ? (
-                  <input
-                    autoFocus
-                    defaultValue={conv.title}
-                    className="flex-1 text-[13px] bg-transparent border-b border-[#d97757] outline-none min-w-0"
-                    onClick={(e) => e.stopPropagation()}
-                    onBlur={(e) => {
-                      const val = e.target.value.trim();
-                      if (val && val !== conv.title) renameConversation(conv.id, val);
-                      setEditingId(null);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                      if (e.key === 'Escape') setEditingId(null);
-                    }}
-                  />
-                ) : (
-                  <span className="flex-1 truncate text-[14px] font-medium tracking-[-0.01em]">{conv.title}</span>
-                )}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => handleDeleteConversation(e, conv.id)}
-                  className="h-5 w-5 opacity-0 group-hover:opacity-100 text-[#656358] hover:text-red-500 hover:bg-transparent shrink-0"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </button>
-            ))}
+          <div className="space-y-5 py-2">
+            {conversationGroups.projects.length > 0 && (
+              <section>
+                <div className="px-3 pb-2 text-[14px] font-semibold tracking-[-0.01em] text-[#8a867c]">{t.sidebar.projects}</div>
+                <div className="space-y-1">
+                  {conversationGroups.projects.map((project) => {
+                    const collapsed = collapsedProjects.has(project.path);
+                    const showAll = expandedProjects.has(project.path);
+                    const visible = showAll ? project.conversations : project.conversations.slice(0, PROJECT_VISIBLE_LIMIT);
+                    const hiddenCount = project.conversations.length - PROJECT_VISIBLE_LIMIT;
+                    return (
+                      <div key={project.path} className="space-y-0.5">
+                        <div
+                          className="group/project flex items-center gap-2 px-3.5 py-2 text-[15px] font-semibold tracking-[-0.01em] text-[#34322d] hover:bg-[#eeeeea] rounded-xl transition-colors w-full text-left"
+                        >
+                          <button
+                            onClick={() => toggleProject(project.path)}
+                            className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                          >
+                            {collapsed ? (
+                              <FolderClosed className="h-4 w-4 text-[#3d3929] shrink-0" />
+                            ) : (
+                              <FolderOpen className="h-4 w-4 text-[#3d3929] shrink-0" />
+                            )}
+                            <span className="truncate">{project.name}</span>
+                            <ChevronRight className={cn('h-4 w-4 text-[#8a867c] shrink-0 opacity-0 transition-all group-hover/project:opacity-100', !collapsed && 'rotate-90')} />
+                          </button>
+                          <button
+                            onClick={(event) => openProjectMenu(event, project.path)}
+                            className="flex h-6 w-6 items-center justify-center rounded-md text-[#656358] opacity-0 transition-opacity hover:bg-[#dedbd3] hover:text-[#29261b] group-hover/project:opacity-100"
+                            aria-label={t.sidebar.projectMore}
+                            title={t.sidebar.projectMore}
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              startProjectConversation(project.path);
+                            }}
+                            className="flex h-6 w-6 items-center justify-center rounded-md text-[#656358] opacity-0 transition-opacity hover:bg-[#dedbd3] hover:text-[#29261b] group-hover/project:opacity-100"
+                            aria-label={t.sidebar.newProjectConversation}
+                            title={t.sidebar.newProjectConversation}
+                          >
+                            <SquarePen className="h-4 w-4" />
+                          </button>
+                        </div>
+                        {!collapsed && project.conversations.length === 0 && (
+                          <div className="ml-7 px-3 py-1.5 text-[14px] text-[#8a867c]">{t.sidebar.noSessionsYet}</div>
+                        )}
+                        {!collapsed && visible.map((conv) => renderConversationButton(conv, true))}
+                        {!collapsed && hiddenCount > 0 && (
+                          <button
+                            onClick={() => {
+                              setExpandedProjects((current) => {
+                                const next = new Set(current);
+                                if (showAll) next.delete(project.path);
+                                else next.add(project.path);
+                                return next;
+                              });
+                            }}
+                            className="ml-7 px-3 py-1.5 text-[14px] font-medium text-[#8a867c] hover:text-[#34322d] transition-colors"
+                          >
+                            {showAll ? t.sidebar.collapseProject : t.sidebar.expandProjectConversations}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
+            {conversationGroups.unprojected.length > 0 && (
+              <section>
+                <div className="px-3 pb-2 text-[14px] font-semibold tracking-[-0.01em] text-[#8a867c]">{t.sidebar.conversations}</div>
+                <div className="space-y-0.5">
+                  {conversationGroups.unprojected.map((conv) => renderConversationButton(conv))}
+                </div>
+              </section>
+            )}
           </div>
         )}
       </ScrollArea>
@@ -363,6 +559,44 @@ export default function Sidebar() {
           >
             <Trash2 className="h-3.5 w-3.5" />
             {t.sidebar.deleteConversation}
+          </button>
+        </div>
+      )}
+
+      {projectMenu && (
+        <div
+          className="fixed z-50 bg-white rounded-lg shadow-lg border border-[#e8e4dd] py-1 min-w-[140px]"
+          style={{ left: projectMenu.x, top: projectMenu.y }}
+        >
+          <button
+            onClick={() => {
+              void shellBridge.revealItemInDir(projectMenu.path);
+              setProjectMenu(null);
+            }}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-[13px] text-[#3d3929] hover:bg-[#f0ede6]"
+          >
+            <FolderOpen className="h-3.5 w-3.5" />
+            {t.sidebar.openProjectLocation}
+          </button>
+          <button
+            onClick={() => {
+              renameProject(projectMenu.path);
+              setProjectMenu(null);
+            }}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-[13px] text-[#3d3929] hover:bg-[#f0ede6]"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            {t.sidebar.renameProject}
+          </button>
+          <button
+            onClick={() => {
+              removeProject(projectMenu.path);
+              setProjectMenu(null);
+            }}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-[13px] text-red-500 hover:bg-[#f0ede6]"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {t.sidebar.removeProject}
           </button>
         </div>
       )}

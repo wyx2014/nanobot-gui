@@ -2,16 +2,20 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { authorizeWorkspace, revokeWorkspace } from '../core/safety/pathSafety';
 import { getBaseName } from '../utils/pathUtils';
+import { normalizeProjectPath, visibleProjectPath } from '@/core/workspace';
 
 interface WorkspaceState {
   /** User-selected workspace path (null if user hasn't selected one) */
   currentPath: string | null;
   recentPaths: string[];
+  projectNames: Record<string, string>;
 }
 
 interface WorkspaceActions {
   setWorkspace: (path: string | null) => void;
   clearWorkspace: () => void;
+  removeRecentPath: (path: string) => void;
+  setProjectName: (path: string, name: string) => void;
 }
 
 export type WorkspaceStore = WorkspaceState & WorkspaceActions;
@@ -23,6 +27,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
     (set, get) => ({
       currentPath: null,
       recentPaths: [],
+      projectNames: {},
 
       setWorkspace: (path) => {
         const { currentPath: oldPath } = get();
@@ -41,9 +46,14 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
         authorizeWorkspace(path);
 
         const { recentPaths } = get();
+        const visiblePath = visibleProjectPath(path);
+        if (!visiblePath) {
+          set({ currentPath: path });
+          return;
+        }
         // Add to recent paths, removing duplicates and keeping max size
-        const filtered = recentPaths.filter((p) => p !== path);
-        const updated = [path, ...filtered].slice(0, MAX_RECENT_PATHS);
+        const filtered = recentPaths.filter((p) => normalizeProjectPath(p) !== visiblePath);
+        const updated = [visiblePath, ...filtered].slice(0, MAX_RECENT_PATHS);
 
         set({
           currentPath: path,
@@ -58,6 +68,27 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
         }
         set({ currentPath: null });
       },
+
+      removeRecentPath: (path) => {
+        const normalized = normalizeProjectPath(path);
+        set((state) => {
+          const { [normalized]: _removed, ...projectNames } = state.projectNames;
+          return {
+            recentPaths: state.recentPaths.filter((p) => normalizeProjectPath(p) !== normalized),
+            projectNames,
+          };
+        });
+      },
+
+      setProjectName: (path, name) => {
+        const normalized = normalizeProjectPath(path);
+        set((state) => ({
+          projectNames: {
+            ...state.projectNames,
+            [normalized]: name,
+          },
+        }));
+      },
     }),
     {
       name: 'ruyi-workspace',
@@ -65,6 +96,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       // Only persist recentPaths — currentPath is now derived from active conversation
       partialize: (state) => ({
         recentPaths: state.recentPaths,
+        projectNames: state.projectNames,
       }),
     }
   )

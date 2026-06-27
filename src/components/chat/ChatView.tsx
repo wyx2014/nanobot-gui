@@ -118,7 +118,7 @@ export default function ChatView({
   workspaceDefaultScope?: WorkspaceScopePayload | null;
   workspaceControls?: WorkspacesPayload['controls'] | null;
   workspaceError?: string | null;
-  onWorkspaceScopeChange?: (scope: WorkspaceScopePayload) => void;
+  onWorkspaceScopeChange?: (scope: WorkspaceScopePayload | null) => void;
 }) {
   const activeConv = useActiveConversation();
   const activeConvId = activeConv?.id;
@@ -299,7 +299,6 @@ export default function ChatView({
     };
 
     let convId = activeConv?.id;
-    const isNewConversation = !convId;
     if (!convId) {
       pendingFirstRef.current = {
         text,
@@ -313,9 +312,6 @@ export default function ChatView({
       });
     } else {
       stream.send(text, imageAttachmentsToSendImages(images), wireOptions);
-    }
-    if (isNewConversation && !useSettingsStore.getState().sidebarCollapsed) {
-      useSettingsStore.getState().toggleSidebar();
     }
     resetToBottom();
   };
@@ -469,6 +465,7 @@ export default function ChatView({
   // Welcome screen - new conversation state (activeConversationId is null)
   const apiKey = useSettingsStore((s) => s.apiKey);
   const needsSetup = !apiKey?.trim();
+  const welcomeProjectName = workspaceScope?.project_name || workspaceScope?.project_path?.split(/[\\/]/).filter(Boolean).pop();
 
   if (!activeConv) {
     return (
@@ -479,14 +476,22 @@ export default function ChatView({
             <div className="text-center mb-8">
               {/* Slogan */}
               <h1 className="text-[28px] text-[#29261b] leading-tight mb-3 flex items-center justify-center gap-3.5 font-claude-response font-medium select-none">
-                <span>
-                  {greeting}
-                  {userName ? (
-                    useSettingsStore.getState().language === 'en-US' ? `, ${userName}` : `，${userName}`
-                  ) : ''}
-                  {useSettingsStore.getState().language === 'en-US' ? '. ' : '，'}
-                  {t.chat.welcomeTitle}
-                </span>
+                {welcomeProjectName ? (
+                  <span>
+                    {useSettingsStore.getState().language === 'en-US'
+                      ? `What should we build in ${welcomeProjectName}?`
+                      : `我们应该在 ${welcomeProjectName} 中构建什么？`}
+                  </span>
+                ) : (
+                  <span>
+                    {greeting}
+                    {userName ? (
+                      useSettingsStore.getState().language === 'en-US' ? `, ${userName}` : `，${userName}`
+                    ) : ''}
+                    {useSettingsStore.getState().language === 'en-US' ? '. ' : '，'}
+                    {t.chat.welcomeTitle}
+                  </span>
+                )}
               </h1>
             </div>
 

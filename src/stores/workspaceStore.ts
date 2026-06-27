@@ -20,8 +20,6 @@ interface WorkspaceActions {
 
 export type WorkspaceStore = WorkspaceState & WorkspaceActions;
 
-const MAX_RECENT_PATHS = 5;
-
 export const useWorkspaceStore = create<WorkspaceStore>()(
   persist(
     (set, get) => ({
@@ -51,9 +49,9 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
           set({ currentPath: path });
           return;
         }
-        // Add to recent paths, removing duplicates and keeping max size
+        // Add to recent paths, removing duplicates
         const filtered = recentPaths.filter((p) => normalizeProjectPath(p) !== visiblePath);
-        const updated = [visiblePath, ...filtered].slice(0, MAX_RECENT_PATHS);
+        const updated = [visiblePath, ...filtered];
 
         set({
           currentPath: path,
@@ -74,6 +72,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
         set((state) => {
           const { [normalized]: _removed, ...projectNames } = state.projectNames;
           return {
+            currentPath: state.currentPath && normalizeProjectPath(state.currentPath) === normalized ? null : state.currentPath,
             recentPaths: state.recentPaths.filter((p) => normalizeProjectPath(p) !== normalized),
             projectNames,
           };

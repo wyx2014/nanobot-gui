@@ -224,7 +224,7 @@ export default function FolderSelector({
           </div>
 
           {/* List area */}
-          <div className="py-1 max-h-[200px] overflow-y-auto">
+          <div className="py-1 max-h-[188px] overflow-y-auto">
             {filteredPaths.length > 0 ? (
               filteredPaths.map((path) => (
                 <button
@@ -322,13 +322,13 @@ export default function FolderSelector({
 
       {isNameDialogOpen && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/10 px-4">
-          <div className="w-full max-w-[460px] rounded-[20px] bg-white shadow-[0_16px_48px_rgba(0,0,0,0.16)] border border-[#e6e1d8] overflow-hidden">
+          <div className="w-full max-w-[500px] rounded-[20px] bg-white shadow-[0_16px_48px_rgba(0,0,0,0.16)] border border-[#e6e1d8] overflow-hidden">
             <div className="flex items-start justify-between px-7 pt-6 pb-4">
               <div>
                 <h2 className="text-[22px] leading-tight font-semibold text-[#242424]">
                   {t.folder.nameProject}
                 </h2>
-                <p className="mt-2.5 text-[15px] font-medium text-[#8d8d8d]">
+                <p className="mt-2.5 text-[15px] font-medium text-[#8d8d8d] whitespace-nowrap">
                   {t.folder.nameProjectHint}
                 </p>
               </div>
@@ -342,7 +342,7 @@ export default function FolderSelector({
               </button>
             </div>
 
-            <div className="border-t border-[#eeeeee] px-7 py-5">
+            <div className="px-7 py-4">
               <input
                 ref={nameInputRef}
                 value={newProjectName}
@@ -358,11 +358,11 @@ export default function FolderSelector({
               />
             </div>
 
-            <div className="flex justify-end gap-3 px-7 pb-7">
+            <div className="flex justify-end gap-3 px-7 pb-6">
               <button
                 type="button"
                 onClick={() => setIsNameDialogOpen(false)}
-                className="h-12 rounded-[14px] border border-[#e8e5df] bg-white px-7 text-[16px] font-semibold text-[#242424] hover:bg-[#f8f6f2] transition-colors"
+                className="h-10 rounded-[12px] border border-[#e8e5df] bg-white px-6 text-[15px] font-semibold text-[#242424] hover:bg-[#f8f6f2] transition-colors"
               >
                 {t.common.cancel}
               </button>
@@ -370,7 +370,7 @@ export default function FolderSelector({
                 type="button"
                 onClick={handleSaveBlankProject}
                 disabled={!newProjectName.trim()}
-                className="h-12 rounded-[14px] bg-[#1f2024] px-7 text-[16px] font-semibold text-white hover:bg-[#111214] disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+                className="h-10 rounded-[12px] bg-[#1f2024] px-6 text-[15px] font-semibold text-white hover:bg-[#111214] disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
               >
                 {t.common.save}
               </button>

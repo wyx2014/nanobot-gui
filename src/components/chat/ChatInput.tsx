@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Plus, ArrowUp, ArrowRight, Square, X, ChevronDown, Check, FileText, CornerDownRight, Pencil, Trash2, GraduationCap, Code, Coffee, Lightbulb, Paperclip, ChevronRight, Puzzle, Globe } from 'lucide-react';
+import { Plus, ArrowUp, ArrowRight, Square, X, ChevronDown, Check, FileText, CornerDownRight, Pencil, Trash2, GraduationCap, Code, Coffee, Lightbulb, Paperclip, ChevronRight, Puzzle, Globe, Search } from 'lucide-react';
 import { dialogBridge, fsBridge } from '@/lib/ipc-factory';
 import { useFileDragDrop } from '@/hooks/useFileDragDrop';
 import { uint8ArrayToBase64 } from '@/utils/base64';
@@ -32,6 +32,7 @@ import { generateAttachmentId, readFileAsBase64, SUPPORTED_IMAGE_TYPES } from '@
 import PermissionDialog from '@/components/common/PermissionDialog';
 import FolderSelector from '@/components/common/FolderSelector';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
+import { visibleProjectPath } from '@/core/workspace';
 
 export interface ChatInputSendOptions {
   cliApps?: OutboundCliAppMention[];
@@ -191,6 +192,7 @@ interface ComposerDraft {
   text?: string;
   images?: ImageAttachment[];
   files?: FileAttachmentItem[];
+  skills?: string[];
   cliApps?: OutboundCliAppMention[];
   mcpPresets?: OutboundMcpPresetMention[];
 }
@@ -233,6 +235,7 @@ function normalizeDraft(value: unknown): ComposerDraft | null {
           && typeof file.name === 'string',
         )
       : [],
+    skills: Array.isArray(record.skills) ? record.skills.filter((skill): skill is string => typeof skill === 'string') : [],
     cliApps: Array.isArray(record.cliApps) ? record.cliApps : [],
     mcpPresets: Array.isArray(record.mcpPresets) ? record.mcpPresets : [],
   };
@@ -252,6 +255,7 @@ function hasDraftPayload(draft: ComposerDraft): boolean {
   return !!draft.text?.trim()
     || !!draft.images?.length
     || !!draft.files?.length
+    || !!draft.skills?.length
     || !!draft.cliApps?.length
     || !!draft.mcpPresets?.length;
 }
@@ -311,6 +315,7 @@ function queuedPromptLabel(prompt: QueuedPrompt): string {
   const images = prompt.images?.length ?? 0;
   if (images) return `${images} 张图片`;
   const caps = [
+    ...(prompt.skills?.map((skill) => `/${skill}`) ?? []),
     ...(prompt.cliApps?.map((app) => app.display_name || app.name) ?? []),
     ...(prompt.mcpPresets?.map((preset) => preset.display_name || preset.name) ?? []),
   ];
@@ -364,6 +369,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   const [text, setText] = useState('');
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const [files, setFiles] = useState<FileAttachmentItem[]>([]);
+  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [selectedCliApps, setSelectedCliApps] = useState<OutboundCliAppMention[]>([]);
   const [selectedMcpPresets, setSelectedMcpPresets] = useState<OutboundMcpPresetMention[]>([]);
   const [queuedPrompts, setQueuedPrompts] = useState<QueuedPrompt[]>([]);
@@ -376,6 +382,8 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
 
   const [showPlusMenu, setShowPlusMenu] = useState(false);
   const [activeSubmenu, setActiveSubmenu] = useState<'project' | 'skills' | 'connector' | null>(null);
+  const [skillSearchQuery, setSkillSearchQuery] = useState('');
+  const [connectorSearchQuery, setConnectorSearchQuery] = useState('');
   const plusMenuRef = useRef<HTMLDivElement>(null);
   const skills = useDiscoveryStore((s) => s.skills);
   const useBuiltinWebSearch = useSettingsStore((s) => s.useBuiltinWebSearch);
@@ -408,6 +416,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   const provider = useSettingsStore((s) => s.provider);
   const setModel = useSettingsStore((s) => s.setModel);
   const recentPaths = useWorkspaceStore((s) => s.recentPaths);
+  const conversations = useChatStore((s) => s.conversations);
   const grantPermission = usePermissionStore((s) => s.grantPermission);
   const hasPermission = usePermissionStore((s) => s.hasPermission);
   const { t } = useI18n();
@@ -432,11 +441,12 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       text: prompt,
       images: [],
       files: [],
+      skills: [],
       cliApps: [],
       mcpPresets: [],
     };
     isSubmittingRef.current = true;
-    writeDraft(draftKey, { text: '', images: [], files: [], cliApps: [], mcpPresets: [] });
+    writeDraft(draftKey, { text: '', images: [], files: [], skills: [], cliApps: [], mcpPresets: [] });
     submitDraft(draft);
     setActiveCategory(null);
     setHoverPrompt(null);
@@ -515,6 +525,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     setText(draft?.text ?? '');
     setImages(draft?.images ?? []);
     setFiles(draft?.files ?? []);
+    setSelectedSkills(draft?.skills ?? []);
     setSelectedCliApps(draft?.cliApps ?? []);
     setSelectedMcpPresets(draft?.mcpPresets ?? []);
     window.setTimeout(() => {
@@ -525,7 +536,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   useEffect(() => {
     if (skipDraftPersistRef.current) return;
     if (isSubmittingRef.current) {
-      const hasPayload = text.trim() || images.length || files.length || selectedCliApps.length || selectedMcpPresets.length;
+      const hasPayload = text.trim() || images.length || files.length || selectedSkills.length || selectedCliApps.length || selectedMcpPresets.length;
       if (!hasPayload) {
         isSubmittingRef.current = false;
       }
@@ -535,10 +546,11 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       text,
       images,
       files,
+      skills: selectedSkills,
       cliApps: selectedCliApps,
       mcpPresets: selectedMcpPresets,
     });
-  }, [draftKey, files, images, selectedCliApps, selectedMcpPresets, text]);
+  }, [draftKey, files, images, selectedCliApps, selectedMcpPresets, selectedSkills, text]);
 
   useEffect(() => {
     skipQueuePersistRef.current = true;
@@ -678,13 +690,10 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     };
   }, []);
 
-  // Suggestion type tracking: slash commands for /, capabilities for @
+  // Suggestion popup is hidden for business users; use the + menu instead.
   const suggestionType = useMemo((): 'slash' | 'mention' | null => {
-    const trimmed = text.trim();
-    if (trimmed.startsWith('@')) return 'mention';
-    if (trimmed.startsWith('/')) return 'slash';
     return null;
-  }, [text]);
+  }, []);
 
   // Slash command and capability suggestions.
   const suggestions = useMemo((): SuggestionItem[] => {
@@ -803,6 +812,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     setText('');
     setImages([]);
     setFiles([]);
+    setSelectedSkills([]);
     setSelectedCliApps([]);
     setSelectedMcpPresets([]);
     setSuggestionsDismissed(false);
@@ -824,8 +834,12 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       ...(draft.mcpPresets?.map((preset) => `@${preset.name}`) ?? []),
     ].join(' ');
 
+    const skillPrefix = draft.skills?.length
+      ? draft.skills.map((skill) => `/${skill}`).join(' ')
+      : '';
+
     // Compose parts, then join with newline
-    const bodyParts = [fileContext, capabilityMentions, trimmed].filter(Boolean).join('\n');
+    const bodyParts = [fileContext, capabilityMentions, skillPrefix, trimmed].filter(Boolean).join('\n');
 
     const message = bodyParts;
 
@@ -844,6 +858,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     text,
     images,
     files,
+    skills: selectedSkills,
     cliApps: selectedCliApps,
     mcpPresets: selectedMcpPresets,
   });
@@ -865,7 +880,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     }
 
     isSubmittingRef.current = true;
-    writeDraft(draftKey, { text: '', images: [], files: [], cliApps: [], mcpPresets: [] });
+    writeDraft(draftKey, { text: '', images: [], files: [], skills: [], cliApps: [], mcpPresets: [] });
     submitDraft(draft);
     resetInput();
   };
@@ -881,6 +896,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     setText(prompt.text ?? '');
     setImages(prompt.images ?? []);
     setFiles(prompt.files ?? []);
+    setSelectedSkills(prompt.skills ?? []);
     setSelectedCliApps(prompt.cliApps ?? []);
     setSelectedMcpPresets(prompt.mcpPresets ?? []);
     requestAnimationFrame(() => {
@@ -949,6 +965,11 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
         setSelectedCliApps((prev) => prev.slice(0, -1));
         return;
       }
+      if (selectedSkills.length > 0) {
+        e.preventDefault();
+        setSelectedSkills((prev) => prev.slice(0, -1));
+        return;
+      }
     }
 
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -981,6 +1002,19 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   }, []);
 
   const renderPlusMenu = () => {
+    const filteredSkills = skills.filter((skill) => {
+      const query = skillSearchQuery.trim().toLowerCase();
+      if (!query) return true;
+      return skill.name.toLowerCase().includes(query) || (skill.description ?? '').toLowerCase().includes(query);
+    });
+    const filteredMcpPresets = mcpPresets.filter((preset) => {
+      const query = connectorSearchQuery.trim().toLowerCase();
+      if (!query) return true;
+      return preset.name.toLowerCase().includes(query)
+        || (preset.display_name ?? '').toLowerCase().includes(query)
+        || (preset.description ?? '').toLowerCase().includes(query);
+    });
+
     return (
       <div
         ref={plusMenuRef}
@@ -1028,36 +1062,55 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
 
           {activeSubmenu === 'skills' && (
             <div className={cn(
-              "absolute left-full ml-1 w-64 bg-white rounded-2xl border border-[#dedbd3] shadow-lg py-1.5 z-50 animate-in fade-in slide-in-from-left-1 duration-150",
-              isWelcome ? "top-0" : "bottom-0"
+              "absolute left-full top-0 w-64 bg-white rounded-2xl border border-[#dedbd3] shadow-lg py-1.5 z-50 animate-in fade-in slide-in-from-left-1 duration-150"
             )}>
+              <div className="px-3.5 py-1.5 border-b border-[#f0ede6] flex items-center gap-2">
+                <Search className="h-4 w-4 text-[#8a867c] shrink-0" />
+                <input
+                  type="text"
+                  placeholder={isEn ? 'Search skills' : '搜索技能'}
+                  value={skillSearchQuery}
+                  onChange={(event) => setSkillSearchQuery(event.target.value)}
+                  className="w-full bg-transparent text-[13px] border-none outline-none placeholder:text-[#8a867c] text-[#29261b] font-medium"
+                  onKeyDown={(event) => event.stopPropagation()}
+                />
+              </div>
               {skills.length === 0 ? (
                 <div className="px-3.5 py-2 text-[#8a867c] italic text-center">
                   {isEn ? 'No skills available' : '无可用技能'}
                 </div>
+              ) : filteredSkills.length === 0 ? (
+                <div className="px-3.5 py-2 text-[#8a867c] italic text-center">
+                  {isEn ? 'No skills found' : '未找到技能'}
+                </div>
               ) : (
                 <div className="max-h-48 overflow-y-auto">
-                  {skills.map((skill) => (
-                    <button
-                      key={skill.name}
-                      onClick={() => {
-                        setText((prev) => {
-                          const commandStr = `/${skill.name} `;
-                          if (prev.startsWith('/')) {
-                            return prev.replace(/^\/\S*\s*/, commandStr);
-                          }
-                          return commandStr + prev;
-                        });
-                        setShowPlusMenu(false);
-                        setActiveSubmenu(null);
-                        textareaRef.current?.focus();
-                      }}
-                      className="w-full flex flex-col px-3.5 py-2 hover:bg-[#f5f3ee] transition-colors text-left cursor-pointer"
-                    >
-                      <span className="font-medium text-[#29261b]">/{skill.name}</span>
-                      <span className="text-[11px] text-[#8a867c] line-clamp-1">{skill.description}</span>
-                    </button>
-                  ))}
+                  {filteredSkills.map((skill) => {
+                    const isSelected = selectedSkills.includes(skill.name);
+                    return (
+                      <button
+                        key={skill.name}
+                        onClick={() => {
+                          setSelectedSkills((prev) => (
+                            prev.includes(skill.name)
+                              ? prev.filter((name) => name !== skill.name)
+                              : [...prev, skill.name]
+                          ));
+                          setShowPlusMenu(false);
+                          setActiveSubmenu(null);
+                          setSkillSearchQuery('');
+                          textareaRef.current?.focus();
+                        }}
+                        className="w-full flex items-center justify-between gap-2 px-3.5 py-2 hover:bg-[#f5f3ee] transition-colors text-left cursor-pointer"
+                      >
+                        <div className="min-w-0 flex flex-col">
+                          <span className="font-medium text-[#29261b] truncate">/{skill.name}</span>
+                          <span className="text-[11px] text-[#8a867c] line-clamp-1">{skill.description}</span>
+                        </div>
+                        {isSelected && <Check className="h-3.5 w-3.5 text-[#d97757] shrink-0" />}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1085,16 +1138,30 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
 
           {activeSubmenu === 'connector' && (
             <div className={cn(
-              "absolute left-full ml-1 w-64 bg-white rounded-2xl border border-[#dedbd3] shadow-lg py-1.5 z-50 animate-in fade-in slide-in-from-left-1 duration-150",
-              isWelcome ? "top-0" : "bottom-0"
+              "absolute left-full top-0 w-64 bg-white rounded-2xl border border-[#dedbd3] shadow-lg py-1.5 z-50 animate-in fade-in slide-in-from-left-1 duration-150"
             )}>
+              <div className="px-3.5 py-1.5 border-b border-[#f0ede6] flex items-center gap-2">
+                <Search className="h-4 w-4 text-[#8a867c] shrink-0" />
+                <input
+                  type="text"
+                  placeholder={isEn ? 'Search connectors' : '搜索连接器'}
+                  value={connectorSearchQuery}
+                  onChange={(event) => setConnectorSearchQuery(event.target.value)}
+                  className="w-full bg-transparent text-[13px] border-none outline-none placeholder:text-[#8a867c] text-[#29261b] font-medium"
+                  onKeyDown={(event) => event.stopPropagation()}
+                />
+              </div>
               {mcpPresets.length === 0 ? (
                 <div className="px-3.5 py-2 text-[#8a867c] italic text-center">
                   {isEn ? 'No connectors available' : '无可用连接器'}
                 </div>
+              ) : filteredMcpPresets.length === 0 ? (
+                <div className="px-3.5 py-2 text-[#8a867c] italic text-center">
+                  {isEn ? 'No connectors found' : '未找到连接器'}
+                </div>
               ) : (
                 <div className="max-h-48 overflow-y-auto">
-                  {mcpPresets.map((preset) => {
+                  {filteredMcpPresets.map((preset) => {
                     const isSelected = selectedMcpPresets.some((s) => s.name === preset.name);
                     return (
                       <button
@@ -1169,6 +1236,10 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
 
   // Close plus menu on click outside
   useEffect(() => {
+    if (!showPlusMenu) {
+      setSkillSearchQuery('');
+      setConnectorSearchQuery('');
+    }
     if (!showPlusMenu) return;
     const handleClickOutside = (e: MouseEvent) => {
       if (plusMenuRef.current && !plusMenuRef.current.contains(e.target as Node)) {
@@ -1187,6 +1258,8 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       if (e.key === 'Escape') {
         setShowPlusMenu(false);
         setActiveSubmenu(null);
+        setSkillSearchQuery('');
+        setConnectorSearchQuery('');
       }
     };
     document.addEventListener('keydown', handleEscape);
@@ -1194,8 +1267,23 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   }, [showPlusMenu]);
 
   const hasAttachments = images.length > 0 || files.length > 0;
-  const hasContent = text.trim().length > 0 || selectedCliApps.length > 0 || selectedMcpPresets.length > 0 || hasAttachments;
+  const hasContent = text.trim().length > 0 || selectedSkills.length > 0 || selectedCliApps.length > 0 || selectedMcpPresets.length > 0 || hasAttachments;
   const showProjectSelector = !activeConv?.workspacePath && !activeConv?.workspaceScope?.project_path;
+  const projectSelectorPaths = useMemo(() => {
+    const seen = new Set<string>();
+    const paths: string[] = [];
+    const add = (path: string | null | undefined) => {
+      const visible = visibleProjectPath(path);
+      if (!visible || seen.has(visible)) return;
+      seen.add(visible);
+      paths.push(visible);
+    };
+    recentPaths.forEach(add);
+    Object.values(conversations)
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .forEach((conv) => add(conv.workspaceScope?.project_path ?? conv.workspacePath));
+    return paths;
+  }, [conversations, recentPaths]);
 
   // Determine placeholder based on selected command
   const placeholder = hoverPrompt
@@ -1366,6 +1454,16 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
               : hasAttachments ? 'px-4 pt-1 pb-1' : 'px-4 pt-3.5 pb-1'
           )}>
             {/* Inline command prefix (unified for both variants) */}
+            {selectedSkills.map((skill) => (
+              <button
+                key={`selected-skill-${skill}`}
+                onClick={() => setSelectedSkills((prev) => prev.filter((item) => item !== skill))}
+                className="shrink-0 mt-[3px] mr-1.5 rounded-full bg-[#f3f2ee] px-2 py-0.5 text-[12px] font-medium text-[#656358] hover:line-through"
+                title={t.common.close}
+              >
+                /{skill}
+              </button>
+            ))}
             {selectedCliApps.map((app) => (
               <button
                 key={`selected-cli-${app.name}`}
@@ -1553,7 +1651,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
             <FolderSelector
               variant="pill"
               currentPath={workspaceScope?.project_path ?? localWorkspace}
-              recentPaths={recentPaths}
+              recentPaths={projectSelectorPaths}
               onSelect={handleSelectFolder}
               onClear={handleClearWorkspace}
             />

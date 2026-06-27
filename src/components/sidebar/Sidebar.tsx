@@ -4,7 +4,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { useScheduleStore } from '@/stores/scheduleStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useI18n } from '@/i18n';
-import { Plus, Clock, Wrench, Trash2, Settings, Download, Pencil, Undo2, HelpCircle, ChevronRight, MoreHorizontal, SquarePen, FolderOpen, FolderClosed } from 'lucide-react';
+import { Plus, Clock, Wrench, Trash2, Settings, Download, Pencil, Undo2, HelpCircle, ChevronRight, MoreHorizontal, SquarePen, FolderOpen, FolderClosed, X } from 'lucide-react';
 import GuideModal from '@/components/common/GuideModal';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -66,12 +66,12 @@ export default function Sidebar() {
   const recentWorkspacePaths = useWorkspaceStore((s) => s.recentPaths);
   const projectNames = useWorkspaceStore((s) => s.projectNames);
   const removeRecentPath = useWorkspaceStore((s) => s.removeRecentPath);
-  const setProjectName = useWorkspaceStore((s) => s.setProjectName);
   const { t } = useI18n();
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; convId: string } | null>(null);
   const [projectMenu, setProjectMenu] = useState<{ x: number; y: number; path: string } | null>(null);
+  const [pendingRemoveProject, setPendingRemoveProject] = useState<{ path: string; name: string } | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
   // Undo delete state
@@ -267,24 +267,22 @@ export default function Sidebar() {
     window.dispatchEvent(new CustomEvent('nanobot-gui:new-chat', { detail: { projectPath: path } }));
   };
 
-  const renameProject = (path: string) => {
-    const next = window.prompt(t.sidebar.renameProject, projectNames[path] ?? projectNameFromPath(path));
-    if (!next?.trim()) return;
-    setProjectName(path, next.trim());
-  };
-
-  const removeProject = (path: string) => {
+  const requestRemoveProject = (path: string) => {
     const project = conversationGroups.projects.find((item) => item.path === path);
     const projectName = project?.name ?? projectNames[path] ?? projectNameFromPath(path);
+    setPendingRemoveProject({ path, name: projectName });
+  };
+
+  const confirmRemoveProject = () => {
+    if (!pendingRemoveProject) return;
+    const project = conversationGroups.projects.find((item) => item.path === pendingRemoveProject.path);
     const projectConversations = project?.conversations ?? [];
-    const message = projectConversations.length > 0
-      ? `移除项目「${projectName}」并删除其中 ${projectConversations.length} 个会话？`
-      : `移除项目「${projectName}」？`;
-    if (!window.confirm(message)) return;
     for (const conv of projectConversations) {
       deleteConversation(conv.id);
     }
-    removeRecentPath(path);
+    removeRecentPath(pendingRemoveProject.path);
+    window.dispatchEvent(new CustomEvent('nanobot-gui:workspace-settings-changed'));
+    setPendingRemoveProject(null);
   };
 
   const renderConversationButton = (conv: Conversation, nested = false) => (
@@ -580,17 +578,7 @@ export default function Sidebar() {
           </button>
           <button
             onClick={() => {
-              renameProject(projectMenu.path);
-              setProjectMenu(null);
-            }}
-            className="flex items-center gap-2 w-full px-3 py-1.5 text-[13px] text-[#3d3929] hover:bg-[#f0ede6]"
-          >
-            <Pencil className="h-3.5 w-3.5" />
-            {t.sidebar.renameProject}
-          </button>
-          <button
-            onClick={() => {
-              removeProject(projectMenu.path);
+              requestRemoveProject(projectMenu.path);
               setProjectMenu(null);
             }}
             className="flex items-center gap-2 w-full px-3 py-1.5 text-[13px] text-red-500 hover:bg-[#f0ede6]"
@@ -598,6 +586,44 @@ export default function Sidebar() {
             <Trash2 className="h-3.5 w-3.5" />
             {t.sidebar.removeProject}
           </button>
+        </div>
+      )}
+
+      {pendingRemoveProject && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/10 px-4">
+          <div className="w-full max-w-[500px] rounded-[20px] border border-[#e6e1d8] bg-white shadow-[0_16px_48px_rgba(0,0,0,0.16)] overflow-hidden">
+            <div className="flex items-start justify-between px-7 pt-6 pb-4">
+              <div>
+                <h2 className="text-[22px] font-semibold leading-tight text-[#242424]">
+                  移除 {pendingRemoveProject.name}?
+                </h2>
+                <p className="mt-2.5 text-[15px] font-medium leading-snug text-[#8d8d8d] whitespace-nowrap">
+                  这将从 太资如意 中移除该项目。磁盘上的文件不会被删除。
+                </p>
+              </div>
+              <button
+                onClick={() => setPendingRemoveProject(null)}
+                className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg text-[#4b4b4b] hover:bg-[#f3f1ed] transition-colors"
+                aria-label={t.common.close}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="flex justify-end gap-3 px-7 pb-6 pt-4">
+              <button
+                onClick={() => setPendingRemoveProject(null)}
+                className="h-10 rounded-[12px] border border-[#e8e5df] bg-white px-6 text-[15px] font-semibold text-[#242424] hover:bg-[#f8f6f2] transition-colors"
+              >
+                {t.common.cancel}
+              </button>
+              <button
+                onClick={confirmRemoveProject}
+                className="h-10 rounded-[12px] bg-[#fae7e7] px-6 text-[15px] font-semibold text-[#d83434] hover:bg-[#f5dddd] transition-colors"
+              >
+                {t.sidebar.removeProject}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

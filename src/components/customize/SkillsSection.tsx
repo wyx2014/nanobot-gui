@@ -123,7 +123,7 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
 
   const subTabs = [
     { id: 'builtin', label: '内置技能', count: skills.filter((skill) => skill.source === 'builtin').length },
-    { id: 'workspace', label: '工作区技能', count: skills.filter((skill) => skill.source === 'workspace').length },
+    { id: 'workspace', label: '我的技能', count: skills.filter((skill) => skill.source === 'workspace').length },
   ];
 
   const applyPayload = async (next: SkillsPayload) => {
@@ -243,7 +243,7 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
                       }}
                       disabled={busy}
                       className="shrink-0 rounded p-1.5 text-neutral-400 opacity-0 transition-colors hover:bg-red-50 hover:text-red-500 group-hover:opacity-100 disabled:opacity-40"
-                      title="删除工作区技能"
+                      title="删除我的技能"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>

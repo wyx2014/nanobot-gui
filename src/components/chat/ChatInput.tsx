@@ -14,7 +14,7 @@ import { useI18n } from '@/i18n';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { ImageAttachment } from '@/types';
-import type { OutboundCliAppMention, OutboundMcpPresetMention } from '@/core/types';
+import type { OutboundCliAppMention, OutboundMcpPresetMention, OutboundSkillScope } from '@/core/types';
 import type { CliAppInfo, McpPresetInfo, SlashCommand, WorkspaceScopePayload } from '@/core/types';
 import { fetchCliApps, fetchMcpPresets, listSlashCommands } from '@/core/api';
 import { getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/nanobotClient';
@@ -32,11 +32,12 @@ import { generateAttachmentId, readFileAsBase64, SUPPORTED_IMAGE_TYPES } from '@
 import PermissionDialog from '@/components/common/PermissionDialog';
 import FolderSelector from '@/components/common/FolderSelector';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
-import { visibleProjectPath } from '@/core/workspace';
+import { normalizeProjectPath, visibleProjectPath } from '@/core/workspace';
 
 export interface ChatInputSendOptions {
   cliApps?: OutboundCliAppMention[];
   mcpPresets?: OutboundMcpPresetMention[];
+  skillScope?: OutboundSkillScope;
 }
 
 interface ShortcutOption {
@@ -416,6 +417,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   const provider = useSettingsStore((s) => s.provider);
   const setModel = useSettingsStore((s) => s.setModel);
   const recentPaths = useWorkspaceStore((s) => s.recentPaths);
+  const projectSkillBindings = useWorkspaceStore((s) => s.projectSkillBindings);
   const conversations = useChatStore((s) => s.conversations);
   const grantPermission = usePermissionStore((s) => s.grantPermission);
   const hasPermission = usePermissionStore((s) => s.hasPermission);
@@ -834,8 +836,11 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       ...(draft.mcpPresets?.map((preset) => `@${preset.name}`) ?? []),
     ].join(' ');
 
-    const skillPrefix = draft.skills?.length
-      ? draft.skills.map((skill) => `/${skill}`).join(' ')
+    const projectPath = visibleProjectPath(workspacePath ?? workspaceScope?.project_path ?? localWorkspace);
+    const projectSkills = projectPath ? projectSkillBindings[normalizeProjectPath(projectPath)] ?? [] : [];
+    const explicitSkills = draft.skills ?? [];
+    const skillPrefix = explicitSkills.length
+      ? explicitSkills.map((skill) => `/${skill}`).join(' ')
       : '';
 
     // Compose parts, then join with newline
@@ -850,6 +855,10 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       {
         ...(draft.cliApps?.length ? { cliApps: draft.cliApps } : {}),
         ...(draft.mcpPresets?.length ? { mcpPresets: draft.mcpPresets } : {}),
+        skillScope: {
+          project_bound_user_skills: projectSkills,
+          explicit_skills: explicitSkills,
+        },
       },
     );
   };
@@ -1096,9 +1105,6 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                               ? prev.filter((name) => name !== skill.name)
                               : [...prev, skill.name]
                           ));
-                          setShowPlusMenu(false);
-                          setActiveSubmenu(null);
-                          setSkillSearchQuery('');
                           textareaRef.current?.focus();
                         }}
                         className="w-full flex items-center justify-between gap-2 px-3.5 py-2 hover:bg-[#f5f3ee] transition-colors text-left cursor-pointer"

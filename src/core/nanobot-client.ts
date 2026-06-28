@@ -4,6 +4,7 @@ import type {
   Outbound,
   OutboundCliAppMention,
   OutboundImageGeneration,
+  OutboundSkillScope,
   UIInteractivePromptAnswer,
   OutboundMcpPresetMention,
   OutboundMedia,
@@ -291,6 +292,7 @@ export class NanobotClient {
       imageGeneration?: OutboundImageGeneration;
       cliApps?: OutboundCliAppMention[];
       mcpPresets?: OutboundMcpPresetMention[];
+      skillScope?: OutboundSkillScope;
       workspaceScope?: WorkspaceScopePayload | null;
       interactivePromptAnswer?: UIInteractivePromptAnswer;
     },
@@ -304,6 +306,7 @@ export class NanobotClient {
       ...(options?.imageGeneration ? { image_generation: options.imageGeneration } : {}),
       ...(options?.cliApps?.length ? { cli_apps: options.cliApps } : {}),
       ...(options?.mcpPresets?.length ? { mcp_presets: options.mcpPresets } : {}),
+      ...(options?.skillScope ? { skill_scope: options.skillScope } : {}),
       ...(options?.workspaceScope ? { workspace_scope: options.workspaceScope } : {}),
       ...(options?.interactivePromptAnswer ? { interactive_prompt_answer: options.interactivePromptAnswer } : {}),
       webui: true,

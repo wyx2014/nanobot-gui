@@ -3,8 +3,9 @@ import { useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useScheduleStore } from '@/stores/scheduleStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { useI18n } from '@/i18n';
-import { Plus, Clock, Wrench, Trash2, Settings, Download, Pencil, Undo2, HelpCircle, ChevronRight, MoreHorizontal, SquarePen, FolderOpen, FolderClosed, X } from 'lucide-react';
+import { Plus, Clock, Wrench, Trash2, Settings, Download, Pencil, Undo2, HelpCircle, ChevronRight, MoreHorizontal, SquarePen, FolderOpen, FolderClosed, X, Search } from 'lucide-react';
 import GuideModal from '@/components/common/GuideModal';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -14,7 +15,7 @@ import ScheduledSection from '@/components/sidebar/ScheduledSection';
 import ruyiAvatar from '@/assets/ruyi-avatar.png';
 import { dialogBridge, fsBridge, shellBridge } from '@/lib/ipc-factory';
 import { isMacOS } from '@/utils/platform';
-import { projectNameFromPath, visibleProjectPath } from '@/core/workspace';
+import { normalizeProjectPath, projectNameFromPath, visibleProjectPath } from '@/core/workspace';
 import type { Conversation } from '@/types';
 
 interface StatusIndicatorProps {
@@ -44,7 +45,7 @@ function StatusIndicator({ status, onComplete }: StatusIndicatorProps) {
 
 const PROJECT_VISIBLE_LIMIT = 5;
 const PROJECT_MENU_WIDTH = 150;
-const PROJECT_MENU_HEIGHT = 110;
+const PROJECT_MENU_HEIGHT = 140;
 
 function projectPathForConversation(conv: Conversation): string | null {
   return visibleProjectPath(conv.workspaceScope?.project_path ?? conv.workspacePath ?? null);
@@ -65,13 +66,19 @@ export default function Sidebar() {
   const scheduledTasks = useScheduleStore((s) => s.tasks);
   const recentWorkspacePaths = useWorkspaceStore((s) => s.recentPaths);
   const projectNames = useWorkspaceStore((s) => s.projectNames);
+  const projectSkillBindings = useWorkspaceStore((s) => s.projectSkillBindings);
   const removeRecentPath = useWorkspaceStore((s) => s.removeRecentPath);
+  const setProjectSkillBindings = useWorkspaceStore((s) => s.setProjectSkillBindings);
+  const skills = useDiscoveryStore((s) => s.skills);
   const { t } = useI18n();
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; convId: string } | null>(null);
   const [projectMenu, setProjectMenu] = useState<{ x: number; y: number; path: string } | null>(null);
   const [pendingRemoveProject, setPendingRemoveProject] = useState<{ path: string; name: string } | null>(null);
+  const [skillProject, setSkillProject] = useState<{ path: string; name: string } | null>(null);
+  const [skillSearch, setSkillSearch] = useState('');
+  const [draftSkillBindings, setDraftSkillBindings] = useState<string[]>([]);
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
   // Undo delete state
@@ -191,6 +198,20 @@ export default function Sidebar() {
     };
   }, [projectNames, recentWorkspacePaths, sortedConvs]);
 
+  const workspaceSkills = useMemo(
+    () => skills.filter((skill) => skill.tags?.[0] === 'workspace'),
+    [skills],
+  );
+
+  const filteredWorkspaceSkills = useMemo(() => {
+    const query = skillSearch.trim().toLowerCase();
+    if (!query) return workspaceSkills;
+    return workspaceSkills.filter((skill) => (
+      skill.name.toLowerCase().includes(query)
+      || skill.description.toLowerCase().includes(query)
+    ));
+  }, [skillSearch, workspaceSkills]);
+
   const handleDeleteConversation = (e: React.MouseEvent, convId: string) => {
     e.stopPropagation();
     // Save conversation data for undo before deleting
@@ -271,6 +292,28 @@ export default function Sidebar() {
     const project = conversationGroups.projects.find((item) => item.path === path);
     const projectName = project?.name ?? projectNames[path] ?? projectNameFromPath(path);
     setPendingRemoveProject({ path, name: projectName });
+  };
+
+  const openProjectSkills = (path: string) => {
+    const project = conversationGroups.projects.find((item) => item.path === path);
+    const projectName = project?.name ?? projectNames[path] ?? projectNameFromPath(path);
+    setSkillProject({ path, name: projectName });
+    setSkillSearch('');
+    setDraftSkillBindings(projectSkillBindings[normalizeProjectPath(path)] ?? []);
+  };
+
+  const toggleDraftSkill = (name: string) => {
+    setDraftSkillBindings((current) => (
+      current.includes(name)
+        ? current.filter((item) => item !== name)
+        : [...current, name]
+    ));
+  };
+
+  const saveProjectSkills = () => {
+    if (!skillProject) return;
+    setProjectSkillBindings(skillProject.path, draftSkillBindings);
+    setSkillProject(null);
   };
 
   const confirmRemoveProject = () => {
@@ -578,6 +621,16 @@ export default function Sidebar() {
           </button>
           <button
             onClick={() => {
+              openProjectSkills(projectMenu.path);
+              setProjectMenu(null);
+            }}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-[13px] text-[#3d3929] hover:bg-[#f0ede6]"
+          >
+            <Wrench className="h-3.5 w-3.5" />
+            管理技能
+          </button>
+          <button
+            onClick={() => {
               requestRemoveProject(projectMenu.path);
               setProjectMenu(null);
             }}
@@ -586,6 +639,93 @@ export default function Sidebar() {
             <Trash2 className="h-3.5 w-3.5" />
             {t.sidebar.removeProject}
           </button>
+        </div>
+      )}
+
+      {skillProject && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/10 px-4">
+          <div className="w-full max-w-[500px] rounded-[20px] border border-[#e6e1d8] bg-white shadow-[0_16px_48px_rgba(0,0,0,0.16)] overflow-hidden">
+            <div className="flex items-start justify-between px-7 pt-6 pb-4">
+              <div className="min-w-0">
+                <h2 className="text-[22px] font-semibold leading-tight text-[#242424]">
+                  管理技能
+                </h2>
+                <p className="mt-2.5 text-[15px] font-medium leading-snug text-[#8d8d8d] truncate">
+                  {skillProject.name}
+                </p>
+              </div>
+              <button
+                onClick={() => setSkillProject(null)}
+                className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg text-[#4b4b4b] hover:bg-[#f3f1ed] transition-colors"
+                aria-label={t.common.close}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="px-7 pb-4">
+              <div className="mb-3 flex h-10 items-center gap-2 rounded-[12px] border border-[#e8e5df] bg-white px-3">
+                <Search className="h-4 w-4 shrink-0 text-[#8d8d8d]" />
+                <input
+                  value={skillSearch}
+                  onChange={(event) => setSkillSearch(event.target.value)}
+                  placeholder="搜索我的技能"
+                  className="w-full bg-transparent text-[14px] text-[#242424] outline-none placeholder:text-[#a6a29a]"
+                />
+              </div>
+              <div className="max-h-[260px] overflow-y-auto rounded-[12px] border border-[#eeeae3]">
+                {workspaceSkills.length === 0 ? (
+                  <div className="px-4 py-8 text-center text-[13px] text-[#8d8d8d]">
+                    暂无我的技能
+                  </div>
+                ) : filteredWorkspaceSkills.length === 0 ? (
+                  <div className="px-4 py-8 text-center text-[13px] text-[#8d8d8d]">
+                    未找到技能
+                  </div>
+                ) : (
+                  filteredWorkspaceSkills.map((skill) => {
+                    const checked = draftSkillBindings.includes(skill.name);
+                    return (
+                      <label
+                        key={skill.name}
+                        className="flex cursor-pointer items-start gap-3 px-3.5 py-2.5 hover:bg-[#f8f6f2]"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleDraftSkill(skill.name)}
+                          className="mt-1 h-4 w-4 accent-[#d97757]"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[13.5px] font-medium text-[#29261b]">
+                            {skill.name}
+                          </span>
+                          <span className="line-clamp-2 text-[12px] leading-snug text-[#8d8d8d]">
+                            {skill.description}
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 px-7 pb-6">
+              <button
+                onClick={() => setSkillProject(null)}
+                className="h-10 rounded-[12px] border border-[#e8e5df] bg-white px-6 text-[15px] font-semibold text-[#242424] hover:bg-[#f8f6f2] transition-colors"
+              >
+                {t.common.cancel}
+              </button>
+              <button
+                onClick={saveProjectSkills}
+                className="h-10 rounded-[12px] bg-[#1f2024] px-6 text-[15px] font-semibold text-white hover:bg-[#111214] transition-colors"
+              >
+                {t.common.save}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

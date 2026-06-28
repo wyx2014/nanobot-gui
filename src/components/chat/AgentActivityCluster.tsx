@@ -344,7 +344,6 @@ export default function AgentActivityCluster({
 }: AgentActivityClusterProps) {
   const [userToggled, setUserToggled] = useState(false);
   const [open, setOpen] = useState(isActive);
-  const [holdOpen, setHoldOpen] = useState(false);
   const [startedAt] = useState(Date.now());
   const [, tick] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -359,15 +358,9 @@ export default function AgentActivityCluster({
     if (userToggled) return;
     if (isActive) {
       setOpen(true);
-      setHoldOpen(false);
-      return;
-    }
-    setHoldOpen(true);
-    const timer = window.setTimeout(() => {
-      setHoldOpen(false);
+    } else {
       setOpen(false);
-    }, 900);
-    return () => window.clearTimeout(timer);
+    }
   }, [isActive, userToggled]);
 
   useEffect(() => {
@@ -404,7 +397,7 @@ export default function AgentActivityCluster({
   const runningCount = items.filter((item) => item.status === 'running').length + edits.filter((edit) => edit.status === 'editing').length;
   const completedCount = items.filter((item) => item.status === 'done').length + edits.filter((edit) => edit.status === 'done').length;
   const stepCount = items.length + edits.length;
-  const expanded = userToggled ? open : open || holdOpen || isActive;
+  const expanded = userToggled ? open : open || isActive;
   const summary = isActive
     ? `Working for ${elapsedLabel(startedAt)}`
     : hasError

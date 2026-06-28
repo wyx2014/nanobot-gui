@@ -240,6 +240,7 @@ export default function ChatView({
       workspaceScope: pending.workspaceScope,
       ...(pending.options?.cliApps?.length ? { cliApps: pending.options.cliApps } : {}),
       ...(pending.options?.mcpPresets?.length ? { mcpPresets: pending.options.mcpPresets } : {}),
+      ...(pending.options?.skillScope ? { skillScope: pending.options.skillScope } : {}),
     };
     stream.send(pending.text, imageAttachmentsToSendImages(pending.images), options);
   }, [activeConvId, stream]);
@@ -291,11 +292,13 @@ export default function ChatView({
     const sendOptions: ChatInputSendOptions = {
       ...(options?.cliApps?.length ? { cliApps: options.cliApps } : {}),
       ...(options?.mcpPresets?.length ? { mcpPresets: options.mcpPresets } : {}),
+      ...(options?.skillScope ? { skillScope: options.skillScope } : {}),
     };
     const wireOptions: SendOptions = {
       workspaceScope: effectiveScope,
       ...(sendOptions.cliApps?.length ? { cliApps: sendOptions.cliApps } : {}),
       ...(sendOptions.mcpPresets?.length ? { mcpPresets: sendOptions.mcpPresets } : {}),
+      ...(sendOptions.skillScope ? { skillScope: sendOptions.skillScope } : {}),
     };
 
     let convId = activeConv?.id;

@@ -9,6 +9,7 @@ interface WorkspaceState {
   currentPath: string | null;
   recentPaths: string[];
   projectNames: Record<string, string>;
+  projectSkillBindings: Record<string, string[]>;
 }
 
 interface WorkspaceActions {
@@ -16,6 +17,7 @@ interface WorkspaceActions {
   clearWorkspace: () => void;
   removeRecentPath: (path: string) => void;
   setProjectName: (path: string, name: string) => void;
+  setProjectSkillBindings: (path: string, skillNames: string[]) => void;
 }
 
 export type WorkspaceStore = WorkspaceState & WorkspaceActions;
@@ -26,6 +28,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       currentPath: null,
       recentPaths: [],
       projectNames: {},
+      projectSkillBindings: {},
 
       setWorkspace: (path) => {
         const { currentPath: oldPath } = get();
@@ -71,10 +74,12 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
         const normalized = normalizeProjectPath(path);
         set((state) => {
           const { [normalized]: _removed, ...projectNames } = state.projectNames;
+          const { [normalized]: _removedSkills, ...projectSkillBindings } = state.projectSkillBindings;
           return {
             currentPath: state.currentPath && normalizeProjectPath(state.currentPath) === normalized ? null : state.currentPath,
             recentPaths: state.recentPaths.filter((p) => normalizeProjectPath(p) !== normalized),
             projectNames,
+            projectSkillBindings,
           };
         });
       },
@@ -88,6 +93,17 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
           },
         }));
       },
+
+      setProjectSkillBindings: (path, skillNames) => {
+        const normalized = normalizeProjectPath(path);
+        const unique = [...new Set(skillNames.map((name) => name.trim()).filter(Boolean))];
+        set((state) => ({
+          projectSkillBindings: {
+            ...state.projectSkillBindings,
+            [normalized]: unique,
+          },
+        }));
+      },
     }),
     {
       name: 'ruyi-workspace',
@@ -96,6 +112,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       partialize: (state) => ({
         recentPaths: state.recentPaths,
         projectNames: state.projectNames,
+        projectSkillBindings: state.projectSkillBindings,
       }),
     }
   )

@@ -789,6 +789,11 @@ export interface OutboundMcpPresetMention {
   brand_color?: string | null;
 }
 
+export interface OutboundSkillScope {
+  project_bound_user_skills?: string[];
+  explicit_skills?: string[];
+}
+
 export interface WebuiThreadPersistedPayload {
   schemaVersion: number;
   sessionKey?: string;
@@ -809,6 +814,7 @@ export type Outbound =
       image_generation?: OutboundImageGeneration;
       cli_apps?: OutboundCliAppMention[];
       mcp_presets?: OutboundMcpPresetMention[];
+      skill_scope?: OutboundSkillScope;
       workspace_scope?: WorkspaceScopePayload;
       interactive_prompt_answer?: UIInteractivePromptAnswer;
       webui?: true;

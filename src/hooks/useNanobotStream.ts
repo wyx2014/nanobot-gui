@@ -15,6 +15,7 @@ import type {
   OutboundImageGeneration,
   OutboundMcpPresetMention,
   OutboundMedia,
+  OutboundSkillScope,
   GoalStateWsPayload,
   ToolProgressEvent,
   UIImage,
@@ -430,6 +431,7 @@ export interface SendOptions {
   imageGeneration?: OutboundImageGeneration;
   cliApps?: OutboundCliAppMention[];
   mcpPresets?: OutboundMcpPresetMention[];
+  skillScope?: OutboundSkillScope;
   workspaceScope?: WorkspaceScopePayload | null;
   interactivePromptAnswer?: UIInteractivePromptAnswer;
 }

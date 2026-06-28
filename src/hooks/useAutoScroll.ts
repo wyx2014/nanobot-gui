@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+const BOTTOM_THRESHOLD_PX = 32;
+
 /**
  * Auto-scroll hook for streaming chat.
  *
@@ -9,8 +11,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * 2. RAF-debounced: only one scroll per animation frame, no layout thrashing.
  * 3. No timeout-based "isUserScrolling" flag — the old approach caused 150ms
  *    gaps where auto-scroll was disabled, creating visible jumps.
- *    Instead, programmatic scrolls always land at scrollHeight, so the scroll
- *    handler's checkIfAtBottom() naturally returns true — no flag needed.
+ *    Instead, distance from the real max scrollTop decides whether the user is
+ *    at bottom.
  */
 export function useAutoScroll() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -18,35 +20,42 @@ export function useAutoScroll() {
   const [isAtBottom, setIsAtBottom] = useState(true);
   const isAtBottomRef = useRef(true);
   const rafId = useRef(0);
-  // Flag to skip scroll-handler check after programmatic scrolls.
-  // Prevents a race where new content arrives between scrollTop assignment
-  // and the async scroll event, causing checkIfAtBottom() to return false.
-  const programmaticScrollMinTop = useRef<number | null>(null);
+
+  const setAtBottomState = useCallback((atBottom: boolean) => {
+    if (atBottom === isAtBottomRef.current) return;
+    isAtBottomRef.current = atBottom;
+    setIsAtBottom(atBottom);
+  }, []);
+
+  const maxScrollTop = (container: HTMLDivElement) => (
+    Math.max(0, container.scrollHeight - container.clientHeight)
+  );
+
+  const landAtBottom = useCallback((container: HTMLDivElement) => {
+    container.scrollTop = maxScrollTop(container);
+    setAtBottomState(true);
+  }, [setAtBottomState]);
 
   const checkIfAtBottom = useCallback(() => {
     const container = containerRef.current;
     if (!container) return true;
-    const { scrollTop, scrollHeight, clientHeight } = container;
-    return scrollTop + clientHeight >= scrollHeight - 100;
+    return maxScrollTop(container) - container.scrollTop <= BOTTOM_THRESHOLD_PX;
   }, []);
 
   const refreshScrollState = useCallback(() => {
-    const atBottom = checkIfAtBottom();
-    if (atBottom !== isAtBottomRef.current) {
-      isAtBottomRef.current = atBottom;
-      setIsAtBottom(atBottom);
-    }
-  }, [checkIfAtBottom]);
+    setAtBottomState(checkIfAtBottom());
+  }, [checkIfAtBottom, setAtBottomState]);
 
   // Manual scroll-to-bottom (for the button)
   const scrollToBottom = useCallback(() => {
     const container = containerRef.current;
     if (!container) return;
-    programmaticScrollMinTop.current = Math.max(0, container.scrollHeight - container.clientHeight - 2);
-    container.scrollTop = container.scrollHeight;
-    isAtBottomRef.current = true;
-    setIsAtBottom(true);
-  }, []);
+    landAtBottom(container);
+    requestAnimationFrame(() => {
+      const latest = containerRef.current;
+      if (latest) landAtBottom(latest);
+    });
+  }, [landAtBottom]);
 
   // Re-enable auto-scroll and scroll to bottom immediately.
   // Use this when the user sends a message to ensure auto-scroll resumes.
@@ -55,39 +64,22 @@ export function useAutoScroll() {
   const resetToBottom = useCallback(() => {
     const container = containerRef.current;
     if (container) {
-      programmaticScrollMinTop.current = Math.max(0, container.scrollHeight - container.clientHeight - 2);
-      container.scrollTop = container.scrollHeight;
+      landAtBottom(container);
     }
-    isAtBottomRef.current = true;
-    setIsAtBottom(true);
-  }, []);
+  }, [landAtBottom]);
 
   // Track scroll position — works for both user and programmatic scrolls.
-  // Programmatic scrolls land at scrollHeight, so checkIfAtBottom returns true
-  // and isAtBottom stays true — no extra re-render.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     const handleScroll = () => {
-      // Skip check for programmatic scrolls — the race between scrollTop
-      // assignment and this async event can cause false negatives.
-      const minTop = programmaticScrollMinTop.current;
-      if (minTop !== null) {
-        programmaticScrollMinTop.current = null;
-        if (container.scrollTop >= minTop) return;
-      }
-      const atBottom = checkIfAtBottom();
-      // Only update state when the value actually changes to avoid re-renders
-      if (atBottom !== isAtBottomRef.current) {
-        isAtBottomRef.current = atBottom;
-        setIsAtBottom(atBottom);
-      }
+      setAtBottomState(checkIfAtBottom());
     };
 
     container.addEventListener('scroll', handleScroll, { passive: true });
     return () => container.removeEventListener('scroll', handleScroll);
-  }, [checkIfAtBottom]);
+  }, [checkIfAtBottom, setAtBottomState]);
 
   // Auto-scroll on DOM changes — debounced to one scroll per frame
   useEffect(() => {
@@ -104,17 +96,11 @@ export function useAutoScroll() {
         rafId.current = 0;
         const c = containerRef.current;
         if (!c || !isAtBottomRef.current) return;
-        programmaticScrollMinTop.current = Math.max(0, c.scrollHeight - c.clientHeight - 2);
-        c.scrollTop = c.scrollHeight;
+        landAtBottom(c);
         // Safety: clear the flag next frame if no scroll event fires
         // (e.g., scrollTop didn't actually change because we're already at bottom)
         requestAnimationFrame(() => {
-          programmaticScrollMinTop.current = null;
-          const atBottom = checkIfAtBottom();
-          if (atBottom !== isAtBottomRef.current) {
-            isAtBottomRef.current = atBottom;
-            setIsAtBottom(atBottom);
-          }
+          setAtBottomState(checkIfAtBottom());
         });
       });
     };
@@ -149,7 +135,7 @@ export function useAutoScroll() {
       mutationObserver.disconnect();
       resizeObserver.disconnect();
     };
-  }, [checkIfAtBottom]);
+  }, [checkIfAtBottom, landAtBottom, setAtBottomState]);
 
   return {
     containerRef,

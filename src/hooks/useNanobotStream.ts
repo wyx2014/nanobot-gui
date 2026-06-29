@@ -854,6 +854,7 @@ export function useNanobotStream(
         // so a sequence of calls collapses into one compact trace group.
         if (ev.kind === "tool_hint" || ev.kind === "progress") {
           const structuredEvents = normalizeToolProgressEvents(ev.tool_events);
+          const agentUI = ev.agent_ui;
           const workspaceReason = workspaceAccessRequiredReason(structuredEvents);
           if (workspaceReason) {
             setStreamError({
@@ -871,6 +872,8 @@ export function useNanobotStream(
               ? structuredLines
               : structuredEvents.length > 0
                 ? []
+                : agentUI?.kind
+                  ? [agentUI.kind]
                 : ev.text
                   ? [ev.text]
                   : [];
@@ -899,6 +902,7 @@ export function useNanobotStream(
                 toolEvents: visibleStructuredEvents.length
                   ? mergeToolProgressEvents(last.toolEvents, visibleStructuredEvents)
                   : last.toolEvents,
+                agentUI: agentUI ?? last.agentUI,
                 activitySegmentId: last.activitySegmentId ?? segmentId,
               };
               return [...base.slice(0, -1), merged];
@@ -912,6 +916,7 @@ export function useNanobotStream(
                 content: lines[lines.length - 1],
                 traces: lines,
                 ...(visibleStructuredEvents.length ? { toolEvents: visibleStructuredEvents } : {}),
+                ...(agentUI ? { agentUI } : {}),
                 activitySegmentId: segmentId,
                 createdAt: Date.now(),
               },

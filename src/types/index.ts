@@ -78,6 +78,7 @@ export interface Message {
   isStreaming?: boolean;
   traces?: string[];
   toolEvents?: ToolProgressEvent[];
+  agentUI?: import('@/core/types').AgentUIBlob;
   fileEdits?: UIFileEdit[];
   activitySegmentId?: string;
   toolCalls?: ToolCall[];

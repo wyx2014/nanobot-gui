@@ -33,6 +33,8 @@ export interface UIMessage {
   /** Structured tool events behind trace rows. Kept so activity cards can
    * distinguish running, completed, and failed tool phases. */
   toolEvents?: ToolProgressEvent[];
+  /** Structured rich UI event emitted by nanobot, e.g. task progress. */
+  agentUI?: AgentUIBlob;
   /** Activity rows: explicit file edits emitted by edit tools. */
   fileEdits?: UIFileEdit[];
   /** Activity rows created during the same agent phase share one collapsible block. */
@@ -125,10 +127,24 @@ export interface UIInteractivePromptAnswer {
 }
 
 /** Structured UI blob on ``progress`` WS frames; channels may add more ``kind`` values later. */
-export interface AgentUIBlob {
-  kind: string;
-  data?: unknown;
+export type TaskProgressStatus = "pending" | "running" | "completed" | "error";
+
+export interface TaskProgressStep {
+  id: string;
+  title: string;
+  status: TaskProgressStatus;
 }
+
+export type AgentUIBlob =
+  | {
+      kind: "task_progress";
+      steps: TaskProgressStep[];
+    }
+  | {
+      kind: string;
+      data?: unknown;
+      [key: string]: unknown;
+    };
 
 /** WebSocket snapshot for sustained goals (`goal_state` events; keyed by ``chat_id``). */
 export interface GoalStateWsPayload {

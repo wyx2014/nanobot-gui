@@ -15,6 +15,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { TaskProgressStep } from '@/core/types';
 import type { ExecutionStep } from '@/types/execution';
 import type { Message, ToolCall } from '@/types';
 import type {
@@ -34,6 +35,11 @@ import { FileEditGroup, type FileEditSummary } from './activity/FileEditRow';
 import { ReasoningRow } from './activity/ReasoningRow';
 
 type ActivityStatus = 'running' | 'done' | 'error' | 'pending';
+
+interface ProgressStage {
+  label: string;
+  status: ActivityStatus;
+}
 
 interface ActivityRowItem {
   id: string;
@@ -126,10 +132,11 @@ function itemFromToolCall(toolCall: ToolCall): ActivityRowItem {
 }
 
 function itemFromToolEvent(message: Message): ActivityRowItem[] {
-  return (message.toolEvents ?? []).map((event, eventIndex) => {
+  return (message.toolEvents ?? []).flatMap((event, eventIndex) => {
     const name = toolEventName(event);
+    if (name === 'update_task_progress') return [];
     const error = event.error ? String(event.error) : undefined;
-    return {
+    return [{
       id: event.call_id || `${message.id}:event:${eventIndex}`,
       label: displayToolName(name),
       status: event.phase === 'error' ? 'error' : event.phase === 'end' ? 'done' : event.phase === 'start' ? 'running' : 'pending',
@@ -138,7 +145,7 @@ function itemFromToolEvent(message: Message): ActivityRowItem[] {
       result: toolEventResult(event),
       preview: activityEvidenceFromToolEvent(event),
       error,
-    };
+    }];
   });
 }
 
@@ -167,6 +174,27 @@ function itemFromMedia(message: Message): ActivityRowItem[] {
     source: 'media',
     preview: evidence,
   }];
+}
+
+function taskProgressFromMessages(messages: Message[]): ProgressStage[] {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const agentUI = messages[i].agentUI;
+    if (agentUI?.kind !== 'task_progress' || !Array.isArray(agentUI.steps)) continue;
+    return agentUI.steps
+      .map((step: TaskProgressStep): ProgressStage => ({
+        label: step.title,
+        status: taskProgressStatus(step.status),
+      }))
+      .filter((step) => step.label.trim())
+      .slice(0, 8);
+  }
+  return [];
+}
+
+function taskProgressStatus(status: TaskProgressStep['status']): ActivityStatus {
+  if (status === 'completed') return 'done';
+  if (status === 'running' || status === 'pending' || status === 'error') return status;
+  return 'pending';
 }
 
 function itemsFromTimelineItem(item: TimelineActivityItem): ActivityRowItem[] {
@@ -331,6 +359,59 @@ function groupedItems(items: ActivityRowItem[]): Array<{ source: ActivityStepSou
     .map((source) => ({ source, items: groups.get(source)! }));
 }
 
+function aggregateStageStatus(items: ActivityRowItem[], isActive: boolean): ActivityStatus {
+  if (items.some((item) => item.status === 'error')) return 'error';
+  if (items.some((item) => item.status === 'running')) return 'running';
+  if (items.length > 0) return 'done';
+  return isActive ? 'pending' : 'done';
+}
+
+function buildProgressStages({
+  hasThinking,
+  thinkingActive,
+  items,
+  hasEdits,
+  editStatus,
+  isActive,
+  hasBodyBelow,
+}: {
+  hasThinking: boolean;
+  thinkingActive: boolean;
+  items: ActivityRowItem[];
+  hasEdits: boolean;
+  editStatus: ActivityStatus;
+  isActive: boolean;
+  hasBodyBelow?: boolean;
+}): ProgressStage[] {
+  const researchItems = items.filter((item) => ['web', 'browser', 'file'].includes(item.source));
+  const executionItems = items.filter((item) => !['web', 'browser', 'file'].includes(item.source));
+  const stages: ProgressStage[] = [];
+
+  if (hasThinking) {
+    stages.push({ label: '理解与规划', status: thinkingActive ? 'running' : 'done' });
+  }
+  if (researchItems.length) {
+    stages.push({ label: '收集信息', status: aggregateStageStatus(researchItems, isActive) });
+  }
+  if (executionItems.length || hasEdits) {
+    const executionStatus = aggregateStageStatus(executionItems, isActive);
+    stages.push({
+      label: hasEdits ? '处理与更新' : '执行处理',
+      status: editStatus === 'error' ? 'error' : editStatus === 'running' ? 'running' : executionStatus,
+    });
+  }
+  if (hasBodyBelow || !isActive) {
+    stages.push({ label: '整理结果', status: isActive ? 'running' : 'done' });
+  } else if (stages.length > 0) {
+    stages.push({ label: '整理结果', status: 'pending' });
+  }
+
+  if (stages.length === 0 && isActive) {
+    return [{ label: '处理请求', status: 'running' }];
+  }
+  return stages.slice(0, 4);
+}
+
 export default function AgentActivityCluster({
   thinking,
   activityMessages = [],
@@ -397,6 +478,25 @@ export default function AgentActivityCluster({
   const runningCount = items.filter((item) => item.status === 'running').length + edits.filter((edit) => edit.status === 'editing').length;
   const completedCount = items.filter((item) => item.status === 'done').length + edits.filter((edit) => edit.status === 'done').length;
   const stepCount = items.length + edits.length;
+  const editStatus: ActivityStatus = edits.some((edit) => edit.status === 'error')
+    ? 'error'
+    : edits.some((edit) => edit.status === 'editing')
+      ? 'running'
+      : edits.length > 0
+        ? 'done'
+        : 'pending';
+  const explicitProgressStages = taskProgressFromMessages(activityMessages);
+  const progressStages = explicitProgressStages.length > 0
+    ? explicitProgressStages
+    : buildProgressStages({
+        hasThinking,
+        thinkingActive: reasoningStreaming(activityMessages, isActive),
+        items,
+        hasEdits,
+        editStatus,
+        isActive,
+        hasBodyBelow,
+      });
   const expanded = userToggled ? open : open || isActive;
   const summary = isActive
     ? `Working for ${elapsedLabel(startedAt)}`
@@ -465,6 +565,10 @@ export default function AgentActivityCluster({
       {expanded && (
         <div className="border-t border-[#e8e4dd] bg-[#fbfaf7] px-3.5 py-3">
           <div ref={scrollRef} className="max-h-72 overflow-y-auto pr-1">
+            {progressStages.length > 0 ? (
+              <ProgressSummary stages={progressStages} />
+            ) : null}
+
             {hasThinking && (
               <ActivityGroup title="Thought" icon={Brain}>
                 <ReasoningRow text={thought} streaming={reasoningStreaming(activityMessages, isActive)} />
@@ -489,6 +593,43 @@ export default function AgentActivityCluster({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function ProgressSummary({ stages }: { stages: ProgressStage[] }) {
+  return (
+    <div className="mb-3 rounded-xl border border-[#e8e4dd] bg-white px-3.5 py-3">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="text-[14px] font-semibold text-[#29261b]">进度</div>
+      </div>
+      <ol className="space-y-2">
+        {stages.map((stage, index) => (
+          <li key={`${stage.label}-${index}`} className="flex min-w-0 items-center gap-2.5">
+            <span
+              className={cn(
+                'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[13px] font-medium',
+                stage.status === 'running' && 'bg-[#edf4ff] text-[#3b82f6]',
+                stage.status === 'done' && 'bg-[#f3f2ee] text-[#656358]',
+                stage.status === 'pending' && 'bg-[#f3f2ee] text-[#8b887c]',
+                stage.status === 'error' && 'bg-red-50 text-red-600',
+              )}
+            >
+              {stage.status === 'done' ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
+            </span>
+            <span
+              className={cn(
+                'min-w-0 truncate text-[13.5px] font-medium',
+                stage.status === 'running' ? 'text-[#29261b]' : 'text-[#656358]',
+                stage.status === 'pending' && 'text-[#8b887c]',
+                stage.status === 'error' && 'text-red-600',
+              )}
+            >
+              {stage.label}
+            </span>
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }

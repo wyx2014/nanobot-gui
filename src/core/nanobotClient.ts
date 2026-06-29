@@ -379,6 +379,7 @@ export function mapWebuiThreadToGuiMessages(webuiMessages: UIMessage[]): Message
         content: msg.content || '',
         traces: msg.traces,
         toolEvents: events,
+        agentUI: msg.agentUI,
         fileEdits: msg.fileEdits,
         mediaAttachments: mediaAttachmentsFromUiMessage(msg),
         activitySegmentId: msg.activitySegmentId,

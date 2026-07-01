@@ -59,6 +59,7 @@ interface ScheduleState {
   loading: boolean;
   error: string | null;
   activeTaskId: string | null;
+  returnTarget: { taskId: string; runId?: string } | null;
   selectedTaskId: string | null;
   showEditor: boolean;
   editingTaskId: string | null;
@@ -92,6 +93,7 @@ interface ScheduleActions {
   runTaskNow: (id: string) => Promise<void>;
   getActiveTaskCount: () => number;
   setActiveTaskId: (id: string | null) => void;
+  setReturnTarget: (target: { taskId: string; runId?: string } | null) => void;
   setSelectedTaskId: (id: string | null) => void;
   openEditor: (taskId?: string) => void;
   closeEditor: () => void;
@@ -105,6 +107,7 @@ export const useScheduleStore = create<ScheduleStore>()(
     loading: false,
     error: null,
     activeTaskId: null,
+    returnTarget: null,
     selectedTaskId: null,
     showEditor: false,
     editingTaskId: null,
@@ -178,6 +181,12 @@ export const useScheduleStore = create<ScheduleStore>()(
     setActiveTaskId: (id) => {
       set((state) => {
         state.activeTaskId = id;
+      });
+    },
+
+    setReturnTarget: (target) => {
+      set((state) => {
+        state.returnTarget = target;
       });
     },
 

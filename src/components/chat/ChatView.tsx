@@ -14,12 +14,13 @@ import type { GoalStateWsPayload, UIMessage, WorkspaceScopePayload, WorkspacesPa
 import { fetchWebuiThread } from '@/core/api';
 import { conversationIdToSessionKey } from '@/core/sessionKey';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { useScheduleStore } from '@/stores/scheduleStore';
 import { useI18n } from '@/i18n';
 import ThreadMessages from './ThreadMessages';
 import InteractivePromptCard, { type InteractivePromptSubmitPayload } from './InteractivePromptCard';
 import ChatInput, { type ChatInputSendOptions } from './ChatInput';
 import ActiveSkillsBar from './ActiveSkillsBar';
-import { ChevronDown, Settings } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Settings } from 'lucide-react';
 import { osBridge } from '@/lib/ipc-factory';
 import { extractUsername } from '@/utils/pathUtils';
 import ThinkingIndicator from './ThinkingIndicator';
@@ -123,6 +124,10 @@ export default function ChatView({
   const activeConv = useActiveConversation();
   const activeConvId = activeConv?.id;
   const { createConversation, setConversationStatus } = useChatStore();
+  const scheduleReturnTarget = useScheduleStore((s) => s.returnTarget);
+  const setScheduleActiveTaskId = useScheduleStore((s) => s.setActiveTaskId);
+  const setScheduleReturnTarget = useScheduleStore((s) => s.setReturnTarget);
+  const setViewMode = useSettingsStore((s) => s.setViewMode);
   const { t } = useI18n();
   const [historyMessages, setHistoryMessages] = useState<UIMessage[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -160,6 +165,14 @@ export default function ChatView({
   }, [activeConvId]);
 
   const { containerRef, endRef, isAtBottom, scrollToBottom, resetToBottom, refreshScrollState } = useAutoScroll();
+
+  const returnToSchedule = useCallback(() => {
+    if (scheduleReturnTarget?.taskId) {
+      setScheduleActiveTaskId(scheduleReturnTarget.taskId);
+    }
+    setScheduleReturnTarget(null);
+    setViewMode('schedule');
+  }, [scheduleReturnTarget, setScheduleActiveTaskId, setScheduleReturnTarget, setViewMode]);
 
   // Scroll to bottom when switching conversations.
   // useLayoutEffect runs after DOM commit but before paint,
@@ -578,6 +591,15 @@ export default function ChatView({
       <div className="shrink-0 px-6 md:px-10 pb-4 pt-2 bg-gradient-to-t from-[#fbfaf7] via-[#fbfaf7] to-[#fbfaf7]/80">
         <div className="max-w-4xl mx-auto">
           <ActiveSkillsBar />
+          {scheduleReturnTarget && (
+            <button
+              onClick={returnToSchedule}
+              className="mb-2 inline-flex items-center gap-1.5 rounded-lg border border-[#e5e2db] bg-white/85 px-3 py-1.5 text-[12.5px] font-medium text-[#656358] shadow-sm hover:bg-white hover:text-[#29261b]"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              返回定时任务
+            </button>
+          )}
           <GoalStatusBar goalState={goalState} runStartedAt={runStartedAt} />
           {stream.streamError ? (
             <StreamErrorNotice

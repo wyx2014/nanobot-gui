@@ -230,7 +230,7 @@ export default function ScheduleTaskDetail() {
                 {t.schedule.runHistory}
               </h3>
             </div>
-            <ScheduleRunHistory runs={task.runs} />
+            <ScheduleRunHistory runs={task.runs} taskName={task.name} />
           </div>
         </div>
       </div>

@@ -1,5 +1,6 @@
 import { useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { useScheduleStore } from '@/stores/scheduleStore';
 import { useI18n } from '@/i18n';
 import { syncSessionFromGateway } from '@/core/nanobotClient';
 import { ExternalLink } from 'lucide-react';
@@ -23,29 +24,49 @@ function formatTimeAgo(timestamp: number, agoTemplate: string): string {
 
 interface Props {
   runs: ScheduledTaskRun[];
+  taskName: string;
 }
 
-export default function ScheduleRunHistory({ runs }: Props) {
+function formatRunDate(timestamp: number): string {
+  const d = new Date(timestamp);
+  const month = d.getMonth() + 1;
+  const day = d.getDate();
+  const h = d.getHours().toString().padStart(2, '0');
+  const m = d.getMinutes().toString().padStart(2, '0');
+  return `${month}/${day} ${h}:${m}`;
+}
+
+function isDefaultConversationTitle(title: string | undefined): boolean {
+  const cleaned = title?.trim();
+  return !cleaned || cleaned === '新对话' || cleaned === 'New chat';
+}
+
+export default function ScheduleRunHistory({ runs, taskName }: Props) {
   const { t } = useI18n();
   const switchConversation = useChatStore((s) => s.switchConversation);
   const setViewMode = useSettingsStore((s) => s.setViewMode);
+  const setReturnTarget = useScheduleStore((s) => s.setReturnTarget);
   const conversations = useChatStore((s) => s.conversations);
 
   const handleViewConversation = async (run: ScheduledTaskRun) => {
     const sessionKey = run.sessionKey ?? run.conversationId;
+    const fallbackTitle = `${formatRunDate(run.startedAt)} - ${taskName}`;
     if (!conversations[sessionKey]) {
       await syncSessionFromGateway(sessionKey, {
         scheduledTaskId: run.scheduledTaskId,
+        title: fallbackTitle,
       });
     }
     const conv = useChatStore.getState().conversations[sessionKey];
     if (conv) {
-      if (conv.scheduledTaskId !== run.scheduledTaskId) {
+      if (conv.scheduledTaskId !== run.scheduledTaskId || isDefaultConversationTitle(conv.title)) {
         useChatStore.getState().upsertConversation(sessionKey, {
           ...conv,
+          title: isDefaultConversationTitle(conv.title) ? fallbackTitle : conv.title,
           scheduledTaskId: run.scheduledTaskId,
         });
       }
+      setReturnTarget({ taskId: run.scheduledTaskId, runId: run.id });
       switchConversation(sessionKey);
       setViewMode('chat');
     }
@@ -61,52 +82,61 @@ export default function ScheduleRunHistory({ runs }: Props) {
 
   return (
     <div className="space-y-1 px-2 pb-2">
-      {runs.map((run) => (
-        <div
-          key={run.id}
-          className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[#f5f3ee] transition-colors"
-        >
-          {/* Status dot */}
-          <span
-            className={cn(
-              'w-1.5 h-1.5 rounded-full shrink-0',
-              run.status === 'running' && 'bg-amber-400 animate-pulse',
-              run.status === 'completed' && 'bg-green-500',
-              run.status === 'error' && 'bg-red-500'
-            )}
-          />
+      {runs.map((run) => {
+        const sessionKey = run.sessionKey ?? run.conversationId;
+        const conversationTitle = conversations[sessionKey]?.title;
+        const title = isDefaultConversationTitle(conversationTitle)
+          ? `${formatRunDate(run.startedAt)} - ${taskName}`
+          : conversationTitle;
 
-          {/* Time */}
-          <span className="text-[11px] text-[#656358] shrink-0">
-            {formatTimeAgo(run.startedAt, t.schedule.ago)}
-          </span>
-
-          {/* Status text */}
-          <span
-            className={cn(
-              'text-[11px] flex-1 truncate',
-              run.status === 'running' && 'text-amber-600',
-              run.status === 'completed' && 'text-green-600',
-              run.status === 'error' && 'text-red-500'
-            )}
+        return (
+          <div
+            key={run.id}
+            className="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-[#f5f3ee] transition-colors"
           >
-            {run.status === 'running' && t.schedule.runStatusRunning}
-            {run.status === 'completed' && t.schedule.runStatusCompleted}
-            {run.status === 'error' && (run.error ? run.error.slice(0, 30) : t.schedule.runStatusError)}
-          </span>
+            <span
+              className={cn(
+                'w-1.5 h-1.5 rounded-full shrink-0',
+                run.status === 'running' && 'bg-amber-400 animate-pulse',
+                run.status === 'completed' && 'bg-green-500',
+                run.status === 'error' && 'bg-red-500'
+              )}
+            />
 
-          {/* View conversation button */}
-          {(run.sessionKey || run.conversationId) && (
-            <button
-              onClick={() => void handleViewConversation(run)}
-              className="text-[#656358] hover:text-[#d97757] p-0.5 shrink-0"
-              title={t.schedule.viewConversation}
-            >
-              <ExternalLink className="h-3 w-3" />
-            </button>
-          )}
-        </div>
-      ))}
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[12.5px] font-medium text-[#29261b]">
+                {title}
+              </div>
+              <div className="mt-0.5 flex items-center gap-2 text-[11px]">
+                <span className="text-[#656358]">
+                  {formatTimeAgo(run.startedAt, t.schedule.ago)}
+                </span>
+                <span
+                  className={cn(
+                    run.status === 'running' && 'text-amber-600',
+                    run.status === 'completed' && 'text-green-600',
+                    run.status === 'error' && 'text-red-500'
+                  )}
+                >
+                  {run.status === 'running' && t.schedule.runStatusRunning}
+                  {run.status === 'completed' && t.schedule.runStatusCompleted}
+                  {run.status === 'error' && (run.error ? run.error.slice(0, 30) : t.schedule.runStatusError)}
+                </span>
+              </div>
+            </div>
+
+            {(run.sessionKey || run.conversationId) && (
+              <button
+                onClick={() => void handleViewConversation(run)}
+                className="text-[#656358] hover:text-[#d97757] p-1 shrink-0"
+                title={t.schedule.viewConversation}
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

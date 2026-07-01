@@ -5,12 +5,11 @@ import { navigateToChatWithInput } from '@/utils/navigation';
 import { Plus, Clock, Info, Wand2 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import ScheduleTaskCard from './ScheduleTaskCard';
-import ScheduleTaskDetail from './ScheduleTaskDetail';
 import ScheduleEditor from './ScheduleEditor';
 
 export default function ScheduleView() {
   const { t } = useI18n();
-  const { tasks, selectedTaskId, openEditor, loadTasks, loading, error } = useScheduleStore();
+  const { tasks, openEditor, loadTasks, loading, error } = useScheduleStore();
 
   useEffect(() => {
     void loadTasks();
@@ -21,16 +20,15 @@ export default function ScheduleView() {
   };
 
   const sortedTasks = Object.values(tasks).sort((a, b) => b.createdAt - a.createdAt);
+  const hasRunningRuns = sortedTasks.some((task) => task.runs.some((run) => run.status === 'running'));
 
-  // Show detail page if a task is selected
-  if (selectedTaskId && tasks[selectedTaskId]) {
-    return (
-      <div className="flex flex-col h-full bg-[#faf8f5]">
-        <ScheduleTaskDetail />
-        <ScheduleEditor />
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (!hasRunningRuns) return;
+    const id = window.setInterval(() => {
+      void loadTasks();
+    }, 2000);
+    return () => window.clearInterval(id);
+  }, [hasRunningRuns, loadTasks]);
 
   return (
     <div className="flex flex-col h-full bg-[#faf8f5]">

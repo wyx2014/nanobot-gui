@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { useSettingsStore } from '@/stores/settingsStore';
-import { fetchSkillDetail, fetchSkills, runSkillAction } from '@/core/api';
+import { fetchSkillDetail, fetchSkills, runSkillAction, saveSkill } from '@/core/api';
 import { getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/nanobotClient';
 import type { NanobotSkillInfo, SkillsPayload } from '@/core/types';
 import SubTabBar from './SubTabBar';
 import { Toggle } from '@/components/ui/toggle';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { ITEM_NAME_RE } from '@/utils/validation';
 import {
   AlertCircle,
   FileText,
@@ -71,6 +74,20 @@ function sourceClass(source: string): string {
   return 'bg-neutral-100 text-neutral-600 border-neutral-200';
 }
 
+function skillMarkdown(name: string, description: string, body: string): string {
+  return `---\nname: ${name}\ndescription: ${JSON.stringify(description.trim())}\n---\n\n# ${name}\n\n${body.trim()}\n`;
+}
+
+function normalizeSkillName(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 export default function SkillsSection({ manualCreateTrigger }: { manualCreateTrigger?: number }) {
   const { refresh: refreshDiscovery } = useDiscoveryStore();
   const { toolboxSearchQuery } = useSettingsStore();
@@ -80,6 +97,11 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
   const [loading, setLoading] = useState(false);
   const [actingName, setActingName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createName, setCreateName] = useState('');
+  const [createDescription, setCreateDescription] = useState('');
+  const [createBody, setCreateBody] = useState('');
+  const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -101,7 +123,9 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
 
   useEffect(() => {
     if (manualCreateTrigger && manualCreateTrigger > 0) {
-      setError('技能创建已交给 nanobot 原生 workspace/skills。当前面板先提供查看、启停和删除。');
+      setError(null);
+      setCreateOpen(true);
+      setActiveSubTab('workspace');
     }
   }, [manualCreateTrigger]);
 
@@ -129,6 +153,45 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
   const applyPayload = async (next: SkillsPayload) => {
     setPayload(next);
     await refreshDiscovery();
+  };
+
+  const resetCreateForm = () => {
+    setCreateName('');
+    setCreateDescription('');
+    setCreateBody('');
+  };
+
+  const handleCreate = async () => {
+    const name = normalizeSkillName(createName);
+    const description = createDescription.trim();
+    const body = createBody.trim();
+    if (!ITEM_NAME_RE.test(name)) {
+      setError('技能名称只能使用英文小写、数字和连字符，且不能以连字符开头或结尾。');
+      return;
+    }
+    if (!description || !body) {
+      setError('请填写触发描述和技能说明。');
+      return;
+    }
+    if (skills.some((skill) => skill.name === name)) {
+      setError(`技能 /${name} 已存在。`);
+      return;
+    }
+
+    setCreating(true);
+    setError(null);
+    try {
+      const { token, baseUrl } = await getSkillsAuth();
+      const next = await saveSkill(token, name, skillMarkdown(name, description, body), baseUrl);
+      await applyPayload(next);
+      setActiveSubTab('workspace');
+      setCreateOpen(false);
+      resetCreateForm();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCreating(false);
+    }
   };
 
   const handleToggle = async (skill: NanobotSkillInfo) => {
@@ -288,6 +351,80 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
             <pre className="whitespace-pre-wrap rounded-lg border border-neutral-200 bg-white p-4 text-xs leading-5 text-neutral-700">
               {detail.content || '未读取到技能内容'}
             </pre>
+          </div>
+        </div>
+      )}
+
+      {createOpen && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30"
+          onClick={(event) => {
+            if (event.target === event.currentTarget && !creating) setCreateOpen(false);
+          }}
+        >
+          <div className="w-[520px] rounded-2xl bg-white p-5 shadow-xl">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-[17px] font-semibold text-[#29261b]">创建技能</h3>
+                <p className="mt-1 text-[13px] text-[#8a867c]">保存后会写入 nanobot 工作区的我的技能。</p>
+              </div>
+              <button
+                onClick={() => setCreateOpen(false)}
+                disabled={creating}
+                className="rounded-lg p-1.5 text-[#656358] hover:bg-[#f5f3ee] hover:text-[#29261b] disabled:opacity-50"
+                title="关闭"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <label className="block">
+                <span className="mb-1 block text-[12px] font-medium text-[#656358]">技能名称</span>
+                <Input
+                  value={createName}
+                  onChange={(event) => setCreateName(event.target.value)}
+                  onBlur={() => setCreateName(normalizeSkillName(createName))}
+                  placeholder="stock-research-note"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[12px] font-medium text-[#656358]">触发描述</span>
+                <Textarea
+                  value={createDescription}
+                  onChange={(event) => setCreateDescription(event.target.value)}
+                  className="min-h-[72px]"
+                  placeholder="当用户需要按照固定格式整理股票研究笔记时使用"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[12px] font-medium text-[#656358]">技能说明</span>
+                <Textarea
+                  value={createBody}
+                  onChange={(event) => setCreateBody(event.target.value)}
+                  className="min-h-[120px]"
+                  placeholder="输出包含公司概况、核心财务、风险点、结论。"
+                />
+              </label>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setCreateOpen(false)}
+                disabled={creating}
+                className="rounded-lg px-3.5 py-2 text-[13px] font-medium text-[#656358] hover:bg-[#f5f3ee] disabled:opacity-50"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => void handleCreate()}
+                disabled={creating}
+                className="inline-flex items-center gap-2 rounded-lg bg-[#29261b] px-4 py-2 text-[13px] font-medium text-white hover:bg-[#3a3628] disabled:opacity-60"
+              >
+                {creating && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                保存
+              </button>
+            </div>
           </div>
         </div>
       )}

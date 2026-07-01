@@ -11,7 +11,6 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import type { ConversationStatus } from '@/types';
-import ScheduledSection from '@/components/sidebar/ScheduledSection';
 import ruyiAvatar from '@/assets/ruyi-avatar.png';
 import { dialogBridge, fsBridge, shellBridge } from '@/lib/ipc-factory';
 import { isMacOS } from '@/utils/platform';
@@ -432,9 +431,6 @@ export default function Sidebar() {
           <span>{t.sidebar.toolbox}</span>
         </button>
       </nav>
-
-      {/* Scheduled Section */}
-      <ScheduledSection />
 
       {/* Conversation List */}
       <ScrollArea className="flex-1 min-h-0 px-2">

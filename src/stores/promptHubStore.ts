@@ -7,11 +7,14 @@ interface PromptHubState {
   token: string | null;
   user: PromptHubUser | null;
   isLoggingIn: boolean;
+  loginOpen: boolean;
   error: string | null;
 }
 
 interface PromptHubActions {
   setBaseUrl: (baseUrl: string) => void;
+  openLogin: () => void;
+  closeLogin: () => void;
   login: (username: string, passwordHash: string) => Promise<void>;
   logout: () => void;
   clearError: () => void;
@@ -26,15 +29,18 @@ export const usePromptHubStore = create<PromptHubStore>()(
       token: null,
       user: null,
       isLoggingIn: false,
+      loginOpen: false,
       error: null,
 
       setBaseUrl: (baseUrl) => set({ baseUrl: baseUrl.trim() || 'http://localhost:8080' }),
+      openLogin: () => set({ loginOpen: true, error: null }),
+      closeLogin: () => set({ loginOpen: false }),
 
       login: async (username, passwordHash) => {
         set({ isLoggingIn: true, error: null });
         try {
           const data = await loginPromptHub(get().baseUrl, username.trim(), passwordHash);
-          set({ token: data.token, user: data.user, isLoggingIn: false });
+          set({ token: data.token, user: data.user, isLoggingIn: false, loginOpen: false });
         } catch (err) {
           set({ error: err instanceof Error ? err.message : String(err), isLoggingIn: false });
           throw err;

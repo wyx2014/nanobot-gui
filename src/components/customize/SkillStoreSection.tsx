@@ -13,8 +13,6 @@ import {
   type PromptHubSkillDetail,
 } from '@/core/prompthubApi';
 import type { NanobotSkillInfo } from '@/core/types';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 
 async function getSkillsAuth(): Promise<{ token: string; baseUrl: string }> {
   const status = await getNanobotStatus();
@@ -59,15 +57,9 @@ export default function SkillStoreSection() {
   const {
     baseUrl,
     token,
-    user,
-    isLoggingIn,
-    error: loginError,
-    setBaseUrl,
-    login,
+    openLogin,
   } = usePromptHubStore();
 
-  const [username, setUsername] = useState(user?.username ?? '');
-  const [password, setPassword] = useState('');
   const [hubSkills, setHubSkills] = useState<PromptHubSkill[]>([]);
   const [localSkills, setLocalSkills] = useState<NanobotSkillInfo[]>([]);
   const [loading, setLoading] = useState(false);
@@ -113,12 +105,6 @@ export default function SkillStoreSection() {
     })
   ), [hubSkills, search]);
 
-  const handleLogin = async () => {
-    if (!username.trim() || !password) return;
-    await login(username, password);
-    setPassword('');
-  };
-
   const handleDownload = async (skill: PromptHubSkill) => {
     setActing(`download:${skill.id}`);
     setError(null);
@@ -162,19 +148,18 @@ export default function SkillStoreSection() {
 
   if (!token) {
     return (
-      <div className="h-full overflow-y-auto p-5">
-        <div className="max-w-[460px] rounded-lg border border-[#e8e4dd] bg-white p-4">
-          <h3 className="text-sm font-semibold text-[#29261b]">连接技能商店</h3>
-          <div className="mt-4 space-y-3">
-            <Input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="http://localhost:8080" />
-            <Input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="用户名" />
-            <Input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="密码" />
-            {(loginError || error) && <p className="text-xs text-red-600">{loginError || error}</p>}
-            <Button onClick={() => void handleLogin()} disabled={isLoggingIn || !username.trim() || !password}>
-              {isLoggingIn && <Loader2 className="h-4 w-4 animate-spin" />}
-              登录
-            </Button>
-          </div>
+      <div className="flex h-full items-center justify-center p-5">
+        <div className="max-w-[420px] rounded-lg border border-[#e8e4dd] bg-white p-5 text-center">
+          <h3 className="text-sm font-semibold text-[#29261b]">请先登录账号</h3>
+          <p className="mt-2 text-xs leading-5 text-[#656358]">
+            登录后即可查看技能商店并下载已审核发布的技能。
+          </p>
+          <button
+            onClick={openLogin}
+            className="mt-4 rounded-lg bg-[#29261b] px-4 py-2 text-[13px] font-medium text-white hover:bg-[#3a3628]"
+          >
+            去登录
+          </button>
         </div>
       </div>
     );

@@ -15,6 +15,7 @@ import { fetchWebuiThread } from '@/core/api';
 import { conversationIdToSessionKey } from '@/core/sessionKey';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useScheduleStore } from '@/stores/scheduleStore';
+import { usePromptHubStore } from '@/stores/promptHubStore';
 import { useI18n } from '@/i18n';
 import ThreadMessages from './ThreadMessages';
 import InteractivePromptCard, { type InteractivePromptSubmitPayload } from './InteractivePromptCard';
@@ -128,6 +129,7 @@ export default function ChatView({
   const setScheduleActiveTaskId = useScheduleStore((s) => s.setActiveTaskId);
   const setScheduleReturnTarget = useScheduleStore((s) => s.setReturnTarget);
   const setViewMode = useSettingsStore((s) => s.setViewMode);
+  const promptHubUsername = usePromptHubStore((s) => s.user?.username);
   const { t } = useI18n();
   const [historyMessages, setHistoryMessages] = useState<UIMessage[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -141,6 +143,7 @@ export default function ChatView({
 
   const [greeting, setGreeting] = useState('');
   const [userName, setUserName] = useState('');
+  const displayUserName = promptHubUsername?.trim() || userName;
 
   useEffect(() => {
     if (activeConvId) return;
@@ -164,7 +167,7 @@ export default function ChatView({
       .catch((err) => console.error('Failed to get home dir:', err));
   }, [activeConvId]);
 
-  const { containerRef, endRef, isAtBottom, scrollToBottom, resetToBottom, refreshScrollState } = useAutoScroll();
+  const { containerRef, isAtBottom, scrollToBottom } = useAutoScroll();
 
   const returnToSchedule = useCallback(() => {
     if (scheduleReturnTarget?.taskId) {
@@ -173,15 +176,6 @@ export default function ChatView({
     setScheduleReturnTarget(null);
     setViewMode('schedule');
   }, [scheduleReturnTarget, setScheduleActiveTaskId, setScheduleReturnTarget, setViewMode]);
-
-  // Scroll to bottom when switching conversations.
-  // useLayoutEffect runs after DOM commit but before paint,
-  // so the user never sees the wrong scroll position.
-  useLayoutEffect(() => {
-    if (activeConvId) {
-      scrollToBottom();
-    }
-  }, [activeConvId, scrollToBottom]);
 
   useEffect(() => {
     if (!activeConvId) {
@@ -273,9 +267,13 @@ export default function ChatView({
 
   useLayoutEffect(() => {
     if (!activeConvId || historyLoading) return;
-    const raf = window.requestAnimationFrame(refreshScrollState);
-    return () => window.cancelAnimationFrame(raf);
-  }, [activeConvId, historyLoading, historyVersion, timelineMessages.length, refreshScrollState]);
+    scrollToBottom({ force: true });
+  }, [activeConvId, historyLoading, historyVersion, scrollToBottom]);
+
+  useLayoutEffect(() => {
+    if (!activeConvId || historyLoading) return;
+    scrollToBottom({ force: false });
+  }, [activeConvId, historyLoading, stream.isStreaming, timelineMessages, scrollToBottom]);
 
   const handleSend = async (
     text: string,
@@ -329,7 +327,7 @@ export default function ChatView({
     } else {
       stream.send(text, imageAttachmentsToSendImages(images), wireOptions);
     }
-    resetToBottom();
+    scrollToBottom({ force: true });
   };
 
   const runStartedAt = stream.runStartedAt;
@@ -353,8 +351,8 @@ export default function ChatView({
       return current.slice(0, index);
     });
     stream.send(content, sendImages, options);
-    resetToBottom();
-  }, [resetToBottom, stream, workspaceScope]);
+    scrollToBottom({ force: true });
+  }, [scrollToBottom, stream, workspaceScope]);
 
   const handleEditUserMessage = useCallback((message: Message, newContent: string) => {
     const trimmed = newContent.trim();
@@ -399,7 +397,7 @@ export default function ChatView({
           },
         };
       }));
-      resetToBottom();
+      scrollToBottom({ force: true });
     } catch {
       setPromptSubmitState({
         promptId: prompt.promptId,
@@ -407,7 +405,7 @@ export default function ChatView({
         error: '提交失败，请重试',
       });
     }
-  }, [resetToBottom, stream, workspaceScope]);
+  }, [scrollToBottom, stream, workspaceScope]);
 
   useEffect(() => {
     if (!promptSubmitState) return;
@@ -501,8 +499,8 @@ export default function ChatView({
                 ) : (
                   <span>
                     {greeting}
-                    {userName ? (
-                      useSettingsStore.getState().language === 'en-US' ? `, ${userName}` : `，${userName}`
+                    {displayUserName ? (
+                      useSettingsStore.getState().language === 'en-US' ? `, ${displayUserName}` : `，${displayUserName}`
                     ) : ''}
                     {useSettingsStore.getState().language === 'en-US' ? '. ' : '，'}
                     {t.chat.welcomeTitle}
@@ -569,15 +567,13 @@ export default function ChatView({
               )}
             </div>
 
-            {/* Bottom sentinel */}
-            <div ref={endRef} className="h-px w-full" />
           </div>
         </div>
 
         {/* Scroll-to-bottom button */}
         {!isAtBottom && (
           <button
-            onClick={scrollToBottom}
+            onClick={() => scrollToBottom({ force: true })}
             title={t.chat.scrollToBottom}
             aria-label={t.chat.scrollToBottom}
             className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center justify-center h-8 w-8 rounded-full bg-white/90 border border-[#706b5730] shadow-md text-[#656358] hover:text-[#29261b] hover:bg-white transition-all backdrop-blur-sm"

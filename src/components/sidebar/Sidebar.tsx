@@ -71,10 +71,12 @@ export default function Sidebar() {
   const skills = useDiscoveryStore((s) => s.skills);
   const promptHubUser = usePromptHubStore((s) => s.user);
   const promptHubIsLoggingIn = usePromptHubStore((s) => s.isLoggingIn);
+  const promptHubOpen = usePromptHubStore((s) => s.loginOpen);
   const promptHubError = usePromptHubStore((s) => s.error);
   const loginPromptHub = usePromptHubStore((s) => s.login);
   const logoutPromptHub = usePromptHubStore((s) => s.logout);
-  const clearPromptHubError = usePromptHubStore((s) => s.clearError);
+  const openPromptHubLogin = usePromptHubStore((s) => s.openLogin);
+  const closePromptHubLogin = usePromptHubStore((s) => s.closeLogin);
   const { t } = useI18n();
 
   // Context menu state
@@ -84,7 +86,6 @@ export default function Sidebar() {
   const [skillProject, setSkillProject] = useState<{ path: string; name: string } | null>(null);
   const [skillSearch, setSkillSearch] = useState('');
   const [draftSkillBindings, setDraftSkillBindings] = useState<string[]>([]);
-  const [promptHubOpen, setPromptHubOpen] = useState(false);
   const [promptHubUsername, setPromptHubUsername] = useState('');
   const [promptHubPassword, setPromptHubPassword] = useState('');
   const contextMenuRef = useRef<HTMLDivElement>(null);
@@ -334,20 +335,17 @@ export default function Sidebar() {
     setPendingRemoveProject(null);
   };
 
-  const openPromptHubLogin = () => {
-    clearPromptHubError();
-    setPromptHubUsername(promptHubUser?.username ?? '');
-    setPromptHubOpen(true);
-  };
-
   const accountInitial = (promptHubUser?.username?.trim()[0] || '').toUpperCase();
+
+  useEffect(() => {
+    if (promptHubOpen) setPromptHubUsername(promptHubUser?.username ?? '');
+  }, [promptHubOpen, promptHubUser?.username]);
 
   const submitPromptHubLogin = async () => {
     if (!promptHubUsername.trim() || !promptHubPassword) return;
     try {
       await loginPromptHub(promptHubUsername, promptHubPassword);
       setPromptHubPassword('');
-      setPromptHubOpen(false);
     } catch {
       // Error is stored in promptHubStore for display.
     }
@@ -805,7 +803,7 @@ export default function Sidebar() {
         <div
           className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30"
           onClick={(event) => {
-            if (event.target === event.currentTarget && !promptHubIsLoggingIn) setPromptHubOpen(false);
+            if (event.target === event.currentTarget && !promptHubIsLoggingIn) closePromptHubLogin();
           }}
         >
           <div className="w-[380px] rounded-2xl bg-white p-5 shadow-xl">
@@ -819,7 +817,7 @@ export default function Sidebar() {
                 </p>
               </div>
               <button
-                onClick={() => setPromptHubOpen(false)}
+                onClick={closePromptHubLogin}
                 disabled={promptHubIsLoggingIn}
                 className="rounded-lg p-1.5 text-[#656358] hover:bg-[#f5f3ee] hover:text-[#29261b] disabled:opacity-50"
                 title="关闭"
@@ -880,7 +878,7 @@ export default function Sidebar() {
               ) : <span />}
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setPromptHubOpen(false)}
+                  onClick={closePromptHubLogin}
                   disabled={promptHubIsLoggingIn}
                   className="rounded-lg px-3.5 py-2 text-[13px] font-medium text-[#656358] hover:bg-[#f5f3ee] disabled:opacity-50"
                 >

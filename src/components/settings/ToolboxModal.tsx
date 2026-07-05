@@ -3,7 +3,7 @@ import { useSettingsStore, type ToolboxTab } from '@/stores/settingsStore';
 import { useChatStore } from '@/stores/chatStore';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { useI18n } from '@/i18n';
-import { Search, Sparkles, Server, Wrench, Plus, Upload, Wand2, PenLine, ChevronDown, X } from 'lucide-react';
+import { Search, Sparkles, Server, Wrench, Plus, Upload, Wand2, PenLine, ChevronDown, X, Store } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fsBridge, dialogBridge } from '@/lib/ipc-factory';
 import { normalizeSeparators } from '@/utils/pathUtils';
@@ -12,6 +12,7 @@ import { saveSkill } from '@/core/api';
 import { getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/nanobotClient';
 import SkillsSection from '../customize/SkillsSection';
 import MCPSection from '../customize/MCPSection';
+import SkillStoreSection from '../customize/SkillStoreSection';
 
 async function getSkillsAuth(): Promise<{ token: string; baseUrl: string }> {
   const status = await getNanobotStatus();
@@ -145,6 +146,7 @@ export default function ToolboxView() {
   const navItems: { id: ToolboxTab; label: string; icon: typeof Sparkles }[] = [
     { id: 'skills', label: t.toolbox.skills, icon: Sparkles },
     { id: 'mcp', label: t.toolbox.mcp, icon: Server },
+    { id: 'skill-store', label: '技能商店', icon: Store },
   ];
 
   const renderContent = () => {
@@ -153,12 +155,15 @@ export default function ToolboxView() {
         return <SkillsSection manualCreateTrigger={manualCreateTrigger} />;
       case 'mcp':
         return <MCPSection showAddForm={mcpAddFormOpen} onAddFormChange={setMcpAddFormOpen} />;
+      case 'skill-store':
+        return <SkillStoreSection />;
       default:
         return null;
     }
   };
 
   const isMCPTab = activeToolboxTab === 'mcp';
+  const isSkillStoreTab = activeToolboxTab === 'skill-store';
 
   return (
     <div className="h-full bg-[#faf8f5] flex flex-col">
@@ -225,7 +230,7 @@ export default function ToolboxView() {
                   </button>
                 )}
               </div>
-              <div className="relative">
+              {!isSkillStoreTab && <div className="relative">
                 <button
                   ref={createButtonRef}
                   onClick={() => {
@@ -277,7 +282,7 @@ export default function ToolboxView() {
                     </button>
                   </div>
                 )}
-              </div>
+              </div>}
             </div>
           </div>
 

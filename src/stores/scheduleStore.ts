@@ -4,6 +4,7 @@ import {
   createScheduleTask,
   deleteScheduleTask,
   fetchScheduleTasks,
+  markScheduleRunViewed,
   pauseScheduleTask,
   resumeScheduleTask,
   runScheduleTaskNow,
@@ -19,6 +20,7 @@ import type { ScheduleTasksPayload } from '@/core/types';
 import type {
   ScheduledTask,
   ScheduleConfig,
+  ScheduledTaskRun,
 } from '../types/schedule';
 
 function tasksById(tasks: ScheduledTask[]): Record<string, ScheduledTask> {
@@ -92,6 +94,8 @@ interface ScheduleActions {
   resumeTask: (id: string) => Promise<void>;
   runTaskNow: (id: string) => Promise<void>;
   getActiveTaskCount: () => number;
+  getUnviewedRunCount: () => number;
+  markRunViewed: (taskId: string, run: ScheduledTaskRun) => Promise<void>;
   setActiveTaskId: (id: string | null) => void;
   setReturnTarget: (target: { taskId: string; runId?: string } | null) => void;
   setSelectedTaskId: (id: string | null) => void;
@@ -177,6 +181,21 @@ export const useScheduleStore = create<ScheduleStore>()(
     },
 
     getActiveTaskCount: () => Object.values(get().tasks).filter((task) => task.status === 'active').length,
+
+    getUnviewedRunCount: () => Object.values(get().tasks).reduce((count, task) => (
+      count + task.runs.filter((run) => (
+        (run.status === 'completed' || run.status === 'error')
+        && Boolean(run.sessionKey || run.conversationId)
+        && !run.viewedAt
+      )).length
+    ), 0),
+
+    markRunViewed: async (taskId, run) => {
+      const runId = run.runId ?? run.id;
+      if (!runId || run.status === 'running' || run.viewedAt) return;
+      const payload = await withScheduleAuth((token, baseUrl) => markScheduleRunViewed(token, taskId, runId, baseUrl));
+      get().applyPayload(payload);
+    },
 
     setActiveTaskId: (id) => {
       set((state) => {

@@ -683,6 +683,7 @@ export interface TranslationDict {
     taskCompleted: string;
     taskError: string;
     onlyRunWhileAwake: string;
+    unreadRuns: string;
     askRuyiToCreate: string;
     askAbuCreatePrompt: string;
   };

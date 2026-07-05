@@ -664,6 +664,7 @@ const enUS: TranslationDict = {
     taskCompleted: 'Task "{name}" completed',
     taskError: 'Task "{name}" failed',
     onlyRunWhileAwake: 'Scheduled tasks only run while the app is open and your computer is awake',
+    unreadRuns: '{count} unread records',
     askRuyiToCreate: 'Ask Ruyi to create',
     askAbuCreatePrompt: 'Help me create a scheduled task',
   },

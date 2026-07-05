@@ -4,14 +4,14 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { useScheduleStore } from '@/stores/scheduleStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
+import { usePromptHubStore } from '@/stores/promptHubStore';
 import { useI18n } from '@/i18n';
-import { Plus, Clock, Wrench, Trash2, Settings, Download, Pencil, Undo2, HelpCircle, ChevronRight, MoreHorizontal, SquarePen, FolderOpen, FolderClosed, X, Search } from 'lucide-react';
+import { Plus, Clock, Wrench, Trash2, Settings, Download, Pencil, Undo2, HelpCircle, ChevronRight, MoreHorizontal, SquarePen, FolderOpen, FolderClosed, X, Search, LogOut, UserRound } from 'lucide-react';
 import GuideModal from '@/components/common/GuideModal';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import type { ConversationStatus } from '@/types';
-import ruyiAvatar from '@/assets/ruyi-avatar.png';
 import { dialogBridge, fsBridge, shellBridge } from '@/lib/ipc-factory';
 import { isMacOS } from '@/utils/platform';
 import { normalizeProjectPath, projectNameFromPath, visibleProjectPath } from '@/core/workspace';
@@ -61,7 +61,7 @@ export default function Sidebar() {
   const viewMode = useSettingsStore((s) => s.viewMode);
   const setViewMode = useSettingsStore((s) => s.setViewMode);
   const updateInfo = useSettingsStore((s) => s.updateInfo);
-  const activeTaskCount = useScheduleStore((s) => s.getActiveTaskCount());
+  const unviewedRunCount = useScheduleStore((s) => s.getUnviewedRunCount());
   const scheduledTasks = useScheduleStore((s) => s.tasks);
   const recentWorkspacePaths = useWorkspaceStore((s) => s.recentPaths);
   const projectNames = useWorkspaceStore((s) => s.projectNames);
@@ -69,6 +69,12 @@ export default function Sidebar() {
   const removeRecentPath = useWorkspaceStore((s) => s.removeRecentPath);
   const setProjectSkillBindings = useWorkspaceStore((s) => s.setProjectSkillBindings);
   const skills = useDiscoveryStore((s) => s.skills);
+  const promptHubUser = usePromptHubStore((s) => s.user);
+  const promptHubIsLoggingIn = usePromptHubStore((s) => s.isLoggingIn);
+  const promptHubError = usePromptHubStore((s) => s.error);
+  const loginPromptHub = usePromptHubStore((s) => s.login);
+  const logoutPromptHub = usePromptHubStore((s) => s.logout);
+  const clearPromptHubError = usePromptHubStore((s) => s.clearError);
   const { t } = useI18n();
 
   // Context menu state
@@ -78,6 +84,9 @@ export default function Sidebar() {
   const [skillProject, setSkillProject] = useState<{ path: string; name: string } | null>(null);
   const [skillSearch, setSkillSearch] = useState('');
   const [draftSkillBindings, setDraftSkillBindings] = useState<string[]>([]);
+  const [promptHubOpen, setPromptHubOpen] = useState(false);
+  const [promptHubUsername, setPromptHubUsername] = useState('');
+  const [promptHubPassword, setPromptHubPassword] = useState('');
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
   // Undo delete state
@@ -113,8 +122,6 @@ export default function Sidebar() {
     return unsub;
   }, []);
 
-  const userNickname = useSettingsStore((s) => s.userNickname);
-  const userAvatar = useSettingsStore((s) => s.userAvatar);
 
   // Close context menu when clicking outside
   useEffect(() => {
@@ -327,6 +334,25 @@ export default function Sidebar() {
     setPendingRemoveProject(null);
   };
 
+  const openPromptHubLogin = () => {
+    clearPromptHubError();
+    setPromptHubUsername(promptHubUser?.username ?? '');
+    setPromptHubOpen(true);
+  };
+
+  const accountInitial = (promptHubUser?.username?.trim()[0] || '').toUpperCase();
+
+  const submitPromptHubLogin = async () => {
+    if (!promptHubUsername.trim() || !promptHubPassword) return;
+    try {
+      await loginPromptHub(promptHubUsername, promptHubPassword);
+      setPromptHubPassword('');
+      setPromptHubOpen(false);
+    } catch {
+      // Error is stored in promptHubStore for display.
+    }
+  };
+
   const renderConversationButton = (conv: Conversation, nested = false) => (
     <button
       key={conv.id}
@@ -412,9 +438,9 @@ export default function Sidebar() {
         >
           <Clock className="h-[18px] w-[18px] text-[#656358]" strokeWidth={1.75} />
           <span>{t.sidebar.scheduledTasks}</span>
-          {activeTaskCount > 0 && (
+          {unviewedRunCount > 0 && (
             <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#d97757]/15 text-[#d97757] font-medium">
-              {activeTaskCount}
+              {unviewedRunCount}
             </span>
           )}
         </button>
@@ -525,20 +551,29 @@ export default function Sidebar() {
       </ScrollArea>
 
       {/* User Section */}
-      <div className="px-5 py-4 shrink-0 border-t border-[#e5e2db]">
-        <div className="flex items-center gap-2.5">
-          {/* User avatar + nickname */}
-          <div className="w-8 h-8 rounded-full overflow-hidden shrink-0">
-            <img src={userAvatar || ruyiAvatar} alt="Avatar" className="w-full h-full object-cover" />
-          </div>
-          <div className="flex-1 min-w-0 text-left flex items-center gap-1.5">
-            <div className="text-[13px] font-semibold text-[#29261b] truncate">
-              {userNickname || t.sidebar.defaultNickname}
+      <div className="px-3 py-2.5 shrink-0 border-t border-[#e5e2db]">
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={openPromptHubLogin}
+            className="group flex min-w-0 flex-1 items-center gap-2.5 rounded-2xl px-1.5 py-1.5 text-left transition-colors hover:bg-[#ebe9e4]"
+            title={promptHubUser ? `已登录：${promptHubUser.username}` : '连接使用'}
+          >
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#d8d5ce] bg-[#f7f6f3] text-[#29261b] shadow-sm">
+              {promptHubUser ? (
+                <span className="text-[18px] font-medium">{accountInitial}</span>
+              ) : (
+                <UserRound className="h-5 w-5" />
+              )}
             </div>
-            <span className="shrink-0 px-1 py-[2px] rounded border border-[#d97757]/30 text-[#d97757] bg-[#d97757]/8 text-[9.5px] font-semibold tracking-wide leading-none">
-              内测版
-            </span>
-          </div>
+            <div className="flex min-w-0 flex-1 items-center gap-1.5">
+              <div className="truncate text-[15px] font-semibold text-[#29261b] leading-none">
+                {promptHubUser?.username || '连接使用'}
+              </div>
+              <div className="shrink-0 rounded border border-[#d97757]/30 bg-[#d97757]/8 px-1 py-[2px] text-[9.5px] font-semibold leading-none tracking-wide text-[#d97757]">
+                内测版
+              </div>
+            </div>
+          </button>
           <button
             onClick={() => openSystemSettings(updateInfo ? 'about' : undefined)}
             className={cn(
@@ -766,6 +801,105 @@ export default function Sidebar() {
       {/* Guide modal */}
       <GuideModal open={guideOpen} onClose={() => { setGuideOpen(false); setGuideShown(true); }} />
 
+      {promptHubOpen && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30"
+          onClick={(event) => {
+            if (event.target === event.currentTarget && !promptHubIsLoggingIn) setPromptHubOpen(false);
+          }}
+        >
+          <div className="w-[380px] rounded-2xl bg-white p-5 shadow-xl">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-[17px] font-semibold text-[#29261b]">
+                  {promptHubUser ? '账号' : '登录'}
+                </h3>
+                <p className="mt-1 text-[13px] text-[#8a867c]">
+                  {promptHubUser ? '当前账号已登录。' : '输入用户名和密码。'}
+                </p>
+              </div>
+              <button
+                onClick={() => setPromptHubOpen(false)}
+                disabled={promptHubIsLoggingIn}
+                className="rounded-lg p-1.5 text-[#656358] hover:bg-[#f5f3ee] hover:text-[#29261b] disabled:opacity-50"
+                title="关闭"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {promptHubUser ? (
+              <div className="rounded-xl border border-[#e8e4dd] bg-[#faf9f7] px-3 py-3">
+                <div className="text-[12px] text-[#8a867c]">当前账号</div>
+                <div className="mt-1 text-[14px] font-semibold text-[#29261b]">{promptHubUser.username}</div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <label className="block">
+                  <span className="mb-1 block text-[12px] font-medium text-[#656358]">用户名</span>
+                  <input
+                    value={promptHubUsername}
+                    onChange={(event) => setPromptHubUsername(event.target.value)}
+                    className="h-9 w-full rounded-lg border border-[#e8e4dd] bg-[#faf9f7] px-3 text-sm text-[#29261b] outline-none focus:border-[#d97757] focus:ring-2 focus:ring-[#d97757]/30"
+                    autoFocus
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-[12px] font-medium text-[#656358]">密码</span>
+                  <input
+                    type="password"
+                    value={promptHubPassword}
+                    onChange={(event) => setPromptHubPassword(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') void submitPromptHubLogin();
+                    }}
+                    className="h-9 w-full rounded-lg border border-[#e8e4dd] bg-[#faf9f7] px-3 text-sm text-[#29261b] outline-none focus:border-[#d97757] focus:ring-2 focus:ring-[#d97757]/30"
+                  />
+                </label>
+              </div>
+            )}
+
+            {promptHubError && (
+              <div className="mt-3 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-[12px] text-red-600">
+                {promptHubError}
+              </div>
+            )}
+
+            <div className="mt-5 flex items-center justify-between gap-2">
+              {promptHubUser ? (
+                <button
+                  onClick={() => {
+                    logoutPromptHub();
+                    setPromptHubPassword('');
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-[#656358] hover:bg-[#f5f3ee] hover:text-red-500"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  退出登录
+                </button>
+              ) : <span />}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPromptHubOpen(false)}
+                  disabled={promptHubIsLoggingIn}
+                  className="rounded-lg px-3.5 py-2 text-[13px] font-medium text-[#656358] hover:bg-[#f5f3ee] disabled:opacity-50"
+                >
+                  {promptHubUser ? '关闭' : '取消'}
+                </button>
+                {!promptHubUser && (
+                  <button
+                    onClick={() => void submitPromptHubLogin()}
+                    disabled={promptHubIsLoggingIn || !promptHubUsername.trim() || !promptHubPassword}
+                    className="rounded-lg bg-[#29261b] px-4 py-2 text-[13px] font-medium text-white hover:bg-[#3a3628] disabled:opacity-60"
+                  >
+                    {promptHubIsLoggingIn ? '登录中...' : '登录'}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Undo delete toast */}
       {pendingDelete && (

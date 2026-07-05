@@ -16,6 +16,7 @@ import { fetchWorkspaces, updateNetworkSafetySettings } from '@/core/api';
 import { getNanobotClient, getNanobotToken, getNanobotStatus } from '@/core/nanobotClient';
 import { projectNameFromPath } from '@/core/workspace';
 import { useChatStore } from '@/stores/chatStore';
+import { useScheduleStore } from '@/stores/scheduleStore';
 
 // Initialize platform detection at module load time (before any component renders)
 // so that isWindows()/isMacOS() return correct values immediately
@@ -324,6 +325,9 @@ function App() {
           });
           syncSessionsFromGateway().then(() => {
             console.log('[App] Session history sync completed');
+          });
+          useScheduleStore.getState().loadTasks().then(() => {
+            console.log('[App] Scheduled tasks sync completed');
           });
         }).catch((err) => {
           console.error('[App] Nanobot gateway bootstrap failed:', err);

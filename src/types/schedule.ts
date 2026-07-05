@@ -47,4 +47,6 @@ export interface ScheduledTaskRun {
   completedAt?: number;
   status: ScheduledRunStatus;
   error?: string;
+  /** Timestamp when the user opened this run's conversation. */
+  viewedAt?: number;
 }

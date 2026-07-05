@@ -46,6 +46,7 @@ export default function ScheduleRunHistory({ runs, taskName }: Props) {
   const switchConversation = useChatStore((s) => s.switchConversation);
   const setViewMode = useSettingsStore((s) => s.setViewMode);
   const setReturnTarget = useScheduleStore((s) => s.setReturnTarget);
+  const markRunViewed = useScheduleStore((s) => s.markRunViewed);
   const conversations = useChatStore((s) => s.conversations);
 
   const handleViewConversation = async (run: ScheduledTaskRun) => {
@@ -69,6 +70,9 @@ export default function ScheduleRunHistory({ runs, taskName }: Props) {
       setReturnTarget({ taskId: run.scheduledTaskId, runId: run.id });
       switchConversation(sessionKey);
       setViewMode('chat');
+      void markRunViewed(run.scheduledTaskId, run).catch((err) => {
+        console.warn('Failed to mark schedule run viewed', err);
+      });
     }
   };
 
@@ -88,6 +92,7 @@ export default function ScheduleRunHistory({ runs, taskName }: Props) {
         const title = isDefaultConversationTitle(conversationTitle)
           ? `${formatRunDate(run.startedAt)} - ${taskName}`
           : conversationTitle;
+        const isUnread = (run.status === 'completed' || run.status === 'error') && !run.viewedAt;
 
         return (
           <div
@@ -98,8 +103,8 @@ export default function ScheduleRunHistory({ runs, taskName }: Props) {
               className={cn(
                 'w-1.5 h-1.5 rounded-full shrink-0',
                 run.status === 'running' && 'bg-amber-400 animate-pulse',
-                run.status === 'completed' && 'bg-green-500',
-                run.status === 'error' && 'bg-red-500'
+                isUnread && 'bg-[#d97757]',
+                !isUnread && run.status === 'error' && 'bg-red-500'
               )}
             />
 

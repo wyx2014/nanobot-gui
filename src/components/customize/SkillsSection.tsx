@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
+import { usePromptHubStore } from '@/stores/promptHubStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { fetchSkillDetail, fetchSkills, runSkillAction, saveSkill } from '@/core/api';
 import { getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/nanobotClient';
+import { fetchPromptHubSkills, publishPromptHubSkill } from '@/core/prompthubApi';
 import type { NanobotSkillInfo, SkillsPayload } from '@/core/types';
 import SubTabBar from './SubTabBar';
 import { Toggle } from '@/components/ui/toggle';
@@ -26,7 +28,8 @@ import {
   Cpu,
   Code,
   Download,
-  Brain
+  Brain,
+  UploadCloud
 } from 'lucide-react';
 
 type SkillTab = 'builtin' | 'workspace';
@@ -91,12 +94,16 @@ function normalizeSkillName(value: string): string {
 export default function SkillsSection({ manualCreateTrigger }: { manualCreateTrigger?: number }) {
   const { refresh: refreshDiscovery } = useDiscoveryStore();
   const { toolboxSearchQuery } = useSettingsStore();
+  const promptHubBaseUrl = usePromptHubStore((s) => s.baseUrl);
+  const promptHubToken = usePromptHubStore((s) => s.token);
   const [payload, setPayload] = useState<SkillsPayload | null>(null);
+  const [hubSkillNames, setHubSkillNames] = useState<Set<string>>(new Set());
   const [activeSubTab, setActiveSubTab] = useState<SkillTab>('builtin');
   const [detail, setDetail] = useState<NanobotSkillInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [actingName, setActingName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState('');
   const [createDescription, setCreateDescription] = useState('');
@@ -110,12 +117,18 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
       const { token, baseUrl } = await getSkillsAuth();
       const next = await fetchSkills(token, baseUrl);
       setPayload(next);
+      if (promptHubToken) {
+        const hub = await fetchPromptHubSkills(promptHubBaseUrl, promptHubToken);
+        setHubSkillNames(new Set((hub.records ?? []).map((skill) => (skill.slug || skill.name || '').toLowerCase()).filter(Boolean)));
+      } else {
+        setHubSkillNames(new Set());
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [promptHubBaseUrl, promptHubToken]);
 
   useEffect(() => {
     void load();
@@ -224,6 +237,33 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
     }
   };
 
+  const handleUpload = async (skill: NanobotSkillInfo) => {
+    if (!promptHubToken) {
+      setError('请先在技能商店登录 PromptHub。');
+      return;
+    }
+    setActingName(skill.name);
+    setError(null);
+    setMessage(null);
+    try {
+      const { token, baseUrl } = await getSkillsAuth();
+      const next = await fetchSkillDetail(token, skill.name, baseUrl);
+      const content = next.skills[0]?.content;
+      if (!content) throw new Error('未读取到本地技能内容');
+      await publishPromptHubSkill(promptHubBaseUrl, promptHubToken, {
+        slug: skill.name,
+        displayName: skill.name,
+        content,
+      });
+      setHubSkillNames((names) => new Set(names).add(skill.name.toLowerCase()));
+      setMessage(`已上传 /${skill.name} 到技能商店`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setActingName(null);
+    }
+  };
+
   const openDetail = async (skill: NanobotSkillInfo) => {
     setDetail(skill);
     setError(null);
@@ -251,6 +291,12 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
           <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
             <div className="text-sm text-red-700">{error}</div>
+          </div>
+        )}
+        {message && (
+          <div className="mb-4 flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+            <div className="text-sm text-emerald-700">{message}</div>
           </div>
         )}
 
@@ -298,6 +344,19 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
                     onChange={() => void handleToggle(skill)}
                     disabled={busy}
                   />
+                  {skill.source === 'workspace' && !hubSkillNames.has(skill.name.toLowerCase()) && (
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void handleUpload(skill);
+                      }}
+                      disabled={busy}
+                      className="shrink-0 rounded p-1.5 text-neutral-400 opacity-0 transition-colors hover:bg-emerald-50 hover:text-emerald-600 group-hover:opacity-100 disabled:opacity-40"
+                      title="上传到技能商店"
+                    >
+                      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+                    </button>
+                  )}
                   {skill.source === 'workspace' && (
                     <button
                       onClick={(event) => {

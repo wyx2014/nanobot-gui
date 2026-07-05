@@ -119,7 +119,13 @@ function skillValuesHeader(values: Record<string, unknown>): HeadersInit | undef
     payload[key] = value;
   });
   if (!Object.keys(payload).length) return undefined;
-  return { "X-Nanobot-Skill-Values": JSON.stringify(payload) };
+  return { "X-Nanobot-Skill-Values": asciiJsonStringify(payload) };
+}
+
+function asciiJsonStringify(value: unknown): string {
+  return JSON.stringify(value).replace(/[^\x00-\x7F]/g, (char) => (
+    `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`
+  ));
 }
 
 function splitKey(key: string): { channel: string; chatId: string } {
@@ -342,6 +348,18 @@ export async function runScheduleTaskNow(
   const query = new URLSearchParams();
   query.set("id", id);
   return request<ScheduleTasksPayload>(`${base}/api/schedule/tasks/run?${query}`, token);
+}
+
+export async function markScheduleRunViewed(
+  token: string,
+  taskId: string,
+  runId: string,
+  base: string = "",
+): Promise<ScheduleTasksPayload> {
+  const query = new URLSearchParams();
+  query.set("task_id", taskId);
+  query.set("run_id", runId);
+  return request<ScheduleTasksPayload>(`${base}/api/schedule/runs/viewed?${query}`, token);
 }
 
 export async function fetchCliApps(

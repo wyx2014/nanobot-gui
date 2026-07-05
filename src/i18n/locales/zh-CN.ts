@@ -664,6 +664,7 @@ const zhCN: TranslationDict = {
     taskCompleted: '定时任务「{name}」已完成',
     taskError: '定时任务「{name}」执行出错',
     onlyRunWhileAwake: '定时任务仅在应用打开且电脑未休眠时运行',
+    unreadRuns: '有 {count} 条未读记录',
     askRuyiToCreate: '让太资如意帮你创建',
     askAbuCreatePrompt: '帮我创建一个定时任务',
   },

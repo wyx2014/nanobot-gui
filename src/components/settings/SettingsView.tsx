@@ -677,7 +677,7 @@ export function SettingsView({
 
   return (
     <div className="flex h-full bg-[#faf8f5] text-[#29261b]">
-      <aside className="w-72 shrink-0 border-r border-[#e8e4dd] bg-[#f6f1eb] p-4">
+      <aside className="w-56 shrink-0 border-r border-[#e8e4dd] bg-[#f6f1eb] p-4">
         <div className="mb-5 px-2">
           <h1 className="text-xl font-semibold">设置</h1>
           <p className="mt-1 text-sm text-[#777267]">由 nanobot 网关提供配置能力</p>

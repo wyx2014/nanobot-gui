@@ -19,17 +19,18 @@ function formatRunDate(timestamp: number): string {
   return `${month}/${day} ${h}:${m}`;
 }
 
-function RunStatusDot({ status }: { status: ScheduledTaskRun['status'] }) {
-  if (status === 'running') {
+function RunStatusDot({ run }: { run: ScheduledTaskRun }) {
+  const isUnread = (run.status === 'completed' || run.status === 'error') && !run.viewedAt;
+  if (run.status === 'running') {
     return <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shrink-0" />;
   }
-  if (status === 'completed') {
-    return <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />;
+  if (isUnread) {
+    return <span className="w-1.5 h-1.5 rounded-full bg-[#d97757] shrink-0" />;
   }
-  if (status === 'error') {
+  if (run.status === 'error') {
     return <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />;
   }
-  return null;
+  return <span className="w-1.5 shrink-0" />;
 }
 
 export default function ScheduledSection() {
@@ -37,6 +38,7 @@ export default function ScheduledSection() {
   const tasks = useScheduleStore((s) => s.tasks);
   const loadTasks = useScheduleStore((s) => s.loadTasks);
   const setSelectedTaskId = useScheduleStore((s) => s.setSelectedTaskId);
+  const markRunViewed = useScheduleStore((s) => s.markRunViewed);
   const conversations = useChatStore((s) => s.conversations);
   const activeConversationId = useChatStore((s) => s.activeConversationId);
   const switchConversation = useChatStore((s) => s.switchConversation);
@@ -98,6 +100,9 @@ export default function ScheduledSection() {
       }
       switchConversation(sessionKey);
       setViewMode('chat');
+      void markRunViewed(taskId, run).catch((err) => {
+        console.warn('Failed to mark schedule run viewed', err);
+      });
     }
   };
 
@@ -183,7 +188,7 @@ export default function ScheduledSection() {
                               : 'text-[#656358] hover:bg-[#eeeeea] hover:text-[#3d3929]'
                           )}
                         >
-                          <RunStatusDot status={run.status} />
+                          <RunStatusDot run={run} />
                           <span className="truncate">{label}</span>
                         </button>
                       );

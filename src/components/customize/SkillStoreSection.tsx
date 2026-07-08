@@ -3,7 +3,7 @@ import { AlertCircle, Download, FileText, Loader2, RefreshCw, X } from 'lucide-r
 import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { usePromptHubStore } from '@/stores/promptHubStore';
 import { useSettingsStore } from '@/stores/settingsStore';
-import { fetchSkills, saveSkill } from '@/core/api';
+import { fetchSkills, runSkillAction } from '@/core/api';
 import { getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/nanobotClient';
 import {
   fetchPromptHubFile,
@@ -13,6 +13,7 @@ import {
   type PromptHubSkillDetail,
 } from '@/core/prompthubApi';
 import type { NanobotSkillInfo } from '@/core/types';
+import { ipc } from '@/lib/ipc-factory';
 
 async function getSkillsAuth(): Promise<{ token: string; baseUrl: string }> {
   const status = await getNanobotStatus();
@@ -50,6 +51,8 @@ function reviewLabel(status?: string): string | null {
 function firstSkillFile(files: { path: string }[]): string | null {
   return files.find((file) => ['skill.md', 'skills.md'].includes(file.path.toLowerCase()))?.path ?? null;
 }
+
+type StoreSkillFile = { path: string; content: string };
 
 export default function SkillStoreSection() {
   const { toolboxSearchQuery } = useSettingsStore();
@@ -113,11 +116,18 @@ export default function SkillStoreSection() {
       const detail = await fetchPromptHubSkillDetail(baseUrl, token!, skill.id);
       const filePath = detail.latestVersion?.id ? firstSkillFile(detail.files) : null;
       if (!detail.latestVersion?.id || !filePath) throw new Error('该技能没有可下载的 SKILL.md');
-      const file = await fetchPromptHubFile(baseUrl, token!, detail.latestVersion.id, filePath);
+      const files = await Promise.all(
+        detail.files.map((file) => fetchPromptHubFile(baseUrl, token!, detail.latestVersion!.id, file.path)),
+      );
       const auth = await getSkillsAuth();
-      await saveSkill(auth.token, skillKey(detail.skill), file.content, auth.baseUrl);
+      const name = skillKey(detail.skill);
+      await ipc.invoke<void>('skills:writePackage', {
+        name,
+        files: files.map((file): StoreSkillFile => ({ path: file.path, content: file.content })),
+      });
+      await runSkillAction(auth.token, 'enable', name, auth.baseUrl);
       await refreshDiscovery();
-      setMessage(`已下载 /${skillKey(detail.skill)} 到我的技能`);
+      setMessage(`已下载 /${name} 到我的技能`);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

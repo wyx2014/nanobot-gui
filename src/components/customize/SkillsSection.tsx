@@ -2,10 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { usePromptHubStore } from '@/stores/promptHubStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useChatStore } from '@/stores/chatStore';
 import { fetchSkillDetail, fetchSkills, runSkillAction, saveSkill } from '@/core/api';
 import { getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/nanobotClient';
 import { fetchPromptHubSkills, publishPromptHubSkill } from '@/core/prompthubApi';
 import type { NanobotSkillInfo, SkillsPayload } from '@/core/types';
+import { ipc } from '@/lib/ipc-factory';
 import SubTabBar from './SubTabBar';
 import { Toggle } from '@/components/ui/toggle';
 import { Input } from '@/components/ui/input';
@@ -91,8 +94,11 @@ function normalizeSkillName(value: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
+type SkillPackageFile = { path: string; content: Uint8Array };
+
 export default function SkillsSection({ manualCreateTrigger }: { manualCreateTrigger?: number }) {
   const { refresh: refreshDiscovery } = useDiscoveryStore();
+  const removeProjectSkillBinding = useWorkspaceStore((s) => s.removeProjectSkillBinding);
   const { toolboxSearchQuery } = useSettingsStore();
   const promptHubBaseUrl = usePromptHubStore((s) => s.baseUrl);
   const promptHubToken = usePromptHubStore((s) => s.token);
@@ -228,6 +234,14 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
     try {
       const { token, baseUrl } = await getSkillsAuth();
       const next = await runSkillAction(token, 'delete', skill.name, baseUrl);
+      removeProjectSkillBinding(skill.name);
+      useChatStore.setState((state) => {
+        for (const conversation of Object.values(state.conversations)) {
+          if (conversation.activeSkills) {
+            conversation.activeSkills = conversation.activeSkills.filter((name) => name !== skill.name);
+          }
+        }
+      });
       await applyPayload(next);
       if (detail?.name === skill.name) setDetail(null);
     } catch (err) {
@@ -248,12 +262,15 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
     try {
       const { token, baseUrl } = await getSkillsAuth();
       const next = await fetchSkillDetail(token, skill.name, baseUrl);
-      const content = next.skills[0]?.content;
-      if (!content) throw new Error('未读取到本地技能内容');
+      const localSkill = next.skills[0];
+      const files = localSkill?.path
+        ? await ipc.invoke<SkillPackageFile[]>('skills:readPackage', localSkill.path)
+        : [];
+      if (!files.some((file) => file.path.toLowerCase() === 'skill.md')) throw new Error('未读取到本地技能包');
       await publishPromptHubSkill(promptHubBaseUrl, promptHubToken, {
         slug: skill.name,
         displayName: skill.name,
-        content,
+        files,
       });
       setHubSkillNames((names) => new Set(names).add(skill.name.toLowerCase()));
       setMessage(`已上传 /${skill.name} 到技能商店`);

@@ -75,6 +75,12 @@ export interface PromptHubPublishResult {
   fileCount: number;
 }
 
+export interface PromptHubPublishFile {
+  path: string;
+  content: string | Uint8Array;
+  type?: string;
+}
+
 async function promptHubRequest<T>(url: string, init?: RequestInit): Promise<T> {
   const isForm = init?.body instanceof FormData;
   const res = await fetch(url, {
@@ -169,7 +175,7 @@ export async function fetchPromptHubFile(
 export async function publishPromptHubSkill(
   baseUrl: string,
   token: string,
-  params: { slug: string; displayName: string; content: string; version?: string },
+  params: { slug: string; displayName: string; files: PromptHubPublishFile[]; version?: string },
 ): Promise<PromptHubPublishResult> {
   const form = new FormData();
   form.set('slug', params.slug);
@@ -179,7 +185,12 @@ export async function publishPromptHubSkill(
   form.set('visibility', 'public');
   form.set('category', 'general');
   form.set('tags', '');
-  form.append('files', new File([params.content], 'SKILL.md', { type: 'text/markdown' }));
+  for (const file of params.files) {
+    const content = typeof file.content === 'string'
+      ? file.content
+      : file.content.buffer.slice(file.content.byteOffset, file.content.byteOffset + file.content.byteLength) as ArrayBuffer;
+    form.append('files', new File([content], file.path, { type: file.type || 'application/octet-stream' }));
+  }
   return promptHubRequest<PromptHubPublishResult>(`${hubBase(baseUrl)}/api/skills/publish`, {
     method: 'POST',
     headers: authHeader(token),

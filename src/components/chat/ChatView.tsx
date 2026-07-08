@@ -16,6 +16,8 @@ import { conversationIdToSessionKey } from '@/core/sessionKey';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useScheduleStore } from '@/stores/scheduleStore';
 import { usePromptHubStore } from '@/stores/promptHubStore';
+import { useDiscoveryStore } from '@/stores/discoveryStore';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useI18n } from '@/i18n';
 import ThreadMessages from './ThreadMessages';
 import InteractivePromptCard, { type InteractivePromptSubmitPayload } from './InteractivePromptCard';
@@ -28,6 +30,8 @@ import ThinkingIndicator from './ThinkingIndicator';
 import StreamErrorNotice from './StreamErrorNotice';
 import { normalizeLegacyLongTaskMessages } from '@/core/nanobot/thread-display-compat';
 import { scrubSubagentUiMessages } from '@/core/nanobot/subagent-channel-display';
+import { projectUsableSkills, stripUnavailableLeadingSkillMentions } from '@/core/skills/filter';
+import { normalizeProjectPath, visibleProjectPath } from '@/core/workspace';
 
 function formatRunDuration(startedAt: number | null): string {
   if (!startedAt) return '';
@@ -130,6 +134,14 @@ export default function ChatView({
   const setScheduleReturnTarget = useScheduleStore((s) => s.setReturnTarget);
   const setViewMode = useSettingsStore((s) => s.setViewMode);
   const promptHubUsername = usePromptHubStore((s) => s.user?.username);
+  const skills = useDiscoveryStore((s) => s.skills);
+  const projectSkillBindings = useWorkspaceStore((s) => s.projectSkillBindings);
+  const activeProjectPath = visibleProjectPath(workspaceScope?.project_path ?? activeConv?.workspaceScope?.project_path ?? activeConv?.workspacePath);
+  const activeProjectSkillNames = activeProjectPath ? projectSkillBindings[normalizeProjectPath(activeProjectPath)] ?? [] : [];
+  const availableSkillNames = useMemo(
+    () => projectUsableSkills(skills, activeProjectSkillNames).map((skill) => skill.name),
+    [activeProjectSkillNames, skills],
+  );
   const { t } = useI18n();
   const [historyMessages, setHistoryMessages] = useState<UIMessage[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -350,9 +362,9 @@ export default function ChatView({
       if (index < 0) return current;
       return current.slice(0, index);
     });
-    stream.send(content, sendImages, options);
+    stream.send(stripUnavailableLeadingSkillMentions(content, availableSkillNames), sendImages, options);
     scrollToBottom({ force: true });
-  }, [scrollToBottom, stream, workspaceScope]);
+  }, [availableSkillNames, scrollToBottom, stream, workspaceScope]);
 
   const handleEditUserMessage = useCallback((message: Message, newContent: string) => {
     const trimmed = newContent.trim();

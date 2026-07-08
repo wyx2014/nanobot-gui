@@ -16,6 +16,8 @@ import { dialogBridge, fsBridge, shellBridge } from '@/lib/ipc-factory';
 import { isMacOS } from '@/utils/platform';
 import { normalizeProjectPath, projectNameFromPath, visibleProjectPath } from '@/core/workspace';
 import type { Conversation } from '@/types';
+import { fetchProjectSkills, saveProjectSkills as saveProjectSkillsApi } from '@/core/api';
+import { getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/nanobotClient';
 
 interface StatusIndicatorProps {
   status: ConversationStatus;
@@ -45,6 +47,16 @@ function StatusIndicator({ status, onComplete }: StatusIndicatorProps) {
 const PROJECT_VISIBLE_LIMIT = 5;
 const PROJECT_MENU_WIDTH = 150;
 const PROJECT_MENU_HEIGHT = 140;
+
+async function getProjectSkillsAuth(): Promise<{ token: string; baseUrl: string }> {
+  const status = await getNanobotStatus();
+  if (!status.ready) throw new Error('nanobot 服务尚未就绪');
+  const baseUrl = `http://127.0.0.1:${status.port}`;
+  const token = getNanobotToken();
+  if (token) return { token, baseUrl };
+  const refreshed = await refreshNanobotAuth();
+  return { token: refreshed.token, baseUrl: refreshed.baseUrl };
+}
 
 function projectPathForConversation(conv: Conversation): string | null {
   return visibleProjectPath(conv.workspaceScope?.project_path ?? conv.workspacePath ?? null);
@@ -301,12 +313,20 @@ export default function Sidebar() {
     setPendingRemoveProject({ path, name: projectName });
   };
 
-  const openProjectSkills = (path: string) => {
+  const openProjectSkills = async (path: string) => {
     const project = conversationGroups.projects.find((item) => item.path === path);
     const projectName = project?.name ?? projectNames[path] ?? projectNameFromPath(path);
+    const availableWorkspaceSkills = new Set(workspaceSkills.map((skill) => skill.name));
     setSkillProject({ path, name: projectName });
     setSkillSearch('');
-    setDraftSkillBindings(projectSkillBindings[normalizeProjectPath(path)] ?? []);
+    try {
+      const auth = await getProjectSkillsAuth();
+      const payload = await fetchProjectSkills(auth.token, path, auth.baseUrl);
+      setDraftSkillBindings(payload.skills.filter((name) => availableWorkspaceSkills.has(name)));
+      setProjectSkillBindings(path, payload.skills);
+    } catch {
+      setDraftSkillBindings((projectSkillBindings[normalizeProjectPath(path)] ?? []).filter((name) => availableWorkspaceSkills.has(name)));
+    }
   };
 
   const toggleDraftSkill = (name: string) => {
@@ -317,9 +337,17 @@ export default function Sidebar() {
     ));
   };
 
-  const saveProjectSkills = () => {
+  const saveProjectSkills = async () => {
     if (!skillProject) return;
-    setProjectSkillBindings(skillProject.path, draftSkillBindings);
+    const availableWorkspaceSkills = new Set(workspaceSkills.map((skill) => skill.name));
+    const skills = draftSkillBindings.filter((name) => availableWorkspaceSkills.has(name));
+    try {
+      const auth = await getProjectSkillsAuth();
+      const payload = await saveProjectSkillsApi(auth.token, skillProject.path, skills, auth.baseUrl);
+      setProjectSkillBindings(skillProject.path, payload.skills);
+    } catch {
+      setProjectSkillBindings(skillProject.path, skills);
+    }
     setSkillProject(null);
   };
 
@@ -650,7 +678,7 @@ export default function Sidebar() {
           </button>
           <button
             onClick={() => {
-              openProjectSkills(projectMenu.path);
+              void openProjectSkills(projectMenu.path);
               setProjectMenu(null);
             }}
             className="flex items-center gap-2 w-full px-3 py-1.5 text-[13px] text-[#3d3929] hover:bg-[#f0ede6]"
@@ -748,7 +776,7 @@ export default function Sidebar() {
                 {t.common.cancel}
               </button>
               <button
-                onClick={saveProjectSkills}
+                onClick={() => void saveProjectSkills()}
                 className="h-10 rounded-[12px] bg-[#1f2024] px-6 text-[15px] font-semibold text-white hover:bg-[#111214] transition-colors"
               >
                 {t.common.save}

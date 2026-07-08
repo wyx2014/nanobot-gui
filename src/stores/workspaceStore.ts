@@ -18,6 +18,7 @@ interface WorkspaceActions {
   removeRecentPath: (path: string) => void;
   setProjectName: (path: string, name: string) => void;
   setProjectSkillBindings: (path: string, skillNames: string[]) => void;
+  removeProjectSkillBinding: (skillName: string) => void;
 }
 
 export type WorkspaceStore = WorkspaceState & WorkspaceActions;
@@ -102,6 +103,17 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
             ...state.projectSkillBindings,
             [normalized]: unique,
           },
+        }));
+      },
+
+      removeProjectSkillBinding: (skillName) => {
+        set((state) => ({
+          projectSkillBindings: Object.fromEntries(
+            Object.entries(state.projectSkillBindings).map(([path, names]) => [
+              path,
+              names.filter((name) => name !== skillName),
+            ]),
+          ),
         }));
       },
     }),

@@ -214,7 +214,7 @@ GUI 当前主要读取 `SKILL.md` 或 `skills.md`。
 - `visibility`：当前 GUI 固定为 `public`
 - `category`：当前 GUI 固定为 `general`
 - `tags`
-- `files`：当前 GUI 上传 `SKILL.md`
+- `files`：当前 GUI 上传技能目录内的文件，保留相对路径
 
 返回核心字段：
 

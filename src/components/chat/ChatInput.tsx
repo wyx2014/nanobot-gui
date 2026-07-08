@@ -33,6 +33,7 @@ import PermissionDialog from '@/components/common/PermissionDialog';
 import FolderSelector from '@/components/common/FolderSelector';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { normalizeProjectPath, visibleProjectPath } from '@/core/workspace';
+import { filterAvailableSkillNames, projectUsableSkills, stripUnavailableLeadingSkillMentions } from '@/core/skills/filter';
 
 export interface ChatInputSendOptions {
   cliApps?: OutboundCliAppMention[];
@@ -837,14 +838,22 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     ].join(' ');
 
     const projectPath = visibleProjectPath(workspacePath ?? workspaceScope?.project_path ?? localWorkspace);
-    const projectSkills = projectPath ? projectSkillBindings[normalizeProjectPath(projectPath)] ?? [] : [];
-    const explicitSkills = draft.skills ?? [];
+    const usableSkillNames = projectUsableSkills(
+      skills,
+      projectPath ? projectSkillBindings[normalizeProjectPath(projectPath)] ?? [] : [],
+    ).map((skill) => skill.name);
+    const projectSkills = filterAvailableSkillNames(
+      projectPath ? projectSkillBindings[normalizeProjectPath(projectPath)] ?? [] : [],
+      usableSkillNames,
+    );
+    const explicitSkills = filterAvailableSkillNames(draft.skills ?? [], usableSkillNames);
     const skillPrefix = explicitSkills.length
       ? explicitSkills.map((skill) => `/${skill}`).join(' ')
       : '';
 
     // Compose parts, then join with newline
-    const bodyParts = [fileContext, capabilityMentions, skillPrefix, trimmed].filter(Boolean).join('\n');
+    const cleanText = stripUnavailableLeadingSkillMentions(trimmed, usableSkillNames);
+    const bodyParts = [fileContext, capabilityMentions, skillPrefix, cleanText].filter(Boolean).join('\n');
 
     const message = bodyParts;
 
@@ -1011,7 +1020,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   }, []);
 
   const renderPlusMenu = () => {
-    const filteredSkills = skills.filter((skill) => {
+    const filteredSkills = usableSkills.filter((skill) => {
       const query = skillSearchQuery.trim().toLowerCase();
       if (!query) return true;
       return skill.name.toLowerCase().includes(query) || (skill.description ?? '').toLowerCase().includes(query);
@@ -1084,7 +1093,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                   onKeyDown={(event) => event.stopPropagation()}
                 />
               </div>
-              {skills.length === 0 ? (
+              {usableSkills.length === 0 ? (
                 <div className="px-3.5 py-2 text-[#8a867c] italic text-center">
                   {isEn ? 'No skills available' : '无可用技能'}
                 </div>
@@ -1290,6 +1299,13 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       .forEach((conv) => add(conv.workspaceScope?.project_path ?? conv.workspacePath));
     return paths;
   }, [conversations, recentPaths]);
+
+  const activeProjectPath = visibleProjectPath(workspaceScope?.project_path ?? activeConv?.workspaceScope?.project_path ?? activeConv?.workspacePath ?? localWorkspace);
+  const activeProjectSkillNames = activeProjectPath ? projectSkillBindings[normalizeProjectPath(activeProjectPath)] ?? [] : [];
+  const usableSkills = useMemo(
+    () => projectUsableSkills(skills, activeProjectSkillNames),
+    [activeProjectSkillNames, skills],
+  );
 
   // Determine placeholder based on selected command
   const placeholder = hoverPrompt

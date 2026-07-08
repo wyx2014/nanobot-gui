@@ -203,6 +203,50 @@ app.whenReady().then(() => {
     return new Uint8Array(buffer);
   });
 
+  safeInvoke('skills:readPackage', async (data) => {
+    const skillPath = typeof data === 'string' ? data : data?.path;
+    if (!skillPath) throw new Error('skills:readPackage failed: path is missing');
+    const pathMod = await import('path');
+    const root = pathMod.dirname(skillPath);
+    const skipDirs = new Set(['.git', 'node_modules', '__pycache__', '.venv', 'venv']);
+    const files: Array<{ path: string; content: Uint8Array }> = [];
+    const walk = async (dir: string) => {
+      for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+        if (entry.name.startsWith('.') || (entry.isDirectory() && skipDirs.has(entry.name))) continue;
+        const abs = pathMod.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          await walk(abs);
+        } else if (entry.isFile()) {
+          files.push({
+            path: pathMod.relative(root, abs).split(pathMod.sep).join('/'),
+            content: new Uint8Array(await fs.readFile(abs)),
+          });
+        }
+      }
+    };
+    await walk(root);
+    return files;
+  });
+
+  safeInvoke('skills:writePackage', async (data) => {
+    const name = typeof data?.name === 'string' ? data.name.trim() : '';
+    const files = Array.isArray(data?.files) ? data.files : [];
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(name)) throw new Error('invalid skill name');
+    if (!files.some((file: any) => String(file?.path).toLowerCase() === 'skill.md')) {
+      throw new Error('skill package must include SKILL.md');
+    }
+    const pathMod = await import('path');
+    const root = pathMod.join(app.getPath('userData'), 'nanobot-workspace', 'skills', name);
+    await fs.rm(root, { recursive: true, force: true });
+    for (const file of files) {
+      const rel = String(file?.path ?? '').replace(/\\/g, '/');
+      if (!rel || rel.startsWith('/') || rel.split('/').includes('..')) throw new Error('invalid skill file path');
+      const target = pathMod.join(root, rel);
+      await fs.mkdir(pathMod.dirname(target), { recursive: true });
+      await fs.writeFile(target, String(file?.content ?? ''), 'utf-8');
+    }
+  });
+
   ipcMain.handle('shell:open', async (_, url: string) => {
     shell.openExternal(url)
   })

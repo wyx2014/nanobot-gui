@@ -122,6 +122,16 @@ function skillValuesHeader(values: Record<string, unknown>): HeadersInit | undef
   return { "X-Nanobot-Skill-Values": asciiJsonStringify(payload) };
 }
 
+function projectSkillValuesHeader(values: Record<string, unknown>): HeadersInit | undefined {
+  const payload: Record<string, unknown> = {};
+  Object.entries(values).forEach(([key, value]) => {
+    if (value === null || value === undefined) return;
+    payload[key] = value;
+  });
+  if (!Object.keys(payload).length) return undefined;
+  return { "X-Nanobot-Project-Skill-Values": asciiJsonStringify(payload) };
+}
+
 function asciiJsonStringify(value: unknown): string {
   return JSON.stringify(value).replace(/[^\x00-\x7F]/g, (char) => (
     `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`
@@ -435,6 +445,34 @@ export async function saveSkill(
     `${base}/api/settings/skills/save?${query}`,
     token,
     { headers: skillValuesHeader({ content }) },
+  );
+}
+
+export async function fetchProjectSkills(
+  token: string,
+  projectPath: string,
+  base: string = "",
+): Promise<{ project_path: string; skills: string[] }> {
+  const query = new URLSearchParams();
+  query.set("project_path", projectPath);
+  return request<{ project_path: string; skills: string[] }>(
+    `${base}/api/settings/project-skills?${query}`,
+    token,
+  );
+}
+
+export async function saveProjectSkills(
+  token: string,
+  projectPath: string,
+  skillNames: string[],
+  base: string = "",
+): Promise<{ project_path: string; skills: string[] }> {
+  const query = new URLSearchParams();
+  query.set("project_path", projectPath);
+  return request<{ project_path: string; skills: string[] }>(
+    `${base}/api/settings/project-skills/save?${query}`,
+    token,
+    { headers: projectSkillValuesHeader({ skills: skillNames }) },
   );
 }
 

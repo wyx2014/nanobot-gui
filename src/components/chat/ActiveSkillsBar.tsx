@@ -1,12 +1,25 @@
+import { useMemo } from 'react';
 import { Wand2, X } from 'lucide-react';
 import { useChatStore, useActiveConversation } from '@/stores/chatStore';
+import { useDiscoveryStore } from '@/stores/discoveryStore';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useI18n } from '@/i18n';
+import { projectUsableSkills } from '@/core/skills/filter';
+import { normalizeProjectPath, visibleProjectPath } from '@/core/workspace';
 import type { Conversation } from '@/types';
 
 export default function ActiveSkillsBar() {
   const activeConv = useActiveConversation();
   const { t } = useI18n();
-  const activeSkills = activeConv?.activeSkills;
+  const skills = useDiscoveryStore((s) => s.skills);
+  const projectSkillBindings = useWorkspaceStore((s) => s.projectSkillBindings);
+  const projectPath = visibleProjectPath(activeConv?.workspaceScope?.project_path ?? activeConv?.workspacePath);
+  const projectSkillNames = projectPath ? projectSkillBindings[normalizeProjectPath(projectPath)] ?? [] : [];
+  const availableSkills = useMemo(
+    () => new Set(projectUsableSkills(skills, projectSkillNames).map((skill) => skill.name)),
+    [projectSkillNames, skills],
+  );
+  const activeSkills = activeConv?.activeSkills?.filter((name) => availableSkills.has(name));
 
   if (!activeSkills || activeSkills.length === 0) return null;
 

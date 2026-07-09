@@ -4,6 +4,34 @@ import type { LLMProvider, ApiFormat, ProviderCapabilities } from '../types';
 import type { WebSearchProviderType } from '../core/search/providers';
 import { setLanguage, initLanguage, type LanguageSetting } from '@/i18n';
 import type { UpdateInfo } from '@/core/updates/checker';
+
+export type FontSizeSetting = 'small' | 'default' | 'medium' | 'large' | 'xlarge' | 'xxlarge';
+
+const fontSizePx: Record<FontSizeSetting, string> = {
+  small: '13.5px',
+  default: '15px',
+  medium: '15.75px',
+  large: '16.5px',
+  xlarge: '17.25px',
+  xxlarge: '18px',
+};
+
+const fontSizeScale: Record<FontSizeSetting, string> = {
+  small: '0.9',
+  default: '1',
+  medium: '1.05',
+  large: '1.1',
+  xlarge: '1.15',
+  xxlarge: '1.2',
+};
+
+function applyFontSize(size: FontSizeSetting) {
+  if (typeof document !== 'undefined') {
+    const nextSize = fontSizePx[size] ?? fontSizePx.default;
+    document.documentElement.style.setProperty('--app-font-size', nextSize);
+    document.documentElement.style.setProperty('--app-font-scale', fontSizeScale[size] ?? fontSizeScale.default);
+  }
+}
 // Provider config type
 type ProviderConfig = {
   name: string;
@@ -217,6 +245,10 @@ interface SettingsState {
   allowPrivateNetworks: boolean;
   // Window close behavior
   closeAction: 'ask' | 'minimize' | 'quit';
+  fontSize: FontSizeSetting;
+  skillsAutoUpdate: boolean;
+  defaultWorkspacePath: string;
+  desktopNotificationsEnabled: boolean;
   // Update checker state
   updateInfo: UpdateInfo | null;
   updateChecking: boolean;
@@ -291,6 +323,10 @@ interface SettingsActions {
   setAllowPrivateNetworks: (allow: boolean) => void;
   // Window close behavior
   setCloseAction: (action: 'ask' | 'minimize' | 'quit') => void;
+  setFontSize: (size: FontSizeSetting) => void;
+  setSkillsAutoUpdate: (enabled: boolean) => void;
+  setDefaultWorkspacePath: (path: string) => void;
+  setDesktopNotificationsEnabled: (enabled: boolean) => void;
   // Update checker actions
   setUpdateInfo: (info: UpdateInfo | null) => void;
   setUpdateChecking: (checking: boolean) => void;
@@ -389,6 +425,10 @@ export const useSettingsStore = create<SettingsStore>()(
       networkWhitelist: [],
       allowPrivateNetworks: true,
       closeAction: 'ask' as 'ask' | 'minimize' | 'quit',
+      fontSize: 'default' as FontSizeSetting,
+      skillsAutoUpdate: true,
+      defaultWorkspacePath: '',
+      desktopNotificationsEnabled: true,
       // Update checker defaults (updateInfo and updateChecking are ephemeral)
       updateInfo: null,
       updateChecking: false,
@@ -469,6 +509,13 @@ export const useSettingsStore = create<SettingsStore>()(
       setNetworkWhitelist: (networkWhitelist) => set({ networkWhitelist }),
       setAllowPrivateNetworks: (allowPrivateNetworks) => set({ allowPrivateNetworks }),
       setCloseAction: (closeAction) => set({ closeAction }),
+      setFontSize: (fontSize) => {
+        applyFontSize(fontSize);
+        set({ fontSize });
+      },
+      setSkillsAutoUpdate: (skillsAutoUpdate) => set({ skillsAutoUpdate }),
+      setDefaultWorkspacePath: (defaultWorkspacePath) => set({ defaultWorkspacePath }),
+      setDesktopNotificationsEnabled: (desktopNotificationsEnabled) => set({ desktopNotificationsEnabled }),
       // Update checker actions
       setUpdateInfo: (updateInfo) => set({ updateInfo }),
       setUpdateChecking: (updateChecking) => set({ updateChecking }),
@@ -567,6 +614,10 @@ export const useSettingsStore = create<SettingsStore>()(
         networkWhitelist: state.networkWhitelist,
         allowPrivateNetworks: state.allowPrivateNetworks,
         closeAction: state.closeAction,
+        fontSize: state.fontSize,
+        skillsAutoUpdate: state.skillsAutoUpdate,
+        defaultWorkspacePath: state.defaultWorkspacePath,
+        desktopNotificationsEnabled: state.desktopNotificationsEnabled,
         lastUpdateCheck: state.lastUpdateCheck,
         userNickname: state.userNickname,
         userAvatar: state.userAvatar,
@@ -586,6 +637,7 @@ export const useSettingsStore = create<SettingsStore>()(
         if (state.language) {
           initLanguage(state.language);
         }
+        applyFontSize(state.fontSize ?? 'default');
         // Runtime fix: reset provider unavailable in current edition
         const availableProviders = getAvailableProviders();
         if (!availableProviders.includes(state.provider)) {

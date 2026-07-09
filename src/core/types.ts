@@ -353,6 +353,7 @@ export interface SettingsPayload {
     api_base?: string | null;
     default_api_base?: string | null;
     api_type?: "auto" | "chat_completions" | "responses";
+    custom?: boolean;
     oauth_account?: string | null;
     oauth_expires_at?: number | null;
     oauth_login_supported?: boolean;
@@ -649,8 +650,16 @@ export interface ModelConfigurationUpdate {
 
 export interface ProviderSettingsUpdate {
   provider: string;
+  label?: string;
   apiKey?: string;
   apiBase?: string;
+  apiType?: "auto" | "chat_completions" | "responses";
+}
+
+export interface ProviderSettingsCreate {
+  name: string;
+  apiKey?: string;
+  apiBase: string;
   apiType?: "auto" | "chat_completions" | "responses";
 }
 

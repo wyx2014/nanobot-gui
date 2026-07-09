@@ -15,9 +15,13 @@
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    font-size: 15px;
     line-height: 1.6;
     background: #fbfaf7;
+  }
+
+  body,
+  #root {
+    font-size: var(--app-font-size, 15px);
   }
 }
 
@@ -354,9 +358,30 @@
 
 .claude-markdown p,
 .claude-markdown li {
-  font-size: 18px;
+  font-size: calc(18px * var(--app-font-scale, 1));
   line-height: 1.8;
 }
+
+/* App font size preference: scale typography without scaling rem-based layout. */
+#root [class~="text-xs"] { font-size: calc(0.75rem * var(--app-font-scale, 1)); }
+#root [class~="text-sm"] { font-size: calc(0.875rem * var(--app-font-scale, 1)); }
+#root [class~="text-base"] { font-size: calc(1rem * var(--app-font-scale, 1)); }
+#root [class~="text-lg"] { font-size: calc(1.125rem * var(--app-font-scale, 1)); }
+#root [class~="text-xl"] { font-size: calc(1.25rem * var(--app-font-scale, 1)); }
+#root [class~="text-2xl"] { font-size: calc(1.5rem * var(--app-font-scale, 1)); }
+#root [class~="text-3xl"] { font-size: calc(1.875rem * var(--app-font-scale, 1)); }
+#root [class~="text-4xl"] { font-size: calc(2.25rem * var(--app-font-scale, 1)); }
+#root [class~="text-[10px]"] { font-size: calc(10px * var(--app-font-scale, 1)); }
+#root [class~="text-[11px]"] { font-size: calc(11px * var(--app-font-scale, 1)); }
+#root [class~="text-[12px]"] { font-size: calc(12px * var(--app-font-scale, 1)); }
+#root [class~="text-[12.5px]"] { font-size: calc(12.5px * var(--app-font-scale, 1)); }
+#root [class~="text-[13px]"] { font-size: calc(13px * var(--app-font-scale, 1)); }
+#root [class~="text-[14px]"] { font-size: calc(14px * var(--app-font-scale, 1)); }
+#root [class~="text-[15px]"] { font-size: calc(15px * var(--app-font-scale, 1)); }
+#root [class~="text-[16px]"] { font-size: calc(16px * var(--app-font-scale, 1)); }
+#root [class~="text-[17px]"] { font-size: calc(17px * var(--app-font-scale, 1)); }
+#root [class~="text-[18px]"] { font-size: calc(18px * var(--app-font-scale, 1)); }
+#root [class~="text-[22px]"] { font-size: calc(22px * var(--app-font-scale, 1)); }
 
 /* Subtle white/8 utility for dark sidebar */
 .bg-white\/8 {

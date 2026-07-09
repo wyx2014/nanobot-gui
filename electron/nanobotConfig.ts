@@ -157,6 +157,8 @@ export async function syncNanobotConfig(cfg: NanobotConfigInput): Promise<boolea
   } catch {
     // First launch: config does not exist yet — start from empty object.
   }
+  const hasGatewayModelPresets =
+    Object.keys(existing.modelPresets ?? existing.model_presets ?? {}).length > 0;
 
   // ── Resolve actual apiKey (never write the '********' placeholder) ──────
   // When syncGatewaySettingsToStore() reads the key back from nanobot, it
@@ -170,7 +172,7 @@ export async function syncNanobotConfig(cfg: NanobotConfigInput): Promise<boolea
       existing?.providers?.[providerName]?.api_key;
     if (existingKey && existingKey !== '********') {
       resolvedApiKey = existingKey;
-    } else {
+    } else if (!hasGatewayModelPresets) {
       // We don't have the real key yet — skip writing to avoid a restart loop.
       console.log('[nanobotConfig] Skipping sync: apiKey is placeholder and no existing key found');
       return false;
@@ -179,20 +181,6 @@ export async function syncNanobotConfig(cfg: NanobotConfigInput): Promise<boolea
 
   // ── Build only the fields we own (camelCase to match nanobot's serializer) ──
   const patch: Record<string, any> = {
-    agents: {
-      defaults: {
-        model: cfg.model,
-        provider: providerName,
-        temperature: cfg.temperature ?? 0.7,
-        reasoningEffort: cfg.enableThinking ? 'medium' : 'none',
-      },
-    },
-    providers: {
-      [providerName]: {
-        apiKey: resolvedApiKey,
-        apiBase: apiBase ?? null,
-      },
-    },
     tools: {
       restrictToWorkspace: cfg.restrictToWorkspace ?? cfg.sandboxEnabled ?? false,
       webuiAllowLocalServiceAccess: cfg.webuiAllowLocalServiceAccess ?? cfg.allowPrivateNetworks ?? true,
@@ -207,6 +195,22 @@ export async function syncNanobotConfig(cfg: NanobotConfigInput): Promise<boolea
       },
     },
   };
+  if (!hasGatewayModelPresets) {
+    patch.agents = {
+      defaults: {
+        model: cfg.model,
+        provider: providerName,
+        temperature: cfg.temperature ?? 0.7,
+        reasoningEffort: cfg.enableThinking ? 'medium' : 'none',
+      },
+    };
+    patch.providers = {
+      [providerName]: {
+        apiKey: resolvedApiKey,
+        apiBase: apiBase ?? null,
+      },
+    };
+  }
 
   // Check if there are any logical changes between existing config and our new patch
   const hasChanges = hasLogicalChanges(existing, patch);

@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils';
 import { getBaseName, isLocalFilePath } from '@/utils/pathUtils';
 import { fsBridge, shellBridge, dialogBridge } from '@/lib/ipc-factory';
 import type { SearchResult } from '@/types';
+import MermaidBlock from './MermaidBlock';
 
 SyntaxHighlighter.registerLanguage('tsx', tsx);
 SyntaxHighlighter.registerLanguage('typescript', tsx);
@@ -371,6 +372,7 @@ function buildMarkdownComponents(
       const match = /language-(\w+)/.exec(className || '');
       const codeString = String(children).replace(/\n$/, '');
       const isInline = !match && !codeString.includes('\n');
+      const language = match?.[1]?.toLowerCase() || null;
 
       if (isInline) {
         if (!isUser && isAbsolutePath(codeString)) {
@@ -389,10 +391,14 @@ function buildMarkdownComponents(
         );
       }
 
+      if (language === 'mermaid' || language === 'mmd') {
+        return <MermaidBlock code={codeString} />;
+      }
+
       return (
         <CollapsibleCodeBlock
           codeString={codeString}
-          language={match?.[1] || null}
+          language={language}
         />
       );
     },

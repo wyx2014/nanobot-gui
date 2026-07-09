@@ -6,6 +6,7 @@ import type {
   ModelConfigurationCreate,
   ModelConfigurationUpdate,
   NetworkSafetySettingsUpdate,
+  ProviderSettingsCreate,
   ProviderModelsPayload,
   ProviderSettingsUpdate,
   ScheduleTasksPayload,
@@ -490,11 +491,25 @@ export async function fetchMcpPresets(
 
 export async function fetchProviderModels(
   token: string,
-  provider: string,
+  provider:
+    | string
+    | {
+        provider: string;
+        apiBase?: string;
+        apiKey?: string;
+        apiType?: "auto" | "chat_completions" | "responses";
+      },
   base: string = "",
 ): Promise<ProviderModelsPayload> {
   const query = new URLSearchParams();
-  query.set("provider", provider);
+  if (typeof provider === "string") {
+    query.set("provider", provider);
+  } else {
+    query.set("provider", provider.provider);
+    if (provider.apiBase !== undefined) query.set("api_base", provider.apiBase);
+    if (provider.apiKey !== undefined) query.set("api_key", provider.apiKey);
+    if (provider.apiType !== undefined) query.set("api_type", provider.apiType);
+  }
   return request<ProviderModelsPayload>(
     `${base}/api/settings/provider-models?${query}`,
     token,
@@ -687,11 +702,28 @@ export async function updateProviderSettings(
 ): Promise<SettingsPayload> {
   const query = new URLSearchParams();
   query.set("provider", update.provider);
+  if (update.label !== undefined) query.set("label", update.label);
   if (update.apiKey !== undefined) query.set("api_key", update.apiKey);
   if (update.apiBase !== undefined) query.set("api_base", update.apiBase);
   if (update.apiType !== undefined) query.set("api_type", update.apiType);
   return request<SettingsPayload>(
     `${base}/api/settings/provider/update?${query}`,
+    token,
+  );
+}
+
+export async function createProviderSettings(
+  token: string,
+  create: ProviderSettingsCreate,
+  base: string = "",
+): Promise<SettingsPayload> {
+  const query = new URLSearchParams();
+  query.set("name", create.name);
+  query.set("api_base", create.apiBase);
+  if (create.apiKey !== undefined) query.set("api_key", create.apiKey);
+  if (create.apiType !== undefined) query.set("api_type", create.apiType);
+  return request<SettingsPayload>(
+    `${base}/api/settings/provider/create?${query}`,
     token,
   );
 }

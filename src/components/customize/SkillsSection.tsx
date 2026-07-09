@@ -56,6 +56,10 @@ function getSkillIcon(name: string) {
   return <IconComponent className="h-4 w-4" />;
 }
 
+function displaySkillName(skill: NanobotSkillInfo): string {
+  return skill.source === 'builtin' && skill.name === 'clawhub' ? '如意Hub' : skill.name;
+}
+
 async function getSkillsAuth(): Promise<{ token: string; baseUrl: string }> {
   const status = await getNanobotStatus();
   if (!status.ready) {
@@ -157,6 +161,7 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
       if (!search) return true;
       return [
         skill.name,
+        displaySkillName(skill),
         skill.description,
         skill.source,
         ...(skill.tags ?? []),
@@ -341,7 +346,7 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-medium text-neutral-900">/{skill.name}</span>
+                      <span className="truncate text-sm font-medium text-neutral-900">/{displaySkillName(skill)}</span>
                       <span className={`rounded border px-1.5 py-0.5 text-[10px] ${sourceClass(skill.source)}`}>
                         {sourceLabel(skill.source)}
                       </span>
@@ -402,7 +407,7 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
                 <div className="text-neutral-500">
                   {getSkillIcon(detail.name)}
                 </div>
-                <h3 className="truncate text-base font-semibold text-neutral-900">/{detail.name}</h3>
+                <h3 className="truncate text-base font-semibold text-neutral-900">/{displaySkillName(detail)}</h3>
                 <span className={`rounded border px-1.5 py-0.5 text-[10px] ${sourceClass(detail.source)}`}>
                   {sourceLabel(detail.source)}
                 </span>

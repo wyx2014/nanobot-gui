@@ -1,6 +1,11 @@
 import { notificationBridge } from '@/lib/ipc-factory';
+import { useSettingsStore } from '@/stores/settingsStore';
 
 let permissionGranted = false;
+
+function canSendNotification(): boolean {
+  return permissionGranted && useSettingsStore.getState().desktopNotificationsEnabled;
+}
 
 /**
  * Initialize notification permissions on app startup
@@ -32,7 +37,7 @@ export async function initNotifications(): Promise<boolean> {
 export async function notifyTaskCompleted(conversationTitle: string): Promise<void> {
   console.log('[Notification] Attempting to send completion notification, permission:', permissionGranted);
 
-  if (!permissionGranted) {
+  if (!canSendNotification()) {
     console.log('[Notification] Skipping - no permission');
     return;
   }
@@ -53,7 +58,7 @@ export async function notifyTaskCompleted(conversationTitle: string): Promise<vo
  * Send a scheduled task completion notification
  */
 export async function notifyScheduledTaskCompleted(taskName: string): Promise<void> {
-  if (!permissionGranted) return;
+  if (!canSendNotification()) return;
   try {
     await notificationBridge.sendNotification({
       title: '定时任务完成',
@@ -68,7 +73,7 @@ export async function notifyScheduledTaskCompleted(taskName: string): Promise<vo
  * Send a scheduled task error notification
  */
 export async function notifyScheduledTaskError(taskName: string): Promise<void> {
-  if (!permissionGranted) return;
+  if (!canSendNotification()) return;
   try {
     await notificationBridge.sendNotification({
       title: '定时任务出错',
@@ -83,7 +88,7 @@ export async function notifyScheduledTaskError(taskName: string): Promise<void> 
  * Send an error notification
  */
 export async function notifyTaskError(conversationTitle: string): Promise<void> {
-  if (!permissionGranted) {
+  if (!canSendNotification()) {
     return;
   }
 

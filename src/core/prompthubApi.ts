@@ -81,6 +81,15 @@ export interface PromptHubPublishFile {
   type?: string;
 }
 
+export interface PromptHubFeedbackRequest {
+  username?: string;
+  content: string;
+  images?: string[];
+  includeLogs?: boolean;
+  appVersion?: string;
+  platform?: string;
+}
+
 async function promptHubRequest<T>(url: string, init?: RequestInit): Promise<T> {
   const isForm = init?.body instanceof FormData;
   const res = await fetch(url, {
@@ -195,5 +204,15 @@ export async function publishPromptHubSkill(
     method: 'POST',
     headers: authHeader(token),
     body: form,
+  });
+}
+
+export async function submitPromptHubFeedback(
+  baseUrl: string,
+  feedback: PromptHubFeedbackRequest,
+): Promise<void> {
+  await promptHubRequest<void>(`${hubBase(baseUrl)}/api/feedback`, {
+    method: 'POST',
+    body: JSON.stringify(feedback),
   });
 }

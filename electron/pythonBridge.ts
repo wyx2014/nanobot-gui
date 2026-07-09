@@ -48,7 +48,7 @@ export class PythonBridge {
     const { pythonBin, nanobotSrc, workspaceDir, configDir } = this.resolvePaths();
 
     if (!this._tokenSecret) {
-      this._tokenSecret = process.env.NANOBOT_TOKEN_SECRET || crypto.randomBytes(32).toString('hex');
+      this._tokenSecret = crypto.randomBytes(32).toString('hex');
     }
 
     console.log('[PythonBridge] Starting nanobot...', { pythonBin, nanobotSrc, workspaceDir });

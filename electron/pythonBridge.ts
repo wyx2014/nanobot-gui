@@ -17,9 +17,14 @@ export class PythonBridge {
   private _tokenSecret = '';
   private _startingPromise: Promise<void> | null = null;  // Prevent concurrent starts
   private _mermaidRenderer: { url: string; token: string } | null = null;
+  private _pdfRenderer: { url: string; token: string } | null = null;
 
   setMermaidRenderer(url: string, token: string): void {
     this._mermaidRenderer = { url, token };
+  }
+
+  setPdfRenderer(url: string, token: string): void {
+    this._pdfRenderer = { url, token };
   }
 
   get isReady(): boolean {
@@ -98,6 +103,10 @@ export class PythonBridge {
         ...(this._mermaidRenderer && {
           NANOBOT_MERMAID_RENDER_URL: this._mermaidRenderer.url,
           NANOBOT_MERMAID_RENDER_TOKEN: this._mermaidRenderer.token,
+        }),
+        ...(this._pdfRenderer && {
+          NANOBOT_PDF_RENDER_URL: this._pdfRenderer.url,
+          NANOBOT_PDF_RENDER_TOKEN: this._pdfRenderer.token,
         }),
       },
       stdio: ['ignore', 'pipe', 'pipe'],

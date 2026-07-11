@@ -6,7 +6,8 @@ export default defineConfig({
   main: {
     plugins: [
       externalizeDepsPlugin({
-        include: ['node-llama-cpp']
+        include: ['node-llama-cpp'],
+        exclude: ['react', 'react-dom', 'react-markdown', 'remark-breaks', 'remark-gfm']
       })
     ],
     build: {

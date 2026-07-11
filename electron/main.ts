@@ -76,6 +76,7 @@ app.whenReady().then(async () => {
   const mermaidBridge = new MermaidBridge();
   await mermaidBridge.start();
   pythonBridge.setMermaidRenderer(mermaidBridge.url, mermaidBridge.token);
+  pythonBridge.setPdfRenderer(mermaidBridge.pdfUrl, mermaidBridge.token);
   console.log('[Main] UserData Path:', userData);
 
   // Ensure models directory exists

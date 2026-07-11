@@ -77,4 +77,19 @@ describe('PythonBridge lifecycle', () => {
     expect(child.kill).toHaveBeenCalledWith('SIGTERM');
     expect(bridge.isReady).toBe(false);
   });
+
+  it('passes the authenticated desktop PDF renderer to nanobot', async () => {
+    const child = processStub();
+    spawn.mockReturnValue(child);
+    const { PythonBridge } = await import('./pythonBridge');
+    const bridge = new PythonBridge();
+    bridge.setPdfRenderer('http://127.0.0.1:3210/render-pdf', 'render-secret');
+
+    await bridge.start();
+
+    expect(spawn.mock.calls[0][2]?.env).toMatchObject({
+      NANOBOT_PDF_RENDER_URL: 'http://127.0.0.1:3210/render-pdf',
+      NANOBOT_PDF_RENDER_TOKEN: 'render-secret',
+    });
+  });
 });

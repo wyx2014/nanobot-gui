@@ -1,6 +1,7 @@
 import { BrowserWindow } from 'electron';
 import crypto from 'crypto';
 import http from 'http';
+import { renderMarkdownPdf } from './markdownPdf';
 
 type Image = { png: string; width: number; height: number };
 type Pending = { resolve: (image: Image) => void; reject: (error: Error) => void; timer: NodeJS.Timeout };
@@ -19,22 +20,41 @@ export class MermaidBridge {
     return this.secret;
   }
 
+  get pdfUrl(): string {
+    return `http://127.0.0.1:${this.port}/render-pdf`;
+  }
+
   async start(): Promise<void> {
     this.server = http.createServer(async (request, response) => {
-      if (request.method !== 'POST' || request.url !== '/render-mermaid' || request.headers.authorization !== `Bearer ${this.secret}`) {
+      if (
+        request.method !== 'POST'
+        || !['/render-mermaid', '/render-pdf'].includes(request.url || '')
+        || request.headers.authorization !== `Bearer ${this.secret}`
+      ) {
         response.writeHead(404).end();
         return;
       }
       let body = '';
       for await (const chunk of request) {
         body += chunk;
-        if (body.length > 1_000_000) throw new Error('Mermaid source is too large');
+        if (body.length > 5_000_000) throw new Error('Render source is too large');
       }
       try {
-        const code = JSON.parse(body).code;
-        if (typeof code !== 'string') throw new Error('code is required');
-        const image = await this.render(code);
-        response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(image));
+        const payload = JSON.parse(body);
+        if (request.url === '/render-pdf') {
+          if (typeof payload.markdown !== 'string') throw new Error('markdown is required');
+          const title = typeof payload.title === 'string' && payload.title.trim()
+            ? payload.title.trim()
+            : 'Document';
+          const pdf = await renderMarkdownPdf(payload.markdown, title, (code) => this.render(code));
+          response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({
+            pdf: pdf.toString('base64'),
+          }));
+        } else {
+          if (typeof payload.code !== 'string') throw new Error('code is required');
+          const image = await this.render(payload.code);
+          response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(image));
+        }
       } catch (error) {
         response.writeHead(422, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: String(error) }));
       }

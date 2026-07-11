@@ -1,22 +1,26 @@
-import { app, shell, BrowserWindow, ipcMain, session } from 'electron'
+import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import fs from 'fs/promises'
 import { exec, spawn } from 'child_process'
 import os from 'os'
 import { pythonBridge } from './pythonBridge'
 import { syncNanobotConfig, type NanobotConfigInput } from './nanobotConfig'
+import { MermaidBridge } from './mermaidBridge'
 
-import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { electronApp, optimizer } from '@electron-toolkit/utils'
 
 const isDev = typeof app !== 'undefined' ? !app.isPackaged : (process.env.NODE_ENV === 'development')
 
-// Hide noisy Chromium GPU logs and disable hardware acceleration warning
-process.env.ELECTRON_DISABLE_GPU = '1';
+// Keep GPU acceleration enabled by default. Individual deployments can opt
+// into the conservative software-rendering path if a device/driver proves
+// unstable, without penalising every other machine.
 app.commandLine.appendSwitch('log-level', '3');
-app.commandLine.appendSwitch('disable-gpu');
-app.commandLine.appendSwitch('disable-gpu-rasterization');
-app.commandLine.appendSwitch('disable-software-rasterizer');
-app.commandLine.appendSwitch('ignore-gpu-blocklist');
+if (process.env.TPARUYI_DISABLE_GPU === '1') {
+  app.commandLine.appendSwitch('disable-gpu');
+  app.commandLine.appendSwitch('disable-gpu-rasterization');
+  app.commandLine.appendSwitch('disable-software-rasterizer');
+  console.warn('[Main] GPU acceleration disabled by TPARUYI_DISABLE_GPU');
+}
 
 let isQuitting = false;
 
@@ -56,7 +60,7 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   console.log('[Main] app.whenReady fired');
   
   app.on('before-quit', async (e) => {
@@ -69,6 +73,9 @@ app.whenReady().then(() => {
     }
   });
   const userData = app.getPath('userData');
+  const mermaidBridge = new MermaidBridge();
+  await mermaidBridge.start();
+  pythonBridge.setMermaidRenderer(mermaidBridge.url, mermaidBridge.token);
   console.log('[Main] UserData Path:', userData);
 
   // Ensure models directory exists
@@ -277,6 +284,10 @@ app.whenReady().then(() => {
     return clipboard.readText()
   })
 
+  ipcMain.handle('mermaid:render-result', (_, result) => {
+    mermaidBridge.complete(result?.id, result);
+  })
+
   ipcMain.handle('dialog:open', async (event, options: any) => {
     const { dialog } = await import('electron')
     const win = BrowserWindow.fromWebContents(event.sender)
@@ -367,7 +378,6 @@ app.whenReady().then(() => {
   safeInvoke('os:resolveResource', async (data) => {
     const p = typeof data === 'string' ? data : data?.path;
     if (!p) throw new Error('os:resolveResource failed: path is missing');
-    const pathMod = await import('path')
     const rPath = app.isPackaged 
       ? process.resourcesPath 
       : join(__dirname, '../../resources')

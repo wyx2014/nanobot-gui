@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { fsBridge } from '@/lib/ipc-factory';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { useI18n } from '@/i18n';
 import { format } from '@/i18n';
 import { Loader2, ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
+import { readArtifactBytes, type ArtifactRef } from '@/core/artifacts';
 
 import 'react-pdf/dist/Page/TextLayer.css';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
@@ -21,7 +21,7 @@ function LoadingIndicator({ label }: { label?: string }) {
   );
 }
 
-export default function PdfPreview({ filePath }: { filePath: string }) {
+export default function PdfPreview({ artifact }: { artifact: ArtifactRef }) {
   const { t } = useI18n();
   const [error, setError] = useState<string | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
@@ -39,7 +39,7 @@ export default function PdfPreview({ filePath }: { filePath: string }) {
       setCurrentPage(1);
       setNumPages(0);
       try {
-        const data = await fsBridge.readFile(filePath);
+        const data = await readArtifactBytes(artifact);
         if (cancelled) return;
         const bytes = new Uint8Array(data.byteLength);
         bytes.set(data);
@@ -61,7 +61,7 @@ export default function PdfPreview({ filePath }: { filePath: string }) {
         URL.revokeObjectURL(currentUrl);
       }
     };
-  }, [filePath]);
+  }, [artifact]);
 
   const loading = !pdfUrl && !error;
 

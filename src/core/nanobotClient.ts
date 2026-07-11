@@ -280,9 +280,14 @@ function mediaAttachmentsFromUiMessage(msg: UIMessage): MessageMediaAttachment[]
     const name = item.name || resolvedUrl?.split(/[/?#]/).filter(Boolean).pop() || resolvedUrl || '';
     if (!resolvedUrl && !name) continue;
     out.push({
+      id: item.id,
       url: resolvedUrl,
+      downloadUrl: item.download_url ? resolveMediaUrl(item.download_url) : undefined,
+      localPath: item.local_path,
       name,
       kind: item.kind || mediaKindFromName(name),
+      mimeType: item.mime_type,
+      size: item.size,
     });
   }
   return out;

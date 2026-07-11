@@ -16,8 +16,13 @@ export type UIMediaKind = "image" | "video" | "file";
 
 export interface UIMediaAttachment {
   kind: UIMediaKind;
+  id?: string;
   url?: string;
+  download_url?: string;
+  local_path?: string;
   name?: string;
+  mime_type?: string;
+  size?: number;
 }
 
 export interface UIMessage {
@@ -139,6 +144,9 @@ export type AgentUIBlob =
   | {
       kind: "task_progress";
       steps: TaskProgressStep[];
+      /** Optional public progress note; never contains private reasoning. */
+      note?: string;
+      current_step_id?: string;
     }
   | {
       kind: string;
@@ -158,6 +166,19 @@ export interface ToolProgressEvent {
   phase?: "start" | "end" | "error" | string;
   call_id?: string;
   name?: string;
+  /** Stable ordering within one agent turn. */
+  sequence?: number;
+  /** Calls emitted by the same model response share a batch id. */
+  batch_id?: string;
+  /** Gateway event time in Unix milliseconds. */
+  occurred_at?: number;
+  display?: {
+    category?: string;
+    title?: string;
+    detail?: string;
+    subject?: string;
+    importance?: "primary" | "secondary" | string;
+  };
   arguments?: unknown;
   result?: unknown;
   error?: unknown;
@@ -711,7 +732,16 @@ export type InboundEvent =
       text: string;
       reply_to?: string;
       media?: string[];
-      media_urls?: Array<{ url: string; name?: string }>;
+      media_urls?: Array<{
+        id?: string;
+        url: string;
+        download_url?: string;
+        local_path?: string;
+        name?: string;
+        kind?: UIMediaKind;
+        mime_type?: string;
+        size?: number;
+      }>;
       tool_events?: ToolProgressEvent[];
       /** Present when the frame is an agent breadcrumb (e.g. tool hint,
        * generic progress line) rather than a conversational reply. */

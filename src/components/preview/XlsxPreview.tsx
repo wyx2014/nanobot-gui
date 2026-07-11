@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
-import { fsBridge } from '@/lib/ipc-factory';
 import { useI18n } from '@/i18n';
 import { Loader2 } from 'lucide-react';
 import DataTable from './DataTable';
+import { readArtifactBytes, type ArtifactRef } from '@/core/artifacts';
 
 const MAX_ROWS = 1000;
 
-export default function XlsxPreview({ filePath }: { filePath: string }) {
+export default function XlsxPreview({ artifact }: { artifact: ArtifactRef }) {
   const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -20,7 +20,7 @@ export default function XlsxPreview({ filePath }: { filePath: string }) {
       setLoading(true);
       setError(null);
       try {
-        const data = await fsBridge.readFile(filePath);
+        const data = await readArtifactBytes(artifact);
         const XLSX = await import('xlsx');
         const workbook = XLSX.read(data, { type: 'array' });
 
@@ -50,7 +50,7 @@ export default function XlsxPreview({ filePath }: { filePath: string }) {
 
     load();
     return () => { cancelled = true; };
-  }, [filePath]);
+  }, [artifact]);
 
   if (loading) {
     return (

@@ -1,47 +1,29 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
-import { fsBridge, shellBridge } from '@/lib/ipc-factory';
-import { getBaseName, loadLocalImage } from '@/utils/pathUtils';
+import { shellBridge } from '@/lib/ipc-factory';
 import { usePreviewStore } from '@/stores/previewStore';
 import { useI18n } from '@/i18n';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import MarkdownRenderer from '@/components/chat/MarkdownRenderer';
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Loader2, X, FolderOpen, Code, Eye, FileCode, FileText, FileImage, FileSpreadsheet, FileType, File } from 'lucide-react';
+import { Loader2, X, FolderOpen, Code, Eye, FileCode, FileText, FileImage, FileSpreadsheet, FileType, File, ExternalLink, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  artifactDownloadUrl,
+  artifactLocalPath,
+  artifactObjectUrl,
+  artifactPreviewKind,
+  readArtifactText,
+  type ArtifactPreviewKind,
+} from '@/core/artifacts';
 
 const PdfPreview = lazy(() => import('@/components/preview/PdfPreview'));
 const DocxPreview = lazy(() => import('@/components/preview/DocxPreview'));
 const XlsxPreview = lazy(() => import('@/components/preview/XlsxPreview'));
 const CsvPreview = lazy(() => import('@/components/preview/CsvPreview'));
 
-type RendererType = 'markdown' | 'code' | 'image' | 'text' | 'html' | 'pdf' | 'docx' | 'xlsx' | 'csv' | 'unsupported';
-
 /** Binary types that handle their own file reading */
-const BINARY_TYPES = new Set<RendererType>(['pdf', 'docx', 'xlsx']);
-
-function isDataUrl(path: string): boolean {
-  return path.startsWith('data:');
-}
-
-function getRendererType(filePath: string): RendererType {
-  if (isDataUrl(filePath) && filePath.startsWith('data:image/')) return 'image';
-  const ext = filePath.split('.').pop()?.toLowerCase() || '';
-  if (ext === 'md') return 'markdown';
-  if (ext === 'html' || ext === 'htm') return 'html';
-  if (ext === 'pdf') return 'pdf';
-  if (ext === 'docx') return 'docx';
-  if (ext === 'xlsx' || ext === 'xls') return 'xlsx';
-  if (ext === 'csv') return 'csv';
-  if ([
-    'ts', 'tsx', 'js', 'jsx', 'py', 'rs', 'go', 'java', 'cpp', 'c', 'h',
-    'json', 'yaml', 'yml', 'toml', 'xml', 'css', 'scss', 'less',
-    'sh', 'bash', 'zsh', 'sql', 'graphql', 'rb', 'php', 'swift', 'kt'
-  ].includes(ext)) return 'code';
-  if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico', 'bmp'].includes(ext)) return 'image';
-  if (['txt', 'log'].includes(ext)) return 'text';
-  return 'unsupported';
-}
+const BINARY_TYPES = new Set<ArtifactPreviewKind>(['pdf', 'docx', 'xlsx']);
 
 function getLanguage(filePath: string): string {
   const ext = filePath.split('.').pop()?.toLowerCase() || '';
@@ -72,7 +54,7 @@ function LazyFallback() {
 }
 
 export default function PreviewPanel() {
-  const { previewFilePath, closePreview } = usePreviewStore();
+  const { previewArtifact, closePreview } = usePreviewStore();
   const { t } = useI18n();
   const [content, setContent] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
@@ -80,12 +62,14 @@ export default function PreviewPanel() {
   const [error, setError] = useState<string | null>(null);
   const [htmlViewMode, setHtmlViewMode] = useState<'preview' | 'source'>('preview');
 
-  const rendererType = previewFilePath ? getRendererType(previewFilePath) : 'unsupported';
-  const fileName = previewFilePath && isDataUrl(previewFilePath) ? '图片预览' : (previewFilePath ? getBaseName(previewFilePath) : '');
-  const Icon = previewFilePath ? (isDataUrl(previewFilePath) ? FileImage : getFileIcon(previewFilePath)) : File;
+  const rendererType = previewArtifact ? artifactPreviewKind(previewArtifact) : 'unsupported';
+  const fileName = previewArtifact?.name || '';
+  const Icon = previewArtifact ? getFileIcon(previewArtifact.name) : File;
+  const localPath = previewArtifact ? artifactLocalPath(previewArtifact) : null;
+  const downloadUrl = previewArtifact ? artifactDownloadUrl(previewArtifact) : null;
 
   useEffect(() => {
-    if (!previewFilePath) {
+    if (!previewArtifact) {
       setContent(null);
       setImageUrl(null);
       return;
@@ -101,40 +85,28 @@ export default function PreviewPanel() {
       setImageUrl(null);
 
       try {
-        // Binary types and unsupported types don't need text reading from parent
+        // Binary types and unsupported types don't need parent-level reads.
         if (rendererType === 'unsupported' || BINARY_TYPES.has(rendererType)) {
           setLoading(false);
           return;
         }
 
-        // Data URL: use directly
-        if (isDataUrl(previewFilePath)) {
-          setImageUrl(previewFilePath);
-          setLoading(false);
-          return;
-        }
-
-        // Check if file exists before attempting to read
-        const fileExists = await fsBridge.exists(previewFilePath);
-        if (cancelled) return;
-        if (!fileExists) {
-          setError(`${t.panel.fileNotFound}: ${getBaseName(previewFilePath)}`);
-          setLoading(false);
-          return;
-        }
-
-        if (rendererType === 'image') {
-          blobUrl = await loadLocalImage(previewFilePath);
-          if (cancelled) { URL.revokeObjectURL(blobUrl); blobUrl = null; return; }
+        if (rendererType === 'image' || rendererType === 'video') {
+          blobUrl = await artifactObjectUrl(previewArtifact);
+          if (cancelled) {
+            if (blobUrl.startsWith('blob:')) URL.revokeObjectURL(blobUrl);
+            blobUrl = null;
+            return;
+          }
           setImageUrl(blobUrl);
         } else {
-          const text = await fsBridge.readTextFile(previewFilePath);
+          const text = await readArtifactText(previewArtifact);
           if (cancelled) return;
           setContent(text);
         }
       } catch (err) {
         if (cancelled) return;
-        console.error('[PreviewPanel] Failed to read file:', previewFilePath, err);
+        console.error('[PreviewPanel] Failed to read artifact:', previewArtifact.name, err);
         const message = err instanceof Error ? err.message : String(err);
         setError(message || t.panel.failedToReadFile);
       } finally {
@@ -143,21 +115,34 @@ export default function PreviewPanel() {
     };
 
     loadFile();
-    return () => { cancelled = true; if (blobUrl) URL.revokeObjectURL(blobUrl); };
+    return () => {
+      cancelled = true;
+      if (blobUrl?.startsWith('blob:')) URL.revokeObjectURL(blobUrl);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- t is stable from i18n singleton
-  }, [previewFilePath, rendererType]);
+  }, [previewArtifact, rendererType]);
 
   const handleOpenInFinder = async () => {
-    if (previewFilePath) {
+    if (localPath) {
       try {
-        await shellBridge.revealItemInDir(previewFilePath);
+        await shellBridge.revealItemInDir(localPath);
       } catch (err) {
         console.error('Failed to open folder:', err);
       }
     }
   };
 
-  if (!previewFilePath) return null;
+  const handleOpenSystem = async () => {
+    if (!localPath) return;
+    await shellBridge.openPath(localPath);
+  };
+
+  const handleDownload = async () => {
+    if (!downloadUrl) return;
+    await shellBridge.open(downloadUrl);
+  };
+
+  if (!previewArtifact) return null;
 
   return (
     <div className="flex flex-col h-full">
@@ -185,6 +170,20 @@ export default function PreviewPanel() {
             </button>
           </div>
         )}
+        {localPath ? (
+          <>
+            <Button variant="ghost" size="icon" onClick={handleOpenSystem} className="h-6 w-6 text-[#656358]" title={t.panel.openInSystem}>
+              <ExternalLink className="h-3.5 w-3.5" />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={handleOpenInFinder} className="h-6 w-6 text-[#656358]" title={t.panel.revealInFolder}>
+              <FolderOpen className="h-3.5 w-3.5" />
+            </Button>
+          </>
+        ) : downloadUrl ? (
+          <Button variant="ghost" size="icon" onClick={handleDownload} className="h-6 w-6 text-[#656358]" title={t.panel.downloadFile}>
+            <Download className="h-3.5 w-3.5" />
+          </Button>
+        ) : null}
         <Button
           variant="ghost"
           size="icon"
@@ -208,14 +207,18 @@ export default function PreviewPanel() {
           </div>
         ) : rendererType === 'pdf' || rendererType === 'docx' || rendererType === 'xlsx' || (rendererType === 'csv' && content !== null) ? (
           <Suspense fallback={<LazyFallback />}>
-            {rendererType === 'pdf' && <PdfPreview filePath={previewFilePath} />}
-            {rendererType === 'docx' && <DocxPreview filePath={previewFilePath} />}
-            {rendererType === 'xlsx' && <XlsxPreview filePath={previewFilePath} />}
+            {rendererType === 'pdf' && <PdfPreview artifact={previewArtifact} />}
+            {rendererType === 'docx' && <DocxPreview artifact={previewArtifact} />}
+            {rendererType === 'xlsx' && <XlsxPreview artifact={previewArtifact} />}
             {rendererType === 'csv' && content !== null && <CsvPreview content={content} />}
           </Suspense>
         ) : rendererType === 'image' && imageUrl ? (
           <div className="flex items-center justify-center h-full p-4 bg-[#e8e5de]/30">
             <img src={imageUrl} alt={fileName} className="max-w-full max-h-full object-contain" />
+          </div>
+        ) : rendererType === 'video' && imageUrl ? (
+          <div className="flex items-center justify-center h-full p-4 bg-[#1f1f1f]">
+            <video src={imageUrl} controls className="max-w-full max-h-full" title={fileName} />
           </div>
         ) : rendererType === 'markdown' && content !== null ? (
           <ScrollArea className="h-full">
@@ -246,7 +249,7 @@ export default function PreviewPanel() {
           <ScrollArea className="h-full bg-[#1e1e1e]">
             <SyntaxHighlighter
               style={oneDark}
-              language={getLanguage(previewFilePath)}
+              language={getLanguage(previewArtifact.name)}
               showLineNumbers
               customStyle={{ margin: 0, padding: '12px', fontSize: '11px', background: '#1e1e1e' }}
               lineNumberStyle={{ minWidth: '2em', paddingRight: '0.5em', color: '#666' }}
@@ -263,10 +266,17 @@ export default function PreviewPanel() {
         ) : (
           <div className="flex flex-col items-center justify-center h-full p-4 text-center">
             <p className="text-[13px] text-[#656358]">{t.panel.unsupportedFileType}</p>
-            <Button variant="outline" size="sm" onClick={handleOpenInFinder} className="mt-3">
-              <FolderOpen className="w-3.5 h-3.5 mr-1.5" />
-              {t.panel.showInFinder}
-            </Button>
+            {localPath ? (
+              <Button variant="outline" size="sm" onClick={handleOpenSystem} className="mt-3">
+                <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
+                {t.panel.openInSystem}
+              </Button>
+            ) : downloadUrl ? (
+              <Button variant="outline" size="sm" onClick={handleDownload} className="mt-3">
+                <Download className="w-3.5 h-3.5 mr-1.5" />
+                {t.panel.downloadFile}
+              </Button>
+            ) : null}
           </div>
         )}
       </div>

@@ -1,12 +1,18 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import type { Message } from '@/types';
 import MessageBubble from './MessageBubble';
-import AgentActivityCluster from './AgentActivityCluster';
-import { normalizeActivityTimeline, type ChatDisplayUnit } from '@/core/nanobot/activityTimeline';
+import TaskNarrativeTimeline from './TaskNarrativeTimeline';
+import {
+  createActivityTimelineProjector,
+  normalizeActivityTimeline,
+  type ChatDisplayUnit,
+} from '@/core/nanobot/activityTimeline';
 
 interface ThreadMessagesProps {
   messages: Message[];
   isStreaming?: boolean;
+  scrollElement?: HTMLDivElement | null;
   onEditUserMessage?: (message: Message, newContent: string) => void;
   onRegenerateAssistant?: (message: Message) => void;
 }
@@ -37,19 +43,36 @@ export function assistantCopyFlags(units: DisplayUnit[]): boolean[] {
 export default function ThreadMessages({
   messages,
   isStreaming = false,
+  scrollElement = null,
   onEditUserMessage,
   onRegenerateAssistant,
 }: ThreadMessagesProps) {
-  const units = useMemo(() => buildDisplayUnits(messages), [messages]);
+  const [projector] = useState(createActivityTimelineProjector);
+  const units = useMemo(() => projector.project(messages), [messages, projector]);
   const copyFlags = useMemo(() => assistantCopyFlags(units), [units]);
-  const liveActivityClusterIndices = useMemo(
-    () => isStreaming ? currentActivityClusterIndices(units) : new Set<number>(),
+  const liveActivityTimelineIndices = useMemo(
+    () => isStreaming ? currentActivityTimelineIndices(units) : new Set<number>(),
     [isStreaming, units],
   );
+  // TanStack Virtual intentionally exposes imperative measurement functions.
+  // It is safe here because they are consumed within this component only.
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const virtualizer = useVirtualizer({
+    count: units.length,
+    getScrollElement: () => scrollElement,
+    estimateSize: () => 180,
+    overscan: 6,
+  });
+  const virtualItems = virtualizer.getVirtualItems();
 
   return (
-    <div className="flex w-full flex-col">
-      {units.map((unit, index) => {
+    <div
+      className="relative w-full"
+      style={{ height: `${virtualizer.getTotalSize()}px` }}
+    >
+      {virtualItems.map((virtualItem) => {
+        const index = virtualItem.index;
+        const unit = units[index];
         const prev = units[index - 1];
         const next = units[index + 1];
         const marginTop = index > 0 ? marginAfterPrevUnit(prev) : '';
@@ -59,13 +82,17 @@ export default function ThreadMessages({
           && next.message.role === 'assistant';
 
         return (
-          <div key={unitKey(unit, index)} className={marginTop}>
+          <div
+            key={unitKey(unit, index)}
+            data-index={index}
+            ref={virtualizer.measureElement}
+            className={`absolute left-0 w-full ${marginTop}`}
+            style={{ transform: `translateY(${virtualItem.start}px)` }}
+          >
             {unit.type === 'activity' ? (
-              <AgentActivityCluster
-                activityMessages={unit.messages}
-                activityItems={unit.items}
-                turnLatencyMs={unit.turnLatencyMs}
-                isActive={liveActivityClusterIndices.has(index)}
+              <TaskNarrativeTimeline
+                messages={unit.messages}
+                isActive={liveActivityTimelineIndices.has(index)}
                 hasBodyBelow={hasBodyBelow}
               />
             ) : (
@@ -87,7 +114,7 @@ export default function ThreadMessages({
   );
 }
 
-function currentActivityClusterIndices(units: DisplayUnit[]): Set<number> {
+function currentActivityTimelineIndices(units: DisplayUnit[]): Set<number> {
   const indices = new Set<number>();
   let markedCurrentActivity = false;
   for (let i = units.length - 1; i >= 0; i -= 1) {

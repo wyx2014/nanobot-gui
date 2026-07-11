@@ -553,6 +553,9 @@ export interface TranslationDict {
     sourceMode: string;
     unsupportedFileType: string;
     showInFinder: string;
+    openInSystem: string;
+    revealInFolder: string;
+    downloadFile: string;
     failedToReadFile: string;
     fileNotFound: string;
     // FilesSection

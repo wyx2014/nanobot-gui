@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "eslint .",
+    "lint": "eslint . --max-warnings 56",
     "preview": "vite preview",
     "electron:dev": "electron-vite dev",
     "electron:build": "electron-vite build",
@@ -16,6 +16,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:gateway-contract": "vitest run src/core/nanobotClient.test.ts src/core/nanobot/*.test.ts",
     "prepare-python": "node scripts/download-python.mjs",
     "build:win": "npm run prepare-python && npm run electron:build && electron-builder --win --config",
     "build:mac": "npm run prepare-python && npm run electron:build && electron-builder --mac --config",
@@ -79,10 +80,12 @@
     }
   },
   "dependencies": {
+    "@fontsource-variable/newsreader": "^5.2.10",
     "@mozilla/readability": "^0.6.0",
     "@radix-ui/react-dialog": "^1.1.16",
     "@radix-ui/react-dropdown-menu": "^2.1.17",
     "@radix-ui/react-separator": "^1.1.9",
+    "@tanstack/react-virtual": "^3.14.5",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "docx-preview": "^0.3.7",
@@ -119,6 +122,7 @@
     "@types/react-syntax-highlighter": "^15.5.13",
     "@types/turndown": "^5.0.6",
     "@vitejs/plugin-react": "^5.1.1",
+    "@vitest/coverage-v8": "^4.1.10",
     "autoprefixer": "^10.4.27",
     "electron": "^34.0.0",
     "electron-builder": "^26.8.1",

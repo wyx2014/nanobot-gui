@@ -5,6 +5,7 @@ node_modules/
 dist/
 src-tauri/target/
 out/
+coverage/
 
 # Embedded Python Runtime
 embedded-python/
@@ -34,4 +35,3 @@ src-tauri/*.md
 
 # Claude Code local config
 .claude/
-

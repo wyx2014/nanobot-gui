@@ -117,9 +117,14 @@ export interface Message {
 }
 
 export interface MessageMediaAttachment {
+  id?: string;
   path?: string;
+  localPath?: string;
   url?: string;
+  downloadUrl?: string;
   name?: string;
+  mimeType?: string;
+  size?: number;
   kind?: 'image' | 'video' | 'file';
 }
 

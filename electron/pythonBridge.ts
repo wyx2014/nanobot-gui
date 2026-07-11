@@ -16,6 +16,11 @@ export class PythonBridge {
   private _stopping = false;
   private _tokenSecret = '';
   private _startingPromise: Promise<void> | null = null;  // Prevent concurrent starts
+  private _mermaidRenderer: { url: string; token: string } | null = null;
+
+  setMermaidRenderer(url: string, token: string): void {
+    this._mermaidRenderer = { url, token };
+  }
 
   get isReady(): boolean {
     return this._ready;
@@ -90,6 +95,10 @@ export class PythonBridge {
         PYTHONUNBUFFERED: '1',
         // Write nanobot's own logs to a file so they don't pollute Electron's stdout
         NANOBOT_LOG_FILE: path.join(app.getPath('userData'), 'nanobot.log'),
+        ...(this._mermaidRenderer && {
+          NANOBOT_MERMAID_RENDER_URL: this._mermaidRenderer.url,
+          NANOBOT_MERMAID_RENDER_TOKEN: this._mermaidRenderer.token,
+        }),
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });

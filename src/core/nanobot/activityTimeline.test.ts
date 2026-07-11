@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { Message } from '@/types';
-import { activityEvidenceFromMessageMedia, normalizeActivityTimeline } from './activityTimeline';
+import {
+  activityEvidenceFromMessageMedia,
+  createActivityTimelineProjector,
+  normalizeActivityTimeline,
+} from './activityTimeline';
 
 function msg(partial: Partial<Message> & Pick<Message, 'id' | 'role'>): Message {
   return {
@@ -11,6 +15,21 @@ function msg(partial: Partial<Message> & Pick<Message, 'id' | 'role'>): Message 
 }
 
 describe('normalizeActivityTimeline', () => {
+  it('reuses completed turn units while a streaming assistant turn changes', () => {
+    const user = msg({ id: 'u1', role: 'user', content: 'question' });
+    const completed = msg({ id: 'a1', role: 'assistant', content: 'previous answer' });
+    const activeStart = msg({ id: 'u2', role: 'user', content: 'next question' });
+    const projector = createActivityTimelineProjector();
+    const first = projector.project([user, completed, activeStart, msg({ id: 'stream', role: 'assistant', content: 'part' })]);
+    const second = projector.project([user, completed, activeStart, msg({ id: 'stream', role: 'assistant', content: 'partial answer' })]);
+
+    expect(second.slice(0, 3)).toEqual(first.slice(0, 3));
+    expect(second[0]).toBe(first[0]);
+    expect(second[1]).toBe(first[1]);
+    expect(second[2]).toBe(first[2]);
+    expect(second[3]).not.toBe(first[3]);
+  });
+
   it('keeps reasoning and tool rows before the answer as an activity unit', () => {
     const units = normalizeActivityTimeline([
       msg({ id: 'u1', role: 'user', content: 'question' }),

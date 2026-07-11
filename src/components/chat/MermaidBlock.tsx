@@ -1,6 +1,7 @@
 import { memo, useEffect, useId, useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { renderMermaidSvg } from '@/core/mermaid';
 
 interface MermaidBlockProps {
   code: string;
@@ -11,8 +12,6 @@ type RenderState =
   | { status: 'loading' }
   | { status: 'ready'; svg: string }
   | { status: 'error'; message: string };
-
-let initialized = false;
 
 function normalizeId(id: string) {
   return `mermaid-${id.replace(/[^a-zA-Z0-9_-]/g, '')}`;
@@ -29,22 +28,8 @@ export default memo(function MermaidBlock({ code, className }: MermaidBlockProps
       setState({ status: 'loading' });
 
       try {
-        const mermaidModule = await import('mermaid');
-        const mermaid = mermaidModule.default;
-
-        if (!initialized) {
-          mermaid.initialize({
-            startOnLoad: false,
-            securityLevel: 'strict',
-            theme: 'default',
-            flowchart: { htmlLabels: false },
-            sequence: { useMaxWidth: true },
-          });
-          initialized = true;
-        }
-
         const renderId = `${baseId}-${Date.now().toString(36)}`;
-        const { svg } = await mermaid.render(renderId, code);
+        const svg = await renderMermaidSvg(code, renderId);
         if (!cancelled) {
           setState({ status: 'ready', svg });
         }
@@ -78,7 +63,7 @@ export default memo(function MermaidBlock({ code, className }: MermaidBlockProps
       <div className={cn('my-4 overflow-hidden rounded-lg border border-[#e5e2db] bg-[#fffdf8]', className)}>
         <div className="flex items-center gap-2 border-b border-[#eeeae1] px-4 py-2 text-sm text-[#8a5a44]">
           <AlertTriangle className="h-4 w-4" />
-          <span>Mermaid render failed: {state.message}</span>
+          <span>Mermaid diagram is invalid: {state.message}</span>
         </div>
         <pre className="overflow-x-auto p-4 text-sm leading-6 text-[#3d3929]">
           <code>{code}</code>

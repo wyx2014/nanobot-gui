@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 
 import { getNanobotClient } from "@/core/nanobotClient";
+import { resolveArtifactUrl } from "@/core/artifacts";
 import {
   mergeToolProgressEvents,
   mergeUniqueToolTraceLines,
@@ -24,6 +25,10 @@ import type {
   UIMessage,
   WorkspaceScopePayload,
 } from "@/core/types";
+import {
+  initialStreamProtocolState,
+  streamProtocolReducer,
+} from '@/core/nanobot/streamProtocol';
 
 interface StreamBuffer {
   /** ID of the assistant message currently receiving deltas (cleared on ``stream_end``). */
@@ -50,17 +55,33 @@ function extensionOf(value?: string): string {
   return dot < 0 ? "" : clean.slice(dot);
 }
 
-function toMediaAttachment(media: { url?: string; name?: string; kind?: UIMediaAttachment["kind"] }): UIMediaAttachment {
-  const url = media.url ?? "";
-  if (url.startsWith("data:image/")) return { kind: "image", url: media.url, name: media.name };
-  if (url.startsWith("data:video/")) return { kind: "video", url: media.url, name: media.name };
+function toMediaAttachment(media: {
+  id?: string;
+  url?: string;
+  download_url?: string;
+  local_path?: string;
+  name?: string;
+  kind?: UIMediaAttachment["kind"];
+  mime_type?: string;
+  size?: number;
+}): UIMediaAttachment {
+  const url = resolveArtifactUrl(media.url ?? "");
   const ext = extensionOf(media.name) || extensionOf(media.url);
-  const kind = IMAGE_EXTENSIONS.has(ext)
+  const kind = url.startsWith("data:image/") || IMAGE_EXTENSIONS.has(ext)
     ? "image"
-    : VIDEO_EXTENSIONS.has(ext)
+    : url.startsWith("data:video/") || VIDEO_EXTENSIONS.has(ext)
       ? "video"
       : media.kind ?? "file";
-  return { kind, url: media.url, name: media.name };
+  return {
+    kind,
+    id: media.id,
+    url: url || undefined,
+    download_url: media.download_url ? resolveArtifactUrl(media.download_url) : undefined,
+    local_path: media.local_path,
+    name: media.name,
+    mime_type: media.mime_type,
+    size: media.size,
+  };
 }
 
 /** Find a still-open streamed assistant turn. Closed stream segments stay visible
@@ -471,11 +492,15 @@ export function useNanobotStream(
   const initialStreaming = initialMessages.length > 0
     ? initialMessages[initialMessages.length - 1].kind === "trace"
     : false;
-  const [isStreaming, setIsStreaming] = useState(initialStreaming || hasPendingToolCalls);
-  /** Unix epoch seconds when the current user turn started; cleared on ``idle``. */
-  const [runStartedAt, setRunStartedAt] = useState<number | null>(null);
-  const [goalState, setGoalState] = useState<GoalStateWsPayload | undefined>(undefined);
-  const [streamError, setStreamError] = useState<StreamError | null>(null);
+  const [protocol, dispatchProtocol] = useReducer(streamProtocolReducer, {
+    ...initialStreamProtocolState,
+    isStreaming: initialStreaming || hasPendingToolCalls,
+  });
+  const { isStreaming, runStartedAt, goalState, streamError } = protocol;
+  const setIsStreaming = useCallback((value: boolean) => dispatchProtocol({ type: 'streaming', value }), []);
+  const setGoalState = useCallback((value: GoalStateWsPayload | undefined) => dispatchProtocol({ type: 'goal_state', value }), []);
+  const setRunStartedAt = useCallback((value: number | null) => dispatchProtocol({ type: 'goal_status', status: value === null ? 'idle' : 'running', ...(value === null ? {} : { startedAt: value }) }), []);
+  const setStreamError = useCallback((value: StreamError | null) => dispatchProtocol({ type: 'error', value }), []);
   const buffer = useRef<StreamBuffer | null>(null);
   const activeAssistantRef = useRef<ActiveAssistantCursor | null>(null);
   const closedAssistantStreamIdsRef = useRef<Set<string>>(new Set());
@@ -501,9 +526,9 @@ export function useNanobotStream(
       if (errorChatId && errorChatId !== chatId) return;
       setStreamError(err);
     });
-  }, [chatId, client]);
+  }, [chatId, client, setStreamError]);
 
-  const dismissStreamError = useCallback(() => setStreamError(null), []);
+  const dismissStreamError = useCallback(() => setStreamError(null), [setStreamError]);
 
   const clearPendingStreamWork = useCallback(() => {
     if (streamFrameRef.current !== null) {
@@ -702,14 +727,14 @@ export function useNanobotStream(
   // history response after the optimistic first message has already rendered.
   useEffect(() => {
     setMessages(initialMessages);
-    setIsStreaming(
-      (initialMessages.length > 0
+    dispatchProtocol({
+      type: 'reset',
+      isStreaming: (initialMessages.length > 0
         ? initialMessages[initialMessages.length - 1].kind === "trace"
         : false) || hasPendingToolCalls,
-    );
-    setStreamError(null);
-    setRunStartedAt(chatId && client ? client.getRunStartedAt(chatId) : null);
-    setGoalState(chatId && client ? client.getGoalState(chatId) : undefined);
+      runStartedAt: chatId && client ? client.getRunStartedAt(chatId) : null,
+      goalState: chatId && client ? client.getGoalState(chatId) : undefined,
+    });
     buffer.current = null;
     activeAssistantRef.current = null;
     closedAssistantStreamIdsRef.current.clear();
@@ -720,12 +745,13 @@ export function useNanobotStream(
       clearTimeout(streamEndTimerRef.current);
       streamEndTimerRef.current = null;
     }
+    // History is deliberately reset only when the selected chat changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatId, client, clearActivitySegment, clearPendingStreamWork]);
 
   useEffect(() => {
     if (hasPendingToolCalls) setIsStreaming(true);
-  }, [hasPendingToolCalls]);
+  }, [hasPendingToolCalls, setIsStreaming]);
 
   useEffect(() => {
     if (!chatId || !client) return;
@@ -883,6 +909,11 @@ export function useNanobotStream(
               last
               && last.kind === "trace"
               && !last.isStreaming
+              // Keep consecutive task-progress snapshots as separate timeline
+              // moments. Tool start/end frames may still merge into either
+              // snapshot through call_id, but a newer plan update must not
+              // overwrite the earlier user-visible stage.
+              && !(agentUI?.kind === "task_progress" && last.agentUI?.kind === "task_progress")
               && (!last.activitySegmentId || last.activitySegmentId === segmentId)
             ) {
               const previousTraces = last.traces?.length
@@ -1031,6 +1062,10 @@ export function useNanobotStream(
     flushPendingStreamEvents,
     onTurnEnd,
     schedulePendingStreamFlush,
+    setGoalState,
+    setIsStreaming,
+    setRunStartedAt,
+    setStreamError,
   ]);
 
   const send = useCallback(
@@ -1073,7 +1108,7 @@ export function useNanobotStream(
         client.sendMessage(chatId, content, wireMedia);
       }
     },
-    [chatId, clearActivitySegment, client, flushPendingStreamEvents],
+    [chatId, clearActivitySegment, client, flushPendingStreamEvents, setIsStreaming],
   );
 
   const stop = useCallback(() => {
@@ -1089,7 +1124,7 @@ export function useNanobotStream(
     });
     suppressStreamUntilTurnEndRef.current = false;
     client.sendMessage(chatId, "/stop");
-  }, [chatId, clearActivitySegment, client, flushPendingStreamEvents]);
+  }, [chatId, clearActivitySegment, client, flushPendingStreamEvents, setIsStreaming]);
 
   return {
     messages,

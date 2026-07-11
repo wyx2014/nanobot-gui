@@ -179,7 +179,7 @@ export default function ChatView({
       .catch((err) => console.error('Failed to get home dir:', err));
   }, [activeConvId]);
 
-  const { containerRef, isAtBottom, scrollToBottom } = useAutoScroll();
+  const { containerRef, scrollElement, isAtBottom, scrollToBottom } = useAutoScroll();
 
   const returnToSchedule = useCallback(() => {
     if (scheduleReturnTarget?.taskId) {
@@ -567,6 +567,7 @@ export default function ChatView({
               <ThreadMessages
                 messages={timelineMessages}
                 isStreaming={stream.isStreaming}
+                scrollElement={scrollElement}
                 onEditUserMessage={handleEditUserMessage}
                 onRegenerateAssistant={handleRegenerateAssistant}
               />

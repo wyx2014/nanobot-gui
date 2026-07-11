@@ -5,6 +5,8 @@ import { cn } from '@/lib/utils';
 import { getBaseName, loadLocalImage } from '@/utils/pathUtils';
 import { shellBridge } from '@/lib/ipc-factory';
 import FileAttachment, { isImageFile } from './FileAttachment';
+import { artifactFromMediaAttachment, artifactFromUrl } from '@/core/artifacts';
+import { usePreviewStore } from '@/stores/previewStore';
 
 type Align = 'left' | 'right';
 
@@ -58,9 +60,10 @@ function DataImageTile({
   index: number;
   compact?: boolean;
 }) {
+  const openArtifact = usePreviewStore((state) => state.openArtifact);
   const dataUrl = useMemo(() => `data:${image.source.media_type};base64,${image.source.data}`, [image.source.data, image.source.media_type]);
   const label = `Image ${index + 1}`;
-  const openDataImage = () => window.open(dataUrl, '_blank', 'noopener,noreferrer');
+  const openDataImage = () => openArtifact(artifactFromUrl(dataUrl, { name: label, mimeType: image.source.media_type }));
   return (
     <div
       className={cn(
@@ -90,6 +93,7 @@ function LocalImageTile({
   item: MessageMediaAttachment;
   compact?: boolean;
 }) {
+  const openArtifact = usePreviewStore((state) => state.openArtifact);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const label = displayName(item);
@@ -129,15 +133,10 @@ function LocalImageTile({
     }
   };
 
-  const openFile = async (event: React.MouseEvent) => {
+  const openFile = (event: React.MouseEvent) => {
     event.stopPropagation();
     event.preventDefault();
-    if (!item.path) return;
-    try {
-      await shellBridge.openPath(item.path);
-    } catch {
-      await shellBridge.revealItemInDir(item.path);
-    }
+    openArtifact(artifactFromMediaAttachment(item));
   };
 
   if (!imageUrl) {
@@ -157,8 +156,8 @@ function LocalImageTile({
           type="button"
           onClick={openFile}
           className="absolute bottom-3 right-3 inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#29261b]/85 text-white opacity-0 shadow-sm transition-opacity hover:bg-[#29261b] group-hover/media:opacity-100"
-          title="打开原文件"
-          aria-label="打开原文件"
+          title="预览图片"
+          aria-label="预览图片"
         >
           <ExternalLink className="h-3.5 w-3.5" />
         </button>
@@ -168,7 +167,7 @@ function LocalImageTile({
           type="button"
           onClick={openFile}
           className="min-w-0 flex-1 truncate text-left transition-colors hover:text-[#d97757] hover:underline"
-          title="打开原文件"
+          title="预览图片"
         >
           {label}
         </button>
@@ -194,10 +193,11 @@ function RemoteImageTile({
   item: MessageMediaAttachment;
   compact?: boolean;
 }) {
+  const openArtifact = usePreviewStore((state) => state.openArtifact);
   const [failed, setFailed] = useState(false);
   const label = displayName(item);
   if (!item.url || failed) return <ImagePlaceholder label={failed ? `${label} 加载失败` : label} compact={compact} />;
-  const openRemoteImage = () => window.open(item.url, '_blank', 'noopener,noreferrer');
+  const openRemoteImage = () => openArtifact(artifactFromMediaAttachment(item));
   return (
     <div
       className={cn(
@@ -228,6 +228,7 @@ function RemoteImageTile({
 }
 
 function RemoteFileTile({ item }: { item: MessageMediaAttachment }) {
+  const openArtifact = usePreviewStore((state) => state.openArtifact);
   const label = displayName(item);
   if (!item.url) {
     return (
@@ -238,17 +239,16 @@ function RemoteFileTile({ item }: { item: MessageMediaAttachment }) {
     );
   }
   return (
-    <a
-      href={item.url}
-      target="_blank"
-      rel="noreferrer"
+    <button
+      type="button"
+      onClick={() => openArtifact(artifactFromMediaAttachment(item))}
       className="inline-flex max-w-[16rem] items-center gap-2 rounded-lg border border-[#e5e2db] bg-white px-3 py-2 text-[13px] text-[#29261b] transition-all hover:border-[#d97757]/40 hover:shadow-sm"
       title={item.url}
     >
       <FileText className="h-4 w-4 shrink-0 text-[#656358]" />
       <span className="truncate">{label}</span>
       <ExternalLink className="h-3.5 w-3.5 shrink-0 text-[#888579]" />
-    </a>
+    </button>
   );
 }
 

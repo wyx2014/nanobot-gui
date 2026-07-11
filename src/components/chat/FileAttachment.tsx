@@ -5,6 +5,7 @@ import { useI18n } from '@/i18n';
 import { cn } from '@/lib/utils';
 import { loadLocalImage, getBaseName, isLocalFilePath } from '@/utils/pathUtils';
 import { shellBridge } from '@/lib/ipc-factory';
+import { artifactFromPath } from '@/core/artifacts';
 
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
 
@@ -58,7 +59,7 @@ interface FileAttachmentProps {
 }
 
 export default function FileAttachment({ filePath, operation }: FileAttachmentProps) {
-  const openPreview = usePreviewStore((s) => s.openPreview);
+  const openArtifact = usePreviewStore((s) => s.openArtifact);
   const { icon: Icon, label, category } = getFileTypeInfo(filePath);
   const fileName = getBaseName(filePath);
   const showThumbnail = isImageFile(filePath);
@@ -79,7 +80,7 @@ export default function FileAttachment({ filePath, operation }: FileAttachmentPr
   }, [filePath, showThumbnail]);
 
   const handleClick = () => {
-    openPreview(filePath);
+    openArtifact(artifactFromPath(filePath));
   };
 
   const handleOpenFile = async (event: React.MouseEvent) => {
@@ -140,25 +141,29 @@ export default function FileAttachment({ filePath, operation }: FileAttachmentPr
 
       {/* File Info */}
       <div className="flex flex-col min-w-0">
-        <button
-          type="button"
-          onClick={handleOpenFile}
-          className="max-w-[160px] truncate text-left text-[13px] font-medium text-[#29261b] hover:text-[#d97757] hover:underline"
-          title="打开文件"
-        >
+        <span className="max-w-[160px] truncate text-left text-[13px] font-medium text-[#29261b]" title={filePath}>
           {fileName.replace(/\.[^/.]+$/, '') || fileName}
-        </button>
+        </span>
         <span className="text-[11px] text-[#888579]">
           {category} · {label}
         </span>
       </div>
+      <button
+        type="button"
+        onClick={handleOpenFile}
+        className="ml-auto rounded p-1 text-[#888579] opacity-0 transition-all hover:bg-[#f5f3ee] hover:text-[#29261b] group-hover:opacity-100"
+        title="在系统应用中打开"
+        aria-label="在系统应用中打开"
+      >
+        <ExternalLink className="h-3.5 w-3.5" />
+      </button>
     </div>
   );
 }
 
 // Small square thumbnail for images referenced in markdown text
 export function ImageThumbnail({ src }: { src: string }) {
-  const openPreview = usePreviewStore((s) => s.openPreview);
+  const openArtifact = usePreviewStore((s) => s.openArtifact);
   const isLocalPath = isLocalFilePath(src);
   const [imgUrl, setImgUrl] = useState<string | null>(() => isLocalPath ? null : src);
 
@@ -179,7 +184,7 @@ export function ImageThumbnail({ src }: { src: string }) {
 
   return (
     <div
-      onClick={() => isLocalPath && openPreview(src)}
+      onClick={() => isLocalPath && openArtifact(artifactFromPath(src))}
       className={cn(
         'w-16 h-16 rounded-lg overflow-hidden border border-[#e5e2db] transition-all',
         'hover:border-[#d97757]/40 hover:shadow-sm',
@@ -199,7 +204,7 @@ export function ImageThumbnail({ src }: { src: string }) {
 
 // Compact image preview card for generated images
 export function ImagePreviewCard({ filePath }: { filePath: string }) {
-  const openPreview = usePreviewStore((s) => s.openPreview);
+  const openArtifact = usePreviewStore((s) => s.openArtifact);
   const { t } = useI18n();
   const fileName = getBaseName(filePath);
   const [imgUrl, setImgUrl] = useState<string | null>(null);
@@ -238,7 +243,7 @@ export function ImagePreviewCard({ filePath }: { filePath: string }) {
 
   return (
     <div
-      onClick={() => openPreview(filePath)}
+      onClick={() => openArtifact(artifactFromPath(filePath))}
       className={cn(
         'group/card inline-block rounded-lg cursor-pointer transition-all overflow-hidden relative',
         'bg-white border border-[#e5e2db] hover:border-[#d97757]/40 hover:shadow-md',

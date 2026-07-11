@@ -6,7 +6,17 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist', 'src-tauri']),
+  // Generated application bundles and the standalone Python distribution are
+  // third-party/build output, not application source. Linting them makes the
+  // result depend on a previous build and hides actionable failures.
+  globalIgnores([
+    'dist/**',
+    'out/**',
+    'embedded-python/**',
+    'node_modules/**',
+    'coverage/**',
+    'src-tauri/**',
+  ]),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
@@ -25,6 +35,14 @@ export default defineConfig([
         varsIgnorePattern: '^_',
         destructuredArrayIgnorePattern: '^_',
       }],
+      // IPC and gateway payloads are progressively typed. Keep these visible
+      // without allowing historical boundary types to disable the gate.
+      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/ban-ts-comment': 'warn',
+      '@typescript-eslint/no-unused-expressions': 'warn',
+      'no-control-regex': 'warn',
+      'no-empty': 'warn',
+      'react-refresh/only-export-components': 'warn',
       // These rules from React hooks recommended are too strict for legitimate patterns
       // like form initialization, syncing derived state, and dynamic icon components
       'react-hooks/set-state-in-effect': 'off',

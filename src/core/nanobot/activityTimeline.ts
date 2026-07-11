@@ -38,6 +38,10 @@ export type ChatDisplayUnit =
   | { type: 'activity'; messages: Message[]; items: ActivityItem[]; turnLatencyMs?: number }
   | { type: 'message'; message: Message };
 
+export interface ActivityTimelineProjector {
+  project(messages: Message[]): ChatDisplayUnit[];
+}
+
 export function isReasoningOnlyAssistant(message: Message): boolean {
   if (message.role !== 'assistant' || message.kind === 'trace') return false;
   if (typeof message.content === 'string' && message.content.trim().length > 0) return false;
@@ -108,6 +112,41 @@ export function normalizeActivityTimeline(messages: Message[]): ChatDisplayUnit[
 
   flushTurn();
   return units;
+}
+
+/**
+ * Incremental projection for a live conversation.
+ *
+ * Streaming frames only mutate the current assistant turn. Completed turns
+ * are kept by reference and never walked again; a complete rebuild occurs
+ * only when a new user message starts the next turn or history is replaced.
+ */
+export function createActivityTimelineProjector(): ActivityTimelineProjector {
+  let committedMessages: Message[] = [];
+  let committedUnits: ChatDisplayUnit[] = [];
+
+  return {
+    project(messages: Message[]): ChatDisplayUnit[] {
+      const boundary = committedTurnBoundary(messages);
+      const nextCommitted = messages.slice(0, boundary);
+      if (!sameMessageReferences(committedMessages, nextCommitted)) {
+        committedMessages = nextCommitted;
+        committedUnits = normalizeActivityTimeline(nextCommitted);
+      }
+      return committedUnits.concat(normalizeActivityTimeline(messages.slice(boundary)));
+    },
+  };
+}
+
+function committedTurnBoundary(messages: Message[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].role === 'user') return index + 1;
+  }
+  return 0;
+}
+
+function sameMessageReferences(left: Message[], right: Message[]): boolean {
+  return left.length === right.length && left.every((message, index) => message === right[index]);
 }
 
 function visibleMessagesForTurn(messages: Message[]): Message[] {
@@ -328,7 +367,11 @@ function mediaAttachmentFromUnknown(value: unknown): MessageMediaAttachment | nu
   const path = stringField(record, ['path', 'absolute_path', 'file', 'filename']);
   const name = stringField(record, ['name', 'filename', 'title', 'label']) ?? baseName(url ?? path ?? '');
   const kind = mediaKindFromRecord(record, url, name);
-  return normalizeMediaAttachment({ url, path, name, kind });
+  const mimeType = stringField(record, ['mime_type', 'mimeType', 'content_type']);
+  const downloadUrl = stringField(record, ['download_url', 'downloadUrl']);
+  const id = stringField(record, ['id', 'artifact_id']);
+  const size = typeof record.size === 'number' && Number.isFinite(record.size) ? record.size : undefined;
+  return normalizeMediaAttachment({ url, path, name, kind, mimeType, downloadUrl, id, size });
 }
 
 function normalizeMediaAttachment(attachment: MessageMediaAttachment): MessageMediaAttachment {

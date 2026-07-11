@@ -38,7 +38,7 @@ describe('toolResultTruncation', () => {
       const result = truncateToolResultText(text, 500, { minKeepChars: 100 });
       // Should end cleanly (no partial lines before the suffix)
       const beforeSuffix = result.split('⚠️')[0];
-      expect(beforeSuffix.endsWith('\n') || beforeSuffix.endsWith('...')).toBeTruthy;
+      expect(beforeSuffix.endsWith('\n') || beforeSuffix.endsWith('...')).toBeTruthy();
     });
 
     it('should use custom suffix', () => {

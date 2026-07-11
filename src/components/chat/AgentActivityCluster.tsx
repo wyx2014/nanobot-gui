@@ -32,7 +32,7 @@ import { ActivityEvidencePreview } from './activity/ActivityEvidencePreview';
 import { ActivityGroup } from './activity/ActivityGroup';
 import { ActivityStep } from './activity/ActivityStep';
 import { FileEditGroup, type FileEditSummary } from './activity/FileEditRow';
-import { ReasoningRow } from './activity/ReasoningRow';
+import { toolActivityLabel } from '@/core/nanobot/toolDisplay';
 
 type ActivityStatus = 'running' | 'done' | 'error' | 'pending';
 
@@ -107,11 +107,11 @@ function sourceFromName(name: string, type?: ExecutionStep['type']): ActivitySte
 }
 
 function itemFromStep(step: ExecutionStep): ActivityRowItem {
+  const status = step.status === 'completed' ? 'done' : step.status === 'error' ? 'error' : step.status === 'running' ? 'running' : 'pending';
   return {
     id: step.id,
-    label: step.label || step.toolName || 'Tool',
-    detail: step.detail,
-    status: step.status === 'completed' ? 'done' : step.status === 'error' ? 'error' : step.status === 'running' ? 'running' : 'pending',
+    label: toolActivityLabel(step.toolName || step.label || '', status, step.toolInput, step.toolResult),
+    status,
     source: sourceFromName(step.toolName || step.label, step.type),
     input: step.toolInput,
     result: step.toolResult || step.errorMessage,
@@ -120,10 +120,11 @@ function itemFromStep(step: ExecutionStep): ActivityRowItem {
 }
 
 function itemFromToolCall(toolCall: ToolCall): ActivityRowItem {
+  const status = toolCall.isError ? 'error' : toolCall.isExecuting ? 'running' : toolCall.result !== undefined ? 'done' : 'pending';
   return {
     id: toolCall.id,
-    label: toolCall.name,
-    status: toolCall.isError ? 'error' : toolCall.isExecuting ? 'running' : toolCall.result !== undefined ? 'done' : 'pending',
+    label: toolActivityLabel(toolCall.name, status, toolCall.input, toolCall.result),
+    status,
     source: activitySourceFromToolName(toolCall.name),
     input: toolCall.input,
     result: toolCall.result,
@@ -136,10 +137,11 @@ function itemFromToolEvent(message: Message): ActivityRowItem[] {
     const name = toolEventName(event);
     if (name === 'update_task_progress') return [];
     const error = event.error ? String(event.error) : undefined;
+    const status = event.phase === 'error' ? 'error' : event.phase === 'end' ? 'done' : event.phase === 'start' ? 'running' : 'pending';
     return [{
       id: event.call_id || `${message.id}:event:${eventIndex}`,
-      label: displayToolName(name),
-      status: event.phase === 'error' ? 'error' : event.phase === 'end' ? 'done' : event.phase === 'start' ? 'running' : 'pending',
+      label: toolActivityLabel(name, status, toolEventArgs(event), toolEventResult(event)),
+      status,
       source: activitySourceFromToolName(name),
       input: toolEventArgs(event),
       result: toolEventResult(event),
@@ -158,7 +160,7 @@ function itemFromTraceLine(message: Message): ActivityRowItem[] {
       : [];
   return lines.map((line, index) => ({
     id: `${message.id}:trace:${index}`,
-    label: line,
+    label: toolActivityLabel('', message.isStreaming ? 'running' : 'done'),
     status: message.isStreaming ? 'running' : 'done',
     source: activitySourceFromToolName(line),
   }));
@@ -273,19 +275,15 @@ function reasoningText(messages: Message[], explicit?: string): string {
     .join('\n');
 }
 
-function reasoningStreaming(messages: Message[], active: boolean): boolean {
-  return active && messages.some((message) => message.role === 'assistant' && !!message.reasoningStreaming);
-}
-
 function groupTitle(source: ActivityStepSource): string {
-  if (source === 'web') return 'Web';
-  if (source === 'browser') return 'Browser';
-  if (source === 'shell') return 'Shell';
-  if (source === 'mcp') return 'MCP';
-  if (source === 'file') return 'Files';
-  if (source === 'media') return 'Media';
-  if (source === 'reasoning') return 'Thought';
-  return 'Tools';
+  if (source === 'web') return '资料查询';
+  if (source === 'browser') return '网页操作';
+  if (source === 'shell') return '数据处理';
+  if (source === 'mcp') return '外部数据';
+  if (source === 'file') return '文件处理';
+  if (source === 'media') return '内容生成';
+  if (source === 'reasoning') return '任务分析';
+  return '任务步骤';
 }
 
 function groupIcon(source: ActivityStepSource): LucideIcon {
@@ -313,25 +311,6 @@ function statusIcon(status: ActivityStatus): LucideIcon {
   return Wrench;
 }
 
-function shortText(value: unknown): string {
-  if (value === undefined || value === null) return '';
-  if (typeof value === 'string') return value;
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-}
-
-function displayToolName(name: string): string {
-  if (!name) return 'Tool';
-  if (name.startsWith('mcp_')) {
-    const parts = name.split('_');
-    return parts.length > 2 ? parts.slice(2).join('_') : name;
-  }
-  return name;
-}
-
 function elapsedLabel(startedAt: number): string {
   const seconds = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
   if (seconds < 60) return `${seconds}s`;
@@ -357,59 +336,6 @@ function groupedItems(items: ActivityRowItem[]): Array<{ source: ActivityStepSou
   return order
     .filter((source) => groups.has(source))
     .map((source) => ({ source, items: groups.get(source)! }));
-}
-
-function aggregateStageStatus(items: ActivityRowItem[], isActive: boolean): ActivityStatus {
-  if (items.some((item) => item.status === 'error')) return 'error';
-  if (items.some((item) => item.status === 'running')) return 'running';
-  if (items.length > 0) return 'done';
-  return isActive ? 'pending' : 'done';
-}
-
-function buildProgressStages({
-  hasThinking,
-  thinkingActive,
-  items,
-  hasEdits,
-  editStatus,
-  isActive,
-  hasBodyBelow,
-}: {
-  hasThinking: boolean;
-  thinkingActive: boolean;
-  items: ActivityRowItem[];
-  hasEdits: boolean;
-  editStatus: ActivityStatus;
-  isActive: boolean;
-  hasBodyBelow?: boolean;
-}): ProgressStage[] {
-  const researchItems = items.filter((item) => ['web', 'browser', 'file'].includes(item.source));
-  const executionItems = items.filter((item) => !['web', 'browser', 'file'].includes(item.source));
-  const stages: ProgressStage[] = [];
-
-  if (hasThinking) {
-    stages.push({ label: '理解与规划', status: thinkingActive ? 'running' : 'done' });
-  }
-  if (researchItems.length) {
-    stages.push({ label: '收集信息', status: aggregateStageStatus(researchItems, isActive) });
-  }
-  if (executionItems.length || hasEdits) {
-    const executionStatus = aggregateStageStatus(executionItems, isActive);
-    stages.push({
-      label: hasEdits ? '处理与更新' : '执行处理',
-      status: editStatus === 'error' ? 'error' : editStatus === 'running' ? 'running' : executionStatus,
-    });
-  }
-  if (hasBodyBelow || !isActive) {
-    stages.push({ label: '整理结果', status: isActive ? 'running' : 'done' });
-  } else if (stages.length > 0) {
-    stages.push({ label: '整理结果', status: 'pending' });
-  }
-
-  if (stages.length === 0 && isActive) {
-    return [{ label: '处理请求', status: 'running' }];
-  }
-  return stages.slice(0, 4);
 }
 
 export default function AgentActivityCluster({
@@ -478,33 +404,16 @@ export default function AgentActivityCluster({
   const runningCount = items.filter((item) => item.status === 'running').length + edits.filter((edit) => edit.status === 'editing').length;
   const completedCount = items.filter((item) => item.status === 'done').length + edits.filter((edit) => edit.status === 'done').length;
   const stepCount = items.length + edits.length;
-  const editStatus: ActivityStatus = edits.some((edit) => edit.status === 'error')
-    ? 'error'
-    : edits.some((edit) => edit.status === 'editing')
-      ? 'running'
-      : edits.length > 0
-        ? 'done'
-        : 'pending';
   const explicitProgressStages = taskProgressFromMessages(activityMessages);
-  const progressStages = explicitProgressStages.length > 0
-    ? explicitProgressStages
-    : buildProgressStages({
-        hasThinking,
-        thinkingActive: reasoningStreaming(activityMessages, isActive),
-        items,
-        hasEdits,
-        editStatus,
-        isActive,
-        hasBodyBelow,
-      });
+  const progressStages = explicitProgressStages;
   const expanded = userToggled ? open : open || isActive;
   const summary = isActive
-    ? `Working for ${elapsedLabel(startedAt)}`
+    ? `正在处理 · ${elapsedLabel(startedAt)}`
     : hasError
-      ? 'Completed with errors'
+      ? '处理未完全完成'
       : stepCount > 0
-        ? `${completedCount}/${stepCount} tool steps`
-        : 'Thought';
+        ? `已完成 ${completedCount}/${stepCount} 个步骤`
+        : '任务分析完成';
 
   const grouped = groupedItems(items);
 
@@ -540,10 +449,10 @@ export default function AgentActivityCluster({
             )}
           </div>
           <div className="mt-0.5 text-[11px] text-[#8b887c]">
-            {hasThinking ? 'Thought' : ''}
+            {hasThinking ? '正在分析' : ''}
             {hasThinking && stepCount > 0 ? ' · ' : ''}
-            {stepCount > 0 ? `${stepCount} activity ${stepCount === 1 ? 'step' : 'steps'}` : ''}
-            {runningCount > 0 ? ` · ${runningCount} running` : ''}
+            {stepCount > 0 ? `${stepCount} 个任务步骤` : ''}
+            {runningCount > 0 ? ` · ${runningCount} 个进行中` : ''}
             {!isActive && turnLatencyMs !== undefined ? ` · ${formatDuration(turnLatencyMs)}` : ''}
           </div>
         </div>
@@ -569,14 +478,8 @@ export default function AgentActivityCluster({
               <ProgressSummary stages={progressStages} />
             ) : null}
 
-            {hasThinking && (
-              <ActivityGroup title="Thought" icon={Brain}>
-                <ReasoningRow text={thought} streaming={reasoningStreaming(activityMessages, isActive)} />
-              </ActivityGroup>
-            )}
-
             {hasEdits && (
-              <ActivityGroup title="File changes" icon={FilePen}>
+              <ActivityGroup title="文件更新" icon={FilePen}>
                 <FileEditGroup edits={edits} />
               </ActivityGroup>
             )}
@@ -638,62 +541,15 @@ function ToolActivityRow({ item }: { item: ActivityRowItem }) {
   const Icon = statusIcon(item.status);
   const active = item.status === 'running';
   const tone = statusTone(item.status);
-  const input = shortText(item.input);
-  const output = item.error || item.result;
-  const hasDetails = !!input || !!output || !!item.preview?.length;
   return (
     <ActivityStep
       as="li"
       icon={Icon}
       active={active}
       tone={tone}
-      label={active ? activeVerb(item.source) : doneVerb(item)}
-      detail={<span className="font-medium">{item.label}</span>}
-      title={`${item.label}${item.detail ? ` ${item.detail}` : ''}${item.error ? ` ${item.error}` : ''}`}
+      label={item.label}
     >
-      {item.detail ? <div className="text-[11.5px] text-[#8b887c]">{item.detail}</div> : null}
       {item.preview?.length ? <ActivityEvidencePreview evidence={item.preview} /> : null}
-      {hasDetails && (input || output) ? (
-        <div className="mt-1 overflow-hidden rounded-lg border border-[#e8e4dd] bg-[#202020]">
-          {input ? (
-            <div className="px-3 py-2">
-              <div className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-white/35">Input</div>
-              <pre className="max-h-28 overflow-y-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-[#a8c5da]">
-                {input}
-              </pre>
-            </div>
-          ) : null}
-          {output ? (
-            <div className="border-t border-white/10 px-3 py-2">
-              <div className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-white/35">
-                {item.status === 'error' ? 'Error' : 'Output'}
-              </div>
-              <pre className="max-h-32 overflow-y-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-[#b5c9a8]">
-                {output}
-              </pre>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
     </ActivityStep>
   );
-}
-
-function activeVerb(source: ActivityStepSource): string {
-  if (source === 'web') return 'Searching';
-  if (source === 'browser') return 'Browsing';
-  if (source === 'shell') return 'Running';
-  if (source === 'mcp') return 'Using';
-  if (source === 'media') return 'Generating';
-  return 'Using';
-}
-
-function doneVerb(item: ActivityRowItem): string {
-  if (item.status === 'error') return 'Failed';
-  if (item.source === 'web') return 'Searched';
-  if (item.source === 'browser') return 'Browsed';
-  if (item.source === 'shell') return 'Ran';
-  if (item.source === 'mcp') return 'Used';
-  if (item.source === 'media') return 'Generated';
-  return 'Used';
 }

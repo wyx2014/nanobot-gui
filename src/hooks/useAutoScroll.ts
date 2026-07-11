@@ -12,6 +12,7 @@ function isNearBottom(container: HTMLDivElement): boolean {
 
 export function useAutoScroll() {
   const containerNodeRef = useRef<HTMLDivElement | null>(null);
+  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
   const detachScrollRef = useRef<(() => void) | null>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const stickToBottomRef = useRef(true);
@@ -50,6 +51,7 @@ export function useAutoScroll() {
     detachScrollRef.current?.();
     detachScrollRef.current = null;
     containerNodeRef.current = node;
+    setScrollElement(node);
     if (!node) return;
 
     const handleScroll = () => setBottomState(isNearBottom(node));
@@ -63,12 +65,14 @@ export function useAutoScroll() {
       detachScrollRef.current?.();
       detachScrollRef.current = null;
       containerNodeRef.current = null;
+      setScrollElement(null);
       if (rafRef.current !== null) window.cancelAnimationFrame(rafRef.current);
     }
   ), []);
 
   return {
     containerRef,
+    scrollElement,
     isAtBottom,
     scrollToBottom,
   };

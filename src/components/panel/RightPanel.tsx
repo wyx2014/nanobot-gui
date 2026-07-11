@@ -6,10 +6,10 @@ const PREVIEW_WIDTH = 420;
 
 export default function RightPanel() {
   const viewMode = useSettingsStore((s) => s.viewMode);
-  const previewFilePath = usePreviewStore((s) => s.previewFilePath);
+  const previewArtifact = usePreviewStore((s) => s.previewArtifact);
 
   // Hide panel when not in chat view or when there's no preview
-  if (viewMode !== 'chat' || !previewFilePath) {
+  if (viewMode !== 'chat' || !previewArtifact) {
     return null;
   }
 

@@ -17,14 +17,19 @@ export default defineConfig({
   test: {
     environment: 'happy-dom',
     setupFiles: ['./src/test/setup.ts'],
-    include: ['src/**/*.test.ts', 'src/__tests__/**/*.ts'],
+    include: ['src/**/*.test.{ts,tsx}', 'electron/**/*.test.ts', 'src/__tests__/**/*.ts'],
     coverage: {
       provider: 'v8',
+      reporter: ['text', 'json-summary', 'html'],
+      thresholds: {
+        lines: 1,
+        functions: 1,
+        statements: 1,
+        branches: 1,
+      },
       exclude: [
-        'src/components/**',
         'src/test/**',
         'src/main.tsx',
-        'src/App.tsx',
         '**/*.d.ts',
       ],
     },

@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { fsBridge } from '@/lib/ipc-factory';
 import { useI18n } from '@/i18n';
 import { Loader2 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { readArtifactBytes, type ArtifactRef } from '@/core/artifacts';
 
-export default function DocxPreview({ filePath }: { filePath: string }) {
+export default function DocxPreview({ artifact }: { artifact: ArtifactRef }) {
   const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
@@ -17,7 +17,7 @@ export default function DocxPreview({ filePath }: { filePath: string }) {
       setLoading(true);
       setError(null);
       try {
-        const data = await fsBridge.readFile(filePath);
+        const data = await readArtifactBytes(artifact);
         const { renderAsync } = await import('docx-preview');
 
         if (cancelled || !containerRef.current) return;
@@ -47,7 +47,7 @@ export default function DocxPreview({ filePath }: { filePath: string }) {
 
     load();
     return () => { cancelled = true; };
-  }, [filePath]);
+  }, [artifact]);
 
   if (error) {
     return (

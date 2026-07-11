@@ -1,10 +1,7 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { lazy, Suspense, useEffect, useState, useCallback, useMemo } from 'react';
 import { ipc, windowBridge, eventBridge } from '@/lib/ipc-factory';
 import Sidebar from '@/components/sidebar/Sidebar';
 import ChatView from '@/components/chat/ChatView';
-import ScheduleView from '@/components/schedule/ScheduleView';
-import SystemSettingsView from '@/components/settings/SystemSettingsModal';
-import ToolboxView from '@/components/settings/ToolboxModal';
 import RightPanel from '@/components/panel/RightPanel';
 import ToastContainer from '@/components/common/ToastContainer';
 import { useToastStore } from '@/stores/toastStore';
@@ -41,6 +38,17 @@ import { checkForUpdate } from '@/core/updates/checker';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
 import { syncNanobotSettings, bootstrapNanobotGateway, syncSessionsFromGateway, syncGatewaySettingsToStore } from '@/core/nanobotClient';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { renderMermaidPng } from '@/core/mermaid';
+
+// These views are only needed after explicit navigation. Keeping them out of
+// the initial chat bundle reduces startup work on the common path.
+const ScheduleView = lazy(() => import('@/components/schedule/ScheduleView'));
+const SystemSettingsView = lazy(() => import('@/components/settings/SystemSettingsModal'));
+const ToolboxView = lazy(() => import('@/components/settings/ToolboxModal'));
+
+function DeferredViewFallback() {
+  return <div className="flex h-full items-center justify-center text-sm text-[#77746b]">正在加载…</div>;
+}
 
 function normalizeWorkspaceScope(scope: WorkspaceScopePayload): WorkspaceScopePayload {
   return {
@@ -58,6 +66,18 @@ function App() {
   const viewMode = useSettingsStore((s) => s.viewMode);
   const { t } = useI18n();
   const [showCloseDialog, setShowCloseDialog] = useState(false);
+
+  useEffect(() => ipc.on('mermaid:render', async ({ id, code }: { id: string; code: string }) => {
+    try {
+      const image = await renderMermaidPng(code, `pdf-${id}`);
+      await ipc.invoke('mermaid:render-result', { id, image });
+    } catch (error) {
+      await ipc.invoke('mermaid:render-result', {
+        id,
+        error: error instanceof Error ? error.message : 'Mermaid render failed',
+      });
+    }
+  }), []);
 
   // Workspace state — synced from nanobot gateway
   const [workspaces, setWorkspaces] = useState<WorkspacesPayload | null>(null);
@@ -394,9 +414,11 @@ function App() {
 
           {/* Main — pt-7 on macOS to clear overlay title bar; no padding on Windows (native title bar) */}
           <main className={cn('flex-1 min-w-0 bg-[#fbfaf7]', mac && 'pt-7')}>
-            {viewMode === 'schedule' && <ScheduleView />}
-            {viewMode === 'toolbox' && <ToolboxView />}
-            {viewMode === 'settings' && <SystemSettingsView />}
+            <Suspense fallback={<DeferredViewFallback />}>
+              {viewMode === 'schedule' && <ScheduleView />}
+              {viewMode === 'toolbox' && <ToolboxView />}
+              {viewMode === 'settings' && <SystemSettingsView />}
+            </Suspense>
             {(viewMode === 'chat' || !viewMode) && (
               <ChatView
                 workspaceScope={activeWorkspaceScope}

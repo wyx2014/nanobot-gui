@@ -15,6 +15,7 @@ import { useI18n, format } from '@/i18n';
 import { cn } from '@/lib/utils';
 import { getBaseName, isLocalFilePath } from '@/utils/pathUtils';
 import { fsBridge, shellBridge, dialogBridge } from '@/lib/ipc-factory';
+import { artifactFromPath, artifactFromUrl, looksLikeArtifactUrl } from '@/core/artifacts';
 import type { SearchResult } from '@/types';
 import MermaidBlock from './MermaidBlock';
 
@@ -200,13 +201,13 @@ function processChildren(
 // --- Components ---
 
 function FilePathChip({ filePath }: { filePath: string }) {
-  const openPreview = usePreviewStore((s) => s.openPreview);
+  const openArtifact = usePreviewStore((s) => s.openArtifact);
   const { t } = useI18n();
   const fileName = getBaseName(filePath);
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    openPreview(filePath);
+    openArtifact(artifactFromPath(filePath));
   };
 
   const handleReveal = async (e: React.MouseEvent) => {
@@ -233,6 +234,26 @@ function FilePathChip({ filePath }: { filePath: string }) {
         <FolderOpen className="w-3 h-3 text-[#888579]" />
       </button>
     </span>
+  );
+}
+
+function ArtifactLink({ href, children, className }: { href: string; children?: ReactNode; className: string }) {
+  const openArtifact = usePreviewStore((state) => state.openArtifact);
+  return (
+    <a
+      href={href}
+      onClick={(event) => {
+        event.preventDefault();
+        openArtifact(artifactFromUrl(href, {
+          name: typeof children === 'string' && /\.[A-Za-z0-9]{1,8}$/.test(children.trim())
+            ? children.trim()
+            : undefined,
+        }));
+      }}
+      className={className}
+    >
+      {children}
+    </a>
   );
 }
 
@@ -435,9 +456,13 @@ function buildMarkdownComponents(
       );
     },
     a({ href, children }: { href?: string; children?: ReactNode }) {
-      const safeHref = SAFE_URL_PATTERN.test(href ?? '') ? href : undefined;
+      const safeHref = SAFE_URL_PATTERN.test(href ?? '') || href?.startsWith('/api/') ? href : undefined;
+      const className = isUser ? 'text-[#191814] underline' : 'text-[#b85f3f] hover:underline';
+      if (safeHref && looksLikeArtifactUrl(safeHref)) {
+        return <ArtifactLink href={safeHref} className={className}>{children}</ArtifactLink>;
+      }
       return (
-        <a href={safeHref} target="_blank" rel="noopener noreferrer" className={isUser ? 'text-[#191814] underline' : 'text-[#b85f3f] hover:underline'}>
+        <a href={safeHref} target="_blank" rel="noopener noreferrer" className={className}>
           {children}
         </a>
       );

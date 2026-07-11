@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Message } from '@/types';
-import { projectGatewayMessagesForHistory } from './nanobotClient';
+import { mapWebuiThreadToGuiMessages, projectGatewayMessagesForHistory } from './nanobotClient';
 
 describe('projectGatewayMessagesForHistory', () => {
   it('uses gateway history as the canonical transcript', () => {
@@ -57,5 +57,35 @@ describe('projectGatewayMessagesForHistory', () => {
     const projected = projectGatewayMessagesForHistory(gateway);
 
     expect(projected.map((message) => message.id)).toEqual(['gu1', 'ga1', 'gu2', 'ga2']);
+  });
+});
+
+describe('mapWebuiThreadToGuiMessages artifacts', () => {
+  it('preserves signed PDF preview and download metadata from gateway history', () => {
+    const messages = mapWebuiThreadToGuiMessages([{
+      id: 'assistant-pdf',
+      role: 'assistant',
+      content: '报告已生成',
+      createdAt: 1,
+      media: [{
+        kind: 'file',
+        url: '/api/media/sig/payload',
+        download_url: '/api/media/sig/payload?download=1',
+        name: 'report.pdf',
+        mime_type: 'application/pdf',
+        size: 2048,
+      }],
+    }]);
+
+    expect(messages[0].mediaAttachments).toEqual([{
+      id: undefined,
+      url: '/api/media/sig/payload',
+      downloadUrl: '/api/media/sig/payload?download=1',
+      localPath: undefined,
+      name: 'report.pdf',
+      kind: 'file',
+      mimeType: 'application/pdf',
+      size: 2048,
+    }]);
   });
 });

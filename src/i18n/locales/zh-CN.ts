@@ -536,6 +536,9 @@ const zhCN: TranslationDict = {
     sourceMode: '源码',
     unsupportedFileType: '此文件类型暂不支持预览',
     showInFinder: '在文件管理器中显示',
+    openInSystem: '在系统应用中打开',
+    revealInFolder: '在文件夹中显示',
+    downloadFile: '下载文件',
     failedToReadFile: '无法读取文件',
     fileNotFound: '文件不存在',
     // FilesSection

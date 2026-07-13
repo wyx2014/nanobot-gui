@@ -11,6 +11,7 @@ import {
 import type { StreamError } from "@/core/nanobot-client";
 import type {
   InboundEvent,
+  ExpertTeamBinding,
   UIInteractivePromptAnswer,
   OutboundCliAppMention,
   OutboundImageGeneration,
@@ -19,6 +20,7 @@ import type {
   OutboundSkillScope,
   GoalStateWsPayload,
   ToolProgressEvent,
+  TaskProgressStep,
   UIImage,
   UIFileEdit,
   UIMediaAttachment,
@@ -455,6 +457,7 @@ export interface SendOptions {
   skillScope?: OutboundSkillScope;
   workspaceScope?: WorkspaceScopePayload | null;
   interactivePromptAnswer?: UIInteractivePromptAnswer;
+  expertTeam?: ExpertTeamBinding;
 }
 
 export function useNanobotStream(
@@ -824,6 +827,114 @@ export function useNanobotStream(
         } else {
           setRunStartedAt(null);
         }
+        return;
+      }
+
+      if (ev.event === "team_run_started") {
+        const id = `team-run-${ev.run_id}`;
+        const steps = [
+          ...ev.members.map((member) => ({
+            id: member.id,
+            title: `${member.name}${member.framework ? ` · ${member.framework}` : ""}`,
+            detail: member.description,
+            status: "pending" as const,
+          })),
+          {
+            id: "team-lead",
+            title: "Team Lead 交叉质证与汇总",
+            detail: "等待四位专家交付后进行交叉质证",
+            status: "pending" as const,
+          },
+          {
+            id: "report-audit",
+            title: "财务数据抽检与生成报告",
+            detail: "等待交叉质证完成后抽检数据并生成报告",
+            status: "pending" as const,
+          },
+        ];
+        setMessages((prev) => [
+          ...prev.filter((message) => message.id !== id),
+          {
+            id,
+            role: "tool",
+            kind: "trace",
+            content: `${ev.team_name}已启动`,
+            traces: [`${ev.team_name}已启动`],
+            agentUI: { kind: "task_progress", steps, note: "四位专家将并行研究" },
+            createdAt: Date.now(),
+          },
+        ]);
+        return;
+      }
+
+      if (ev.event === "team_member_updated") {
+        const id = `team-run-${ev.run_id}`;
+        setMessages((prev) => prev.map((message) => {
+          if (message.id !== id || message.agentUI?.kind !== "task_progress") return message;
+          const progress = message.agentUI as {
+            kind: "task_progress";
+            steps: TaskProgressStep[];
+            note?: string;
+            current_step_id?: string;
+          };
+          const status = ev.member.status === "running"
+            ? "running"
+            : "completed";
+          const steps = progress.steps.map((step) => (
+            step.id === ev.member.id
+              ? {
+                  ...step,
+                  title: ev.member.status === "failed"
+                    ? `${step.title.replace(/（已降级）$|（已停止）$/, "")}（已降级）`
+                    : ev.member.status === "cancelled"
+                      ? `${step.title.replace(/（已降级）$|（已停止）$/, "")}（已停止）`
+                      : step.title.replace(/（已降级）$|（已停止）$/, ""),
+                  detail: ev.member.activity || step.detail,
+                  status,
+                }
+              : step
+          ));
+          return {
+            ...message,
+            content: ev.member.activity || `${ev.member.name}${ev.member.status === "running" ? "正在研究" : "已完成"}`,
+            traces: [ev.member.activity || `${ev.member.name}${ev.member.status === "running" ? "正在研究" : "已完成"}`],
+            agentUI: {
+              ...progress,
+              steps,
+              current_step_id: ev.member.status === "running" ? ev.member.id : undefined,
+              note: ev.member.status === "failed"
+                ? "部分维度已降级，团队将继续完成报告"
+                : ev.member.status === "cancelled"
+                  ? "主任务已停止，后台专家和并发槽位已释放"
+                  : message.agentUI.note,
+            },
+          };
+        }));
+        return;
+      }
+
+      if (ev.event === "team_run_completed") {
+        const id = `team-run-${ev.run_id}`;
+        setMessages((prev) => prev.map((message) => {
+          if (message.id !== id || message.agentUI?.kind !== "task_progress") return message;
+          const progress = message.agentUI as {
+            kind: "task_progress";
+            steps: TaskProgressStep[];
+            note?: string;
+            current_step_id?: string;
+          };
+          return {
+            ...message,
+            content: "资产投研团队已完成",
+            traces: ["资产投研团队已完成"],
+            agentUI: {
+              ...progress,
+              steps: progress.steps.map((step) => ({ ...step, status: "completed" as const })),
+              current_step_id: undefined,
+              note: ev.status === "completed_with_warnings" ? "已完成，部分维度采用降级结果" : "研究与报告已完成",
+            },
+          };
+        }));
         return;
       }
 

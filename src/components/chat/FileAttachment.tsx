@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { FileCode, FileText, FileImage, File, FileJson, ExternalLink } from 'lucide-react';
+import { FileCode, FileText, FileImage, File, FileJson, ExternalLink, Globe2 } from 'lucide-react';
 import { usePreviewStore } from '@/stores/previewStore';
 import { useI18n } from '@/i18n';
 import { cn } from '@/lib/utils';
@@ -62,6 +62,7 @@ export default function FileAttachment({ filePath, operation }: FileAttachmentPr
   const openArtifact = usePreviewStore((s) => s.openArtifact);
   const { icon: Icon, label, category } = getFileTypeInfo(filePath);
   const fileName = getBaseName(filePath);
+  const isHtml = /\.html?$/i.test(fileName);
   const showThumbnail = isImageFile(filePath);
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
 
@@ -115,6 +116,32 @@ export default function FileAttachment({ filePath, operation }: FileAttachmentPr
           <FileImage className="w-3.5 h-3.5 text-[#888579] shrink-0" />
           <span className="text-[12px] text-[#29261b] truncate">{fileName}</span>
         </div>
+      </div>
+    );
+  }
+
+  if (isHtml) {
+    return (
+      <div
+        onClick={handleClick}
+        className="group flex min-h-[72px] w-full cursor-pointer items-center gap-4 rounded-2xl bg-[#efefef] px-5 py-3 transition-colors hover:bg-[#e9e9e9]"
+        title="点击预览 HTML"
+      >
+        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-[#5b86d6] text-white shadow-sm">
+          <FileCode className="h-6 w-6" strokeWidth={2.2} />
+        </div>
+        <span className="min-w-0 flex-1 truncate text-left text-[16px] font-semibold text-[#202020]" title={filePath}>
+          {fileName}
+        </span>
+        <button
+          type="button"
+          onClick={handleOpenFile}
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[#555] transition-colors hover:bg-white/80 hover:text-[#202020]"
+          title="在浏览器中打开"
+          aria-label="在浏览器中打开"
+        >
+          <Globe2 className="h-5 w-5" />
+        </button>
       </div>
     );
   }

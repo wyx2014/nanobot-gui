@@ -1,5 +1,6 @@
 import type {
   ConnectionStatus,
+  ExpertTeamBinding,
   InboundEvent,
   Outbound,
   OutboundCliAppMention,
@@ -57,6 +58,7 @@ type SessionUpdateHandler = (
   chatId: string,
   scope?: SessionUpdateScope,
   workspaceScope?: WorkspaceScopePayload,
+  expertTeam?: ExpertTeamBinding,
 ) => void;
 type RunStatusHandler = (chatId: string, startedAt: number | null) => void;
 
@@ -260,7 +262,11 @@ export class NanobotClient {
     this.setStatus("closed");
   }
 
-  newChat(timeoutMs: number = 5_000, workspaceScope?: WorkspaceScopePayload | null): Promise<string> {
+  newChat(
+    timeoutMs: number = 5_000,
+    workspaceScope?: WorkspaceScopePayload | null,
+    expertTeam?: ExpertTeamBinding,
+  ): Promise<string> {
     if (this.pendingNewChat) {
       return Promise.reject(new Error("newChat already in flight"));
     }
@@ -273,6 +279,7 @@ export class NanobotClient {
       this.queueSend({
         type: "new_chat",
         ...(workspaceScope ? { workspace_scope: workspaceScope } : {}),
+        ...(expertTeam ? { expert_team: expertTeam } : {}),
       });
     });
   }
@@ -295,6 +302,7 @@ export class NanobotClient {
       skillScope?: OutboundSkillScope;
       workspaceScope?: WorkspaceScopePayload | null;
       interactivePromptAnswer?: UIInteractivePromptAnswer;
+      expertTeam?: ExpertTeamBinding;
     },
   ): void {
     this.knownChats.add(chatId);
@@ -309,6 +317,7 @@ export class NanobotClient {
       ...(options?.skillScope ? { skill_scope: options.skillScope } : {}),
       ...(options?.workspaceScope ? { workspace_scope: options.workspaceScope } : {}),
       ...(options?.interactivePromptAnswer ? { interactive_prompt_answer: options.interactivePromptAnswer } : {}),
+      ...(options?.expertTeam ? { expert_team: options.expertTeam } : {}),
       webui: true,
     };
     this.queueSend(frame);
@@ -382,7 +391,7 @@ export class NanobotClient {
     }
 
     if (parsed.event === "session_updated") {
-      this.emitSessionUpdate(parsed.chat_id, parsed.scope, parsed.workspace_scope);
+      this.emitSessionUpdate(parsed.chat_id, parsed.scope, parsed.workspace_scope, parsed.expert_team);
       return;
     }
 
@@ -421,9 +430,10 @@ export class NanobotClient {
     chatId: string,
     scope?: SessionUpdateScope,
     workspaceScope?: WorkspaceScopePayload,
+    expertTeam?: ExpertTeamBinding,
   ): void {
     for (const handler of this.sessionUpdateHandlers) {
-      handler(chatId, scope, workspaceScope);
+      handler(chatId, scope, workspaceScope, expertTeam);
     }
   }
 

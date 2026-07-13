@@ -1,4 +1,4 @@
-import { ExternalLink, FileText, ImageIcon } from 'lucide-react';
+import { ExternalLink, FileCode, FileText, Globe2, ImageIcon } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { MessageContent, MessageMediaAttachment } from '@/types';
 import { cn } from '@/lib/utils';
@@ -236,6 +236,34 @@ function RemoteFileTile({ item }: { item: MessageMediaAttachment }) {
         <FileText className="h-4 w-4 shrink-0 text-[#888579]" />
         <span className="truncate">{label}</span>
       </span>
+    );
+  }
+  if (/\.html?$/i.test(label)) {
+    const openBrowser = async (event: React.MouseEvent) => {
+      event.stopPropagation();
+      event.preventDefault();
+      if (item.url) await shellBridge.open(item.url);
+    };
+    return (
+      <div
+        onClick={() => openArtifact(artifactFromMediaAttachment(item))}
+        className="group flex min-h-[72px] w-full cursor-pointer items-center gap-4 rounded-2xl bg-[#efefef] px-5 py-3 transition-colors hover:bg-[#e9e9e9]"
+        title={label}
+      >
+        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-[#5b86d6] text-white shadow-sm">
+          <FileCode className="h-6 w-6" strokeWidth={2.2} />
+        </div>
+        <span className="min-w-0 flex-1 truncate text-left text-[16px] font-semibold text-[#202020]">{label}</span>
+        <button
+          type="button"
+          onClick={openBrowser}
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[#555] transition-colors hover:bg-white/80 hover:text-[#202020]"
+          title="在浏览器中打开"
+          aria-label="在浏览器中打开"
+        >
+          <Globe2 className="h-5 w-5" />
+        </button>
+      </div>
     );
   }
   return (

@@ -299,6 +299,7 @@ const enUS: TranslationDict = {
 
   toolbox: {
     title: 'Toolbox',
+    expertTeams: 'Expert Teams',
     skills: 'Skills',
     mcp: 'MCP',
     searchPlaceholder: 'Search...',

@@ -299,6 +299,7 @@ const zhCN: TranslationDict = {
 
   toolbox: {
     title: '工具箱',
+    expertTeams: '专家团队',
     skills: '技能',
     mcp: '连接器',
     searchPlaceholder: '搜索...',

@@ -319,6 +319,7 @@ export interface TranslationDict {
   // Toolbox Modal
   toolbox: {
     title: string;
+    expertTeams: string;
     skills: string;
     mcp: string;
     searchPlaceholder: string;

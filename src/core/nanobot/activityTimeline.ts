@@ -63,15 +63,8 @@ export function normalizeActivityTimeline(messages: Message[]): ChatDisplayUnit[
   const flushTurn = () => {
     if (turnMessages.length === 0) return;
 
-    const visibleMessages = visibleMessagesForTurn(turnMessages);
-    let visibleIndex = 0;
-    let activityMessages: Message[] = [];
-
-    const flushActivityMessages = () => {
-      if (!activityMessages.length) return;
-      pushActivityUnits(units, activityMessages, visibleMessages.slice(visibleIndex));
-      activityMessages = [];
-    };
+    const visibleMessages: Message[] = [];
+    const activityMessages: Message[] = [];
 
     for (const message of turnMessages) {
       if (isEmptyAssistantPlaceholder(message)) {
@@ -85,18 +78,22 @@ export function normalizeActivityTimeline(messages: Message[]): ChatDisplayUnit[
 
       if (assistantHasInlineReasoning(message)) {
         activityMessages.push(reasoningOnlyMessageFromAnswer(message));
-        flushActivityMessages();
-        units.push({ type: 'message', message: stripInlineReasoning(message) });
-        visibleIndex += 1;
+        visibleMessages.push(stripInlineReasoning(message));
         continue;
       }
 
-      flushActivityMessages();
-      units.push({ type: 'message', message });
-      visibleIndex += 1;
+      visibleMessages.push(message);
     }
 
-    flushActivityMessages();
+    if (activityMessages.length) {
+      units.push({
+        type: 'activity',
+        messages: activityMessages,
+        items: activityMessages.flatMap(activityItemsForMessage),
+        turnLatencyMs: activityTurnLatencyMs(activityMessages, visibleMessages),
+      });
+    }
+    visibleMessages.forEach((message) => units.push({ type: 'message', message }));
     turnMessages = [];
   };
 
@@ -147,57 +144,6 @@ function committedTurnBoundary(messages: Message[]): number {
 
 function sameMessageReferences(left: Message[], right: Message[]): boolean {
   return left.length === right.length && left.every((message, index) => message === right[index]);
-}
-
-function visibleMessagesForTurn(messages: Message[]): Message[] {
-  const visibleMessages: Message[] = [];
-  for (const message of messages) {
-    if (isAgentActivityMember(message)) continue;
-    visibleMessages.push(assistantHasInlineReasoning(message) ? stripInlineReasoning(message) : message);
-  }
-  return visibleMessages;
-}
-
-function pushActivityUnits(units: ChatDisplayUnit[], activityMessages: Message[], visibleMessages: Message[]) {
-  let runMessages: Message[] = [];
-  let runBucket: 'file' | 'other' | undefined;
-  let runSegmentId: string | undefined;
-
-  const flushRun = () => {
-    if (!runMessages.length) return;
-    units.push({
-      type: 'activity',
-      messages: runMessages,
-      items: runMessages.flatMap(activityItemsForMessage),
-      turnLatencyMs: activityTurnLatencyMs(runMessages, visibleMessages),
-    });
-    runMessages = [];
-    runBucket = undefined;
-    runSegmentId = undefined;
-  };
-
-  for (const message of activityMessages) {
-    const bucket = isFileEditActivityMessage(message) ? 'file' : 'other';
-    const segmentId = message.activitySegmentId;
-    const segmentChanged =
-      bucket === 'file'
-      && runBucket === 'file'
-      && !!runSegmentId
-      && !!segmentId
-      && runSegmentId !== segmentId;
-    if ((runBucket && bucket !== runBucket) || segmentChanged) {
-      flushRun();
-    }
-    runBucket = bucket;
-    if (segmentId) runSegmentId = segmentId;
-    runMessages.push(message);
-  }
-
-  flushRun();
-}
-
-function isFileEditActivityMessage(message: Message): boolean {
-  return message.kind === 'trace' && !!message.fileEdits?.length;
 }
 
   /** Empty assistant placeholder rows are created by the stream hook for tool events

@@ -1,0 +1,1155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>中国数据中心(IDC)行业入门研究报告 — 2026.07</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #f0f2f5;
+    --card-bg: #ffffff;
+    --text: #1a1a2e;
+    --text-sub: #555;
+    --text-light: #888;
+    --border: #e8e8e8;
+    --primary: #1652f0;
+    --primary-light: #e8effd;
+    --green: #00b8a3;
+    --green-light: #e6f9f6;
+    --red: #ff4d4f;
+    --red-light: #fff1f0;
+    --orange: #fa8c16;
+    --orange-light: #fff7e6;
+    --purple: #722ed1;
+    --purple-light: #f5f0ff;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    font-size: 15px;
+  }
+  .container { max-width: 1100px; margin: 0 auto; padding: 0 20px 60px; }
+
+  /* Hero */
+  .hero {
+    background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #1652f0 100%);
+    color: white;
+    padding: 48px 0 40px;
+    text-align: center;
+  }
+  .hero h1 { font-size: 32px; font-weight: 700; margin-bottom: 8px; letter-spacing: 1px; }
+  .hero .subtitle { font-size: 16px; opacity: 0.85; margin-bottom: 16px; }
+  .hero .meta { display: flex; justify-content: center; gap: 20px; font-size: 13px; opacity: 0.7; }
+  .hero .meta span { display: flex; align-items: center; gap: 4px; }
+
+  /* Section */
+  .section { margin-top: 36px; }
+  .section-title {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 16px;
+    padding-left: 12px;
+    border-left: 4px solid var(--primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-title .num {
+    background: var(--primary);
+    color: white;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+  }
+  h3 { font-size: 17px; font-weight: 600; margin: 20px 0 10px; color: var(--text); }
+  p { margin-bottom: 12px; color: var(--text-sub); }
+  .highlight { color: var(--primary); font-weight: 600; }
+  .highlight-green { color: var(--green); font-weight: 600; }
+  .highlight-red { color: var(--red); font-weight: 600; }
+
+  /* Card */
+  .card {
+    background: var(--card-bg);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  .card h2 { font-size: 18px; margin-bottom: 12px; }
+
+  /* Grid */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  @media (max-width: 768px) {
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+  }
+
+  /* Stat box */
+  .stat-box {
+    background: var(--card-bg);
+    border-radius: 10px;
+    padding: 20px;
+    text-align: center;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  .stat-box .value { font-size: 28px; font-weight: 700; color: var(--primary); }
+  .stat-box .label { font-size: 13px; color: var(--text-light); margin-top: 4px; }
+  .stat-box .sub { font-size: 12px; color: var(--green); margin-top: 4px; }
+
+  /* Table */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    background: #f7f8fa;
+    padding: 12px 10px;
+    text-align: center;
+    font-weight: 600;
+    color: var(--text);
+    border-bottom: 2px solid var(--border);
+    white-space: nowrap;
+  }
+  td {
+    padding: 10px;
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-sub);
+  }
+  tr:hover td { background: #fafbfc; }
+  .stock-name { font-weight: 600; color: var(--text); }
+  .pos { color: var(--green); }
+  .neg { color: var(--red); }
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .tag-blue { background: var(--primary-light); color: var(--primary); }
+  .tag-green { background: var(--green-light); color: var(--green); }
+  .tag-orange { background: var(--orange-light); color: var(--orange); }
+  .tag-red { background: var(--red-light); color: var(--red); }
+  .tag-purple { background: var(--purple-light); color: var(--purple); }
+
+  /* Tier card */
+  .tier-card {
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 12px;
+  }
+  .tier-card h4 { font-size: 16px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .tier-card p { font-size: 13px; margin-bottom: 8px; }
+  .tier-1 { background: linear-gradient(135deg, #e6f9f6 0%, #f0fffa 100%); border-left: 4px solid var(--green); }
+  .tier-2 { background: linear-gradient(135deg, #e8effd 0%, #f0f5ff 100%); border-left: 4px solid var(--primary); }
+  .tier-3 { background: linear-gradient(135deg, #fff7e6 0%, #fffbf0 100%); border-left: 4px solid var(--orange); }
+
+  /* Watchlist card */
+  .watch-card {
+    background: var(--card-bg);
+    border-radius: 14px;
+    overflow: hidden;
+    margin-bottom: 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+  .watch-header {
+    padding: 20px 24px;
+    color: white;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .watch-header h3 { color: white; margin: 0; font-size: 20px; }
+  .watch-header .code { font-size: 13px; opacity: 0.8; }
+  .watch-body { padding: 24px; }
+  .watch-metrics { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+  .watch-metric { text-align: center; min-width: 80px; }
+  .watch-metric .v { font-size: 20px; font-weight: 700; }
+  .watch-metric .l { font-size: 11px; color: var(--text-light); }
+
+  /* Badge */
+  .badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-right: 6px;
+  }
+  .badge-blue { background: rgba(255,255,255,0.25); color: white; }
+
+  /* Chart container */
+  .chart-container { position: relative; height: 360px; margin: 16px 0; }
+  .chart-container-sm { position: relative; height: 280px; margin: 16px 0; }
+
+  /* Timeline */
+  .timeline { position: relative; padding-left: 24px; }
+  .timeline::before { content: ''; position: absolute; left: 6px; top: 0; bottom: 0; width: 2px; background: var(--border); }
+  .timeline-item { position: relative; margin-bottom: 16px; }
+  .timeline-item::before { content: ''; position: absolute; left: -22px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: var(--primary); }
+  .timeline-item .time { font-size: 12px; color: var(--text-light); }
+  .timeline-item .content { font-size: 14px; color: var(--text-sub); }
+
+  /* Callout */
+  .callout {
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 12px 0;
+    font-size: 14px;
+  }
+  .callout-info { background: var(--primary-light); border-left: 3px solid var(--primary); }
+  .callout-warn { background: var(--orange-light); border-left: 3px solid var(--orange); }
+  .callout-success { background: var(--green-light); border-left: 3px solid var(--green); }
+
+  /* Pros/Cons */
+  .pros-cons { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 12px 0; }
+  @media (max-width: 768px) { .pros-cons { grid-template-columns: 1fr; } }
+  .pros, .cons { padding: 16px; border-radius: 8px; }
+  .pros { background: var(--green-light); }
+  .cons { background: var(--red-light); }
+  .pros h5 { color: var(--green); margin-bottom: 8px; font-size: 14px; }
+  .cons h5 { color: var(--red); margin-bottom: 8px; font-size: 14px; }
+  .pros ul, .cons ul { padding-left: 18px; font-size: 13px; color: var(--text-sub); }
+  .pros li, .cons li { margin-bottom: 4px; }
+
+  /* Disclaimer */
+  .disclaimer {
+    margin-top: 40px;
+    padding: 24px;
+    background: #fffbe6;
+    border: 1px solid #ffe58f;
+    border-radius: 8px;
+    font-size: 13px;
+    color: #8c6e2a;
+    line-height: 1.8;
+  }
+
+  /* TOC */
+  .toc {
+    background: var(--card-bg);
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin-bottom: 28px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  .toc h4 { font-size: 14px; color: var(--text-light); margin-bottom: 10px; }
+  .toc ul { list-style: none; display: flex; flex-wrap: wrap; gap: 8px; }
+  .toc li a {
+    display: inline-block;
+    padding: 4px 12px;
+    background: #f5f6f8;
+    border-radius: 6px;
+    text-decoration: none;
+    color: var(--text-sub);
+    font-size: 13px;
+    transition: all 0.2s;
+  }
+  .toc li a:hover { background: var(--primary-light); color: var(--primary); }
+
+  /* Footer */
+  .footer { text-align: center; padding: 24px; color: var(--text-light); font-size: 12px; }
+</style>
+</head>
+<body>
+
+<!-- ============ HERO ============ -->
+<div class="hero">
+  <h1>中国数据中心(IDC)行业入门研究报告</h1>
+  <p class="subtitle">竞争格局 · 可比公司估值 · 主题股票观察清单</p>
+  <div class="meta">
+    <span>📅 2026年7月8日</span>
+    <span>📊 数据来源：NeoData 金融数据服务</span>
+    <span>🔬 行业研究</span>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- ============ TOC ============ -->
+  <div class="toc" style="margin-top: 24px;">
+    <h4>📑 目录</h4>
+    <ul>
+      <li><a href="#s1">1. 行业概况</a></li>
+      <li><a href="#s2">2. 政策与宏观环境</a></li>
+      <li><a href="#s3">3. 产业链与商业模式</a></li>
+      <li><a href="#s4">4. 竞争格局</a></li>
+      <li><a href="#s5">5. 可比公司估值表</a></li>
+      <li><a href="#s6">6. 主题股票观察清单</a></li>
+      <li><a href="#s7">7. 催化剂与风险</a></li>
+    </ul>
+  </div>
+
+  <!-- ============ 1. 行业概况 ============ -->
+  <div class="section" id="s1">
+    <div class="section-title"><span class="num">1</span> 行业概况</div>
+
+    <div class="card">
+      <h2>什么是 IDC？</h2>
+      <p><strong>互联网数据中心（Internet Data Center，简称 IDC）</strong>是集中存放计算、存储、网络等IT设备的基础设施场所，为互联网企业、云服务商、金融机构及政企客户提供服务器托管、带宽接入、算力租赁、运维管理等一站式服务。简单来说，IDC 就是"数字时代的房地产+电厂"——它出租的不是物理空间，而是<span class="highlight">算力承载能力</span>。</p>
+      <p>2026年的 IDC 行业正经历从"通用算力仓库"向"AI 智算枢纽"的范式迁移。大模型训练与推理需求爆发，推动数据中心从传统的 CPU 通用计算向 GPU 高密度智算加速演进，单机柜功率密度从传统的 6-8kW 飙升至 30-100kW+，对供电、散热、网络架构提出了全新挑战。</p>
+    </div>
+
+    <div class="grid-4" style="margin-bottom: 20px;">
+      <div class="stat-box">
+        <div class="value">280<small style="font-size:14px">EFLOPS</small></div>
+        <div class="label">全国算力总规模</div>
+        <div class="sub">截至2024年底</div>
+      </div>
+      <div class="stat-box">
+        <div class="value">90<small style="font-size:14px">EFLOPS</small></div>
+        <div class="label">智能算力规模</div>
+        <div class="sub">占比持续提升</div>
+      </div>
+      <div class="stat-box">
+        <div class="value">3958<small style="font-size:14px">亿GB</small></div>
+        <div class="label">2025年移动互联网流量</div>
+        <div class="sub">同比+17.3%</div>
+      </div>
+      <div class="stat-box">
+        <div class="value">10+</div>
+        <div class="label">国家数据中心集群</div>
+        <div class="sub">东数西算工程</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>市场规模与增长驱动</h3>
+      <p>中国 IDC 市场规模在 AI 算力需求驱动下保持高速增长。根据前瞻产业研究院测算，2025年国内 IDC 需求结构中，<span class="highlight">公有云需求占比约 46.7%</span>，互联网需求占比约 43.0%，传统行业需求占比约 10.7%。AI 大模型的爆发正在重塑需求结构——训练侧需要大规模 GPU 集群集中部署，推理侧需要边缘节点低延迟覆盖，两者共同推动 IDC 行业进入新一轮扩产周期。</p>
+      <p>核心增长驱动因素：</p>
+      <div class="grid-2">
+        <div class="callout callout-info">
+          <strong>🤖 AI 算力爆发</strong><br>
+          大模型训练/推理需求指数级增长，Meta 宣布投入数千亿美元建设多个千兆瓦级数据中心，OpenAI"星际之门"计划 4 年 5000 亿美元。国内互联网巨头资本开支加速向 AI 基础设施倾斜。
+        </div>
+        <div class="callout callout-info">
+          <strong>☁️ 云计算渗透深化</strong><br>
+         公有云市场持续扩张，阿里、腾讯、华为等云厂商持续加大数据中心投入。2025年公有云需求占比近半，仍是 IDC 最大客户群体。
+        </div>
+        <div class="callout callout-info">
+          <strong>🏛️ 政企数字化转型</strong><br>
+          智慧政务、金融科技、工业互联网等传统行业释放增量需求，目前占比仅10.7%但增速领先，是未来增长的重要极。
+        </div>
+        <div class="callout callout-info">
+          <strong>⚡ 东数西算战略</strong><br>
+          全国一体化算力网络加速成型，8大枢纽节点+10大集群引导算力向西部能源富集区集聚，重塑区域布局。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 2. 政策与宏观 ============ -->
+  <div class="section" id="s2">
+    <div class="section-title"><span class="num">2</span> 政策与宏观环境</div>
+
+    <div class="card">
+      <h3>政策演进历程</h3>
+      <p>中国 IDC 行业政策经历了从"早期萌芽与宽松发展"到"规范整顿与绿色引导"，再到"新基建推动与区域布局"，直至当前"国家战略与算力协同"四个阶段的演变：</p>
+      <div class="timeline">
+        <div class="timeline-item">
+          <div class="time">2020年</div>
+          <div class="content"><strong>体系搭建期</strong>：《新型数据中心发展三年行动计划》出台，首次从算力规模、区域部署、绿色节能等多维度提出发展要求。</div>
+        </div>
+        <div class="timeline-item">
+          <div class="time">2022年</div>
+          <div class="content"><strong>东数西算启动</strong>：四部委联合批复 8 个国家算力枢纽节点和 10 个数据中心集群，"东数西算"工程正式全面启动，对行业进行供给侧改革。</div>
+        </div>
+        <div class="timeline-item">
+          <div class="time">2023年</div>
+          <div class="content"><strong>算力高质量发展</strong>：多部委联合推动算力基础设施高质量发展，提出算力规模、PUE、自主可控等量化目标。</div>
+        </div>
+        <div class="timeline-item">
+          <div class="time">2025-2026年</div>
+          <div class="content"><strong>十五五重大工程</strong>：算力基础设施被纳入"十五五"重大工程项目，政策进一步强调"算电协同"和国产芯片应用。全国超50城出台算力产业支持政策，20余个智算中心项目入选国家级重大工程。</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>地方政策亮点</h3>
+      <div class="grid-2">
+        <div>
+          <h3>🏙️ 北京</h3>
+          <p>推出算力券补贴支持智能算力租赁；明确智算供给目标与软硬件自主可控要求；通过差别电价引导存量 IDC 绿色转型、提升绿电消纳水平。</p>
+        </div>
+        <div>
+          <h3>🏙️ 上海</h3>
+          <p>发布"算力浦江"2025年专项行动；出台《智算中心建设导则（2025年版）》，明确大型及边缘智算中心建设标准，量化智算规模与先进存储占比目标。</p>
+        </div>
+      </div>
+      <div class="callout callout-success">
+        <strong>📌 政策趋势总结</strong>：整体围绕<strong>算力规模提升、能效水平优化、技术创新突破</strong>三大核心方向推进，聚焦智算基础设施建设，推动 IDC 行业从规模扩张向高质量、绿色化、智能化转型。
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 3. 产业链 ============ -->
+  <div class="section" id="s3">
+    <div class="section-title"><span class="num">3</span> 产业链与商业模式</div>
+
+    <div class="card">
+      <h3>产业链全景</h3>
+      <div class="chart-container-sm">
+        <canvas id="产业链图"></canvas>
+      </div>
+      <p>IDC 产业链可分为上游设备与基础设施、中游运营服务、下游应用客户三层：</p>
+      <div class="grid-3">
+        <div class="tier-card tier-3">
+          <h4>⬆️ 上游：设备与基建</h4>
+          <p><strong>供配电</strong>：UPS、变压器、发电机（科华数据、科士达）</p>
+          <p><strong>制冷散热</strong>：精密空调、液冷（英维克、高澜股份）</p>
+          <p><strong>IT设备</strong>：服务器、交换机（浪潮信息、锐捷网络）</p>
+          <p><strong>光通信</strong>：光模块、光连接（中际旭创、新易盛）</p>
+        </div>
+        <div class="tier-card tier-2">
+          <h4>⬅️ 中游：IDC 运营</h4>
+          <p><strong>第三方IDC</strong>：万国数据、润泽科技、数据港、光环新网、奥飞数据</p>
+          <p><strong>运营商IDC</strong>：中国电信、中国移动、中国联通</p>
+          <p><strong>云厂商自建</strong>：阿里云、腾讯云、华为云</p>
+          <p><strong>跨界入局者</strong>：宝信软件（钢铁）、东阳光（秦淮数据）</p>
+        </div>
+        <div class="tier-card tier-1">
+          <h4>⬇️ 下游：应用客户</h4>
+          <p><strong>公有云</strong>：阿里、腾讯、华为（46.7%）</p>
+          <p><strong>互联网</strong>：字节、百度、快手等（43.0%）</p>
+          <p><strong>传统行业</strong>：金融、政务、制造（10.7%）</p>
+          <p><strong>AI 大模型</strong>：新兴增量核心驱动</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>核心商业模式</h3>
+      <div class="grid-2">
+        <div>
+          <h3>🏠 批发型（Wholesale）</h3>
+          <p>面向大型云厂商和互联网企业，以整栋数据中心或整层模块为单位出租。合同期长（10-15年）、客户粘性强、现金流稳定，但单价较低、定制化程度高。</p>
+          <p><strong>代表</strong>：润泽科技、数据港（核心大客户绑定模式）</p>
+        </div>
+        <div>
+          <h3>🏢 零售型（Retail）</h3>
+          <p>面向中小型企业，以机柜或机架为单位出租。单价较高、灵活性好，但客户分散、收入波动大、销售成本高。</p>
+          <p><strong>代表</strong>：光环新网、奥飞数据</p>
+        </div>
+      </div>
+      <div class="callout callout-info">
+        <strong>💡 行业趋势</strong>：随着 AI 算力需求爆发，批发型模式成为主流——大客户包下整栋智算中心，IDC 运营商转型为"算力基础设施服务商"，核心能力从"建房子"升级为"建+管+运维高密度智算集群"。
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 4. 竞争格局 ============ -->
+  <div class="section" id="s4">
+    <div class="section-title"><span class="num">4</span> 竞争格局</div>
+
+    <div class="card">
+      <h3>三大阵营格局</h3>
+      <p>中国 IDC 市场已形成<span class="highlight">三大阵营</span>竞合的格局，各有优劣：</p>
+
+      <div class="tier-card tier-1">
+        <h4>🥇 第一阵营：第三方专业 IDC 运营商</h4>
+        <p><span class="tag tag-green">核心玩家</span> 万国数据(GDS)、润泽科技、数据港、光环新网、奥飞数据、世纪互联(VNET)</p>
+        <p><strong>优势</strong>：专业化运营能力、客户资源丰富、选址灵活、响应速度快。头部企业已建立规模效应和品牌壁垒。</p>
+        <p><strong>劣势</strong>：重资产模式，资本开支大，负债率偏高；一线城市的土地和电力指标获取难度持续加大。</p>
+        <p><strong>趋势</strong>：行业集中度加速提升，头部企业通过并购整合扩大份额。东阳光并购秦淮数据、润泽科技快速扩产，均是这一趋势的体现。</p>
+      </div>
+
+      <div class="tier-card tier-2">
+        <h4>🥈 第二阵营：电信运营商</h4>
+        <p><span class="tag tag-blue">核心玩家</span> 中国电信、中国移动、中国联通</p>
+        <p><strong>优势</strong>：拥有带宽、机房、骨干网络等核心资源；政企客户渠道深厚；资金实力雄厚。中国移动总市值近2万亿，在数据中心板块成分股中市值最大。</p>
+        <p><strong>劣势</strong>：运营效率相对较低，市场化服务能力弱于第三方；内部体制机制灵活度不足。</p>
+        <p><strong>趋势</strong>：运营商正从"提供机房"向"提供算力服务"转型，积极布局智算中心。</p>
+      </div>
+
+      <div class="tier-card tier-3">
+        <h4>🥉 第三阵营：云厂商自建 + 跨界入局者</h4>
+        <p><span class="tag tag-orange">云厂商</span> 阿里云、腾讯云、华为云 —— 超大规模自建数据中心，既是IDC的客户也是竞争者</p>
+        <p><span class="tag tag-purple">跨界者</span> 宝信软件（背靠宝武钢铁）、东阳光（并购秦淮数据）—— 利用自身土地、电力、资金优势切入赛道</p>
+        <p><strong>优势</strong>：云厂商具备技术栈全栈能力；跨界企业拥有低成本土地和能源，契合"东数西算"绿电导向。</p>
+        <p><strong>劣势</strong>：云厂商自建以自用为主，不对外服务；跨界企业缺乏IDC运营经验和客户积累。</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>核心竞争要素</h3>
+      <div class="chart-container-sm">
+        <canvas id="竞争要素图"></canvas>
+      </div>
+      <div class="grid-4">
+        <div class="callout callout-info" style="text-align:center;">
+          <strong>📍 区位资源</strong><br>
+          <span style="font-size:13px">一线城市及周边的土地和电力指标是最稀缺资源。北京严控新增、上海门槛提高，核心区位价值持续上升。</span>
+        </div>
+        <div class="callout callout-info" style="text-align:center;">
+          <strong>⚡ 电力保障</strong><br>
+          <span style="font-size:13px">高密度智算中心对供电要求极高。绿电接入能力、储能配套成为新壁垒，"算电协同"是政策核心方向。</span>
+        </div>
+        <div class="callout callout-info" style="text-align:center;">
+          <strong>🤝 客户绑定</strong><br>
+          <span style="font-size:13px">绑定头部云厂商/AI企业的大单是收入稳定性的关键。长期合同（10-15年）提供类公用事业的现金流可见性。</span>
+        </div>
+        <div class="callout callout-info" style="text-align:center;">
+          <strong>🔧 技术能力</strong><br>
+          <span style="font-size:13px">液冷散热、高密度机柜、智能运维等硬技术决定运营效率和PUE水平，直接影响成本竞争力。</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>行业并购趋势</h3>
+      <p>2025-2026年 IDC 行业并购活跃，呈现<strong>从横向整合向纵向深度整合</strong>演进的特征：</p>
+      <ul style="padding-left: 20px; color: var(--text-sub); margin-bottom: 12px;">
+        <li><strong>横向整合</strong>：头部第三方 IDC 通过收购中小运营商扩大机柜规模和区域覆盖</li>
+        <li><strong>纵向并购</strong>：上游重资产企业（钢铁、地产、基建）利用土地和能源优势向下游延伸，如东阳光并购秦淮数据</li>
+        <li><strong>资本特征</strong>：国资、产业资本与头部投资机构积极入局，融资覆盖天使轮至IPO全阶段，单笔金额从数千万至数十亿元不等</li>
+        <li><strong>技术聚焦</strong>：资本重点投向算力芯片、数据中心基础设施、液冷散热、光通讯等核心技术环节</li>
+      </ul>
+      <div class="callout callout-warn">
+        <strong>⚠️ 关注信号</strong>：行业并购估值溢价较高、资产长期化定价明显，核心逻辑在于 IDC 资产具备长周期合同、稳定现金流及较低波动特征，逐步具备<strong>类公用事业属性</strong>。
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 5. 可比公司估值表 ============ -->
+  <div class="section" id="s5">
+    <div class="section-title"><span class="num">5</span> 可比公司估值表</div>
+
+    <div class="card">
+      <h3>核心可比公司估值一览（截至2026/07/08收盘）</h3>
+      <p style="font-size: 13px; color: var(--text-light);">数据来源：NeoData 金融数据服务 | A股数据截至2026/07/08 16:14，美股数据截至2026/07/07 ET</p>
+
+      <div class="table-wrap" style="margin-top: 12px;">
+        <table>
+          <thead>
+            <tr>
+              <th>公司名称</th>
+              <th>代码</th>
+              <th>最新价</th>
+              <th>总市值<br><small>(亿元)</small></th>
+              <th>PE<br><small>(TTM)</small></th>
+              <th>PB</th>
+              <th>ROE<br><small>(TTM)</small></th>
+              <th>毛利率<br><small>(TTM)</small></th>
+              <th>营收增速<br><small>(TTM)</small></th>
+              <th>资产负债率</th>
+              <th>年初至今</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="stock-name">润泽科技</td>
+              <td>300442.SZ</td>
+              <td>79.16</td>
+              <td>1,299</td>
+              <td><span class="pos">24.97</span></td>
+              <td>9.30</td>
+              <td><span class="pos">36.41%</span></td>
+              <td>45.57%</td>
+              <td><span class="pos">+38.01%</span></td>
+              <td>64.97%</td>
+              <td><span class="pos">+50.62%</span></td>
+            </tr>
+            <tr>
+              <td class="stock-name">宝信软件</td>
+              <td>600845.SH</td>
+              <td>19.40</td>
+              <td>554</td>
+              <td>44.65</td>
+              <td>5.24</td>
+              <td><span class="pos">10.87%</span></td>
+              <td>30.76%</td>
+              <td><span class="neg">-13.40%</span></td>
+              <td>46.17%</td>
+              <td><span class="neg">-5.27%</span></td>
+            </tr>
+            <tr>
+              <td class="stock-name">科华数据</td>
+              <td>002335.SZ</td>
+              <td>36.30</td>
+              <td>274</td>
+              <td>64.13</td>
+              <td>4.29</td>
+              <td>6.58%</td>
+              <td>24.31%</td>
+              <td><span class="pos">+7.50%</span></td>
+              <td>51.71%</td>
+              <td><span class="neg">-4.35%</span></td>
+            </tr>
+            <tr>
+              <td class="stock-name">光环新网</td>
+              <td>300383.SZ</td>
+              <td>12.81</td>
+              <td>230</td>
+              <td><span class="neg">-28.57</span></td>
+              <td><span class="pos">1.95</span></td>
+              <td><span class="neg">-6.81%</span></td>
+              <td>13.70%</td>
+              <td><span class="neg">-2.18%</span></td>
+              <td><span class="pos">39.50%</span></td>
+              <td><span class="pos">+2.56%</span></td>
+            </tr>
+            <tr>
+              <td class="stock-name">数据港</td>
+              <td>603881.SH</td>
+              <td>24.21</td>
+              <td>209</td>
+              <td><span class="neg">149.65</span></td>
+              <td>6.25</td>
+              <td>4.14%</td>
+              <td>38.20%</td>
+              <td><span class="neg">-1.62%</span></td>
+              <td>54.18%</td>
+              <td><span class="neg">-4.42%</span></td>
+            </tr>
+            <tr>
+              <td class="stock-name">奥飞数据</td>
+              <td>300738.SZ</td>
+              <td>20.33</td>
+              <td>200</td>
+              <td><span class="neg">115.56</span></td>
+              <td>5.24</td>
+              <td>4.45%</td>
+              <td>35.30%</td>
+              <td><span class="pos">+15.89%</span></td>
+              <td><span class="neg">74.74%</span></td>
+              <td><span class="pos">+10.03%</span></td>
+            </tr>
+            <tr>
+              <td class="stock-name">万国数据</td>
+              <td>GDS.US</td>
+              <td>$30.41</td>
+              <td>~441<small>*USD</small></td>
+              <td><span class="pos">18.22</span></td>
+              <td><span class="pos">1.45</span></td>
+              <td>—</td>
+              <td>—</td>
+              <td>—</td>
+              <td>—</td>
+              <td><span class="neg">-12.87%</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="font-size: 12px; color: var(--text-light); margin-top: 8px;">* 万国数据总市值 60.93 亿美元，按 1 USD ≈ 7.25 CNY 折算约 441 亿人民币。PE/PB 为 TTM 口径。</p>
+    </div>
+
+    <!-- 估值可视化 -->
+    <div class="grid-2">
+      <div class="card">
+        <h3>PE(TTM) 估值对比</h3>
+        <div class="chart-container-sm">
+          <canvas id="peChart"></canvas>
+        </div>
+        <p style="font-size: 12px; color: var(--text-light);">注：光环新网 PE 为负（亏损），图表中未显示；万国数据 PE 最低(18.22x)，润泽科技次之(24.97x)。</p>
+      </div>
+      <div class="card">
+        <h3>ROE(TTM) vs 营收增速</h3>
+        <div class="chart-container-sm">
+          <canvas id="roeChart"></canvas>
+        </div>
+        <p style="font-size: 12px; color: var(--text-light);">润泽科技在盈利能力和成长性上均大幅领先同行，光环新网两项指标均为负值。</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>估值解读</h3>
+      <div class="grid-3">
+        <div class="callout callout-success">
+          <strong>低估值组（PE < 30x）</strong><br>
+          <span style="font-size:13px">润泽科技(25.0x)、万国数据(18.2x)。润泽科技虽PE较低但营收高增、ROE极高，属于"被低估的高成长"；万国数据PE/PB双低，反映市场对其高负债和海外竞争的担忧。</span>
+        </div>
+        <div class="callout callout-info">
+          <strong>中估值组（PE 30-70x）</strong><br>
+          <span style="font-size:13px">宝信软件(44.7x)、科华数据(64.1x)。宝信软件享有"IDC+工业软件"双轮驱动的估值溢价；科华数据则因IDC+电源+新能源多业务线获得一定溢价。</span>
+        </div>
+        <div class="callout callout-warn">
+          <strong>高估值/亏损组（PE > 100x 或负值）</strong><br>
+          <span style="font-size:13px">数据港(149.7x)、奥飞数据(115.6x)、光环新网(-28.6x)。前两者估值高位反映市场对AI算力需求的超前定价；光环新网基本面恶化，PE为负需警惕。</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 6. 主题股票观察清单 ============ -->
+  <div class="section" id="s6">
+    <div class="section-title"><span class="num">6</span> 主题股票观察清单</div>
+    <p>基于竞争格局、估值水平和基本面质量，筛选出以下 3 只主题股票作为重点观察标的：</p>
+
+    <!-- Watch 1: 润泽科技 -->
+    <div class="watch-card">
+      <div class="watch-header" style="background: linear-gradient(135deg, #00b8a3, #00897b);">
+        <div>
+          <h3>① 润泽科技 — AI 算力弹性龙头</h3>
+          <span class="code">300442.SZ · 创业板 · 总市值 1,299 亿</span>
+        </div>
+        <div>
+          <span class="badge badge-blue">AI算力</span>
+          <span class="badge badge-blue">高成长</span>
+          <span class="badge badge-blue">低PE</span>
+        </div>
+      </div>
+      <div class="watch-body">
+        <div class="watch-metrics">
+          <div class="watch-metric"><div class="v" style="color:#00b8a3;">79.16</div><div class="l">最新价(元)</div></div>
+          <div class="watch-metric"><div class="v" style="color:#00b8a3;">24.97</div><div class="l">PE(TTM)</div></div>
+          <div class="watch-metric"><div class="v">9.30</div><div class="l">PB</div></div>
+          <div class="watch-metric"><div class="v" style="color:#00b8a3;">36.41%</div><div class="l">ROE(TTM)</div></div>
+          <div class="watch-metric"><div class="v" style="color:#00b8a3;">+38.0%</div><div class="l">营收增速</div></div>
+          <div class="watch-metric"><div class="v" style="color:#00b8a3;">+50.6%</div><div class="l">年初至今</div></div>
+        </div>
+
+        <h3>📋 公司画像</h3>
+        <p>润泽科技是国内领先的第三方数据中心运营商，以批发型模式为主，深度绑定头部互联网/AI客户。公司在廊坊拥有超大规模智算中心集群，是A股纯正度最高的AI算力基础设施标的。2025年以来受益于AI算力需求爆发，营收和利润均实现高速增长。</p>
+
+        <h3>🔑 核心看点</h3>
+        <ul style="padding-left: 20px; color: var(--text-sub); margin-bottom: 12px;">
+          <li><strong>ROE 行业第一</strong>：TTM ROE 达 36.41%，在通信服务行业127家公司中排名第3，净利率高达82.47%行业第1，盈利能力碾压同行</li>
+          <li><strong>高成长性</strong>：营收同比增长 38.01%（行业排名17/127），净利润增长 197.89%（行业排名4/127），是可比公司中唯一实现营收利润双高增的标的</li>
+          <li><strong>估值合理</strong>：PE(TTM) 仅 24.97x，是 7 家可比公司中第二低（仅高于万国数据），考虑到其高成长性，PEG 显著低于1</li>
+          <li><strong>AI 算力弹性</strong>：大规模智算中心储备产能丰富，直接受益于国内AI大模型训练需求爆发</li>
+        </ul>
+
+        <div class="pros-cons">
+          <div class="pros">
+            <h5>✅ 优势</h5>
+            <ul>
+              <li>ROE/净利率行业顶级，盈利质量优异</li>
+              <li>营收利润双高增，成长确定性强</li>
+              <li>估值在同行中偏低，性价比突出</li>
+              <li>超大规模智算中心储备，AI弹性最大</li>
+              <li>年初至今涨幅+50.6%，市场认可度高</li>
+            </ul>
+          </div>
+          <div class="cons">
+            <h5>⚠️ 风险</h5>
+            <ul>
+              <li>资产负债率 64.97%，杠杆偏高</li>
+              <li>PB 高达 9.30x，资产估值不便宜</li>
+              <li>资产周转率仅 0.15 次，重资产模式</li>
+              <li>短期涨幅较大(20日+4.45%，5日-11.86%)，波动风险</li>
+              <li>客户集中度风险：大客户依赖</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="callout callout-info">
+          <strong>💡 观察要点</strong>：关注后续智算中心投产节奏、新客户签约进展、以及负债率改善情况。5日回调-11.86%可能提供短期介入窗口，但需关注20日均线支撑。
+        </div>
+      </div>
+    </div>
+
+    <!-- Watch 2: 宝信软件 -->
+    <div class="watch-card">
+      <div class="watch-header" style="background: linear-gradient(135deg, #1652f0, #0d47a1);">
+        <div>
+          <h3>② 宝信软件 — IDC + 工业软件双轮驱动</h3>
+          <span class="code">600845.SH · 沪主板 · 总市值 554 亿</span>
+        </div>
+        <div>
+          <span class="badge badge-blue">双主业</span>
+          <span class="badge badge-blue">钢铁背景</span>
+          <span class="badge badge-blue">稳健型</span>
+        </div>
+      </div>
+      <div class="watch-body">
+        <div class="watch-metrics">
+          <div class="watch-metric"><div class="v" style="color:#1652f0;">19.40</div><div class="l">最新价(元)</div></div>
+          <div class="watch-metric"><div class="v">44.65</div><div class="l">PE(TTM)</div></div>
+          <div class="watch-metric"><div class="v">5.24</div><div class="l">PB</div></div>
+          <div class="watch-metric"><div class="v" style="color:#00b8a3;">10.87%</div><div class="l">ROE(TTM)</div></div>
+          <div class="watch-metric"><div class="v">30.76%</div><div class="l">毛利率</div></div>
+          <div class="watch-metric"><div class="v" style="color:#ff4d4f;">-5.27%</div><div class="l">年初至今</div></div>
+        </div>
+
+        <h3>📋 公司画像</h3>
+        <p>宝信软件背靠宝武钢铁集团，是国内独特的"IDC + 工业软件"双轮驱动型企业。IDC 业务利用钢铁厂富余土地和电力资源，具备天然的成本和区位优势；工业软件（MES、ERP等）则服务于钢铁及制造业数字化转型。两个业务形成协同效应，在A股IDC标的中具备独特性。</p>
+
+        <h3>🔑 核心看点</h3>
+        <ul style="padding-left: 20px; color: var(--text-sub); margin-bottom: 12px;">
+          <li><strong>A股市值最大 IDC 标的</strong>：554 亿总市值，在纯A股IDC公司中最大，流动性好、机构覆盖度高</li>
+          <li><strong>ROE 领先</strong>：TTM ROE 10.87%，行业排名33/360，盈利能力稳健</li>
+          <li><strong>钢铁+算力协同</strong>：宝武体系内土地、电力、绿电资源丰富，契合"算电协同"政策方向</li>
+          <li><strong>工业软件第二增长曲线</strong>：钢铁行业数字化转型+国产替代提供持续增长动力</li>
+          <li><strong>估值处历史低位</strong>：PE 在5年中处于49.88%分位，PB处1.41%分位（历史极低），安全边际较高</li>
+        </ul>
+
+        <div class="pros-cons">
+          <div class="pros">
+            <h5>✅ 优势</h5>
+            <ul>
+              <li>双轮驱动，收入来源多元化抗风险</li>
+              <li>宝武集团资源禀赋，成本优势突出</li>
+              <li>ROE 10.87%，盈利质量在同行中领先</li>
+              <li>PB 处5年1.41%分位，历史估值底部</li>
+              <li>流动比1.93，偿债能力优于多数同行</li>
+            </ul>
+          </div>
+          <div class="cons">
+            <h5>⚠️ 风险</h5>
+            <ul>
+              <li>营收同比-13.4%，净利润-41.4%，短期承压</li>
+              <li>PE 44.65x 在低估值组中偏高</li>
+              <li>工业软件业务受钢铁行业周期影响</li>
+              <li>IDC业务纯度不如润泽/数据港等纯正标的</li>
+              <li>年初至今-5.27%，市场情绪偏弱</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="callout callout-info">
+          <strong>💡 观察要点</strong>：关注工业软件订单恢复情况、宝武体系内新 IDC 项目进展、以及AI算力相关业务拓展。当前PB处历史极低位，若营收企稳可能迎来估值修复。
+        </div>
+      </div>
+    </div>
+
+    <!-- Watch 3: 万国数据 -->
+    <div class="watch-card">
+      <div class="watch-header" style="background: linear-gradient(135deg, #722ed1, #531dab);">
+        <div>
+          <h3>③ 万国数据 — 第三方 IDC 龙头，估值洼地</h3>
+          <span class="code">GDS.US / 9698.HK · 美股/港股 · 总市值 ~441 亿CNY</span>
+        </div>
+        <div>
+          <span class="badge badge-blue">龙头</span>
+          <span class="badge badge-blue">低估值</span>
+          <span class="badge badge-blue">海外上市</span>
+        </div>
+      </div>
+      <div class="watch-body">
+        <div class="watch-metrics">
+          <div class="watch-metric"><div class="v" style="color:#722ed1;">$30.41</div><div class="l">最新价(美元)</div></div>
+          <div class="watch-metric"><div class="v" style="color:#00b8a3;">18.22</div><div class="l">PE(TTM)</div></div>
+          <div class="watch-metric"><div class="v" style="color:#00b8a3;">1.45</div><div class="l">PB</div></div>
+          <div class="watch-metric"><div class="v">$60.9亿</div><div class="l">市值(美元)</div></div>
+          <div class="watch-metric"><div class="v" style="color:#ff4d4f;">-12.87%</div><div class="l">年初至今</div></div>
+          <div class="watch-metric"><div class="v">0.99%</div><div class="l">换手率</div></div>
+        </div>
+
+        <h3>📋 公司画像</h3>
+        <p>万国数据(GDS)是中国最大的第三方数据中心运营商，在美股和港股双重上市。公司在国内核心经济区域运营大规模数据中心集群，客户覆盖阿里、腾讯、字节跳动等头部云厂商和互联网企业。同时通过海外子公司 DayOnePoWer 布局东南亚等国际市场，是国内IDC企业中全球化程度最高的标的。</p>
+
+        <h3>🔑 核心看点</h3>
+        <ul style="padding-left: 20px; color: var(--text-sub); margin-bottom: 12px;">
+          <li><strong>行业龙头地位</strong>：国内第三方IDC市场份额第一，规模效应和品牌壁垒深厚</li>
+          <li><strong>估值最低</strong>：PE(TTM) 18.22x、PB 1.45x，均为可比公司中最低，估值安全边际最高</li>
+          <li><strong>海外扩张</strong>：DayOnePoWer 东南亚业务快速放量，打开第二增长曲线</li>
+          <li><strong>AI算力受益</strong>：核心区域高密度机柜储备丰富，直接受益于AI训练需求</li>
+          <li><strong>年初至今-12.87%</strong>：跌幅较大，可能存在超跌反弹机会</li>
+        </ul>
+
+        <div class="pros-cons">
+          <div class="pros">
+            <h5>✅ 优势</h5>
+            <ul>
+              <li>PE/PB双低，估值洼地属性明显</li>
+              <li>行业龙头，规模和客户资源壁垒高</li>
+              <li>海外业务提供增量增长空间</li>
+              <li>核心区位机柜储备丰富</li>
+              <li>年初超跌-12.87%，反弹空间大</li>
+            </ul>
+          </div>
+          <div class="cons">
+            <h5>⚠️ 风险</h5>
+            <ul>
+              <li>高负债率，财务杠杆压力大</li>
+              <li>美股/港股上市，流动性不如A股</li>
+              <li>汇率风险（人民币/美元/港元）</li>
+              <li>海外业务面临 Equinix 等国际巨头竞争</li>
+              <li>中概股监管不确定性</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="callout callout-info">
+          <strong>💡 观察要点</strong>：关注海外业务 DayOnePoWer 收入贡献占比提升、国内新机房投产节奏、以及负债率改善趋势。当前估值处于历史低位区间，若AI算力需求持续兑现，存在显著的估值修复空间。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 7. 催化剂与风险 ============ -->
+  <div class="section" id="s7">
+    <div class="section-title"><span class="num">7</span> 催化剂与风险</div>
+
+    <div class="grid-2">
+      <div class="card" style="border-top: 4px solid var(--green);">
+        <h3 style="color: var(--green);">🚀 上行催化剂</h3>
+        <ul style="padding-left: 20px; color: var(--text-sub);">
+          <li><strong>AI 大模型持续迭代</strong>：训练需求指数级增长，推理需求随AI应用落地爆发，直接拉动高密度智算中心需求</li>
+          <li><strong>头部互联网资本开支持续加码</strong>：阿里、腾讯、字节等持续加大AI基础设施投入，批发型IDC订单能见度提升</li>
+          <li><strong>"十五五"规划落地</strong>：算力基础设施纳入重大工程，政策资金支持加码</li>
+          <li><strong>液冷/算电协同技术突破</strong>：PUE持续优化降低运营成本，提升存量机房价值</li>
+          <li><strong>行业并购整合加速</strong>：头部企业通过并购提升集中度，规模效应进一步显现</li>
+          <li><strong>国产芯片替代加速</strong>：政策推动自主可控，国产算力芯片放量带动国产IDC需求</li>
+        </ul>
+      </div>
+      <div class="card" style="border-top: 4px solid var(--red);">
+        <h3 style="color: var(--red);">⚠️ 下行风险</h3>
+        <ul style="padding-left: 20px; color: var(--text-sub);">
+          <li><strong>AI 需求不及预期</strong>：若大模型发展放缓或应用落地不及预期，算力需求增速可能大幅下降</li>
+          <li><strong>供给过剩风险</strong>：各地盲目建设智算中心可能引发阶段性供给过剩，压低上架率和租金</li>
+          <li><strong>电力约束趋紧</strong>：高密度智算中心耗电量巨大，部分地区可能面临电力指标不足</li>
+          <li><strong>政策监管加码</strong>：能耗双控、PUE限制等政策可能约束部分区域IDC扩张</li>
+          <li><strong>利率上行压力</strong>：IDC为重资产行业，高负债企业对利率敏感</li>
+          <li><strong>客户集中度风险</strong>：头部IDC企业高度依赖少数大客户，客户自建可能分流需求</li>
+          <li><strong>技术路线变化</strong>：CPO/LPO等新技术可能改变网络架构需求，影响设备投资节奏</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top: 16px;">
+      <h3>📊 三只观察清单对比总结</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>维度</th>
+              <th>润泽科技</th>
+              <th>宝信软件</th>
+              <th>万国数据</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>定位</strong></td>
+              <td>AI算力弹性龙头</td>
+              <td>IDC+工业软件双驱</td>
+              <td>第三方IDC龙头/估值洼地</td>
+            </tr>
+            <tr>
+              <td><strong>PE(TTM)</strong></td>
+              <td class="pos">24.97x</td>
+              <td>44.65x</td>
+              <td class="pos">18.22x</td>
+            </tr>
+            <tr>
+              <td><strong>ROE(TTM)</strong></td>
+              <td class="pos">36.41%</td>
+              <td>10.87%</td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td><strong>营收增速</strong></td>
+              <td class="pos">+38.01%</td>
+              <td class="neg">-13.40%</td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td><strong>风险点</strong></td>
+              <td>高杠杆/高波动</td>
+              <td>短期业绩承压</td>
+              <td>高负债/汇率/流动性</td>
+            </tr>
+            <tr>
+              <td><strong>适合风格</strong></td>
+              <td><span class="tag tag-green">成长型</span></td>
+              <td><span class="tag tag-blue">价值型</span></td>
+              <td><span class="tag tag-purple">逆向型</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ Disclaimer ============ -->
+  <div class="disclaimer">
+    <strong>⚠️ 免责声明</strong><br>
+    本报告由 AI 基于公开信息和 NeoData 金融数据服务自动整理生成，仅供学习研究和行业了解之用，不构成任何投资建议、个股推荐或交易指令。报告中涉及的股票名称、代码、价格、估值等数据均来自第三方数据源，虽经尽力核实但不保证其准确性和完整性。股票投资有风险，过往业绩不代表未来表现，投资者应独立做出投资决策并自行承担投资风险。本报告生成日期为 2026 年 7 月 8 日，数据可能因市场变化而过时，请以最新市场数据为准。
+  </div>
+
+  <div class="footer">
+    <p>中国数据中心(IDC)行业入门研究报告 | 生成日期：2026-07-08 | 数据来源：NeoData 金融数据服务</p>
+  </div>
+
+</div>
+
+<script>
+// ===== Chart.js Global Config =====
+Chart.defaults.font.family = "'-apple-system', 'PingFang SC', 'Microsoft YaHei', sans-serif";
+Chart.defaults.font.size = 12;
+Chart.defaults.color = '#555';
+
+// ===== 1. 产业链图 (横向流程) =====
+(function() {
+  const ctx = document.getElementById('产业链图');
+  if (!ctx) return;
+  new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: ['上游：设备与基建', '中游：IDC运营服务', '下游：应用客户'],
+      datasets: [{
+        label: '产业链环节',
+        data: [1, 1, 1],
+        backgroundColor: ['#fa8c16', '#1652f0', '#00b8a3'],
+        borderRadius: 8,
+        barPercentage: 0.5,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { enabled: false } },
+      scales: {
+        x: { display: false, max: 2 },
+        y: { ticks: { font: { size: 14, weight: 'bold' }, color: '#333' }, grid: { display: false } }
+      }
+    }
+  });
+})();
+
+// ===== 2. 竞争要素雷达图 =====
+(function() {
+  const ctx = document.getElementById('竞争要素图');
+  if (!ctx) return;
+  new Chart(ctx, {
+    type: 'radar',
+    data: {
+      labels: ['区位资源', '电力保障', '客户绑定', '技术能力', '资金实力', '规模效应'],
+      datasets: [
+        {
+          label: '第三方IDC',
+          data: [8, 6, 9, 7, 6, 7],
+          borderColor: '#00b8a3',
+          backgroundColor: 'rgba(0,184,163,0.15)',
+          pointBackgroundColor: '#00b8a3',
+        },
+        {
+          label: '运营商',
+          data: [7, 10, 8, 5, 10, 8],
+          borderColor: '#1652f0',
+          backgroundColor: 'rgba(22,82,240,0.15)',
+          pointBackgroundColor: '#1652f0',
+        },
+        {
+          label: '云厂商/跨界',
+          data: [6, 8, 6, 9, 9, 8],
+          borderColor: '#fa8c16',
+          backgroundColor: 'rgba(250,140,22,0.15)',
+          pointBackgroundColor: '#fa8c16',
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        r: {
+          beginAtZero: true,
+          max: 10,
+          ticks: { stepSize: 2, backdropColor: 'transparent' },
+          grid: { color: '#e8e8e8' },
+          angleLines: { color: '#e8e8e8' },
+          pointLabels: { font: { size: 12, weight: '600' }, color: '#333' }
+        }
+      },
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 12, padding: 12 } }
+      }
+    }
+  });
+})();
+
+// ===== 3. PE 估值柱状图 =====
+(function() {
+  const ctx = document.getElementById('peChart');
+  if (!ctx) return;
+  const companies = ['万国数据', '润泽科技', '宝信软件', '科华数据', '奥飞数据', '数据港'];
+  const peValues = [18.22, 24.97, 44.65, 64.13, 115.56, 149.65];
+  const colors = peValues.map(v => v < 30 ? '#00b8a3' : v < 70 ? '#1652f0' : '#fa8c16');
+  new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: companies,
+      datasets: [{ label: 'PE(TTM)', data: peValues, backgroundColor: colors, borderRadius: 6 }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (c) => 'PE: ' + c.parsed.y.toFixed(2) + 'x' } }
+      },
+      scales: {
+        y: { beginAtZero: true, title: { display: true, text: 'PE(TTM)' }, grid: { color: '#f0f0f0' } },
+        x: { grid: { display: false }, ticks: { font: { size: 11 } } }
+      }
+    }
+  });
+})();
+
+// ===== 4. ROE vs 营收增速 气泡/散点图 =====
+(function() {
+  const ctx = document.getElementById('roeChart');
+  if (!ctx) return;
+  new Chart(ctx, {
+    type: 'bubble',
+    data: {
+      datasets: [
+        {
+          label: '润泽科技',
+          data: [{ x: 38.01, y: 36.41, r: 18 }],
+          backgroundColor: 'rgba(0,184,163,0.6)',
+          borderColor: '#00b8a3',
+        },
+        {
+          label: '宝信软件',
+          data: [{ x: -13.4, y: 10.87, r: 12 }],
+          backgroundColor: 'rgba(22,82,240,0.6)',
+          borderColor: '#1652f0',
+        },
+        {
+          label: '科华数据',
+          data: [{ x: 7.5, y: 6.58, r: 10 }],
+          backgroundColor: 'rgba(114,46,209,0.6)',
+          borderColor: '#722ed1',
+        },
+        {
+          label: '光环新网',
+          data: [{ x: -2.18, y: -6.81, r: 10 }],
+          backgroundColor: 'rgba(255,77,79,0.6)',
+          borderColor: '#ff4d4f',
+        },
+        {
+          label: '数据港',
+          data: [{ x: -1.62, y: 4.14, r: 10 }],
+          backgroundColor: 'rgba(250,140,22,0.6)',
+          borderColor: '#fa8c16',
+        },
+        {
+          label: '奥飞数据',
+          data: [{ x: 15.89, y: 4.45, r: 10 }],
+          backgroundColor: 'rgba(82,196,26,0.6)',
+          borderColor: '#52c41a',
+        },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 10, padding: 8, font: { size: 11 } } },
+        tooltip: { callbacks: {
+          label: (c) => c.dataset.label + ': 营收增速' + c.parsed.x.toFixed(1) + '%, ROE' + c.parsed.y.toFixed(1) + '%'
+        }}
+      },
+      scales: {
+        x: { title: { display: true, text: '营收增速 TTM (%)' }, grid: { color: '#f0f0f0' } },
+        y: { title: { display: true, text: 'ROE TTM (%)' }, grid: { color: '#f0f0f0' } }
+      }
+    }
+  });
+})();
+</script>
+
+</body>
+</html>

@@ -137,6 +137,7 @@ export type TaskProgressStatus = "pending" | "running" | "completed" | "error";
 export interface TaskProgressStep {
   id: string;
   title: string;
+  detail?: string;
   status: TaskProgressStatus;
 }
 
@@ -216,6 +217,7 @@ export interface ChatSummary {
   /** Unix epoch seconds when this session currently has a turn in flight. */
   runStartedAt?: number | null;
   workspaceScope?: WorkspaceScopePayload | null;
+  expertTeam?: ExpertTeamBinding | null;
 }
 
 export type WorkspaceAccessMode = "restricted" | "full";
@@ -574,6 +576,69 @@ export interface SkillsPayload {
   };
 }
 
+export interface ExpertTeamBinding {
+  id: string;
+  name?: string;
+  version?: string;
+}
+
+export interface ExpertTeamMember {
+  id: string;
+  name: string;
+  framework?: string;
+  description?: string;
+}
+
+export interface ExpertTeamWorkflow {
+  id: string;
+  name: string;
+  description?: string;
+  mode: "team" | "lead";
+  featured: boolean;
+}
+
+export interface ExpertTeamSummary {
+  id: string;
+  name: string;
+  description: string;
+  version: string;
+  enabled: boolean;
+  available: boolean;
+  unavailable_reason?: string;
+  cover?: string;
+  member_count: number;
+  workflow_count: number;
+  data_source_count?: number;
+  tags: string[];
+  requested_concurrency: number;
+}
+
+export interface ExpertTeamDataSource {
+  id: string;
+  name: string;
+  skill: string;
+  priority: "primary" | "supplemental";
+  required: boolean;
+  description?: string;
+  assignments: Record<string, string>;
+}
+
+export interface ExpertTeamDetail extends ExpertTeamSummary {
+  members: ExpertTeamMember[];
+  workflows: ExpertTeamWorkflow[];
+  data_sources?: ExpertTeamDataSource[];
+  optional_dependencies: Array<{
+    name: string;
+    available: boolean;
+    reason?: string;
+  }>;
+  source_available: boolean;
+}
+
+export interface ExpertTeamsPayload {
+  teams: ExpertTeamSummary[];
+}
+
 export interface McpPresetField {
   name: string;
   label: string;
@@ -811,6 +876,33 @@ export type InboundEvent =
       chat_id: string;
       scope?: "metadata" | "thread" | string;
       workspace_scope?: WorkspaceScopePayload;
+      expert_team?: ExpertTeamBinding;
+    }
+  | {
+      event: "team_run_started";
+      chat_id: string;
+      run_id: string;
+      team_id: string;
+      team_name: string;
+      members: ExpertTeamMember[];
+    }
+  | {
+      event: "team_member_updated";
+      chat_id: string;
+      run_id: string;
+      team_id: string;
+      member: ExpertTeamMember & {
+        status: "pending" | "running" | "completed" | "failed" | "cancelled";
+        task_id?: string;
+        activity?: string;
+      };
+    }
+  | {
+      event: "team_run_completed";
+      chat_id: string;
+      run_id: string;
+      team_id: string;
+      status: "completed" | "completed_with_warnings" | "failed" | "cancelled";
     }
   | { event: "error"; chat_id?: string; detail?: string; reason?: string };
 
@@ -855,10 +947,11 @@ export interface WebuiThreadPersistedPayload {
   savedAt?: string;
   messages: UIMessage[];
   workspace_scope?: WorkspaceScopePayload;
+  expert_team?: ExpertTeamBinding;
 }
 
 export type Outbound =
-  | { type: "new_chat"; workspace_scope?: WorkspaceScopePayload }
+  | { type: "new_chat"; workspace_scope?: WorkspaceScopePayload; expert_team?: ExpertTeamBinding }
   | { type: "attach"; chat_id: string }
   | { type: "set_workspace_scope"; chat_id: string; workspace_scope: WorkspaceScopePayload }
   | {
@@ -872,5 +965,6 @@ export type Outbound =
       skill_scope?: OutboundSkillScope;
       workspace_scope?: WorkspaceScopePayload;
       interactive_prompt_answer?: UIInteractivePromptAnswer;
+      expert_team?: ExpertTeamBinding;
       webui?: true;
     };

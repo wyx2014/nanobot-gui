@@ -215,13 +215,17 @@ function App() {
   useEffect(() => {
     let client;
     try { client = getNanobotClient(); } catch { return; }
-    return client.onSessionUpdate((_chatId, _scope, workspaceScope) => {
-      if (!workspaceScope) return;
-      const next = normalizeWorkspaceScope(workspaceScope);
-      useChatStore.getState().setConversationWorkspaceScope(_chatId, next);
-      setWorkspaceOverrides((current) => ({ ...current, [_chatId]: next }));
-      setWorkspaceError(null);
-      void refreshWorkspaces();
+    return client.onSessionUpdate((_chatId, _scope, workspaceScope, expertTeam) => {
+      if (workspaceScope) {
+        const next = normalizeWorkspaceScope(workspaceScope);
+        useChatStore.getState().setConversationWorkspaceScope(_chatId, next);
+        setWorkspaceOverrides((current) => ({ ...current, [_chatId]: next }));
+        setWorkspaceError(null);
+        void refreshWorkspaces();
+      }
+      if (expertTeam) {
+        useChatStore.getState().setConversationExpertTeam(_chatId, expertTeam);
+      }
     });
   });
 

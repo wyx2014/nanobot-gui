@@ -17,6 +17,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:gateway-contract": "vitest run src/core/nanobotClient.test.ts src/core/nanobot/*.test.ts",
+    "sync:expert-team": "node scripts/sync-expert-team.mjs",
     "prepare-python": "node scripts/download-python.mjs",
     "build:win": "npm run prepare-python && npm run electron:build && electron-builder --win --config",
     "build:mac": "npm run prepare-python && npm run electron:build && electron-builder --mac --config",
@@ -57,6 +58,13 @@
           "!**/venv/**",
           "!**/.git/**",
           "!**/tests/**"
+        ]
+      },
+      {
+        "from": "resources/expert-teams/",
+        "to": "expert-teams/",
+        "filter": [
+          "**/*"
         ]
       }
     ],

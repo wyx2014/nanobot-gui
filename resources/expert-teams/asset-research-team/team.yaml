@@ -1,0 +1,68 @@
+schema_version: 1
+id: asset-research-team
+name: 资产投研团队
+description: 四位研究专家并行完成商业、财务、行业与风险分析，由 Team Lead 交叉质证并输出最终报告。
+version: 1.0.0
+source_root: source/ai-berkshire
+cover: source/ai-berkshire/assets/team-core.svg
+entry_workflow: investment-team
+enabled: true
+tags:
+  - 投资研究
+  - 财务分析
+  - 行业研究
+  - 风险评估
+runtime:
+  requested_concurrency: 4
+  max_members: 4
+  report_directory: reports
+  adapter: adapter.md
+data_sources:
+  - id: ifind-finance-data
+    name: 同花顺 iFinD 金融数据
+    skill: ifind-finance-data
+    priority: primary
+    required: true
+    description: A股公司资料、财务指标、行情、公告、新闻与行业板块结构化数据。
+    assignments:
+      business-analyst: 公司摘要、主营构成、业务变化与关键公告
+      financial-analyst: 财务报表、核心指标、现金流、盈利质量与估值基础数据
+      industry-researcher: 行业板块、可比公司、竞争格局与行业经济指标
+      risk-assessor: 公司公告、治理事件、诉讼处罚、质押减持与风险新闻
+members:
+  - id: business-analyst
+    name: 商业分析师
+    framework: 段永平视角
+    description: 分析商业模式、生意属性与护城河；优先使用同花顺公司摘要、主营构成和公告数据。
+  - id: financial-analyst
+    name: 财务分析师
+    framework: 巴菲特视角
+    description: 分析财务质量、自由现金流、安全边际与估值；以同花顺财务数据作为结构化底表。
+  - id: industry-researcher
+    name: 行业研究员
+    framework: 芒格视角
+    description: 分析行业格局、竞争优势与长期结构变化；优先使用同花顺板块和可比公司数据。
+  - id: risk-assessor
+    name: 风险评估师
+    framework: 李录视角
+    description: 分析管理层、治理、下行风险与永久损失概率；优先核查同花顺公告和风险新闻。
+workflows:
+  - { id: investment-team, name: 团队深度投研, source: skills/investment-team.md, mode: team, featured: true }
+  - { id: earnings-team, name: 团队财报复盘, source: skills/earnings-team.md, mode: team, featured: true }
+  - { id: investment-research, name: 公司深度研究, source: skills/investment-research.md, mode: lead, featured: true }
+  - { id: industry-research, name: 行业深度研究, source: skills/industry-research.md, mode: lead, featured: true }
+  - { id: private-company-research, name: 非上市公司研究, source: skills/private-company-research.md, mode: lead, featured: true }
+  - { id: portfolio-review, name: 投资组合复盘, source: skills/portfolio-review.md, mode: lead, featured: true }
+  - { id: bottleneck-hunter, name: 产业瓶颈发现, source: skills/bottleneck-hunter.md, mode: lead, featured: false }
+  - { id: deep-company-series, name: 公司系列深挖, source: skills/deep-company-series.md, mode: lead, featured: false }
+  - { id: dyp-ask, name: 段永平视角问答, source: skills/dyp-ask.md, mode: lead, featured: false }
+  - { id: earnings-review, name: 财报复盘, source: skills/earnings-review.md, mode: lead, featured: false }
+  - { id: financial-data, name: 财务数据规范, source: skills/financial-data.md, mode: lead, featured: false }
+  - { id: industry-funnel, name: 行业漏斗筛选, source: skills/industry-funnel.md, mode: lead, featured: false }
+  - { id: investment-checklist, name: 投资检查清单, source: skills/investment-checklist.md, mode: lead, featured: false }
+  - { id: management-deep-dive, name: 管理层深度研究, source: skills/management-deep-dive.md, mode: lead, featured: false }
+  - { id: news-pulse, name: 新闻脉搏, source: skills/news-pulse.md, mode: lead, featured: false }
+  - { id: quality-screen, name: 公司质量筛选, source: skills/quality-screen.md, mode: lead, featured: false }
+  - { id: thesis-drift, name: 投资逻辑漂移检查, source: skills/thesis-drift.md, mode: lead, featured: false }
+  - { id: thesis-tracker, name: 投资逻辑跟踪, source: skills/thesis-tracker.md, mode: lead, featured: false }
+  - { id: wechat-article, name: 公众号文章, source: skills/wechat-article.md, mode: lead, featured: false }

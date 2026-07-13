@@ -198,7 +198,7 @@ export type ViewMode = 'chat' | 'schedule' | 'toolbox' | 'settings';
 export type SystemSettingsTab = 'general' | 'ai-services' | 'sandbox' | 'about';
 
 // Toolbox tabs (Skills, MCP, skill store)
-export type ToolboxTab = 'skills' | 'mcp' | 'skill-store';
+export type ToolboxTab = 'expert-teams' | 'skills' | 'mcp' | 'skill-store';
 
 interface SettingsState {
   provider: LLMProvider;

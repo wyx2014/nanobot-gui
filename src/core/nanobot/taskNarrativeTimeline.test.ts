@@ -202,6 +202,144 @@ describe('buildTaskNarrativeEntries', () => {
     ]);
   });
 
+  it('shows role-specific expert research instead of generic parallel steps', () => {
+    const entries = buildTaskNarrativeEntries([
+      msg({
+        id: 'team-run-1',
+        role: 'tool',
+        kind: 'trace',
+        agentUI: {
+          kind: 'task_progress',
+          note: '四位专家将并行研究',
+          steps: [
+            { id: 'business-analyst', title: '商业分析师', detail: '正在查询同花顺公司摘要', status: 'running' },
+            { id: 'financial-analyst', title: '财务分析师', detail: '正在查询同花顺财务指标', status: 'running' },
+            { id: 'team-lead', title: 'Team Lead 交叉质证与汇总', status: 'pending' },
+            { id: 'report-audit', title: '财务数据抽检与生成报告', status: 'pending' },
+          ],
+        },
+      }),
+      msg({
+        id: 'model-plan',
+        role: 'tool',
+        kind: 'trace',
+        agentUI: {
+          kind: 'task_progress',
+          note: '三个维度需要 Team Lead 补齐',
+          steps: [
+            { id: 'team-lead-summary', title: 'Team Lead：汇总最终报告', status: 'running' },
+            { id: 'data-audit', title: '数据抽检与准出', status: 'pending' },
+          ],
+        },
+      }),
+      msg({
+        id: 'expert-spawns',
+        role: 'tool',
+        kind: 'trace',
+        toolEvents: [
+          {
+            phase: 'start',
+            call_id: 'business',
+            name: 'spawn',
+            sequence: 11,
+            batch_id: 'turn-1:2',
+            display: { category: 'expert', importance: 'primary', title: '商业模式分析', subject: '研究主营业务与护城河' },
+            arguments: { label: 'business-analyst', task: 'business task' },
+          },
+          {
+            phase: 'start',
+            call_id: 'financial',
+            name: 'spawn',
+            sequence: 12,
+            batch_id: 'turn-1:2',
+            display: { category: 'expert', importance: 'primary', title: '财务质量与估值', subject: '核验财务与估值' },
+            arguments: { label: 'financial-analyst', task: 'financial task' },
+          },
+        ],
+      }),
+      msg({
+        id: 'lead-search',
+        role: 'tool',
+        kind: 'trace',
+        toolEvents: [{
+          phase: 'start',
+          call_id: 'lead-query',
+          name: 'web_search',
+          arguments: { query: '青岛啤酒现金流核验' },
+        }],
+      }),
+    ]);
+
+    expect(entries[0]).toMatchObject({
+      kind: 'plan',
+      title: '专家团队研究',
+      planSteps: [
+        { id: 'business-analyst', detail: '正在查询同花顺公司摘要' },
+        { id: 'financial-analyst', detail: '正在查询同花顺财务指标' },
+        {
+          id: 'team-lead',
+          status: 'running',
+          detail: '正在查找“青岛啤酒现金流核验”公开资料',
+        },
+        { id: 'report-audit', status: 'pending' },
+      ],
+    });
+    expect(entries.filter((entry) => entry.kind === 'plan')).toHaveLength(1);
+    expect(entries).toHaveLength(1);
+  });
+
+  it('does not show pre-research data packaging as Team Lead synthesis', () => {
+    const entries = buildTaskNarrativeEntries([
+      msg({
+        id: 'initial-model-plan',
+        role: 'tool',
+        kind: 'trace',
+        agentUI: {
+          kind: 'task_progress',
+          note: '正在构建同花顺基础数据包',
+          steps: [
+            { id: 'team-lead', title: 'Team Lead：构建基础数据包', status: 'running' },
+            { id: 'business-analyst', title: '商业模式分析', status: 'pending' },
+            { id: 'financial-analyst', title: '财务与估值分析', status: 'pending' },
+            { id: 'industry-researcher', title: '行业与竞争分析', status: 'pending' },
+            { id: 'risk-assessor', title: '风险与治理评估', status: 'pending' },
+            { id: 'team-lead-summary', title: 'Team Lead：汇总最终报告', status: 'pending' },
+            { id: 'report-audit', title: '数据抽检与报告输出', status: 'pending' },
+          ],
+        },
+      }),
+      msg({
+        id: 'team-run-legacy-plan',
+        role: 'tool',
+        kind: 'trace',
+        agentUI: {
+          kind: 'task_progress',
+          note: '四位专家将并行研究',
+          steps: [
+            { id: 'business-analyst', title: '商业模式分析', status: 'pending' },
+            { id: 'financial-analyst', title: '财务与估值分析', status: 'pending' },
+            { id: 'industry-researcher', title: '行业与竞争分析', status: 'pending' },
+            { id: 'risk-assessor', title: '风险与治理评估', status: 'pending' },
+            { id: 'team-lead', title: 'Team Lead 汇总与交叉质证', status: 'pending' },
+            { id: 'report-audit', title: '数据抽检与最终报告', status: 'pending' },
+          ],
+        },
+      }),
+    ]);
+
+    expect(entries[0]).toMatchObject({
+      title: '专家团队研究',
+      planSteps: [
+        { id: 'business-analyst', status: 'pending' },
+        { id: 'financial-analyst', status: 'pending' },
+        { id: 'industry-researcher', status: 'pending' },
+        { id: 'risk-assessor', status: 'pending' },
+        { id: 'team-lead', status: 'pending' },
+        { id: 'report-audit', status: 'pending' },
+      ],
+    });
+  });
+
   it('uses a public task progress note without exposing reasoning', () => {
     const entries = buildTaskNarrativeEntries([
       msg({

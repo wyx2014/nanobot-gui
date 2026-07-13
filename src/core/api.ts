@@ -1,6 +1,8 @@
 import type {
   ChatSummary,
   CliAppsPayload,
+  ExpertTeamDetail,
+  ExpertTeamsPayload,
   ImageGenerationSettingsUpdate,
   McpPresetsPayload,
   ModelConfigurationCreate,
@@ -158,6 +160,7 @@ export async function listSessions(
     preview?: string;
     run_started_at?: number | null;
     workspace_scope?: WorkspaceScopePayload | null;
+    expert_team?: import("./types").ExpertTeamBinding | null;
   };
   const body = await request<{ sessions: Row[] }>(
     `${base}/api/sessions`,
@@ -174,6 +177,7 @@ export async function listSessions(
     preview: s.preview ?? "",
     runStartedAt: s.run_started_at ?? null,
     workspaceScope: s.workspace_scope ?? null,
+    expertTeam: s.expert_team ?? null,
   }));
 }
 
@@ -402,6 +406,33 @@ export async function fetchSkills(
 ): Promise<SkillsPayload> {
   return request<SkillsPayload>(
     `${base}/api/settings/skills`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
+  );
+}
+
+export async function fetchExpertTeams(
+  token: string,
+  base: string = "",
+): Promise<ExpertTeamsPayload> {
+  return request<ExpertTeamsPayload>(
+    `${base}/api/settings/expert-teams`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
+  );
+}
+
+export async function fetchExpertTeamDetail(
+  token: string,
+  id: string,
+  base: string = "",
+): Promise<ExpertTeamDetail> {
+  const query = new URLSearchParams();
+  query.set("id", id);
+  return request<ExpertTeamDetail>(
+    `${base}/api/settings/expert-teams/detail?${query}`,
     token,
     undefined,
     API_READ_TIMEOUT_MS,

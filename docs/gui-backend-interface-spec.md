@@ -45,6 +45,9 @@ WebSocket 接收：
 - `runtime_model_update`
 - `run_status`
 - `goal_state`
+- `team_run_started`
+- `team_member_updated`
+- `team_run_completed`
 
 ### 设置
 
@@ -93,6 +96,15 @@ WebSocket 接收：
 | GET | `/api/settings/skills/disable?name=...` | 禁用 skill。 |
 | GET | `/api/settings/skills/delete?name=...` | 删除 workspace skill。 |
 | GET | `/api/settings/skills/save?name=...` | 保存 skill 内容。内容放在 `X-Nanobot-Skill-Values` header。 |
+
+### 专家团队
+
+| 方法 | 接口 | 用途 |
+| --- | --- | --- |
+| GET | `/api/settings/expert-teams` | 获取已注册专家团队列表。 |
+| GET | `/api/settings/expert-teams/detail?id=...` | 获取团队成员、工作流和依赖状态。 |
+
+团队会话通过 WebSocket `new_chat` 或 `message` 的 `expert_team` 字段绑定。gateway 将绑定保存到 session metadata，并在会话列表和 `webui-thread` 中返回 `expert_team`。
 
 ### MCP
 

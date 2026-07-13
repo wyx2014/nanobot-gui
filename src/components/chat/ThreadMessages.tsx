@@ -94,6 +94,7 @@ export default function ThreadMessages({
                 messages={unit.messages}
                 isActive={liveActivityTimelineIndices.has(index)}
                 hasBodyBelow={hasBodyBelow}
+                turnLatencyMs={unit.turnLatencyMs}
               />
             ) : (
               <MessageBubble

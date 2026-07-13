@@ -61,6 +61,18 @@ describe('projectGatewayMessagesForHistory', () => {
 });
 
 describe('mapWebuiThreadToGuiMessages artifacts', () => {
+  it('preserves server turn latency for task duration summaries', () => {
+    const messages = mapWebuiThreadToGuiMessages([{
+      id: 'assistant-latency',
+      role: 'assistant',
+      content: '完成',
+      createdAt: 1,
+      latencyMs: 548_000,
+    }]);
+
+    expect(messages[0].thinkingDuration).toBe(548);
+  });
+
   it('preserves signed PDF preview and download metadata from gateway history', () => {
     const messages = mapWebuiThreadToGuiMessages([{
       id: 'assistant-pdf',

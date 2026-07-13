@@ -23,6 +23,7 @@ import ThreadMessages from './ThreadMessages';
 import InteractivePromptCard, { type InteractivePromptSubmitPayload } from './InteractivePromptCard';
 import ChatInput, { type ChatInputSendOptions } from './ChatInput';
 import ActiveSkillsBar from './ActiveSkillsBar';
+import ActiveExpertTeamBar from './ActiveExpertTeamBar';
 import { ArrowLeft, ChevronDown, Settings } from 'lucide-react';
 import { osBridge } from '@/lib/ipc-factory';
 import { extractUsername } from '@/utils/pathUtils';
@@ -257,12 +258,13 @@ export default function ChatView({
     pendingFirstRef.current = null;
     const options: SendOptions = {
       workspaceScope: pending.workspaceScope,
+      ...(activeConv?.expertTeam ? { expertTeam: activeConv.expertTeam } : {}),
       ...(pending.options?.cliApps?.length ? { cliApps: pending.options.cliApps } : {}),
       ...(pending.options?.mcpPresets?.length ? { mcpPresets: pending.options.mcpPresets } : {}),
       ...(pending.options?.skillScope ? { skillScope: pending.options.skillScope } : {}),
     };
     stream.send(pending.text, imageAttachmentsToSendImages(pending.images), options);
-  }, [activeConvId, stream]);
+  }, [activeConv?.expertTeam, activeConvId, stream]);
 
   const displayMessages = useMemo(
     () => mapWebuiThreadToGuiMessages(stream.messages),
@@ -319,6 +321,7 @@ export default function ChatView({
     };
     const wireOptions: SendOptions = {
       workspaceScope: effectiveScope,
+      ...(activeConv?.expertTeam ? { expertTeam: activeConv.expertTeam } : {}),
       ...(sendOptions.cliApps?.length ? { cliApps: sendOptions.cliApps } : {}),
       ...(sendOptions.mcpPresets?.length ? { mcpPresets: sendOptions.mcpPresets } : {}),
       ...(sendOptions.skillScope ? { skillScope: sendOptions.skillScope } : {}),
@@ -354,6 +357,7 @@ export default function ChatView({
     const effectiveScope = overrideWorkspaceScope ?? workspaceScope;
     const options: SendOptions = {
       workspaceScope: effectiveScope,
+      ...(activeConv?.expertTeam ? { expertTeam: activeConv.expertTeam } : {}),
       ...(userMessage.cliApps?.length ? { cliApps: userMessage.cliApps } : {}),
       ...(userMessage.mcpPresets?.length ? { mcpPresets: userMessage.mcpPresets } : {}),
     };
@@ -364,7 +368,7 @@ export default function ChatView({
     });
     stream.send(stripUnavailableLeadingSkillMentions(content, availableSkillNames), sendImages, options);
     scrollToBottom({ force: true });
-  }, [availableSkillNames, scrollToBottom, stream, workspaceScope]);
+  }, [activeConv?.expertTeam, availableSkillNames, scrollToBottom, stream, workspaceScope]);
 
   const handleEditUserMessage = useCallback((message: Message, newContent: string) => {
     const trimmed = newContent.trim();
@@ -395,6 +399,7 @@ export default function ChatView({
     try {
       stream.send(payload.text, undefined, {
         workspaceScope,
+        ...(activeConv?.expertTeam ? { expertTeam: activeConv.expertTeam } : {}),
         interactivePromptAnswer: payload.answer,
       });
       stream.setMessages((current) => current.map((item) => {
@@ -417,7 +422,7 @@ export default function ChatView({
         error: '提交失败，请重试',
       });
     }
-  }, [scrollToBottom, stream, workspaceScope]);
+  }, [activeConv?.expertTeam, scrollToBottom, stream, workspaceScope]);
 
   useEffect(() => {
     if (!promptSubmitState) return;
@@ -600,6 +605,7 @@ export default function ChatView({
       <div className="shrink-0 px-6 md:px-10 pb-4 pt-2 bg-gradient-to-t from-[#fbfaf7] via-[#fbfaf7] to-[#fbfaf7]/80">
         <div className="max-w-4xl mx-auto">
           <ActiveSkillsBar />
+          <ActiveExpertTeamBar />
           {scheduleReturnTarget && (
             <button
               onClick={returnToSchedule}

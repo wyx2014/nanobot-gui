@@ -1,17 +1,18 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   AlertCircle,
   BookOpenText,
   Brain,
   CheckCircle2,
   ChevronDown,
+  ChevronRight,
   Circle,
-  CircleDashed,
   ClipboardList,
   FilePenLine,
   Globe2,
   Image,
   Layers3,
+  Loader2,
   Monitor,
   Plug,
   Search,
@@ -34,18 +35,51 @@ interface TaskNarrativeTimelineProps {
   messages: Message[];
   isActive?: boolean;
   hasBodyBelow?: boolean;
+  turnLatencyMs?: number;
 }
 
 export default function TaskNarrativeTimeline({
   messages,
   isActive = false,
   hasBodyBelow = false,
+  turnLatencyMs,
 }: TaskNarrativeTimelineProps) {
   const entries = useMemo(() => buildTaskNarrativeEntries(messages), [messages]);
+  const [userToggled, setUserToggled] = useState(false);
+  const [open, setOpen] = useState(isActive);
+  const [, tick] = useState(0);
+  const stepsId = useId();
+  const fallbackStartedAt = useRef(Date.now());
+  const startedAt = useMemo(
+    () => activityStartedAt(messages, entries) ?? fallbackStartedAt.current,
+    [entries, messages],
+  );
+  const expanded = userToggled ? open : isActive;
+  const hasError = entries.some((entry) => entry.status === 'error');
+  const taskFailed = !isActive && hasError && !hasBodyBelow;
+  const elapsedMs = isActive
+    ? Math.max(0, Date.now() - startedAt)
+    : completedDurationMs(messages, entries, turnLatencyMs);
+  const summary = isActive
+    ? `进行中 ${formatElapsed(elapsedMs)}`
+    : taskFailed
+      ? `未完成 ${formatElapsed(elapsedMs)}`
+      : `已完成 ${formatElapsed(elapsedMs)}`;
   const showContinuation = isActive
     && entries.length > 0
     && !hasBodyBelow
     && !entries.some((entry) => entry.status === 'running');
+
+  useEffect(() => {
+    if (!isActive) return;
+    const timer = window.setInterval(() => tick((value) => value + 1), 500);
+    return () => window.clearInterval(timer);
+  }, [isActive]);
+
+  useEffect(() => {
+    if (userToggled) return;
+    setOpen(isActive);
+  }, [isActive, userToggled]);
 
   if (entries.length === 0 && !isActive) return null;
 
@@ -58,42 +92,88 @@ export default function TaskNarrativeTimeline({
       aria-label="任务执行过程"
       aria-live={isActive ? 'polite' : 'off'}
     >
-      <ol className="space-y-2.5">
-        {entries.map((entry) => (
-          <NarrativeActionRow key={entry.id} entry={entry} />
-        ))}
-        {showContinuation ? (
-          <NarrativeActionRow
-            entry={{
-              id: 'active-continuation',
-              kind: 'analysis',
-              title: '继续处理',
-              detail: '正在整理下一步',
-              status: 'running',
-              source: 'reasoning',
-            }}
-          />
-        ) : null}
-        {entries.length === 0 && isActive ? (
-          <NarrativeActionRow
-            entry={{
-              id: 'active-placeholder',
-              kind: 'analysis',
-              title: '整理思路',
-              detail: '正在分析任务',
-              status: 'running',
-              source: 'reasoning',
-            }}
-          />
-        ) : null}
-      </ol>
+      <button
+        type="button"
+        onClick={() => {
+          setUserToggled(true);
+          setOpen(!expanded);
+        }}
+        className="group flex min-h-7 items-center gap-2 rounded-md py-1 pr-1 text-left outline-none transition-colors hover:text-[#4f4c43] focus-visible:ring-2 focus-visible:ring-[#d97757]/20"
+        aria-expanded={expanded}
+        aria-controls={stepsId}
+        aria-label={expanded ? '折叠任务步骤' : '展开任务步骤'}
+      >
+        {isActive ? (
+          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[#d97757]" strokeWidth={1.9} aria-hidden />
+        ) : taskFailed ? (
+          <AlertCircle className="h-4 w-4 shrink-0 text-[#a56f4f]" strokeWidth={1.9} aria-hidden />
+        ) : (
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-[#8b887c]" strokeWidth={1.9} aria-hidden />
+        )}
+        <span className={cn(
+          'text-[13.5px] font-medium text-[#77746b]',
+          isActive && 'streaming-text-sheen',
+          taskFailed && 'text-[#8a5f46]',
+        )}>
+          {summary}
+        </span>
+        <ChevronRight
+          className={cn(
+            'h-4 w-4 shrink-0 text-[#aaa69b] transition-transform duration-200 group-hover:text-[#77746b]',
+            expanded && 'rotate-90',
+          )}
+          strokeWidth={1.8}
+          aria-hidden
+        />
+      </button>
+
+      <div
+        id={stepsId}
+        className={cn(
+          'grid transition-[grid-template-rows,opacity] duration-200 ease-out',
+          expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
+        )}
+        aria-hidden={!expanded}
+      >
+        <div className="overflow-hidden">
+          <ol className="space-y-2.5 pt-1.5">
+            {entries.map((entry) => (
+              <NarrativeActionRow key={entry.id} entry={entry} />
+            ))}
+            {showContinuation ? (
+              <NarrativeActionRow
+                entry={{
+                  id: 'active-continuation',
+                  kind: 'analysis',
+                  title: '继续处理',
+                  detail: '正在整理下一步',
+                  status: 'running',
+                  source: 'reasoning',
+                }}
+              />
+            ) : null}
+            {entries.length === 0 && isActive ? (
+              <NarrativeActionRow
+                entry={{
+                  id: 'active-placeholder',
+                  kind: 'analysis',
+                  title: '整理思路',
+                  detail: '正在分析任务',
+                  status: 'running',
+                  source: 'reasoning',
+                }}
+              />
+            ) : null}
+          </ol>
+        </div>
+      </div>
     </section>
   );
 }
 
 function NarrativeActionRow({ entry }: { entry: TaskNarrativeEntry }) {
   const [expanded, setExpanded] = useState(false);
-  const Icon = entryIcon(entry);
+  const Icon = entry.status === 'running' ? Loader2 : entryIcon(entry);
   const hasDetails = hasExpandableDetails(entry);
   const fileDetail = entry.kind === 'file' && entry.detail
     ? getBaseName(entry.detail) || entry.detail
@@ -104,12 +184,12 @@ function NarrativeActionRow({ entry }: { entry: TaskNarrativeEntry }) {
       <span
         className={cn(
           'mt-[3px] grid h-4 w-4 place-items-center text-[#8b887c] transition-colors',
-          entry.status === 'running' && 'text-[#8b887c] motion-safe:animate-pulse',
-          entry.status === 'error' && 'text-red-500',
+          entry.status === 'running' && 'text-[#d97757]',
+          entry.status === 'error' && 'text-[#a56f4f]',
         )}
         aria-hidden
       >
-        <Icon className="h-4 w-4" strokeWidth={1.8} />
+        <Icon className={cn('h-4 w-4', entry.status === 'running' && 'animate-spin')} strokeWidth={1.8} />
       </span>
 
       <div className="min-w-0">
@@ -128,7 +208,7 @@ function NarrativeActionRow({ entry }: { entry: TaskNarrativeEntry }) {
             className={cn(
               'shrink-0 font-medium text-[#77746b]',
               entry.status === 'running' && 'streaming-text-sheen',
-              entry.status === 'error' && 'text-red-600',
+              entry.status === 'error' && 'text-[#8a5f46]',
             )}
           >
             {entry.title}
@@ -138,7 +218,7 @@ function NarrativeActionRow({ entry }: { entry: TaskNarrativeEntry }) {
               className={cn(
                 'min-w-0 truncate text-[#8b887c]',
                 entry.status === 'running' && 'streaming-text-sheen',
-                entry.status === 'error' && 'text-red-500/90',
+                entry.status === 'error' && 'text-[#9a745c]',
                 entry.kind === 'file' && 'font-medium text-[#77746b]',
               )}
               title={entry.detail}
@@ -233,22 +313,35 @@ function PlanSteps({ steps }: { steps: TaskProgressStep[] }) {
               <Icon
                 className={cn(
                   'h-3.5 w-3.5 shrink-0 text-[#aaa69b]',
-                  step.status === 'running' && 'text-[#d97757] motion-safe:animate-pulse',
+                  step.status === 'running' && 'animate-spin text-[#d97757]',
                   step.status === 'completed' && 'text-emerald-600',
-                  step.status === 'error' && 'text-red-500',
+                  step.status === 'error' && 'text-[#a56f4f]',
                 )}
                 strokeWidth={1.9}
                 aria-hidden
               />
-              <span
-                className={cn(
-                  'min-w-0 truncate text-[#77746b]',
-                  step.status === 'running' && 'font-medium text-[#4f4c43]',
-                  step.status === 'pending' && 'text-[#aaa69b]',
-                  step.status === 'error' && 'text-red-600',
-                )}
-              >
-                {step.title}
+              <span className="flex min-w-0 items-baseline gap-2">
+                <span
+                  className={cn(
+                    'shrink-0 text-[#77746b]',
+                    step.status === 'running' && 'font-medium text-[#4f4c43]',
+                    step.status === 'pending' && 'text-[#aaa69b]',
+                    step.status === 'error' && 'text-[#8a5f46]',
+                  )}
+                >
+                  {step.title}
+                </span>
+                {step.detail ? (
+                  <span
+                    className={cn(
+                      'min-w-0 truncate text-[#9a978d]',
+                      step.status === 'running' && 'streaming-text-sheen text-[#77746b]',
+                    )}
+                    title={step.detail}
+                  >
+                    · {step.detail}
+                  </span>
+                ) : null}
               </span>
             </li>
           );
@@ -261,11 +354,11 @@ function PlanSteps({ steps }: { steps: TaskProgressStep[] }) {
 function TechnicalBlock({ label, content, error = false }: { label: string; content: string; error?: boolean }) {
   return (
     <div className="mt-2 first:mt-0">
-      <div className={cn('mb-1 text-[10px] font-medium text-[#aaa69b]', error && 'text-red-500/80')}>{label}</div>
+      <div className={cn('mb-1 text-[10px] font-medium text-[#aaa69b]', error && 'text-[#a77b60]')}>{label}</div>
       <pre
         className={cn(
           'max-h-40 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-[1.55] text-[#5f6b72]',
-          error && 'text-red-600',
+          error && 'text-[#8a5f46]',
         )}
       >
         {content}
@@ -277,8 +370,8 @@ function TechnicalBlock({ label, content, error = false }: { label: string; cont
 function DetailLine({ label, value, error = false }: { label: string; value: string; error?: boolean }) {
   return (
     <div className="mt-1 flex min-w-0 gap-2 first:mt-0">
-      <span className={cn('shrink-0 text-[#aaa69b]', error && 'text-red-500/80')}>{label}</span>
-      <span className={cn('min-w-0 break-all text-[#5f5b52]', error && 'text-red-600')}>{value}</span>
+      <span className={cn('shrink-0 text-[#aaa69b]', error && 'text-[#a77b60]')}>{label}</span>
+      <span className={cn('min-w-0 break-all text-[#5f5b52]', error && 'text-[#8a5f46]')}>{value}</span>
     </div>
   );
 }
@@ -302,9 +395,47 @@ function entryIcon(entry: TaskNarrativeEntry): LucideIcon {
 
 function planStepIcon(status: TaskProgressStep['status']): LucideIcon {
   if (status === 'completed') return CheckCircle2;
-  if (status === 'running') return CircleDashed;
+  if (status === 'running') return Loader2;
   if (status === 'error') return AlertCircle;
   return Circle;
+}
+
+function activityStartedAt(messages: Message[], entries: TaskNarrativeEntry[]): number | undefined {
+  const candidates = [
+    ...messages.map((message) => normalizedTimestamp(message.timestamp)),
+    ...entries.map((entry) => normalizedTimestamp(entry.occurredAt)),
+  ].filter((value): value is number => value !== undefined);
+  return candidates.length ? Math.min(...candidates) : undefined;
+}
+
+function completedDurationMs(
+  messages: Message[],
+  entries: TaskNarrativeEntry[],
+  turnLatencyMs?: number,
+): number {
+  if (typeof turnLatencyMs === 'number' && Number.isFinite(turnLatencyMs) && turnLatencyMs >= 0) {
+    return turnLatencyMs;
+  }
+  const candidates = [
+    ...messages.map((message) => normalizedTimestamp(message.timestamp)),
+    ...entries.map((entry) => normalizedTimestamp(entry.occurredAt)),
+  ].filter((value): value is number => value !== undefined);
+  if (candidates.length < 2) return 0;
+  return Math.max(0, Math.max(...candidates) - Math.min(...candidates));
+}
+
+function normalizedTimestamp(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  if (value >= 1_000_000_000_000) return value;
+  if (value >= 1_000_000_000) return value * 1000;
+  return undefined;
+}
+
+function formatElapsed(ms: number): string {
+  const seconds = Math.max(0, Math.round(ms / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}m${seconds % 60}s`;
 }
 
 function hasExpandableDetails(entry: TaskNarrativeEntry): boolean {

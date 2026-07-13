@@ -3,7 +3,7 @@ import { useSettingsStore, type ToolboxTab } from '@/stores/settingsStore';
 import { useChatStore } from '@/stores/chatStore';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { useI18n } from '@/i18n';
-import { Search, Sparkles, Server, Wrench, Plus, Upload, Wand2, PenLine, ChevronDown, X, Store } from 'lucide-react';
+import { Search, Sparkles, Server, Wrench, Plus, Upload, Wand2, PenLine, ChevronDown, X, Store, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fsBridge, dialogBridge } from '@/lib/ipc-factory';
 import { normalizeSeparators } from '@/utils/pathUtils';
@@ -13,6 +13,7 @@ import { getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/na
 import SkillsSection from '../customize/SkillsSection';
 import MCPSection from '../customize/MCPSection';
 import SkillStoreSection from '../customize/SkillStoreSection';
+import ExpertTeamsSection from '../customize/ExpertTeamsSection';
 
 async function getSkillsAuth(): Promise<{ token: string; baseUrl: string }> {
   const status = await getNanobotStatus();
@@ -144,6 +145,7 @@ export default function ToolboxView() {
   };
 
   const navItems: { id: ToolboxTab; label: string; icon: typeof Sparkles }[] = [
+    { id: 'expert-teams', label: t.toolbox.expertTeams, icon: Users },
     { id: 'skills', label: t.toolbox.skills, icon: Sparkles },
     { id: 'mcp', label: t.toolbox.mcp, icon: Server },
     { id: 'skill-store', label: '技能商店', icon: Store },
@@ -151,6 +153,8 @@ export default function ToolboxView() {
 
   const renderContent = () => {
     switch (activeToolboxTab) {
+      case 'expert-teams':
+        return <ExpertTeamsSection />;
       case 'skills':
         return <SkillsSection manualCreateTrigger={manualCreateTrigger} />;
       case 'mcp':
@@ -164,6 +168,7 @@ export default function ToolboxView() {
 
   const isMCPTab = activeToolboxTab === 'mcp';
   const isSkillStoreTab = activeToolboxTab === 'skill-store';
+  const isExpertTeamsTab = activeToolboxTab === 'expert-teams';
 
   return (
     <div className="h-full bg-[#faf8f5] flex flex-col">
@@ -230,7 +235,7 @@ export default function ToolboxView() {
                   </button>
                 )}
               </div>
-              {!isSkillStoreTab && <div className="relative">
+              {!isSkillStoreTab && !isExpertTeamsTab && <div className="relative">
                 <button
                   ref={createButtonRef}
                   onClick={() => {

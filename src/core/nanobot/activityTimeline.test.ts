@@ -53,7 +53,7 @@ describe('normalizeActivityTimeline', () => {
     expect(units[2].type === 'message' ? units[2].message.thinking : undefined).toBeUndefined();
   });
 
-  it('keeps late activity after an assistant answer', () => {
+  it('merges late activity into the turn activity block before visible answers', () => {
     const units = normalizeActivityTimeline([
       msg({ id: 'u1', role: 'user', content: 'question' }),
       msg({ id: 'a1', role: 'assistant', content: 'partial answer' }),
@@ -61,8 +61,8 @@ describe('normalizeActivityTimeline', () => {
       msg({ id: 'a2', role: 'assistant', content: 'final answer' }),
     ]);
 
-    expect(units.map((unit) => unit.type)).toEqual(['message', 'message', 'activity', 'message']);
-    expect(units[2].type === 'activity' ? units[2].messages.map((message) => message.id) : []).toEqual(['t1']);
+    expect(units.map((unit) => unit.type)).toEqual(['message', 'activity', 'message', 'message']);
+    expect(units[1].type === 'activity' ? units[1].messages.map((message) => message.id) : []).toEqual(['t1']);
   });
 
   it('ignores empty assistant placeholders between activity rows', () => {
@@ -78,7 +78,7 @@ describe('normalizeActivityTimeline', () => {
     expect(units[1].type === 'activity' ? units[1].messages.map((message) => message.id) : []).toEqual(['t1', 't2']);
   });
 
-  it('separates file edit activity from ordinary tool activity', () => {
+  it('keeps reasoning and file edits in one turn activity unit', () => {
     const units = normalizeActivityTimeline([
       msg({ id: 'u1', role: 'user', content: 'edit' }),
       msg({ id: 'r1', role: 'assistant', content: '', thinking: 'plan' }),
@@ -91,11 +91,31 @@ describe('normalizeActivityTimeline', () => {
       }),
     ]);
 
-    expect(units.map((unit) => unit.type)).toEqual(['message', 'activity', 'activity']);
-    expect(units[1].type === 'activity' ? units[1].messages.map((message) => message.id) : []).toEqual(['r1']);
-    expect(units[2].type === 'activity' ? units[2].messages.map((message) => message.id) : []).toEqual(['f1']);
-    expect(units[1].type === 'activity' ? units[1].items.map((item) => item.type) : []).toEqual(['reasoning']);
-    expect(units[2].type === 'activity' ? units[2].items.map((item) => item.type) : []).toEqual(['file_edit']);
+    expect(units.map((unit) => unit.type)).toEqual(['message', 'activity']);
+    expect(units[1].type === 'activity' ? units[1].messages.map((message) => message.id) : []).toEqual(['r1', 'f1']);
+    expect(units[1].type === 'activity' ? units[1].items.map((item) => item.type) : []).toEqual(['reasoning', 'file_edit']);
+  });
+
+  it('creates only one activity summary for multiple activity segments in a turn', () => {
+    const units = normalizeActivityTimeline([
+      msg({ id: 'u1', role: 'user', content: 'research' }),
+      msg({ id: 'r1', role: 'assistant', content: '', thinking: 'plan', activitySegmentId: 'analysis' }),
+      msg({
+        id: 't1', role: 'tool', kind: 'trace', activitySegmentId: 'tools',
+        toolEvents: [{ phase: 'end', call_id: 'search-1', name: 'web_search', result: 'ok' }],
+      }),
+      msg({
+        id: 'f1', role: 'tool', kind: 'trace', activitySegmentId: 'files',
+        fileEdits: [{ tool: 'write_file', path: '/tmp/report.md', operation: 'create', status: 'done' }],
+      }),
+      msg({ id: 'a1', role: 'assistant', content: 'done', thinkingDuration: 110 }),
+    ]);
+
+    const activityUnits = units.filter((unit) => unit.type === 'activity');
+    expect(activityUnits).toHaveLength(1);
+    expect(activityUnits[0].type === 'activity' ? activityUnits[0].messages.map((message) => message.id) : [])
+      .toEqual(['r1', 't1', 'f1']);
+    expect(activityUnits[0].type === 'activity' ? activityUnits[0].turnLatencyMs : undefined).toBe(110_000);
   });
 
   it('classifies tool events and media attachments as structured activity items', () => {

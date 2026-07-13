@@ -364,6 +364,9 @@ export function mapWebuiThreadToGuiMessages(webuiMessages: UIMessage[]): Message
         timestamp,
         interactivePrompt: msg.interactivePrompt,
         thinking: msg.reasoning,
+        thinkingDuration: typeof msg.latencyMs === 'number' && Number.isFinite(msg.latencyMs)
+          ? Math.max(0, msg.latencyMs / 1000)
+          : undefined,
         reasoningStreaming: msg.reasoningStreaming,
         isStreaming: msg.isStreaming,
         toolCalls: [],
@@ -531,6 +534,7 @@ export async function syncSessionFromGateway(
       status: 'idle',
       workspacePath: thread.workspace_scope?.project_path ?? null,
       workspaceScope: thread.workspace_scope ?? null,
+      expertTeam: thread.expert_team ?? null,
       ...(options.scheduledTaskId ? { scheduledTaskId: options.scheduledTaskId } : {}),
     });
     return true;
@@ -579,6 +583,7 @@ export async function syncSessionsFromGateway(): Promise<void> {
           status: 'idle',
           workspacePath: thread.workspace_scope?.project_path ?? null,
           workspaceScope: thread.workspace_scope ?? session.workspaceScope ?? null,
+          expertTeam: thread.expert_team ?? session.expertTeam ?? null,
         });
       }
     }

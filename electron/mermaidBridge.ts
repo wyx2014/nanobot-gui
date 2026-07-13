@@ -1,7 +1,7 @@
 import { BrowserWindow } from 'electron';
 import crypto from 'crypto';
 import http from 'http';
-import { renderMarkdownPdf } from './markdownPdf';
+import { renderMarkdownHtml, renderMarkdownPdf } from './markdownPdf';
 
 type Image = { png: string; width: number; height: number };
 type Pending = { resolve: (image: Image) => void; reject: (error: Error) => void; timer: NodeJS.Timeout };
@@ -24,11 +24,15 @@ export class MermaidBridge {
     return `http://127.0.0.1:${this.port}/render-pdf`;
   }
 
+  get htmlUrl(): string {
+    return `http://127.0.0.1:${this.port}/render-html`;
+  }
+
   async start(): Promise<void> {
     this.server = http.createServer(async (request, response) => {
       if (
         request.method !== 'POST'
-        || !['/render-mermaid', '/render-pdf'].includes(request.url || '')
+        || !['/render-mermaid', '/render-pdf', '/render-html'].includes(request.url || '')
         || request.headers.authorization !== `Bearer ${this.secret}`
       ) {
         response.writeHead(404).end();
@@ -41,15 +45,20 @@ export class MermaidBridge {
       }
       try {
         const payload = JSON.parse(body);
-        if (request.url === '/render-pdf') {
+        if (request.url === '/render-pdf' || request.url === '/render-html') {
           if (typeof payload.markdown !== 'string') throw new Error('markdown is required');
           const title = typeof payload.title === 'string' && payload.title.trim()
             ? payload.title.trim()
             : 'Document';
-          const pdf = await renderMarkdownPdf(payload.markdown, title, (code) => this.render(code));
-          response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({
-            pdf: pdf.toString('base64'),
-          }));
+          if (request.url === '/render-html') {
+            const html = await renderMarkdownHtml(payload.markdown, title, (code) => this.render(code));
+            response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ html }));
+          } else {
+            const pdf = await renderMarkdownPdf(payload.markdown, title, (code) => this.render(code));
+            response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({
+              pdf: pdf.toString('base64'),
+            }));
+          }
         } else {
           if (typeof payload.code !== 'string') throw new Error('code is required');
           const image = await this.render(payload.code);

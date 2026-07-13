@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import type { Message, Conversation, AgentStatus, TokenUsage, ConversationStatus, ToolCall, ToolCallContext, ToolResultContent, MessageMediaAttachment } from '../types';
 import type { ExecutionStepSnapshot } from '../types/execution';
-import type { WorkspaceScopePayload } from '@/core/types';
+import type { ExpertTeamBinding, WorkspaceScopePayload } from '@/core/types';
 import { useWorkspaceStore } from './workspaceStore';
 import { useTaskExecutionStore } from './taskExecutionStore';
 import { clearTodos } from '../core/nanobot/todoManager';
@@ -57,11 +57,12 @@ interface ChatState {
 }
 
 interface ChatActions {
-  createConversation: (workspacePath?: string | null, options?: { scheduledTaskId?: string; skipActivate?: boolean; workspaceScope?: WorkspaceScopePayload | null; title?: string }) => string;
+  createConversation: (workspacePath?: string | null, options?: { scheduledTaskId?: string; skipActivate?: boolean; workspaceScope?: WorkspaceScopePayload | null; title?: string; expertTeam?: ExpertTeamBinding | null }) => string;
   startNewConversation: () => void;
   switchConversation: (id: string) => void;
   setConversationWorkspace: (convId: string, path: string | null) => void;
   setConversationWorkspaceScope: (convId: string, scope: WorkspaceScopePayload | null) => void;
+  setConversationExpertTeam: (convId: string, team: ExpertTeamBinding | null) => void;
   deleteConversation: (id: string) => void;
   renameConversation: (id: string, title: string) => void;
 
@@ -145,6 +146,7 @@ export const useChatStore = create<ChatStore>()(
             status: 'idle',
             workspacePath: path,
             workspaceScope: scope,
+            expertTeam: options?.expertTeam ?? null,
             ...(options?.scheduledTaskId ? { scheduledTaskId: options.scheduledTaskId } : {}),
           };
           if (!options?.skipActivate) {
@@ -197,6 +199,13 @@ export const useChatStore = create<ChatStore>()(
             conv.workspaceScope = scope;
             conv.workspacePath = scope?.project_path ?? null;
           }
+        });
+      },
+
+      setConversationExpertTeam: (convId, team) => {
+        set((state) => {
+          const conv = state.conversations[convId];
+          if (conv) conv.expertTeam = team;
         });
       },
 

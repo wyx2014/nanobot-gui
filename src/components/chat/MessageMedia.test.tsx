@@ -1,7 +1,8 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { artifactPreviewKind } from '@/core/artifacts';
+import { shellBridge } from '@/lib/ipc-factory';
 import { usePreviewStore } from '@/stores/previewStore';
 import { MessageMedia } from './MessageMedia';
 
@@ -52,5 +53,22 @@ describe('MessageMedia artifact opening', () => {
       kind: 'local',
       path: '/workspace/report.pdf',
     });
+  });
+
+  it('shows a browser action for generated HTML artifacts', async () => {
+    const open = vi.spyOn(shellBridge, 'open').mockResolvedValue();
+    const view = render([{
+      url: 'http://127.0.0.1:8900/api/media/sig/html',
+      name: 'research-report.html',
+      mimeType: 'text/html',
+      kind: 'file',
+    }]);
+
+    await act(async () => {
+      view.querySelector('[aria-label="在浏览器中打开"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(open).toHaveBeenCalledWith('http://127.0.0.1:8900/api/media/sig/html');
+    open.mockRestore();
   });
 });

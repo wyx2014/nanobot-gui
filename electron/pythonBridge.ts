@@ -18,6 +18,7 @@ export class PythonBridge {
   private _startingPromise: Promise<void> | null = null;  // Prevent concurrent starts
   private _mermaidRenderer: { url: string; token: string } | null = null;
   private _pdfRenderer: { url: string; token: string } | null = null;
+  private _htmlRenderer: { url: string; token: string } | null = null;
 
   setMermaidRenderer(url: string, token: string): void {
     this._mermaidRenderer = { url, token };
@@ -25,6 +26,10 @@ export class PythonBridge {
 
   setPdfRenderer(url: string, token: string): void {
     this._pdfRenderer = { url, token };
+  }
+
+  setHtmlRenderer(url: string, token: string): void {
+    this._htmlRenderer = { url, token };
   }
 
   get isReady(): boolean {
@@ -55,7 +60,7 @@ export class PythonBridge {
 
   private async _doStart(): Promise<void> {
     this._stopping = false;
-    const { pythonBin, nanobotSrc, workspaceDir, configDir } = this.resolvePaths();
+    const { pythonBin, nanobotSrc, workspaceDir, configDir, expertTeamsDir } = this.resolvePaths();
 
     if (!this._tokenSecret) {
       this._tokenSecret = crypto.randomBytes(32).toString('hex');
@@ -100,6 +105,7 @@ export class PythonBridge {
         PYTHONUNBUFFERED: '1',
         // Write nanobot's own logs to a file so they don't pollute Electron's stdout
         NANOBOT_LOG_FILE: path.join(app.getPath('userData'), 'nanobot.log'),
+        NANOBOT_EXPERT_TEAMS_DIR: expertTeamsDir,
         ...(this._mermaidRenderer && {
           NANOBOT_MERMAID_RENDER_URL: this._mermaidRenderer.url,
           NANOBOT_MERMAID_RENDER_TOKEN: this._mermaidRenderer.token,
@@ -107,6 +113,10 @@ export class PythonBridge {
         ...(this._pdfRenderer && {
           NANOBOT_PDF_RENDER_URL: this._pdfRenderer.url,
           NANOBOT_PDF_RENDER_TOKEN: this._pdfRenderer.token,
+        }),
+        ...(this._htmlRenderer && {
+          NANOBOT_HTML_RENDER_URL: this._htmlRenderer.url,
+          NANOBOT_HTML_RENDER_TOKEN: this._htmlRenderer.token,
         }),
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -196,6 +206,7 @@ export class PythonBridge {
     nanobotSrc: string;
     workspaceDir: string;
     configDir: string;
+    expertTeamsDir: string;
   } {
     const workspaceDir = path.join(app.getPath('userData'), 'nanobot-workspace');
     const configDir = path.join(workspaceDir, '.nanobot');
@@ -213,12 +224,13 @@ export class PythonBridge {
       // Path levels: out/main/ -> out/ -> nanobot-gui/ -> nanobot-pc/ (3 levels up)
       const monorepoRoot = path.resolve(__dirname, '../../..');
       const nanobotSrc = path.join(monorepoRoot, 'nanobot');
+      const expertTeamsDir = path.join(monorepoRoot, 'nanobot-gui', 'resources', 'expert-teams');
 
       const pythonBin = process.platform === 'win32'
         ? path.join(nanobotSrc, 'venv', 'Scripts', 'python.exe')
         : path.join(nanobotSrc, 'venv', 'bin', 'python3');
 
-      return { pythonBin, nanobotSrc, workspaceDir, configDir };
+      return { pythonBin, nanobotSrc, workspaceDir, configDir, expertTeamsDir };
     }
 
     // Production: use bundled Python from extraResources
@@ -227,8 +239,9 @@ export class PythonBridge {
       : path.join(process.resourcesPath, 'python', 'bin', 'python3');
 
     const nanobotSrc = path.join(process.resourcesPath, 'nanobot-src');
+    const expertTeamsDir = path.join(process.resourcesPath, 'expert-teams');
 
-    return { pythonBin, nanobotSrc, workspaceDir, configDir };
+    return { pythonBin, nanobotSrc, workspaceDir, configDir, expertTeamsDir };
   }
 
   private async waitReady(): Promise<void> {

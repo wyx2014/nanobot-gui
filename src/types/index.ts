@@ -4,6 +4,7 @@
 
 import type {
   MessageKind,
+  ExpertTeamBinding,
   UIInteractivePrompt,
   UIInteractivePromptAnswer,
   ToolProgressEvent,
@@ -160,6 +161,7 @@ export interface Conversation {
   completedAt?: number;
   activeSkills?: string[];  // Skill names active in this conversation
   activeSkillArgs?: Record<string, string>;  // Per-skill invocation arguments
+  expertTeam?: ExpertTeamBinding | null;  // Expert team bound to this conversation
   workspacePath?: string | null;  // Workspace bound to this conversation
   workspaceScope?: WorkspaceScopePayload | null;  // Full nanobot workspace scope for this conversation
   enabledMCPServers?: string[];  // Per-session MCP server filter (undefined = all enabled)

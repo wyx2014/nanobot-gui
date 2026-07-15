@@ -275,20 +275,51 @@ function resolveMediaUrl(url: string | undefined): string | undefined {
 
 function mediaAttachmentsFromUiMessage(msg: UIMessage): MessageMediaAttachment[] {
   const out: MessageMediaAttachment[] = [];
+  const artifactIndexes = new Map<string, number>();
   for (const item of msg.media ?? []) {
     const resolvedUrl = resolveMediaUrl(item.url);
     const name = item.name || resolvedUrl?.split(/[/?#]/).filter(Boolean).pop() || resolvedUrl || '';
     if (!resolvedUrl && !name) continue;
-    out.push({
+    const kind = item.kind || mediaKindFromName(name);
+    // Generated files may be attached once during streaming and once while
+    // restoring artifacts from the persisted tool result. Those deliveries use
+    // distinct signed URLs for the same file, so URL-based de-duplication is
+    // ineffective. A local path is authoritative; staged artifacts fall back
+    // to their stable display metadata.
+    const artifactKeys = [
+      ...(item.local_path ? [`path:${item.local_path}`] : []),
+      ...(name && item.size !== undefined ? [`meta:${name}:${item.mime_type ?? ''}:${kind}:${item.size}`] : []),
+    ];
+    const attachment: MessageMediaAttachment = {
       id: item.id,
       url: resolvedUrl,
       downloadUrl: item.download_url ? resolveMediaUrl(item.download_url) : undefined,
       localPath: item.local_path,
       name,
-      kind: item.kind || mediaKindFromName(name),
+      kind,
       mimeType: item.mime_type,
       size: item.size,
-    });
+    };
+    const duplicateIndex = artifactKeys
+      .map((key) => artifactIndexes.get(key))
+      .find((index): index is number => index !== undefined);
+    if (duplicateIndex !== undefined) {
+      // Prefer replayed metadata when it supplies the original local path.
+      // This lets old streamed artifacts gain Finder support after history sync.
+      const existing = out[duplicateIndex];
+      out[duplicateIndex] = {
+        ...existing,
+        ...attachment,
+        url: attachment.url ?? existing.url,
+        downloadUrl: attachment.downloadUrl ?? existing.downloadUrl,
+        localPath: attachment.localPath ?? existing.localPath,
+      };
+      artifactKeys.forEach((key) => artifactIndexes.set(key, duplicateIndex));
+      continue;
+    }
+    const index = out.length;
+    out.push(attachment);
+    artifactKeys.forEach((key) => artifactIndexes.set(key, index));
   }
   return out;
 }

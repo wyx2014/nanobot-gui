@@ -18,6 +18,7 @@ import { fsBridge, shellBridge, dialogBridge } from '@/lib/ipc-factory';
 import { artifactFromPath, artifactFromUrl, looksLikeArtifactUrl } from '@/core/artifacts';
 import type { SearchResult } from '@/types';
 import MermaidBlock from './MermaidBlock';
+import FileAttachment from './FileAttachment';
 
 SyntaxHighlighter.registerLanguage('tsx', tsx);
 SyntaxHighlighter.registerLanguage('typescript', tsx);
@@ -80,6 +81,28 @@ function splitTextWithPaths(text: string): ReactNode[] {
     parts.push(text.slice(lastIndex));
   }
   return parts;
+}
+
+function textFromNode(node: ReactNode): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(textFromNode).join('');
+  if (node && typeof node === 'object' && 'props' in node) {
+    return textFromNode((node as { props?: { children?: ReactNode } }).props?.children ?? '');
+  }
+  return '';
+}
+
+function savedHtmlArtifactPath(children: ReactNode): string | null {
+  const text = textFromNode(children).trim();
+  if (!/^(?:文件已保存至|已保存至|文件保存至|file saved to|saved to)\s*[:：]?/i.test(text)) {
+    return null;
+  }
+  BARE_PATH_REGEX.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = BARE_PATH_REGEX.exec(text)) !== null) {
+    if (/\.html?$/i.test(match[0])) return match[0];
+  }
+  return null;
 }
 
 // --- Citation utilities ---
@@ -428,6 +451,14 @@ function buildMarkdownComponents(
       return null;
     },
     p({ children }: { children?: ReactNode }) {
+      const htmlPath = !isUser ? savedHtmlArtifactPath(children ?? '') : null;
+      if (htmlPath) {
+        return (
+          <div className="my-3">
+            <FileAttachment filePath={htmlPath} />
+          </div>
+        );
+      }
       return <p className={isUser ? 'my-1 leading-relaxed text-[14.5px]' : 'my-3 leading-8 text-[18px] text-[#191814]'}>{processChildren(children, sr, onCitationClick)}</p>;
     },
     h1({ children }: { children?: ReactNode }) {

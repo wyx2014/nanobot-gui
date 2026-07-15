@@ -6,10 +6,11 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import MarkdownRenderer from '@/components/chat/MarkdownRenderer';
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Loader2, X, FolderOpen, Code, Eye, FileCode, FileText, FileImage, FileSpreadsheet, FileType, File, ExternalLink, Download } from 'lucide-react';
+import { Loader2, X, FolderOpen, FileCode, FileText, FileImage, FileSpreadsheet, FileType, File, ExternalLink, Download, Maximize2, Minimize2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   artifactDownloadUrl,
+  artifactContentUrl,
   artifactLocalPath,
   artifactObjectUrl,
   artifactPreviewKind,
@@ -54,13 +55,12 @@ function LazyFallback() {
 }
 
 export default function PreviewPanel() {
-  const { previewArtifact, closePreview } = usePreviewStore();
+  const { previewArtifact, closePreview, isExpanded, toggleExpanded } = usePreviewStore();
   const { t } = useI18n();
   const [content, setContent] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [htmlViewMode, setHtmlViewMode] = useState<'preview' | 'source'>('preview');
 
   const rendererType = previewArtifact ? artifactPreviewKind(previewArtifact) : 'unsupported';
   const fileName = previewArtifact?.name || '';
@@ -137,6 +137,16 @@ export default function PreviewPanel() {
     await shellBridge.openPath(localPath);
   };
 
+  const handleOpenInBrowser = async () => {
+    if (!previewArtifact) return;
+    if (localPath) {
+      await shellBridge.open(`file://${encodeURI(localPath).replace(/#/g, '%23')}`);
+      return;
+    }
+    const contentUrl = artifactContentUrl(previewArtifact);
+    if (contentUrl) await shellBridge.open(contentUrl);
+  };
+
   const handleDownload = async () => {
     if (!downloadUrl) return;
     await shellBridge.open(downloadUrl);
@@ -152,25 +162,28 @@ export default function PreviewPanel() {
         <span className="text-[13px] font-medium text-[#29261b] truncate flex-1">
           {fileName}
         </span>
-        {rendererType === 'html' && (
-          <div className="flex items-center bg-[#e8e5de] rounded p-0.5 mr-1">
-            <button
-              onClick={() => setHtmlViewMode('preview')}
-              className={`p-1 rounded text-[10px] ${htmlViewMode === 'preview' ? 'bg-white shadow-sm' : ''}`}
-              title={t.panel.previewMode}
-            >
-              <Eye className="w-3 h-3" />
-            </button>
-            <button
-              onClick={() => setHtmlViewMode('source')}
-              className={`p-1 rounded text-[10px] ${htmlViewMode === 'source' ? 'bg-white shadow-sm' : ''}`}
-              title={t.panel.sourceMode}
-            >
-              <Code className="w-3 h-3" />
-            </button>
-          </div>
-        )}
-        {localPath ? (
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={toggleExpanded}
+          className="h-6 w-6 text-[#656358]"
+          title={isExpanded ? '收起预览面板' : '展开预览面板'}
+          aria-label={isExpanded ? '收起预览面板' : '展开预览面板'}
+        >
+          {isExpanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+        </Button>
+        {rendererType === 'html' || rendererType === 'pdf' ? (
+          <>
+            <Button variant="ghost" size="icon" onClick={handleOpenInBrowser} className="h-6 w-6 text-[#656358]" title={t.panel.openInBrowser}>
+              <ExternalLink className="h-3.5 w-3.5" />
+            </Button>
+            {localPath ? (
+              <Button variant="ghost" size="icon" onClick={handleOpenInFinder} className="h-6 w-6 text-[#656358]" title={t.panel.revealInFolder}>
+                <FolderOpen className="h-3.5 w-3.5" />
+              </Button>
+            ) : null}
+          </>
+        ) : localPath ? (
           <>
             <Button variant="ghost" size="icon" onClick={handleOpenSystem} className="h-6 w-6 text-[#656358]" title={t.panel.openInSystem}>
               <ExternalLink className="h-3.5 w-3.5" />
@@ -227,24 +240,12 @@ export default function PreviewPanel() {
             </div>
           </ScrollArea>
         ) : rendererType === 'html' && content !== null ? (
-          htmlViewMode === 'preview' ? (
-            <iframe
-              srcDoc={content}
-              title={fileName}
-              sandbox="allow-scripts"
-              className="w-full h-full border-0 bg-white"
-            />
-          ) : (
-            <ScrollArea className="h-full bg-[#1e1e1e]">
-              <SyntaxHighlighter
-                style={oneDark}
-                language="html"
-                customStyle={{ margin: 0, padding: '12px', fontSize: '11px', background: '#1e1e1e' }}
-              >
-                {content}
-              </SyntaxHighlighter>
-            </ScrollArea>
-          )
+          <iframe
+            srcDoc={content}
+            title={fileName}
+            sandbox="allow-scripts"
+            className="w-full h-full border-0 bg-white"
+          />
         ) : rendererType === 'code' && content !== null ? (
           <ScrollArea className="h-full bg-[#1e1e1e]">
             <SyntaxHighlighter

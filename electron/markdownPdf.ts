@@ -238,7 +238,7 @@ body { margin: 0; color: var(--ink); background: var(--page); font-family: -appl
 .hero-inner { position: relative; z-index: 1; max-width: 1120px; margin: 0 auto; }
 .eyebrow { margin-bottom: 13px; font-size: 12px; font-weight: 750; letter-spacing: .16em; opacity: .72; }
 .report-hero h1 { max-width: 900px; margin: 0; font-size: clamp(30px, 4.2vw, 48px); line-height: 1.16; letter-spacing: -.035em; }
-.hero-subtitle { margin: 14px 0 20px; font-size: 16px; opacity: .82; }
+.hero-subtitle { margin: 14px 0 20px; color: #fff; font-size: 16px; font-weight: 600; letter-spacing: .01em; opacity: 1; text-shadow: 0 1px 2px rgba(0,0,0,.28); }
 .hero-meta { display: flex; flex-wrap: wrap; gap: 9px; }
 .hero-meta span { padding: 6px 11px; border: 1px solid rgba(255,255,255,.2); border-radius: 999px; background: rgba(255,255,255,.1); font-size: 12px; backdrop-filter: blur(6px); }
 .report-shell { max-width: 1120px; margin: 0 auto; padding: 24px 20px 72px; }

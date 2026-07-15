@@ -38,6 +38,7 @@ import { checkForUpdate } from '@/core/updates/checker';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
 import { syncNanobotSettings, bootstrapNanobotGateway, syncSessionsFromGateway, syncGatewaySettingsToStore } from '@/core/nanobotClient';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { usePreviewStore } from '@/stores/previewStore';
 import { renderMermaidPng } from '@/core/mermaid';
 
 // These views are only needed after explicit navigation. Keeping them out of
@@ -62,6 +63,7 @@ function normalizeWorkspaceScope(scope: WorkspaceScopePayload): WorkspaceScopePa
 function App() {
   const refreshDiscovery = useDiscoveryStore((s) => s.refresh);
   const sidebarCollapsed = useSettingsStore((s) => s.sidebarCollapsed);
+  const previewExpanded = usePreviewStore((s) => s.isExpanded);
   const toggleSidebar = useSettingsStore((s) => s.toggleSidebar);
   const viewMode = useSettingsStore((s) => s.viewMode);
   const { t } = useI18n();
@@ -394,7 +396,14 @@ function App() {
         )}
 
         {/* Sidebar & panel toggle buttons — positioned in title bar area on macOS, top bar on Windows */}
-        <div className={cn('fixed left-0 right-0 z-40 pointer-events-none', mac ? 'top-0 h-7' : 'top-0 h-8')}>
+        <div
+          className={cn(
+            'fixed left-0 right-0 z-40 pointer-events-none transition-opacity duration-150',
+            previewExpanded && 'opacity-0 [&_button]:pointer-events-none',
+            mac ? 'top-0 h-7' : 'top-0 h-8',
+          )}
+          style={{ transitionDelay: previewExpanded ? '0ms' : '180ms' }}
+        >
           <button
             onClick={toggleSidebar}
             className="absolute btn-ghost p-1 text-[#656358] hover:text-[#29261b] hover:bg-[#e8e5de]/80 rounded-md transition-[left] duration-200 pointer-events-auto"
@@ -410,14 +419,28 @@ function App() {
         <div className="flex h-full w-full">
           {/* Sidebar */}
           <div
-            className="sidebar-transition shrink-0 overflow-hidden"
-            style={{ width: sidebarCollapsed ? 0 : 260 }}
+            className={cn(
+              'sidebar-transition shrink-0 overflow-hidden transition-opacity duration-150',
+              previewExpanded && 'pointer-events-none',
+            )}
+            style={{
+              width: previewExpanded ? 0 : sidebarCollapsed ? 0 : 260,
+              opacity: previewExpanded ? 0 : 1,
+              transitionDelay: previewExpanded ? '0ms' : '180ms',
+            }}
           >
             <Sidebar />
           </div>
 
           {/* Main — pt-7 on macOS to clear overlay title bar; no padding on Windows (native title bar) */}
-          <main className={cn('flex-1 min-w-0 bg-[#fbfaf7]', mac && 'pt-7')}>
+          <main
+            className={cn(
+              'flex-1 min-w-0 bg-[#fbfaf7] transition-opacity duration-150',
+              previewExpanded && 'pointer-events-none overflow-hidden opacity-0',
+              mac && 'pt-7',
+            )}
+            style={{ transitionDelay: previewExpanded ? '0ms' : '180ms' }}
+          >
             <Suspense fallback={<DeferredViewFallback />}>
               {viewMode === 'schedule' && <ScheduleView />}
               {viewMode === 'toolbox' && <ToolboxView />}

@@ -538,6 +538,7 @@ const enUS: TranslationDict = {
     unsupportedFileType: 'This file type is not supported for preview',
     showInFinder: 'Show in File Manager',
     openInSystem: 'Open in system app',
+    openInBrowser: 'Open in browser',
     revealInFolder: 'Show in folder',
     downloadFile: 'Download file',
     failedToReadFile: 'Failed to read file',

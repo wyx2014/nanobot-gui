@@ -100,4 +100,33 @@ describe('mapWebuiThreadToGuiMessages artifacts', () => {
       size: 2048,
     }]);
   });
+
+  it('dedupes a generated artifact restored with a new signed URL', () => {
+    const messages = mapWebuiThreadToGuiMessages([{
+      id: 'assistant-html',
+      role: 'assistant',
+      content: '报告已生成',
+      createdAt: 1,
+      media: [
+        {
+          kind: 'file',
+          url: '/api/media/streamed-signature/report',
+          name: '上海咖啡馆研究.html',
+          mime_type: 'text/html',
+          size: 4096,
+        },
+        {
+          kind: 'file',
+          url: '/api/media/replayed-signature/report',
+          local_path: '/workspace/上海咖啡馆研究.html',
+          name: '上海咖啡馆研究.html',
+          mime_type: 'text/html',
+          size: 4096,
+        },
+      ],
+    }]);
+
+    expect(messages[0].mediaAttachments).toHaveLength(1);
+    expect(messages[0].mediaAttachments?.[0]?.localPath).toBe('/workspace/上海咖啡馆研究.html');
+  });
 });

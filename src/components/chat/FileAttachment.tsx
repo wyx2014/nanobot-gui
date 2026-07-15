@@ -88,7 +88,9 @@ export default function FileAttachment({ filePath, operation }: FileAttachmentPr
     event.stopPropagation();
     event.preventDefault();
     try {
-      await shellBridge.openPath(filePath);
+      // Use a file URL so this action always targets the browser instead of
+      // whichever native application happens to own the extension.
+      await shellBridge.open(`file://${encodeURI(filePath).replace(/#/g, '%23')}`);
     } catch {
       await shellBridge.revealItemInDir(filePath);
     }

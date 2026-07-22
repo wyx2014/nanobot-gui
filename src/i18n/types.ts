@@ -71,6 +71,9 @@ export interface TranslationDict {
     inputPlaceholderWithSkill: string;
     inputPlaceholderWithAgent: string;
     inputPlaceholderMidTask: string;
+    gatewayStarting: string;
+    mcpWarming: string;
+    mcpUnavailable: string;
     start: string;
     stop: string;
     welcomeTitle: string;

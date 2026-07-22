@@ -45,7 +45,11 @@ describe('PythonBridge lifecycle', () => {
     vi.clearAllMocks();
     existsSync.mockReturnValue(true);
     execFile.mockImplementation((_file, _args, callback) => callback(null, ''));
-    fetchMock.mockResolvedValue({ ok: true, status: 200 });
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({ agent_ready: true }),
+    });
     vi.stubGlobal('fetch', fetchMock);
   });
 
@@ -76,6 +80,34 @@ describe('PythonBridge lifecycle', () => {
 
     expect(child.kill).toHaveBeenCalledWith('SIGTERM');
     expect(bridge.isReady).toBe(false);
+  });
+
+  it('waits for the agent loop readiness contract instead of the HTTP port alone', async () => {
+    const child = processStub();
+    spawn.mockReturnValue(child);
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ agent_ready: false }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        json: vi.fn().mockResolvedValue(null),
+      })
+      .mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ agent_ready: true }),
+      });
+    const { PythonBridge } = await import('./pythonBridge');
+    const bridge = new PythonBridge();
+
+    await bridge.start();
+
+    expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(3);
+    expect(bridge.isReady).toBe(true);
   });
 
   it('passes the authenticated desktop PDF renderer to nanobot', async () => {

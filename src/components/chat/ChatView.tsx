@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useChatStore, useActiveConversation } from '@/stores/chatStore';
 import type { ImageAttachment, Message } from '@/types';
 import { useAutoScroll } from '@/hooks/useAutoScroll';
@@ -6,8 +6,11 @@ import { useNanobotStream, type SendImage, type SendOptions } from '@/hooks/useN
 import {
   getGatewayBaseUrl,
   getNanobotClient,
+  getNanobotConnectionStatus,
+  getNanobotMcpStatus,
   getNanobotToken,
   mapWebuiThreadToGuiMessages,
+  subscribeNanobotConnectionStatus,
   syncSessionsFromGateway,
 } from '@/core/nanobotClient';
 import type { GoalStateWsPayload, UIMessage, WorkspaceScopePayload, WorkspacesPayload } from '@/core/types';
@@ -144,6 +147,24 @@ export default function ChatView({
     [activeProjectSkillNames, skills],
   );
   const { t } = useI18n();
+  const gatewayConnectionStatus = useSyncExternalStore(
+    subscribeNanobotConnectionStatus,
+    getNanobotConnectionStatus,
+    getNanobotConnectionStatus,
+  );
+  const gatewayReady = gatewayConnectionStatus === 'open';
+  const mcpStatus = useSyncExternalStore(
+    subscribeNanobotConnectionStatus,
+    getNanobotMcpStatus,
+    getNanobotMcpStatus,
+  );
+  const runtimeNotice = !gatewayReady
+    ? t.chat.gatewayStarting
+    : mcpStatus === 'pending' || mcpStatus === 'warming'
+      ? t.chat.mcpWarming
+      : mcpStatus === 'unavailable'
+        ? t.chat.mcpUnavailable
+        : null;
   const [historyMessages, setHistoryMessages] = useState<UIMessage[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyVersion, setHistoryVersion] = useState(0);
@@ -255,7 +276,6 @@ export default function ChatView({
     if (!activeConvId) return;
     const pending = pendingFirstRef.current;
     if (!pending) return;
-    pendingFirstRef.current = null;
     const options: SendOptions = {
       workspaceScope: pending.workspaceScope,
       ...(activeConv?.expertTeam ? { expertTeam: activeConv.expertTeam } : {}),
@@ -263,7 +283,9 @@ export default function ChatView({
       ...(pending.options?.mcpPresets?.length ? { mcpPresets: pending.options.mcpPresets } : {}),
       ...(pending.options?.skillScope ? { skillScope: pending.options.skillScope } : {}),
     };
-    stream.send(pending.text, imageAttachmentsToSendImages(pending.images), options);
+    if (stream.send(pending.text, imageAttachmentsToSendImages(pending.images), options)) {
+      pendingFirstRef.current = null;
+    }
   }, [activeConv?.expertTeam, activeConvId, stream]);
 
   const displayMessages = useMemo(
@@ -289,17 +311,18 @@ export default function ChatView({
     scrollToBottom({ force: false });
   }, [activeConvId, historyLoading, stream.isStreaming, timelineMessages, scrollToBottom]);
 
-  const handleSend = async (
+  const handleSend = (
     text: string,
     images?: ImageAttachment[],
     welcomeWorkspacePath?: string | null,
     options?: ChatInputSendOptions,
   ) => {
+    if (!gatewayReady) return false;
     // Block sending if API key is not configured
     const currentApiKey = useSettingsStore.getState().apiKey;
     if (!currentApiKey?.trim()) {
       useSettingsStore.getState().openSystemSettings('ai-services');
-      return;
+      return false;
     }
 
     // Use gateway-provided scope; fall back to welcome path if provided
@@ -340,9 +363,12 @@ export default function ChatView({
         title: text.slice(0, 30) + (text.length > 30 ? '...' : ''),
       });
     } else {
-      stream.send(text, imageAttachmentsToSendImages(images), wireOptions);
+      if (!stream.send(text, imageAttachmentsToSendImages(images), wireOptions)) {
+        return false;
+      }
     }
     scrollToBottom({ force: true });
+    return true;
   };
 
   const runStartedAt = stream.runStartedAt;
@@ -552,9 +578,15 @@ export default function ChatView({
               <ChatInput
                 variant="welcome"
                 onSend={handleSend}
+                sendDisabled={!gatewayReady}
                 workspaceScope={workspaceScope}
                 onWorkspaceScopeChange={_onWorkspaceScopeChange}
               />
+              {runtimeNotice ? (
+                <p className="mt-2 text-center text-[12px] text-amber-700">
+                  {runtimeNotice}
+                </p>
+              ) : null}
             </div>
           </div>
         </div>
@@ -649,9 +681,15 @@ export default function ChatView({
             onStop={stream.stop}
             isStreaming={stream.isStreaming}
             disabled={!!pendingPromptMessage}
+            sendDisabled={!gatewayReady}
             workspaceScope={workspaceScope}
             onWorkspaceScopeChange={_onWorkspaceScopeChange}
           />
+          {runtimeNotice ? (
+            <p className="mt-2 text-center text-[12px] text-amber-700">
+              {runtimeNotice}
+            </p>
+          ) : null}
           <p className="text-center text-[13px] text-[#8a867c] mt-3">
             {t.chat.disclaimer}
           </p>

@@ -511,6 +511,7 @@ function toolEventStatus(event: ToolProgressEvent): TaskNarrativeStatus {
 
 function taskActionTitle(name: string, source: ActivityStepSource, category?: string): string {
   const compact = name.toLowerCase();
+  if (compact === 'write_stdin') return '等待后台命令';
   if (category === 'plan') return '整理计划';
   if (category === 'skill') return '加载技能';
   if (category === 'command') return '运行命令';

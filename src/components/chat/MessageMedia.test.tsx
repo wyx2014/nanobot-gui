@@ -55,10 +55,11 @@ describe('MessageMedia artifact opening', () => {
     });
   });
 
-  it('shows a browser action for generated HTML artifacts', async () => {
+  it('opens the HTML preview URL in the browser instead of downloading it', async () => {
     const open = vi.spyOn(shellBridge, 'open').mockResolvedValue();
     const view = render([{
-      url: 'http://127.0.0.1:8900/api/media/sig/html',
+      url: 'http://127.0.0.1:8900/api/media/sig/html?preview=1',
+      downloadUrl: 'http://127.0.0.1:8900/api/media/sig/html?download=1',
       name: 'research-report.html',
       mimeType: 'text/html',
       kind: 'file',
@@ -68,7 +69,12 @@ describe('MessageMedia artifact opening', () => {
       view.querySelector('[aria-label="在浏览器中打开"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
-    expect(open).toHaveBeenCalledWith('http://127.0.0.1:8900/api/media/sig/html');
+    expect(open).toHaveBeenCalledWith(
+      'http://127.0.0.1:8900/api/media/sig/html?preview=1',
+    );
+    expect(open).not.toHaveBeenCalledWith(
+      'http://127.0.0.1:8900/api/media/sig/html?download=1',
+    );
     open.mockRestore();
   });
 });

@@ -166,10 +166,11 @@ const SHORTCUT_CATEGORIES: ShortcutCategory[] = [
 
 interface ChatInputProps {
   variant: 'welcome' | 'chat';
-  onSend: (message: string, images?: ImageAttachment[], workspacePath?: string | null, options?: ChatInputSendOptions) => void;
+  onSend: (message: string, images?: ImageAttachment[], workspacePath?: string | null, options?: ChatInputSendOptions) => boolean | void;
   onStop?: () => void;
   isStreaming?: boolean;
   disabled?: boolean;
+  sendDisabled?: boolean;
   workspaceScope?: WorkspaceScopePayload | null;
   onWorkspaceScopeChange?: (scope: WorkspaceScopePayload | null) => void;
 }
@@ -365,7 +366,7 @@ async function processFilePaths(
   }
 }
 
-export default function ChatInput({ variant, onSend, onStop, isStreaming: isStreamingProp, disabled, workspaceScope, onWorkspaceScopeChange }: ChatInputProps) {
+export default function ChatInput({ variant, onSend, onStop, isStreaming: isStreamingProp, disabled, sendDisabled, workspaceScope, onWorkspaceScopeChange }: ChatInputProps) {
   const isWelcome = variant === 'welcome';
 
   const [text, setText] = useState('');
@@ -448,9 +449,9 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       cliApps: [],
       mcpPresets: [],
     };
+    if (!submitDraft(draft)) return;
     isSubmittingRef.current = true;
     writeDraft(draftKey, { text: '', images: [], files: [], skills: [], cliApps: [], mcpPresets: [] });
-    submitDraft(draft);
     setActiveCategory(null);
     setHoverPrompt(null);
     resetInput();
@@ -822,7 +823,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
   };
 
-  const submitDraft = (draft: ComposerDraft, workspacePath?: string | null) => {
+  const submitDraft = (draft: ComposerDraft, workspacePath?: string | null): boolean => {
     const trimmed = draft.text?.trim() ?? '';
     // Build file context prefix
     const fileContext = draft.files?.length
@@ -857,7 +858,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
 
     const message = bodyParts;
 
-    onSend(
+    return onSend(
       message,
       draft.images?.length ? draft.images : undefined,
       isWelcome ? workspacePath ?? localWorkspace : undefined,
@@ -869,7 +870,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
           explicit_skills: explicitSkills,
         },
       },
-    );
+    ) !== false;
   };
 
   const currentDraft = (): ComposerDraft => ({
@@ -883,7 +884,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
 
   const handleSend = () => {
     const draft = currentDraft();
-    if (!hasDraftPayload(draft) || disabled) return;
+    if (!hasDraftPayload(draft) || disabled || sendDisabled) return;
     if (isStreaming) {
       setQueuedPrompts((items) => [
         ...items,
@@ -897,15 +898,15 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       return;
     }
 
+    if (!submitDraft(draft)) return;
     isSubmittingRef.current = true;
     writeDraft(draftKey, { text: '', images: [], files: [], skills: [], cliApps: [], mcpPresets: [] });
-    submitDraft(draft);
     resetInput();
   };
 
   const sendQueuedPrompt = useCallback((prompt: QueuedPrompt) => {
+    if (!submitDraft(prompt)) return;
     setQueuedPrompts((items) => items.filter((item) => item.id !== prompt.id));
-    submitDraft(prompt);
     requestAnimationFrame(() => textareaRef.current?.focus());
   }, [submitDraft]);
 
@@ -1552,10 +1553,10 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
 
               <button
                 onClick={handleSend}
-                disabled={!hasContent}
+                disabled={!hasContent || disabled || sendDisabled}
                 className={cn(
                   'btn-claude-primary flex items-center gap-1.5 px-4 py-2 rounded-xl text-[13px] font-medium',
-                  hasContent
+                  hasContent && !disabled && !sendDisabled
                     ? 'bg-[#29261b] text-[#faf9f5] shadow-sm'
                     : 'bg-[#e8e5de] text-[#656358]/50 cursor-not-allowed'
                 )}
@@ -1626,11 +1627,11 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                     <Button
                       size="icon"
                       onClick={handleSend}
-                      disabled={!hasContent || disabled}
+                      disabled={!hasContent || disabled || sendDisabled}
                       aria-label="加入队列"
                       className={cn(
                         'h-8 w-8 rounded-xl transition-colors',
-                        hasContent && !disabled
+                        hasContent && !disabled && !sendDisabled
                           ? 'bg-[#29261b] hover:bg-[#3d3a2f] text-[#faf9f5] shadow-sm'
                           : 'bg-[#e8e5de] text-[#656358]/50 cursor-not-allowed hover:bg-[#e8e5de]',
                       )}
@@ -1652,10 +1653,10 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                   <Button
                     size="icon"
                     onClick={handleSend}
-                    disabled={!hasContent || disabled}
+                    disabled={!hasContent || disabled || sendDisabled}
                     className={cn(
                       'h-8 w-8 rounded-xl transition-colors',
-                      hasContent && !disabled
+                      hasContent && !disabled && !sendDisabled
                         ? 'bg-[#29261b] hover:bg-[#3d3a2f] text-[#faf9f5] shadow-sm'
                         : 'bg-[#e8e5de] text-[#656358]/50 cursor-not-allowed hover:bg-[#e8e5de]'
                     )}

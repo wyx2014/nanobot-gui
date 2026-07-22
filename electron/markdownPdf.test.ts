@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 vi.mock('electron', () => ({
   app: { getAppPath: vi.fn(() => '/missing-app') },
@@ -40,6 +43,44 @@ describe('Markdown PDF document', () => {
     expect(html).toContain('<h1 class="document-title">研究报告</h1>');
   });
 
+  it('embeds only report-local raster images as self-contained data', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'tparuyi-report-'));
+    const assets = path.join(directory, 'assets');
+    fs.mkdirSync(assets);
+    fs.writeFileSync(
+      path.join(assets, 'trend.png'),
+      Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL0qQAAAABJRU5ErkJggg==', 'base64'),
+    );
+    try {
+      const html = renderMarkdownDocument(
+        '# 研究报告\n\n![收入趋势](assets/trend.png)\n\n![远程图片](https://example.com/chart.png)',
+        '研究报告',
+        new Map(),
+        path.join(directory, 'report.md'),
+      );
+
+      expect(html).toContain('data:image/png;base64,');
+      expect(html).toContain('收入趋势');
+      expect(html).not.toContain('https://example.com/chart.png');
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('adds a research cover and table of contents for the report PDF template', () => {
+    const html = renderMarkdownDocument(
+      '# 研究报告\n\n## 核心结论\n\n### 收入趋势\n\n正文',
+      '研究报告',
+      new Map(),
+      undefined,
+      'research_report',
+    );
+
+    expect(html).toContain('class="research-cover"');
+    expect(html).toContain('报告目录');
+    expect(html).toContain('核心结论');
+  });
+
   it('creates a self-contained HTML artifact with rendered Mermaid figures', async () => {
     const html = await renderMarkdownHtml(
       '# Report\n\n```mermaid\ngraph TD\nA-->B\n```',
@@ -62,8 +103,8 @@ describe('Markdown PDF document', () => {
 
 | 维度 | 评分 | 结论 |
 | --- | --- | --- |
-| 商业模式 | 3.5 | 护城河收窄 |
-| 财务估值 | 4.4 | 现金流健康 |
+| 技术面 | 5.5 | 短期修复 |
+| 基本面 | 7.5 | 现金流健康 |
 
 ## 核心数据
 
@@ -85,7 +126,7 @@ describe('Markdown PDF document', () => {
     expect(html).toContain('id="dashboard"');
     expect(html).toContain('多维评分概览');
     expect(html).toContain('trend-figure');
-    expect(html).toContain('TPARUYI · ASSET RESEARCH');
+    expect(html).toContain('TPARUYI · EXPERT RESEARCH');
     expect(html).not.toContain('cdn.jsdelivr.net');
 
     document.open();
@@ -97,6 +138,7 @@ describe('Markdown PDF document', () => {
 
     expect(document.querySelectorAll('.report-section')).toHaveLength(4);
     expect(document.querySelector('.report-preamble')).not.toBeNull();
+    expect(document.querySelector('.score-value')?.textContent).toContain('/10');
     expect(document.querySelectorAll('.toc-links a')).toHaveLength(3);
     expect(document.querySelectorAll('.metric-card')).toHaveLength(3);
     expect(document.querySelectorAll('.score-row')).toHaveLength(2);

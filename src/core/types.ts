@@ -148,6 +148,12 @@ export type AgentUIBlob =
       /** Optional public progress note; never contains private reasoning. */
       note?: string;
       current_step_id?: string;
+      /** Display label retained for lifecycle events that only carry a team id. */
+      team_name?: string;
+      /** Stable team identity for progress updates that arrive without a usable run id. */
+      team_id?: string;
+      /** Current team run identity, when supplied by the gateway. */
+      team_run_id?: string;
     }
   | {
       kind: string;
@@ -287,6 +293,8 @@ export interface BootstrapResponse {
   ws_url?: string | null;
   expires_in: number;
   model_name?: string | null;
+  agent_ready?: boolean;
+  mcp_status?: "disabled" | "pending" | "warming" | "ready" | "unavailable" | "unknown";
   runtime_surface?: RuntimeSurface;
   runtime_capabilities?: RuntimeCapabilities;
 }
@@ -580,6 +588,7 @@ export interface ExpertTeamBinding {
   id: string;
   name?: string;
   version?: string;
+  member_count?: number;
 }
 
 export interface ExpertTeamMember {
@@ -587,6 +596,8 @@ export interface ExpertTeamMember {
   name: string;
   framework?: string;
   description?: string;
+  phase?: string;
+  phase_label?: string;
 }
 
 export interface ExpertTeamWorkflow {
@@ -789,12 +800,26 @@ export type ConnectionStatus =
   | "error";
 
 export type InboundEvent =
-  | { event: "ready"; chat_id: string; client_id: string }
+  | {
+      event: "ready";
+      chat_id: string;
+      client_id: string;
+      agent_ready?: boolean;
+      mcp_status?: BootstrapResponse["mcp_status"];
+    }
+  | {
+      event: "runtime_status";
+      agent_ready: boolean;
+      mcp_status: BootstrapResponse["mcp_status"];
+    }
   | { event: "attached"; chat_id: string }
   | {
       event: "message";
       chat_id: string;
       text: string;
+      /** Authoritative completion of a reply already delivered by streaming.
+       * Merge its attachments and metadata into the streamed bubble. */
+      replace_stream?: boolean;
       reply_to?: string;
       media?: string[];
       media_urls?: Array<{

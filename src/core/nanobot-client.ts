@@ -1,4 +1,5 @@
 import type {
+  BootstrapResponse,
   ConnectionStatus,
   ExpertTeamBinding,
   InboundEvent,
@@ -52,6 +53,10 @@ function summarizeInboundWsPayload(ev: InboundEvent): unknown {
 type Unsubscribe = () => void;
 type EventHandler = (ev: InboundEvent) => void;
 type StatusHandler = (status: ConnectionStatus) => void;
+type RuntimeStatusHandler = (
+  agentReady: boolean,
+  mcpStatus: NonNullable<BootstrapResponse["mcp_status"]>,
+) => void;
 type RuntimeModelHandler = (modelName: string | null, modelPreset?: string | null) => void;
 type SessionUpdateScope = "metadata" | "thread" | string;
 type SessionUpdateHandler = (
@@ -86,6 +91,7 @@ export interface NanobotClientOptions {
 export class NanobotClient {
   private socket: WebSocket | null = null;
   private statusHandlers = new Set<StatusHandler>();
+  private runtimeStatusHandlers = new Set<RuntimeStatusHandler>();
   private runtimeModelHandlers = new Set<RuntimeModelHandler>();
   private sessionUpdateHandlers = new Set<SessionUpdateHandler>();
   private runStatusHandlers = new Set<RunStatusHandler>();
@@ -106,6 +112,8 @@ export class NanobotClient {
   private socketFactory: (url: string) => WebSocket;
   private currentUrl: string;
   private status_: ConnectionStatus = "idle";
+  private agentReady_ = false;
+  private mcpStatus_: NonNullable<BootstrapResponse["mcp_status"]> = "unknown";
   private readyChatId: string | null = null;
   private intentionallyClosed = false;
   private options: NanobotClientOptions;
@@ -126,6 +134,10 @@ export class NanobotClient {
     return this.readyChatId;
   }
 
+  get mcpStatus(): NonNullable<BootstrapResponse["mcp_status"]> {
+    return this.mcpStatus_;
+  }
+
   updateUrl(url: string, socketFactory?: (url: string) => WebSocket): void {
     this.currentUrl = url;
     if (socketFactory) {
@@ -138,6 +150,14 @@ export class NanobotClient {
     handler(this.status_);
     return () => {
       this.statusHandlers.delete(handler);
+    };
+  }
+
+  onRuntimeStatus(handler: RuntimeStatusHandler): Unsubscribe {
+    this.runtimeStatusHandlers.add(handler);
+    handler(this.agentReady_, this.mcpStatus_);
+    return () => {
+      this.runtimeStatusHandlers.delete(handler);
     };
   }
 
@@ -246,6 +266,35 @@ export class NanobotClient {
     sock.onclose = (ev) => this.handleClose(ev);
   }
 
+  waitUntilReady(timeoutMs: number = 10_000): Promise<void> {
+    if (this.status_ === "open") return Promise.resolve();
+    return new Promise<void>((resolve, reject) => {
+      let settled = false;
+      let unsubscribe: Unsubscribe | null = null;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        if (timer !== null) clearTimeout(timer);
+        unsubscribe?.();
+        if (error) reject(error);
+        else resolve();
+      };
+      unsubscribe = this.onStatus((status) => {
+        if (status === "open") finish();
+        else if (status === "closed") finish(new Error("socket closed before ready"));
+      });
+      if (settled) {
+        unsubscribe();
+        return;
+      }
+      timer = setTimeout(
+        () => finish(new Error(`WebSocket did not become ready within ${timeoutMs}ms`)),
+        timeoutMs,
+      );
+    });
+  }
+
   close(): void {
     this.intentionallyClosed = true;
     if (this.reconnectTimer) {
@@ -340,13 +389,7 @@ export class NanobotClient {
   }
 
   private handleOpen(): void {
-    this.setStatus("open");
     this.reconnectAttempts = 0;
-    for (const chatId of this.knownChats) {
-      this.rawSend({ type: "attach", chat_id: chatId });
-    }
-    const queued = this.sendQueue.splice(0);
-    for (const frame of queued) this.rawSend(frame);
   }
 
   private handleMessage(ev: MessageEvent): void {
@@ -370,7 +413,19 @@ export class NanobotClient {
 
     if (parsed.event === "ready") {
       this.readyChatId = parsed.chat_id;
+      this.updateRuntimeStatus(parsed.agent_ready !== false, parsed.mcp_status);
+      for (const chatId of this.knownChats) {
+        this.rawSend({ type: "attach", chat_id: chatId });
+      }
       this.knownChats.add(parsed.chat_id);
+      this.setStatus("open");
+      const queued = this.sendQueue.splice(0);
+      for (const frame of queued) this.rawSend(frame);
+      return;
+    }
+
+    if (parsed.event === "runtime_status") {
+      this.updateRuntimeStatus(parsed.agent_ready, parsed.mcp_status);
       return;
     }
 
@@ -423,6 +478,17 @@ export class NanobotClient {
   private emitRuntimeModelUpdate(modelName: string | null, modelPreset?: string | null): void {
     for (const handler of this.runtimeModelHandlers) {
       handler(modelName, modelPreset);
+    }
+  }
+
+  private updateRuntimeStatus(
+    agentReady: boolean,
+    mcpStatus?: BootstrapResponse["mcp_status"],
+  ): void {
+    this.agentReady_ = agentReady;
+    this.mcpStatus_ = mcpStatus ?? "unknown";
+    for (const handler of this.runtimeStatusHandlers) {
+      handler(this.agentReady_, this.mcpStatus_);
     }
   }
 
@@ -509,7 +575,7 @@ export class NanobotClient {
   }
 
   private queueSend(frame: Outbound): void {
-    if (this.socket?.readyState === WS_OPEN) {
+    if (this.socket?.readyState === WS_OPEN && this.status_ === "open") {
       this.rawSend(frame);
     } else {
       this.sendQueue.push(frame);

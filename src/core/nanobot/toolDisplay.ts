@@ -62,6 +62,7 @@ export function toolActivityLabel(name: string, status: ToolStatus, input?: Reco
     return done ? `已读取${quoted(target) || '所需资料'}` : `正在读取${quoted(target) || '所需资料'}`;
   }
   if (name === 'write_file' || name === 'edit_file' || name === 'apply_patch') return done ? '已更新文件内容' : '正在更新文件内容';
+  if (name === 'write_stdin') return done ? '已获取后台命令输出' : '正在等待后台命令';
   if (name === 'web_search' || name === 'search_web') return done ? `已查到${quoted(target) || '相关'}公开资料` : `正在查找${quoted(target) || '相关'}公开资料`;
   if (name === 'web_fetch') {
     const url = typeof input?.url === 'string' ? input.url : '';

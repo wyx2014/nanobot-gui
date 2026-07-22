@@ -91,7 +91,12 @@ export default function ExpertTeamsSection() {
   const startTeam = (team: ExpertTeamSummary | ExpertTeamDetail) => {
     createConversation(null, {
       title: team.name,
-      expertTeam: { id: team.id, name: team.name, version: team.version },
+      expertTeam: {
+        id: team.id,
+        name: team.name,
+        version: team.version,
+        member_count: team.member_count,
+      },
     });
     closeToolbox();
   };
@@ -151,6 +156,11 @@ export default function ExpertTeamsSection() {
                     <div className="text-sm font-medium text-[#29261b]">{member.name}</div>
                     <div className="mt-0.5 text-[11px] text-[#a06b52]">{member.framework}</div>
                   </div>
+                  {member.phase_label && (
+                    <span className="ml-auto rounded-full bg-[#f5f2ed] px-2 py-0.5 text-[10px] text-[#777368]">
+                      {member.phase_label}
+                    </span>
+                  )}
                 </div>
                 <p className="mt-3 text-xs leading-5 text-[#777368]">{member.description}</p>
               </div>
@@ -202,14 +212,14 @@ export default function ExpertTeamsSection() {
               <ShieldCheck className="h-4 w-4" />
               质量控制
             </div>
-            <p className="mt-2 text-xs leading-5 text-[#5f7565]">关键财务数据双源交叉验证，使用精确计算脚本，并在报告发布前执行数据抽检。</p>
+            <p className="mt-2 text-xs leading-5 text-[#5f7565]">关键结论保留来源、期间、单位与口径；团队在报告发布前交叉验证并标注证据缺口。</p>
           </div>
           <div className="rounded-xl border border-[#e8e4dd] bg-[#faf9f6] p-4">
             <div className="flex items-center gap-2 text-sm font-medium text-[#514d43]">
               <CheckCircle2 className="h-4 w-4" />
               运行依赖
             </div>
-            <p className="mt-2 text-xs leading-5 text-[#777368]">同花顺 iFinD 已作为团队优先结构化数据源；雪球观点抓取依赖 Playwright，未安装时自动降级。</p>
+            <p className="mt-2 text-xs leading-5 text-[#777368]">团队复用当前 Cowork 的模型、联网搜索和已配置数据 Skill；可选依赖不可用时会在报告中如实降级。</p>
           </div>
         </section>
       </div>

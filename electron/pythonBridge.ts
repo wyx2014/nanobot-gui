@@ -266,7 +266,9 @@ export class PythonBridge {
         method: 'GET',
         headers,
       });
-      return resp.ok || resp.status === 401 || resp.status === 403;
+      if (!resp.ok) return false;
+      const body = await resp.json().catch(() => null) as { agent_ready?: unknown } | null;
+      return body?.agent_ready === true;
     } catch {
       return false;
     }

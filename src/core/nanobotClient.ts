@@ -6,6 +6,7 @@
 import { ipc } from '@/lib/ipc-factory';
 import { NanobotClient } from './nanobot-client';
 import { fetchBootstrap, deriveWsUrl } from './bootstrap';
+import type { BootstrapResponse, ConnectionStatus } from './types';
 
 export interface NanobotStatus {
   ready: boolean;
@@ -25,6 +26,30 @@ export interface NanobotSyncResult {
 let globalClient: NanobotClient | null = null;
 let currentToken = '';
 let currentBaseUrl = '';
+let globalConnectionStatus: ConnectionStatus = 'idle';
+let globalStatusUnsubscribe: (() => void) | null = null;
+let globalRuntimeStatusUnsubscribe: (() => void) | null = null;
+let globalMcpStatus: NonNullable<BootstrapResponse['mcp_status']> = 'unknown';
+const globalConnectionListeners = new Set<() => void>();
+
+function setGlobalConnectionStatus(status: ConnectionStatus): void {
+  if (globalConnectionStatus === status) return;
+  globalConnectionStatus = status;
+  for (const listener of globalConnectionListeners) listener();
+}
+
+export function getNanobotConnectionStatus(): ConnectionStatus {
+  return globalConnectionStatus;
+}
+
+export function getNanobotMcpStatus(): NonNullable<BootstrapResponse['mcp_status']> {
+  return globalMcpStatus;
+}
+
+export function subscribeNanobotConnectionStatus(listener: () => void): () => void {
+  globalConnectionListeners.add(listener);
+  return () => globalConnectionListeners.delete(listener);
+}
 
 export function getNanobotClient(): NanobotClient {
   if (!globalClient) {
@@ -48,6 +73,9 @@ export async function refreshNanobotAuth(): Promise<{ token: string; baseUrl: st
   }
   const baseUrl = `http://127.0.0.1:${status.port}`;
   const boot = await fetchBootstrap(baseUrl, status.tokenSecret);
+  if (boot.agent_ready === false) {
+    throw new Error('Nanobot agent loop is not ready yet.');
+  }
   currentToken = boot.token;
 
   const wsUrl = deriveWsUrl(boot.ws_path, boot.token, boot.ws_url);
@@ -71,7 +99,12 @@ export async function bootstrapNanobotGateway(): Promise<NanobotClient> {
   const { wsUrl } = await refreshNanobotAuth();
 
   console.log('[nanobotClient] Connecting WebSocket to', wsUrl);
-  
+
+  globalStatusUnsubscribe?.();
+  globalStatusUnsubscribe = null;
+  globalRuntimeStatusUnsubscribe?.();
+  globalRuntimeStatusUnsubscribe = null;
+  globalClient?.close();
   globalClient = new NanobotClient({
     url: wsUrl,
     onReauth: async () => {
@@ -88,7 +121,19 @@ export async function bootstrapNanobotGateway(): Promise<NanobotClient> {
     }
   });
 
+  globalStatusUnsubscribe = globalClient.onStatus(setGlobalConnectionStatus);
+  globalRuntimeStatusUnsubscribe = globalClient.onRuntimeStatus((_agentReady, mcpStatus) => {
+    if (globalMcpStatus === mcpStatus) return;
+    globalMcpStatus = mcpStatus;
+    for (const listener of globalConnectionListeners) listener();
+  });
   globalClient.connect();
+  try {
+    await globalClient.waitUntilReady();
+  } catch (error) {
+    setGlobalConnectionStatus('error');
+    throw error;
+  }
   return globalClient;
 }
 

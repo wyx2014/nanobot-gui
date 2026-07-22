@@ -105,6 +105,28 @@ describe('buildTaskNarrativeEntries', () => {
     });
   });
 
+  it('shows write_stdin as waiting for a background command, not writing a file', () => {
+    const entries = buildTaskNarrativeEntries([
+      msg({
+        id: 'wait',
+        role: 'tool',
+        kind: 'trace',
+        toolEvents: [{
+          phase: 'start',
+          call_id: 'call-wait',
+          name: 'write_stdin',
+          arguments: { session_id: 'abc123', wait_for: 'ready' },
+          display: { category: 'command', importance: 'primary' },
+        }],
+      }),
+    ]);
+
+    expect(entries[0]).toMatchObject({
+      title: '等待后台命令',
+      status: 'running',
+    });
+  });
+
   it('builds a plan from update_task_progress tool input for older transcripts', () => {
     const entries = buildTaskNarrativeEntries([
       msg({

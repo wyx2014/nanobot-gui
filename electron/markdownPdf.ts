@@ -11,6 +11,14 @@ export type MermaidImage = { png: string; width: number; height: number };
 export type MermaidImageRenderer = (code: string) => Promise<MermaidImage>;
 
 const remarkPlugins = [remarkGfm, remarkBreaks];
+const MAX_EMBEDDED_LOCAL_IMAGE_BYTES = 8 * 1024 * 1024;
+const LOCAL_IMAGE_MIME_TYPES: Record<string, string> = {
+  '.gif': 'image/gif',
+  '.jpeg': 'image/jpeg',
+  '.jpg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+};
 
 function readNewsreaderFont(): string | null {
   const relative = path.join(
@@ -49,12 +57,72 @@ function hasLeadingTitle(markdown: string): boolean {
   return /^\s*#\s+\S/m.test(markdown);
 }
 
-function markdownBody(markdown: string): string {
+function researchOutline(markdown: string): Array<{ level: number; title: string }> {
+  const outline: Array<{ level: number; title: string }> = [];
+  const pattern = /^(#{2,3})\s+(.+?)\s*$/gm;
+  for (const match of markdown.matchAll(pattern)) {
+    const title = match[2].replace(/[`*_]/g, '').trim();
+    if (title) outline.push({ level: match[1].length, title });
+  }
+  return outline.slice(0, 36);
+}
+
+function researchPrintPreamble(markdown: string, title: string): string {
+  const meta = reportMeta(markdown);
+  const outline = researchOutline(markdown);
+  const outlineRows = outline.length
+    ? outline.map((item) => `<li class="toc-level-${item.level}">${escapeHtml(item.title)}</li>`).join('')
+    : '<li class="toc-empty">正文未包含可列入目录的二、三级标题。</li>';
+  return `<section class="research-cover">
+  <div class="research-cover-kicker">TPARUYI · EXPERT RESEARCH</div>
+  <h1>${escapeHtml(title)}</h1>
+  <p>多角色研究、交叉质证与数据审计</p>
+  <div class="research-cover-meta">${meta.date ? `数据截止：${escapeHtml(meta.date)}` : '以报告正文披露的数据截止日期为准'}</div>
+</section>
+<section class="research-print-toc">
+  <div class="research-toc-kicker">TABLE OF CONTENTS</div>
+  <h2>报告目录</h2>
+  <ol>${outlineRows}</ol>
+</section>`;
+}
+
+function localMarkdownImageDataUrl(sourcePath: string | undefined, rawSource: string | undefined): string | null {
+  if (!sourcePath || !rawSource || rawSource.length > 2_048) return null;
+  if (/^(?:[a-z][a-z\d+.-]*:|\/)/i.test(rawSource)) return null;
+
+  try {
+    const sourceDirectory = path.dirname(sourcePath);
+    const rawPath = decodeURIComponent(rawSource.split(/[?#]/, 1)[0]);
+    const imagePath = path.resolve(sourceDirectory, rawPath);
+    const relative = path.relative(sourceDirectory, imagePath);
+    if (relative.startsWith('..') || path.isAbsolute(relative)) return null;
+
+    const mimeType = LOCAL_IMAGE_MIME_TYPES[path.extname(imagePath).toLowerCase()];
+    if (!mimeType) return null;
+    const image = fs.readFileSync(imagePath);
+    if (image.length === 0 || image.length > MAX_EMBEDDED_LOCAL_IMAGE_BYTES) return null;
+    return `data:${mimeType};base64,${image.toString('base64')}`;
+  } catch {
+    return null;
+  }
+}
+
+function markdownBody(markdown: string, sourcePath?: string): string {
   return renderToStaticMarkup(React.createElement(ReactMarkdown, {
     remarkPlugins,
     components: {
-      // Match the chat renderer: remote Markdown images are not loaded implicitly.
-      img: () => null,
+      // Embed only raster images relative to the report source. Remote, data-URL,
+      // absolute, and parent-directory references deliberately remain blocked.
+      img: ({ src, alt }) => {
+        const dataUrl = localMarkdownImageDataUrl(sourcePath, src);
+        if (!dataUrl) return null;
+        return React.createElement(
+          'span',
+          { className: 'report-image' },
+          React.createElement('img', { src: dataUrl, alt: alt || '' }),
+          alt ? React.createElement('span', { className: 'report-image-caption' }, alt) : null,
+        );
+      },
     },
     children: markdown,
   }));
@@ -64,15 +132,20 @@ export function renderMarkdownDocument(
   markdown: string,
   title: string,
   mermaidFigures: Map<string, MermaidImage> = new Map(),
+  sourcePath?: string,
+  template = 'simple',
 ): string {
   const font = readNewsreaderFont();
   const fontFace = font
     ? `@font-face { font-family: "Newsreader PDF"; src: url(data:font/woff2;base64,${font}) format("woff2"); font-style: normal; font-weight: 200 800; font-display: block; }`
     : '';
-  let body = markdownBody(markdown);
+  let body = markdownBody(markdown, sourcePath);
   for (const [token, image] of mermaidFigures) {
     const figure = `<figure class="mermaid"><img src="data:image/png;base64,${image.png}" width="${image.width}" height="${image.height}" alt="Mermaid diagram"></figure>`;
     body = body.replace(`<p>${token}</p>`, figure);
+  }
+  if (template === 'research_report') {
+    body = body.replace(/^\s*<h1>[^]*?<\/h1>\s*/i, '');
   }
   const visibleTitle = hasLeadingTitle(markdown)
     ? ''
@@ -172,10 +245,25 @@ pre code { padding: 0; background: transparent; color: inherit; font-size: 9pt; 
 a { color: #b85f3f; text-decoration: none; overflow-wrap: anywhere; }
 figure.mermaid { margin: 5mm auto 7mm; text-align: center; break-inside: avoid-page; }
 figure.mermaid img { display: inline-block; width: auto; max-width: 100%; height: auto; max-height: 160mm; }
+.report-image { display: block; margin: 5mm auto 7mm; text-align: center; break-inside: avoid-page; page-break-inside: avoid; }
+.report-image img { display: inline-block; max-width: 100%; max-height: 160mm; height: auto; }
+.report-image-caption { display: block; margin-top: 1.5mm; color: #666157; font-size: 9pt; text-align: center; }
 .document-title { margin-bottom: 9mm; }
+.research-cover { display: flex; min-height: 228mm; flex-direction: column; justify-content: center; padding: 26mm 24mm; color: #fff; background: radial-gradient(circle at 86% 15%, rgba(96,139,255,.72), transparent 29%), linear-gradient(135deg, #0b1731 0%, #173d95 56%, #4f76e2 100%); break-after: page; page-break-after: always; }
+.research-cover-kicker, .research-toc-kicker { margin-bottom: 9mm; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif; font-size: 10pt; font-weight: 700; letter-spacing: .16em; }
+.research-cover h1 { max-width: 142mm; margin: 0; color: #fff; font-size: 30pt; letter-spacing: -.025em; }
+.research-cover p { margin: 7mm 0 15mm; color: rgba(255,255,255,.82); font-size: 14pt; }
+.research-cover-meta { display: inline-block; width: fit-content; padding: 3mm 4mm; border: .25mm solid rgba(255,255,255,.3); border-radius: 5mm; color: rgba(255,255,255,.9); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif; font-size: 9.5pt; }
+.research-print-toc { min-height: 220mm; padding: 8mm 4mm 16mm; break-after: page; page-break-after: always; }
+.research-toc-kicker { margin-bottom: 4mm; color: #3156d3; }
+.research-print-toc h2 { margin: 0 0 9mm; font-size: 22pt; }
+.research-print-toc ol { margin: 0; padding: 0; list-style: none; }
+.research-print-toc li { margin: 0; padding: 2.2mm 0; border-bottom: .25mm solid #e5e8ef; color: #343b4c; font-size: 11pt; }
+.research-print-toc .toc-level-3 { padding-left: 7mm; color: #687083; font-size: 10pt; }
+.research-print-toc .toc-empty { color: #687083; }
 </style>
 </head>
-<body>${visibleTitle}${body}</body>
+<body>${template === 'research_report' ? researchPrintPreamble(markdown, title) : ''}${visibleTitle}${body}</body>
 </html>`;
 }
 
@@ -189,8 +277,9 @@ function renderRichMarkdownHtml(
   markdown: string,
   title: string,
   mermaidFigures: Map<string, MermaidImage>,
+  sourcePath?: string,
 ): string {
-  let body = markdownBody(markdown);
+  let body = markdownBody(markdown, sourcePath);
   for (const [token, image] of mermaidFigures) {
     const figure = `<figure class="mermaid"><img src="data:image/png;base64,${image.png}" width="${image.width}" height="${image.height}" alt="研究关系图"></figure>`;
     body = body.replace(`<p>${token}</p>`, figure);
@@ -303,6 +392,9 @@ pre { margin: 17px 0 22px; padding: 18px 20px; overflow-x: auto; border-radius: 
 pre code { padding: 0; color: inherit; background: transparent; }
 figure.mermaid, .trend-figure { margin: 20px 0 25px; padding: 18px; border: 1px solid var(--line); border-radius: 13px; background: #fbfcff; text-align: center; }
 figure.mermaid img { width: auto; max-width: 100%; height: auto; max-height: 600px; }
+.report-image { display: block; margin: 20px 0 25px; padding: 18px; border: 1px solid var(--line); border-radius: 13px; background: #fbfcff; text-align: center; }
+.report-image img { display: inline-block; max-width: 100%; height: auto; max-height: 600px; }
+.report-image-caption { display: block; margin-top: 10px; color: var(--muted); font-size: 12px; }
 .trend-caption { margin-bottom: 8px; color: #37435a; font-size: 13px; font-weight: 700; text-align: left; }
 .trend-figure svg { display: block; width: 100%; height: auto; }
 .positive-heading { color: var(--positive); }
@@ -316,9 +408,9 @@ figure.mermaid img { width: auto; max-width: 100%; height: auto; max-height: 600
 <body>
 <header class="report-hero">
   <div class="hero-inner">
-    <div class="eyebrow">TPARUYI · ASSET RESEARCH</div>
+    <div class="eyebrow">TPARUYI · EXPERT RESEARCH</div>
     <h1>${escapeHtml(title)}</h1>
-    <p class="hero-subtitle">资产投研团队 · 多角色研究、交叉质证与数据审计</p>
+    <p class="hero-subtitle">专家团队 · 多角色研究、交叉质证与数据审计</p>
     <div class="hero-meta">${metaItems}</div>
   </div>
 </header>
@@ -326,7 +418,7 @@ figure.mermaid img { width: auto; max-width: 100%; height: auto; max-height: 600
   <nav class="report-toc" aria-label="报告目录"><span class="toc-label">报告目录</span><div class="toc-links"></div></nav>
   <div id="dashboard"></div>
   <article id="report-content">${body}</article>
-  <footer class="report-footer">本报告由太资如意资产投研团队基于公开资料生成，仅作研究辅助，不构成投资建议。</footer>
+  <footer class="report-footer">本报告由太资如意专家团队基于可用资料生成，仅作研究辅助，不构成投资建议。</footer>
 </main>
 <script>
 (function () {
@@ -429,10 +521,11 @@ figure.mermaid img { width: auto; max-width: 100%; height: auto; max-height: 600
       var cells = row.querySelectorAll('td');
       if (cells.length <= scoreIndex) return;
       var score = numberFrom(cells[scoreIndex].textContent);
-      if (!Number.isFinite(score) || score < 0 || score > 5) return;
+      if (!Number.isFinite(score) || score < 0 || score > 10) return;
       scores.push({ name: clean(cells[0].textContent), score: score });
     });
     if (scores.length >= 2) {
+      var scoreScale = scores.some(function (item) { return item.score > 5; }) ? 10 : 5;
       var scoreCard = document.createElement('section');
       scoreCard.className = 'visual-card';
       var scoreTitle = document.createElement('h3');
@@ -448,11 +541,11 @@ figure.mermaid img { width: auto; max-width: 100%; height: auto; max-height: 600
         track.className = 'score-track';
         var fill = document.createElement('span');
         fill.className = 'score-fill';
-        fill.style.width = Math.max(0, Math.min(100, item.score / 5 * 100)) + '%';
+        fill.style.width = Math.max(0, Math.min(100, item.score / scoreScale * 100)) + '%';
         track.appendChild(fill);
         var value = document.createElement('span');
         value.className = 'score-value';
-        value.textContent = item.score.toFixed(1);
+        value.textContent = item.score.toFixed(1) + '/' + scoreScale;
         row.appendChild(name); row.appendChild(track); row.appendChild(value);
         scoreCard.appendChild(row);
       });
@@ -627,9 +720,11 @@ export async function renderMarkdownPdf(
   markdown: string,
   title: string,
   mermaidRenderer?: MermaidImageRenderer,
+  sourcePath?: string,
+  template = 'simple',
 ): Promise<Buffer> {
   const prepared = await prepareMermaid(markdown, mermaidRenderer);
-  const document = renderMarkdownDocument(prepared.markdown, title, prepared.figures);
+  const document = renderMarkdownDocument(prepared.markdown, title, prepared.figures, sourcePath, template);
   const window = new BrowserWindow({
     show: false,
     webPreferences: {
@@ -659,11 +754,13 @@ export async function renderMarkdownHtml(
   markdown: string,
   title: string,
   mermaidRenderer?: MermaidImageRenderer,
+  sourcePath?: string,
 ): Promise<string> {
   const prepared = await prepareMermaid(markdown, mermaidRenderer);
   return `<!-- Generated from Markdown by TpaRuyi -->\n${renderRichMarkdownHtml(
     prepared.markdown,
     title,
     prepared.figures,
+    sourcePath,
   )}`;
 }

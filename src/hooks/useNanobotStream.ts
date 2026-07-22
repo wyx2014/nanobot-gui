@@ -245,10 +245,37 @@ function stampLastAssistantLatency(prev: UIMessage[], latencyMs: number): UIMess
   return prev;
 }
 
-function absorbCompleteAssistantMessage(
+export function absorbCompleteAssistantMessage(
   prev: UIMessage[],
   message: Omit<UIMessage, "id" | "role" | "createdAt">,
+  options?: { replaceStream?: boolean },
 ): UIMessage[] {
+  // A streamed reply can be followed by an authoritative ``message`` that
+  // carries generated attachments. By then ``stream_end`` has closed the
+  // active cursor, so merge into the latest assistant bubble in this user
+  // turn. Exact-content matching repairs transcripts from older gateways
+  // that did not emit ``replace_stream``.
+  for (let index = prev.length - 1; index >= 0; index -= 1) {
+    const candidate = prev[index];
+    if (candidate.role === "user") break;
+    if (candidate.role !== "assistant" || candidate.kind === "trace") continue;
+    const exactStreamReplay = (
+      candidate.isStreaming
+      && candidate.content.length > 0
+      && candidate.content === message.content
+    );
+    if (!options?.replaceStream && !exactStreamReplay) break;
+    return replaceMessageAt(prev, index, {
+      ...candidate,
+      ...message,
+      id: candidate.id,
+      role: "assistant",
+      createdAt: candidate.createdAt,
+      isStreaming: false,
+      reasoningStreaming: false,
+    });
+  }
+
   const last = prev[prev.length - 1];
   if (!last || !isReasoningOnlyPlaceholder(last)) {
     return [
@@ -460,6 +487,26 @@ export interface SendOptions {
   expertTeam?: ExpertTeamBinding;
 }
 
+function teamProgressMessageId(
+  messages: UIMessage[],
+  teamId: string,
+  runId: string | undefined,
+): string | undefined {
+  const exactId = runId ? `team-run-${runId}` : undefined;
+  if (exactId && messages.some((message) => message.id === exactId)) return exactId;
+
+  // A gateway restart or an older context bridge can omit the run id on a
+  // member update. The active team's stable id still identifies the progress
+  // card, so prefer the newest matching card instead of silently dropping a
+  // real status update.
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    const ui = message.agentUI;
+    if (ui?.kind === "task_progress" && ui.team_id === teamId) return message.id;
+  }
+  return undefined;
+}
+
 export function useNanobotStream(
   chatId: string | null,
   initialMessages: UIMessage[] = [],
@@ -472,7 +519,7 @@ export function useNanobotStream(
   runStartedAt: number | null;
   /** Latest sustained goal for this ``chatId`` (``goal_state`` WS events). */
   goalState: GoalStateWsPayload | undefined;
-  send: (content: string, images?: SendImage[], options?: SendOptions) => void;
+  send: (content: string, images?: SendImage[], options?: SendOptions) => boolean;
   stop: () => void;
   setMessages: React.Dispatch<React.SetStateAction<UIMessage[]>>;
   /** Latest transport-level fault raised since the last ``dismissStreamError``.
@@ -832,23 +879,31 @@ export function useNanobotStream(
 
       if (ev.event === "team_run_started") {
         const id = `team-run-${ev.run_id}`;
+        const stagedMembers = ev.members.filter((member) => member.phase);
+        const firstPhase = stagedMembers[0]?.phase;
+        const firstPhaseCount = firstPhase
+          ? stagedMembers.filter((member) => member.phase === firstPhase).length
+          : ev.members.length;
         const steps = [
           ...ev.members.map((member) => ({
             id: member.id,
             title: `${member.name}${member.framework ? ` · ${member.framework}` : ""}`,
-            detail: member.description,
-            status: "pending" as const,
+            detail: member.description || "团队已启动，正在分配研究任务",
+            // The gateway emits this frame immediately before dispatching the
+            // members. Showing an active state here keeps the UI truthful to
+            // the running team even if a follow-up member frame is delayed.
+            status: (!firstPhase || member.phase === firstPhase ? "running" : "pending") as TaskProgressStep["status"],
           })),
           {
             id: "team-lead",
-            title: "Team Lead 交叉质证与汇总",
-            detail: "等待四位专家交付后进行交叉质证",
+            title: "主笔交叉质证与汇总",
+            detail: "等待各位专家交付后进行交叉质证",
             status: "pending" as const,
           },
           {
             id: "report-audit",
-            title: "财务数据抽检与生成报告",
-            detail: "等待交叉质证完成后抽检数据并生成报告",
+            title: "报告审校与交付",
+            detail: "等待交叉质证完成后核验关键结论并生成报告",
             status: "pending" as const,
           },
         ];
@@ -860,7 +915,16 @@ export function useNanobotStream(
             kind: "trace",
             content: `${ev.team_name}已启动`,
             traces: [`${ev.team_name}已启动`],
-            agentUI: { kind: "task_progress", steps, note: "四位专家将并行研究" },
+            agentUI: {
+              kind: "task_progress",
+              steps,
+              note: firstPhase && firstPhaseCount < ev.members.length
+                ? `${ev.members.length} 位专家将分阶段协作，首阶段 ${firstPhaseCount} 位并行研究`
+                : `${ev.members.length} 位专家正在并行研究`,
+              team_name: ev.team_name,
+              team_id: ev.team_id,
+              team_run_id: ev.run_id,
+            },
             createdAt: Date.now(),
           },
         ]);
@@ -868,14 +932,17 @@ export function useNanobotStream(
       }
 
       if (ev.event === "team_member_updated") {
-        const id = `team-run-${ev.run_id}`;
         setMessages((prev) => prev.map((message) => {
-          if (message.id !== id || message.agentUI?.kind !== "task_progress") return message;
+          const targetId = teamProgressMessageId(prev, ev.team_id, ev.run_id);
+          if (message.id !== targetId || message.agentUI?.kind !== "task_progress") return message;
           const progress = message.agentUI as {
             kind: "task_progress";
             steps: TaskProgressStep[];
             note?: string;
             current_step_id?: string;
+            team_name?: string;
+            team_id?: string;
+            team_run_id?: string;
           };
           const status = ev.member.status === "running"
             ? "running"
@@ -914,19 +981,23 @@ export function useNanobotStream(
       }
 
       if (ev.event === "team_run_completed") {
-        const id = `team-run-${ev.run_id}`;
         setMessages((prev) => prev.map((message) => {
-          if (message.id !== id || message.agentUI?.kind !== "task_progress") return message;
+          const targetId = teamProgressMessageId(prev, ev.team_id, ev.run_id);
+          if (message.id !== targetId || message.agentUI?.kind !== "task_progress") return message;
           const progress = message.agentUI as {
             kind: "task_progress";
             steps: TaskProgressStep[];
             note?: string;
             current_step_id?: string;
+            team_name?: string;
+            team_id?: string;
+            team_run_id?: string;
           };
+          const teamName = progress.team_name || "专家团队";
           return {
             ...message,
-            content: "资产投研团队已完成",
-            traces: ["资产投研团队已完成"],
+            content: `${teamName}已完成`,
+            traces: [`${teamName}已完成`],
             agentUI: {
               ...progress,
               steps: progress.steps.map((step) => ({ ...step, status: "completed" as const })),
@@ -1081,7 +1152,9 @@ export function useNanobotStream(
           const activeId = buffer.current?.messageId;
           buffer.current = null;
           activeAssistantRef.current = null;
-          const filtered = activeId ? prev.filter((m) => m.id !== activeId) : prev;
+          const filtered = activeId && ev.replace_stream !== true
+            ? prev.filter((m) => m.id !== activeId)
+            : prev;
           const content = ev.text;
           const lat =
             typeof ev.latency_ms === "number" && ev.latency_ms >= 0
@@ -1092,6 +1165,8 @@ export function useNanobotStream(
             ...(ev.interactive_prompt ? { interactivePrompt: ev.interactive_prompt } : {}),
             ...(hasMedia ? { media } : {}),
             ...(lat !== undefined ? { latencyMs: lat } : {}),
+          }, {
+            replaceStream: ev.replace_stream === true,
           });
         });
         if (hasMedia) {
@@ -1181,12 +1256,12 @@ export function useNanobotStream(
 
   const send = useCallback(
     (content: string, images?: SendImage[], options?: SendOptions) => {
-      if (!chatId) return;
-      if (!client) return;
+      if (!chatId) return false;
+      if (!client || client.status !== "open") return false;
       const hasImages = !!images && images.length > 0;
       // Text is optional when images are attached — the agent will still see
       // the image blocks via ``media`` paths.
-      if (!hasImages && !content.trim()) return;
+      if (!hasImages && !content.trim()) return false;
 
       flushPendingStreamEvents();
       const previews = hasImages ? images!.map((i) => i.preview) : undefined;
@@ -1218,6 +1293,7 @@ export function useNanobotStream(
       } else {
         client.sendMessage(chatId, content, wireMedia);
       }
+      return true;
     },
     [chatId, clearActivitySegment, client, flushPendingStreamEvents, setIsStreaming],
   );

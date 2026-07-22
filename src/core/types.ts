@@ -880,6 +880,8 @@ export type InboundEvent =
       event: "turn_end";
       chat_id: string;
       latency_ms?: number;
+      /** Terminal disposition for a completed, failed, or user-cancelled turn. */
+      finish_reason?: "cancelled" | "completed" | "error" | string;
       /** Authoritative sustained-goal snapshot for this chat (same shape as ``goal_state`` events). */
       goal_state?: GoalStateWsPayload;
     }

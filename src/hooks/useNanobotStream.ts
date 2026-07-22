@@ -188,24 +188,87 @@ function replaceMessageAt(prev: UIMessage[], index: number, message: UIMessage):
  * Close the active reasoning stream segment, if any. Idempotent: a
  * ``reasoning_end`` with no preceding deltas is a harmless no-op.
  */
-function closeReasoningStream(prev: UIMessage[]): UIMessage[] {
+export function closeReasoningStream(prev: UIMessage[]): UIMessage[] {
   for (let i = prev.length - 1; i >= 0; i -= 1) {
     const candidate = prev[i];
     if (!candidate.reasoningStreaming) continue;
-    const latencyMs =
-      candidate.latencyMs === undefined
-      && Number.isFinite(candidate.createdAt)
-      && candidate.createdAt > 1_000_000_000_000
-        ? Math.max(0, Math.round(Date.now() - candidate.createdAt))
-        : candidate.latencyMs;
     const merged: UIMessage = {
       ...candidate,
       reasoningStreaming: false,
-      ...(latencyMs !== undefined ? { latencyMs } : {}),
     };
     return [...prev.slice(0, i), merged, ...prev.slice(i + 1)];
   }
   return prev;
+}
+
+function isTaskProgressAgentUI(
+  agentUI: UIMessage["agentUI"],
+): agentUI is NonNullable<UIMessage["agentUI"]> & {
+  kind: "task_progress";
+  steps: TaskProgressStep[];
+} {
+  return agentUI?.kind === "task_progress" && Array.isArray(agentUI.steps);
+}
+
+/**
+ * Close every locally-open stream when a user interrupts a turn.  The gateway
+ * remains the authority for elapsed time, so an interrupted placeholder must
+ * never turn its age into a fictional completed-turn latency.
+ */
+export function finalizeInterruptedTurn(prev: UIMessage[]): UIMessage[] {
+  return prev.map((message) => {
+    const taskProgress = isTaskProgressAgentUI(message.agentUI)
+      ? message.agentUI
+      : undefined;
+    const cancelledPlan = taskProgress
+      ? {
+        ...taskProgress,
+        steps: taskProgress.steps.map((step) => (
+          step.status === "running"
+            ? {
+              ...step,
+              status: "error" as const,
+              detail: step.detail ? `${step.detail}（已由用户终止）` : "已由用户终止",
+            }
+            : step
+        )),
+        current_step_id: undefined,
+        note: "任务已由用户终止",
+      }
+      : undefined;
+    const cancelledToolEvents = message.toolEvents?.map((event) => (
+      event.phase === "start"
+        ? { ...event, phase: "error", error: "已由用户终止" }
+        : event
+    ));
+    const cancelledFileEdits = message.fileEdits?.map((edit) => (
+      edit.status === "editing"
+        ? { ...edit, status: "error" as const, phase: "error", error: "已由用户终止" }
+        : edit
+    ));
+    const hasInterruptedWork = message.isStreaming
+      || message.reasoningStreaming
+      || taskProgress?.steps.some((step) => step.status === "running")
+      || message.toolEvents?.some((event) => event.phase === "start")
+      || message.fileEdits?.some((edit) => edit.status === "editing");
+    if (!hasInterruptedWork) return message;
+    return {
+      ...message,
+      isStreaming: false,
+      reasoningStreaming: false,
+      ...(cancelledPlan ? { agentUI: cancelledPlan } : {}),
+      ...(cancelledToolEvents ? { toolEvents: cancelledToolEvents } : {}),
+      ...(cancelledFileEdits ? { fileEdits: cancelledFileEdits } : {}),
+    };
+  });
+}
+
+function closeOpenStreams(prev: UIMessage[]): UIMessage[] {
+  return prev.map((message) => (
+    message.isStreaming || message.reasoningStreaming
+      ? { ...message, isStreaming: false, reasoningStreaming: false }
+      : message
+  ));
 }
 
 function isReasoningOnlyPlaceholder(message: UIMessage): boolean {
@@ -873,6 +936,8 @@ export function useNanobotStream(
           setRunStartedAt(ev.started_at);
         } else {
           setRunStartedAt(null);
+          setIsStreaming(false);
+          setMessages(closeOpenStreams);
         }
         return;
       }
@@ -1022,7 +1087,9 @@ export function useNanobotStream(
         }
         setIsStreaming(false);
         setMessages((prev) => {
-          let finalized = prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m));
+          let finalized = ev.finish_reason === "cancelled"
+            ? finalizeInterruptedTurn(prev)
+            : closeOpenStreams(prev);
           finalized = pruneReasoningOnlyPlaceholders(finalized);
           if (typeof ev.latency_ms === "number" && ev.latency_ms >= 0) {
             finalized = stampLastAssistantLatency(finalized, Math.round(ev.latency_ms));
@@ -1302,12 +1369,13 @@ export function useNanobotStream(
     if (!chatId || !client) return;
     flushPendingStreamEvents();
     setIsStreaming(false);
+    setRunStartedAt(null);
     setMessages((prev) => {
       buffer.current = null;
       activeAssistantRef.current = null;
       closedAssistantStreamIdsRef.current.clear();
       clearActivitySegment();
-      return prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m));
+      return finalizeInterruptedTurn(prev);
     });
     suppressStreamUntilTurnEndRef.current = false;
     client.sendMessage(chatId, "/stop");

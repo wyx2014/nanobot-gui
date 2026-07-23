@@ -57,7 +57,7 @@ interface ChatState {
 }
 
 interface ChatActions {
-  createConversation: (workspacePath?: string | null, options?: { scheduledTaskId?: string; skipActivate?: boolean; workspaceScope?: WorkspaceScopePayload | null; title?: string; expertTeam?: ExpertTeamBinding | null }) => string;
+  createConversation: (workspacePath?: string | null, options?: { id?: string; scheduledTaskId?: string; skipActivate?: boolean; workspaceScope?: WorkspaceScopePayload | null; title?: string; expertTeam?: ExpertTeamBinding | null }) => string;
   startNewConversation: () => void;
   switchConversation: (id: string) => void;
   setConversationWorkspace: (convId: string, path: string | null) => void;
@@ -131,7 +131,7 @@ export const useChatStore = create<ChatStore>()(
       activeAgentNames: [],
 
       createConversation: (workspacePath, options) => {
-        const id = generateId();
+        const id = options?.id?.trim() || generateId();
         const now = Date.now();
         const scope = options?.workspaceScope ?? null;
         const path = workspacePath ?? scope?.project_path ?? null;

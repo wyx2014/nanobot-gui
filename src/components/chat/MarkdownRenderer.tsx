@@ -19,6 +19,7 @@ import { artifactFromPath, artifactFromUrl, looksLikeArtifactUrl } from '@/core/
 import type { SearchResult } from '@/types';
 import MermaidBlock from './MermaidBlock';
 import FileAttachment from './FileAttachment';
+import { normalizeMarkdownEmphasis, remarkRelaxedStrong } from './markdownNormalization';
 
 SyntaxHighlighter.registerLanguage('tsx', tsx);
 SyntaxHighlighter.registerLanguage('typescript', tsx);
@@ -397,7 +398,7 @@ function CollapsibleCodeBlock({ codeString, language }: { codeString: string; la
 }
 
 // Stable references — avoid recreating on every render
-const remarkPluginsStable = [remarkGfm, remarkBreaks];
+const remarkPluginsStable = [remarkGfm, remarkBreaks, remarkRelaxedStrong];
 const SAFE_URL_PATTERN = /^(https?:\/\/|mailto:|tel:|#)/i;
 
 type MarkdownVariant = 'assistant' | 'user';
@@ -499,7 +500,7 @@ function buildMarkdownComponents(
       );
     },
     strong({ children }: { children?: ReactNode }) {
-      return <strong className={cn('font-semibold', isUser ? 'text-[#191814]' : 'text-[#191814]')}>{children}</strong>;
+      return <strong className={cn('font-bold', isUser ? 'text-[#191814]' : 'text-[#191814]')}>{children}</strong>;
     },
     table({ children }: { children?: ReactNode }) {
       return (
@@ -535,6 +536,7 @@ interface MarkdownRendererProps {
 }
 
 export default memo(function MarkdownRenderer({ content, searchResults, onCitationClick, variant = 'assistant' }: MarkdownRendererProps) {
+  const normalizedContent = useMemo(() => normalizeMarkdownEmphasis(content), [content]);
   const components = useMemo(
     () => searchResults && searchResults.length > 0
       ? buildMarkdownComponents(searchResults, onCitationClick, variant)
@@ -548,7 +550,7 @@ export default memo(function MarkdownRenderer({ content, searchResults, onCitati
         remarkPlugins={remarkPluginsStable}
         components={components}
       >
-        {content}
+        {normalizedContent}
       </ReactMarkdown>
     </div>
   );

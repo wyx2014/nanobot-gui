@@ -21,12 +21,12 @@ import { useScheduleStore } from '@/stores/scheduleStore';
 import { usePromptHubStore } from '@/stores/promptHubStore';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useToastStore } from '@/stores/toastStore';
 import { useI18n } from '@/i18n';
 import ThreadMessages from './ThreadMessages';
 import InteractivePromptCard, { type InteractivePromptSubmitPayload } from './InteractivePromptCard';
 import ChatInput, { type ChatInputSendOptions } from './ChatInput';
 import ActiveSkillsBar from './ActiveSkillsBar';
-import ActiveExpertTeamBar from './ActiveExpertTeamBar';
 import { ArrowLeft, ChevronDown, Settings } from 'lucide-react';
 import { osBridge } from '@/lib/ipc-factory';
 import { extractUsername } from '@/utils/pathUtils';
@@ -256,6 +256,7 @@ export default function ChatView({
     lastMessageLooksPending(historyMessages),
     handleTurnEnd,
   );
+  const creatingConversationRef = useRef(false);
 
   useEffect(() => {
     if (!activeConvId || historyLoading) return;
@@ -276,9 +277,10 @@ export default function ChatView({
     if (!activeConvId) return;
     const pending = pendingFirstRef.current;
     if (!pending) return;
+    const pendingExpertTeam = pending.options?.expertTeam ?? activeConv?.expertTeam;
     const options: SendOptions = {
       workspaceScope: pending.workspaceScope,
-      ...(activeConv?.expertTeam ? { expertTeam: activeConv.expertTeam } : {}),
+      ...(pendingExpertTeam ? { expertTeam: pendingExpertTeam } : {}),
       ...(pending.options?.cliApps?.length ? { cliApps: pending.options.cliApps } : {}),
       ...(pending.options?.mcpPresets?.length ? { mcpPresets: pending.options.mcpPresets } : {}),
       ...(pending.options?.skillScope ? { skillScope: pending.options.skillScope } : {}),
@@ -341,27 +343,50 @@ export default function ChatView({
       ...(options?.cliApps?.length ? { cliApps: options.cliApps } : {}),
       ...(options?.mcpPresets?.length ? { mcpPresets: options.mcpPresets } : {}),
       ...(options?.skillScope ? { skillScope: options.skillScope } : {}),
+      ...(options?.expertTeam ? { expertTeam: options.expertTeam } : {}),
     };
+    const effectiveExpertTeam = sendOptions.expertTeam ?? activeConv?.expertTeam;
     const wireOptions: SendOptions = {
       workspaceScope: effectiveScope,
-      ...(activeConv?.expertTeam ? { expertTeam: activeConv.expertTeam } : {}),
+      ...(effectiveExpertTeam ? { expertTeam: effectiveExpertTeam } : {}),
       ...(sendOptions.cliApps?.length ? { cliApps: sendOptions.cliApps } : {}),
       ...(sendOptions.mcpPresets?.length ? { mcpPresets: sendOptions.mcpPresets } : {}),
       ...(sendOptions.skillScope ? { skillScope: sendOptions.skillScope } : {}),
     };
 
-    let convId = activeConv?.id;
+    const convId = activeConv?.id;
     if (!convId) {
+      if (creatingConversationRef.current) return false;
       pendingFirstRef.current = {
         text,
         images,
         options: sendOptions,
         workspaceScope: effectiveScope,
       };
-      convId = createConversation(welcomeWorkspacePath ?? effectiveScope?.project_path ?? null, {
-        workspaceScope: effectiveScope,
-        title: text.slice(0, 30) + (text.length > 30 ? '...' : ''),
-      });
+      creatingConversationRef.current = true;
+      void Promise.resolve()
+        .then(() => getNanobotClient().newChat(5_000, effectiveScope, sendOptions.expertTeam))
+        .then((gatewayChatId) => {
+          createConversation(welcomeWorkspacePath ?? effectiveScope?.project_path ?? null, {
+            id: gatewayChatId,
+            workspaceScope: effectiveScope,
+            title: text.slice(0, 30) + (text.length > 30 ? '...' : ''),
+            expertTeam: sendOptions.expertTeam ?? null,
+          });
+        })
+        .catch((error) => {
+          pendingFirstRef.current = null;
+          useChatStore.getState().setPendingInput(text);
+          useToastStore.getState().addToast({
+            type: 'error',
+            title: '新建会话失败',
+            message: error instanceof Error ? error.message : String(error),
+            duration: 5000,
+          });
+        })
+        .finally(() => {
+          creatingConversationRef.current = false;
+        });
     } else {
       if (!stream.send(text, imageAttachmentsToSendImages(images), wireOptions)) {
         return false;
@@ -637,7 +662,6 @@ export default function ChatView({
       <div className="shrink-0 px-6 md:px-10 pb-4 pt-2 bg-gradient-to-t from-[#fbfaf7] via-[#fbfaf7] to-[#fbfaf7]/80">
         <div className="max-w-4xl mx-auto">
           <ActiveSkillsBar />
-          <ActiveExpertTeamBar />
           {scheduleReturnTarget && (
             <button
               onClick={returnToSchedule}

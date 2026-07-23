@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Plus, ArrowUp, ArrowRight, Square, X, ChevronDown, Check, FileText, CornerDownRight, Pencil, Trash2, GraduationCap, Code, Coffee, Lightbulb, Paperclip, ChevronRight, Puzzle, Globe, Search } from 'lucide-react';
+import { Plus, ArrowUp, ArrowRight, Square, X, ChevronDown, Check, FileText, CornerDownRight, Pencil, Trash2, GraduationCap, Code, Coffee, Lightbulb, Paperclip, ChevronRight, Puzzle, Globe, Search, Users } from 'lucide-react';
 import { dialogBridge, fsBridge } from '@/lib/ipc-factory';
 import { useFileDragDrop } from '@/hooks/useFileDragDrop';
 import { uint8ArrayToBase64 } from '@/utils/base64';
@@ -9,15 +9,16 @@ import { useChatStore, useActiveConversation } from '@/stores/chatStore';
 import { useSettingsStore, getEffectiveModel, AVAILABLE_MODELS } from '@/stores/settingsStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { usePermissionStore } from '@/stores/permissionStore';
+import { useToastStore } from '@/stores/toastStore';
 import type { PermissionDuration } from '@/stores/permissionStore';
 import { useI18n } from '@/i18n';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { ImageAttachment } from '@/types';
 import type { OutboundCliAppMention, OutboundMcpPresetMention, OutboundSkillScope } from '@/core/types';
-import type { CliAppInfo, McpPresetInfo, SlashCommand, WorkspaceScopePayload } from '@/core/types';
-import { fetchCliApps, fetchMcpPresets, listSlashCommands } from '@/core/api';
-import { getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/nanobotClient';
+import type { CliAppInfo, ExpertTeamBinding, ExpertTeamSummary, McpPresetInfo, SlashCommand, WorkspaceScopePayload } from '@/core/types';
+import { fetchCliApps, fetchExpertTeams, fetchMcpPresets, listSlashCommands } from '@/core/api';
+import { getNanobotClient, getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/nanobotClient';
 import {
   CLI_APPS_CHANGED_EVENT,
   installedCliAppsFromPayload,
@@ -39,6 +40,7 @@ export interface ChatInputSendOptions {
   cliApps?: OutboundCliAppMention[];
   mcpPresets?: OutboundMcpPresetMention[];
   skillScope?: OutboundSkillScope;
+  expertTeam?: ExpertTeamBinding;
 }
 
 interface ShortcutOption {
@@ -384,9 +386,15 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const [showPlusMenu, setShowPlusMenu] = useState(false);
-  const [activeSubmenu, setActiveSubmenu] = useState<'project' | 'skills' | 'connector' | null>(null);
+  const [activeSubmenu, setActiveSubmenu] = useState<'project' | 'expert-team' | 'skills' | 'connector' | null>(null);
+  const [expertTeamSearchQuery, setExpertTeamSearchQuery] = useState('');
   const [skillSearchQuery, setSkillSearchQuery] = useState('');
   const [connectorSearchQuery, setConnectorSearchQuery] = useState('');
+  const [expertTeams, setExpertTeams] = useState<ExpertTeamSummary[]>([]);
+  const [expertTeamsLoading, setExpertTeamsLoading] = useState(true);
+  const [expertTeamsError, setExpertTeamsError] = useState<string | null>(null);
+  const [pendingExpertTeam, setPendingExpertTeam] = useState<ExpertTeamBinding | null>(null);
+  const [expertTeamUpdating, setExpertTeamUpdating] = useState(false);
   const plusMenuRef = useRef<HTMLDivElement>(null);
   const skills = useDiscoveryStore((s) => s.skills);
   const useBuiltinWebSearch = useSettingsStore((s) => s.useBuiltinWebSearch);
@@ -410,9 +418,12 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
 
   // Store hooks (always called)
   const cancelStreaming = useChatStore((s) => s.cancelStreaming);
+  const setConversationExpertTeam = useChatStore((s) => s.setConversationExpertTeam);
+  const addToast = useToastStore((s) => s.addToast);
   const pendingInput = useChatStore((s) => s.pendingInput);
   const setPendingInput = useChatStore((s) => s.setPendingInput);
   const activeConv = useActiveConversation();
+  const selectedExpertTeam = activeConv?.expertTeam ?? pendingExpertTeam;
   const draftKey = useMemo(() => draftStorageKey(activeConv?.id, variant), [activeConv?.id, variant]);
   const queueKey = useMemo(() => queueStorageKey(activeConv?.id, variant), [activeConv?.id, variant]);
   const currentModel = useSettingsStore((s) => getEffectiveModel(s));
@@ -504,6 +515,38 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   const removeImage = useCallback((id: string) => {
     setImages((prev) => prev.filter((img) => img.id !== id));
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadExpertTeams = async () => {
+      setExpertTeamsLoading(true);
+      setExpertTeamsError(null);
+      try {
+        const status = await getNanobotStatus();
+        if (!status.ready) throw new Error(isEn ? 'Nanobot is not ready' : 'Nanobot 服务尚未就绪');
+        let token = getNanobotToken();
+        let base = `http://127.0.0.1:${status.port}`;
+        if (!token) {
+          const refreshed = await refreshNanobotAuth();
+          token = refreshed.token;
+          base = refreshed.baseUrl;
+        }
+        const payload = await fetchExpertTeams(token, base);
+        if (!cancelled) setExpertTeams(payload.teams.filter((team) => team.enabled));
+      } catch (error) {
+        if (!cancelled) {
+          setExpertTeams([]);
+          setExpertTeamsError(error instanceof Error ? error.message : String(error));
+        }
+      } finally {
+        if (!cancelled) setExpertTeamsLoading(false);
+      }
+    };
+    void loadExpertTeams();
+    return () => {
+      cancelled = true;
+    };
+  }, [isEn]);
 
   const removeFile = useCallback((id: string) => {
     setFiles((prev) => prev.filter((f) => f.id !== id));
@@ -865,6 +908,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       {
         ...(draft.cliApps?.length ? { cliApps: draft.cliApps } : {}),
         ...(draft.mcpPresets?.length ? { mcpPresets: draft.mcpPresets } : {}),
+        ...(selectedExpertTeam ? { expertTeam: selectedExpertTeam } : {}),
         skillScope: {
           project_bound_user_skills: projectSkills,
           explicit_skills: explicitSkills,
@@ -1020,7 +1064,41 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     }
   }, []);
 
+  const updateSelectedExpertTeam = (team: ExpertTeamBinding | null) => {
+    if (!activeConv?.id) {
+      setPendingExpertTeam(team);
+      textareaRef.current?.focus();
+      return;
+    }
+    const chatId = activeConv.id;
+    setExpertTeamUpdating(true);
+    void Promise.resolve()
+      .then(() => getNanobotClient().setExpertTeam(chatId, team))
+      .then((confirmedTeam) => {
+        setConversationExpertTeam(chatId, confirmedTeam);
+        textareaRef.current?.focus();
+      })
+      .catch((error) => {
+        addToast({
+          type: 'error',
+          title: team
+            ? (isEn ? 'Failed to select expert team' : '选择专家团队失败')
+            : (isEn ? 'Failed to remove expert team' : '取消专家团队失败'),
+          message: error instanceof Error ? error.message : String(error),
+          duration: 5000,
+        });
+      })
+      .finally(() => setExpertTeamUpdating(false));
+  };
+
   const renderPlusMenu = () => {
+    const filteredExpertTeams = expertTeams.filter((team) => {
+      const query = expertTeamSearchQuery.trim().toLowerCase();
+      if (!query) return true;
+      return team.name.toLowerCase().includes(query)
+        || team.description.toLowerCase().includes(query)
+        || team.tags.some((tag) => tag.toLowerCase().includes(query));
+    });
     const filteredSkills = usableSkills.filter((skill) => {
       const query = skillSearchQuery.trim().toLowerCase();
       if (!query) return true;
@@ -1060,8 +1138,97 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
         </button>
 
 
+        {/* Expert teams */}
+        <div
+          data-plus-menu-item="expert-team"
+          className="relative"
+          onMouseEnter={() => setActiveSubmenu('expert-team')}
+          onMouseLeave={() => setActiveSubmenu(null)}
+        >
+          <button
+            className={cn(
+              "w-full flex items-center justify-between px-3.5 py-2.5 text-[#29261b] hover:bg-[#f5f3ee] transition-colors text-left font-medium cursor-pointer",
+              activeSubmenu === 'expert-team' && "bg-[#f5f3ee]"
+            )}
+          >
+            <div className="flex items-center gap-2.5">
+              <Users className="h-4 w-4 text-[#656358]" />
+              <span>{isEn ? 'Expert teams' : '专家团队'}</span>
+            </div>
+            <ChevronRight className="h-3.5 w-3.5 text-[#8a867c]" />
+          </button>
+
+          {activeSubmenu === 'expert-team' && (
+            <div className="absolute left-full top-0 w-72 bg-white rounded-2xl border border-[#dedbd3] shadow-lg py-1.5 z-50 animate-in fade-in slide-in-from-left-1 duration-150">
+              <div className="px-3.5 py-1.5 border-b border-[#f0ede6] flex items-center gap-2">
+                <Search className="h-4 w-4 text-[#8a867c] shrink-0" />
+                <input
+                  type="text"
+                  placeholder={isEn ? 'Search expert teams' : '搜索专家团队'}
+                  value={expertTeamSearchQuery}
+                  onChange={(event) => setExpertTeamSearchQuery(event.target.value)}
+                  className="w-full bg-transparent text-[13px] border-none outline-none placeholder:text-[#8a867c] text-[#29261b] font-medium"
+                  onKeyDown={(event) => event.stopPropagation()}
+                />
+              </div>
+              {expertTeamsLoading ? (
+                <div className="px-3.5 py-3 text-[#8a867c] text-center">
+                  {isEn ? 'Loading expert teams…' : '正在加载专家团队…'}
+                </div>
+              ) : expertTeamsError ? (
+                <div className="px-3.5 py-3 text-[#a56f4f] text-center line-clamp-2" title={expertTeamsError}>
+                  {isEn ? 'Failed to load expert teams' : '专家团队加载失败'}
+                </div>
+              ) : expertTeams.length === 0 ? (
+                <div className="px-3.5 py-3 text-[#8a867c] italic text-center">
+                  {isEn ? 'No expert teams available' : '无可用专家团队'}
+                </div>
+              ) : filteredExpertTeams.length === 0 ? (
+                <div className="px-3.5 py-3 text-[#8a867c] italic text-center">
+                  {isEn ? 'No expert teams found' : '未找到专家团队'}
+                </div>
+              ) : (
+                <div className="max-h-64 overflow-y-auto">
+                  {filteredExpertTeams.map((team) => {
+                    const isSelected = selectedExpertTeam?.id === team.id;
+                    return (
+                      <button
+                        key={team.id}
+                        disabled={!team.available || expertTeamUpdating}
+                        title={!team.available ? team.unavailable_reason : undefined}
+                        onClick={() => {
+                          const binding: ExpertTeamBinding = {
+                            id: team.id,
+                            name: team.name,
+                            version: team.version,
+                            member_count: team.member_count,
+                          };
+                          updateSelectedExpertTeam(binding);
+                          setShowPlusMenu(false);
+                          setActiveSubmenu(null);
+                          textareaRef.current?.focus();
+                        }}
+                        className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 hover:bg-[#f5f3ee] transition-colors text-left cursor-pointer disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        <div className="min-w-0 flex flex-col">
+                          <span className="font-medium text-[#29261b] truncate">{team.name}</span>
+                          <span className="text-[11px] text-[#8a867c] line-clamp-1">
+                            {team.member_count} {isEn ? 'experts' : '位专家'} · {team.description}
+                          </span>
+                        </div>
+                        {isSelected && <Check className="h-3.5 w-3.5 text-[#d97757] shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Skills */}
         <div
+          data-plus-menu-item="skills"
           className="relative"
           onMouseEnter={() => setActiveSubmenu('skills')}
           onMouseLeave={() => setActiveSubmenu(null)}
@@ -1253,6 +1420,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   // Close plus menu on click outside
   useEffect(() => {
     if (!showPlusMenu) {
+      setExpertTeamSearchQuery('');
       setSkillSearchQuery('');
       setConnectorSearchQuery('');
     }
@@ -1274,6 +1442,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       if (e.key === 'Escape') {
         setShowPlusMenu(false);
         setActiveSubmenu(null);
+        setExpertTeamSearchQuery('');
         setSkillSearchQuery('');
         setConnectorSearchQuery('');
       }
@@ -1316,6 +1485,29 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       : isRunning
         ? t.chat.inputPlaceholderMidTask
         : t.chat.inputPlaceholder;
+
+  const clearSelectedExpertTeam = () => {
+    updateSelectedExpertTeam(null);
+  };
+
+  const renderSelectedExpertTeam = () => selectedExpertTeam ? (
+    <button
+      type="button"
+      data-selected-expert-team={selectedExpertTeam.id}
+      onClick={clearSelectedExpertTeam}
+      disabled={expertTeamUpdating}
+      aria-busy={expertTeamUpdating}
+      title={isEn ? `Remove ${selectedExpertTeam.name || selectedExpertTeam.id}` : `取消专家团队：${selectedExpertTeam.name || selectedExpertTeam.id}`}
+      aria-label={isEn ? `Remove expert team ${selectedExpertTeam.name || selectedExpertTeam.id}` : `取消专家团队 ${selectedExpertTeam.name || selectedExpertTeam.id}`}
+      className="group/team inline-flex h-8 max-w-[220px] shrink-0 items-center gap-1.5 rounded-xl bg-[#f0efec] px-2.5 text-[13px] font-medium text-[#29261b] transition-colors hover:bg-[#e8e6e1] disabled:cursor-wait disabled:opacity-60"
+    >
+      <span className="relative h-4 w-4 shrink-0">
+        <Users className="absolute inset-0 h-4 w-4 text-[#656358] transition-opacity group-hover/team:opacity-0" />
+        <X className="absolute inset-0 h-4 w-4 text-[#656358] opacity-0 transition-opacity group-hover/team:opacity-100" />
+      </span>
+      <span className="truncate">{selectedExpertTeam.name || selectedExpertTeam.id}</span>
+    </button>
+  ) : null;
 
   return (
     <>
@@ -1549,6 +1741,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                 </Button>
                 {showPlusMenu && renderPlusMenu()}
               </div>
+              {renderSelectedExpertTeam()}
               <div className="flex-1" />
 
               <button
@@ -1585,6 +1778,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                   </Button>
                   {showPlusMenu && renderPlusMenu()}
                 </div>
+                {renderSelectedExpertTeam()}
               </div>
 
               <div className="flex items-center gap-2">

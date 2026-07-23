@@ -63,7 +63,7 @@ type SessionUpdateHandler = (
   chatId: string,
   scope?: SessionUpdateScope,
   workspaceScope?: WorkspaceScopePayload,
-  expertTeam?: ExpertTeamBinding,
+  expertTeam?: ExpertTeamBinding | null,
 ) => void;
 type RunStatusHandler = (chatId: string, startedAt: number | null) => void;
 
@@ -76,6 +76,12 @@ type ErrorHandler = (error: StreamError) => void;
 
 interface PendingNewChat {
   resolve: (chatId: string) => void;
+  reject: (err: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+interface PendingExpertTeamUpdate {
+  resolve: (team: ExpertTeamBinding | null) => void;
   reject: (err: Error) => void;
   timer: ReturnType<typeof setTimeout>;
 }
@@ -103,6 +109,7 @@ export class NanobotClient {
   private runStartedAtByChatId = new Map<string, number>();
   private goalStateByChatId = new Map<string, GoalStateWsPayload>();
   private pendingNewChat: PendingNewChat | null = null;
+  private pendingExpertTeamUpdates = new Map<string, PendingExpertTeamUpdate>();
   private suppressNextWorkspaceScopeRejectedForChat: string | null = null;
   private sendQueue: Outbound[] = [];
   private reconnectAttempts = 0;
@@ -382,6 +389,29 @@ export class NanobotClient {
     });
   }
 
+  setExpertTeam(
+    chatId: string,
+    expertTeam: ExpertTeamBinding | null,
+    timeoutMs: number = 5_000,
+  ): Promise<ExpertTeamBinding | null> {
+    if (this.pendingExpertTeamUpdates.has(chatId)) {
+      return Promise.reject(new Error("expert team update already in flight"));
+    }
+    this.knownChats.add(chatId);
+    return new Promise<ExpertTeamBinding | null>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingExpertTeamUpdates.delete(chatId);
+        reject(new Error("expert team update timed out"));
+      }, timeoutMs);
+      this.pendingExpertTeamUpdates.set(chatId, { resolve, reject, timer });
+      this.queueSend({
+        type: "set_expert_team",
+        chat_id: chatId,
+        expert_team: expertTeam,
+      });
+    });
+  }
+
   private setStatus(status: ConnectionStatus): void {
     if (this.status_ === status) return;
     this.status_ = status;
@@ -447,7 +477,25 @@ export class NanobotClient {
 
     if (parsed.event === "session_updated") {
       this.emitSessionUpdate(parsed.chat_id, parsed.scope, parsed.workspace_scope, parsed.expert_team);
+      if (Object.prototype.hasOwnProperty.call(parsed, "expert_team")) {
+        const pending = this.pendingExpertTeamUpdates.get(parsed.chat_id);
+        if (pending) {
+          clearTimeout(pending.timer);
+          this.pendingExpertTeamUpdates.delete(parsed.chat_id);
+          pending.resolve(parsed.expert_team ?? null);
+        }
+      }
       return;
+    }
+
+    if (parsed.event === "error" && parsed.detail === "expert_team_rejected" && parsed.chat_id) {
+      const pending = this.pendingExpertTeamUpdates.get(parsed.chat_id);
+      if (pending) {
+        clearTimeout(pending.timer);
+        this.pendingExpertTeamUpdates.delete(parsed.chat_id);
+        pending.reject(new Error(`expert_team_rejected:${parsed.reason || ""}`));
+        return;
+      }
     }
 
     if (parsed.event === "error" && parsed.detail === "workspace_scope_rejected") {
@@ -496,7 +544,7 @@ export class NanobotClient {
     chatId: string,
     scope?: SessionUpdateScope,
     workspaceScope?: WorkspaceScopePayload,
-    expertTeam?: ExpertTeamBinding,
+    expertTeam?: ExpertTeamBinding | null,
   ): void {
     for (const handler of this.sessionUpdateHandlers) {
       handler(chatId, scope, workspaceScope, expertTeam);
@@ -536,6 +584,11 @@ export class NanobotClient {
       this.pendingNewChat.reject(new Error("socket closed"));
       this.pendingNewChat = null;
     }
+    for (const pending of this.pendingExpertTeamUpdates.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error("socket closed"));
+    }
+    this.pendingExpertTeamUpdates.clear();
     if (event?.code === 1009) {
       this.emitError({ kind: "message_too_big" });
     }

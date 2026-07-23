@@ -43,6 +43,13 @@ describe('chatStore', () => {
       const id = useChatStore.getState().createConversation(null, { title: '美伊战争经济影响报告' });
       expect(useChatStore.getState().conversations[id].title).toBe('美伊战争经济影响报告');
     });
+
+    it('uses an authoritative gateway id when provided', () => {
+      const id = useChatStore.getState().createConversation(null, { id: 'gateway-chat-id' });
+      expect(id).toBe('gateway-chat-id');
+      expect(useChatStore.getState().activeConversationId).toBe('gateway-chat-id');
+      expect(useChatStore.getState().conversations['gateway-chat-id']).toBeDefined();
+    });
   });
 
   // ── startNewConversation ──

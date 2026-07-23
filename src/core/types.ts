@@ -903,7 +903,7 @@ export type InboundEvent =
       chat_id: string;
       scope?: "metadata" | "thread" | string;
       workspace_scope?: WorkspaceScopePayload;
-      expert_team?: ExpertTeamBinding;
+      expert_team?: ExpertTeamBinding | null;
     }
   | {
       event: "team_run_started";
@@ -981,6 +981,7 @@ export type Outbound =
   | { type: "new_chat"; workspace_scope?: WorkspaceScopePayload; expert_team?: ExpertTeamBinding }
   | { type: "attach"; chat_id: string }
   | { type: "set_workspace_scope"; chat_id: string; workspace_scope: WorkspaceScopePayload }
+  | { type: "set_expert_team"; chat_id: string; expert_team: ExpertTeamBinding | null }
   | {
       type: "message";
       chat_id: string;

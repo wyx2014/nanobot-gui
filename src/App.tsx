@@ -225,7 +225,7 @@ function App() {
         setWorkspaceError(null);
         void refreshWorkspaces();
       }
-      if (expertTeam) {
+      if (expertTeam !== undefined) {
         useChatStore.getState().setConversationExpertTeam(_chatId, expertTeam);
       }
     });

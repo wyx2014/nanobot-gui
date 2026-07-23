@@ -201,15 +201,6 @@ export function closeReasoningStream(prev: UIMessage[]): UIMessage[] {
   return prev;
 }
 
-function isTaskProgressAgentUI(
-  agentUI: UIMessage["agentUI"],
-): agentUI is NonNullable<UIMessage["agentUI"]> & {
-  kind: "task_progress";
-  steps: TaskProgressStep[];
-} {
-  return agentUI?.kind === "task_progress" && Array.isArray(agentUI.steps);
-}
-
 /**
  * Close every locally-open stream when a user interrupts a turn.  The gateway
  * remains the authority for elapsed time, so an interrupted placeholder must
@@ -217,13 +208,10 @@ function isTaskProgressAgentUI(
  */
 export function finalizeInterruptedTurn(prev: UIMessage[]): UIMessage[] {
   return prev.map((message) => {
-    const taskProgress = isTaskProgressAgentUI(message.agentUI)
-      ? message.agentUI
-      : undefined;
-    const cancelledPlan = taskProgress
+    const cancelledPlan = message.agentUI?.kind === "task_progress"
       ? {
-        ...taskProgress,
-        steps: taskProgress.steps.map((step) => (
+        ...message.agentUI,
+        steps: message.agentUI.steps.map((step) => (
           step.status === "running"
             ? {
               ...step,
@@ -248,7 +236,7 @@ export function finalizeInterruptedTurn(prev: UIMessage[]): UIMessage[] {
     ));
     const hasInterruptedWork = message.isStreaming
       || message.reasoningStreaming
-      || taskProgress?.steps.some((step) => step.status === "running")
+      || message.agentUI?.kind === "task_progress" && message.agentUI.steps.some((step) => step.status === "running")
       || message.toolEvents?.some((event) => event.phase === "start")
       || message.fileEdits?.some((edit) => edit.status === "editing");
     if (!hasInterruptedWork) return message;

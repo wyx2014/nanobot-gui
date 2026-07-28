@@ -7,10 +7,12 @@
 - 原工作流中的 `$ARGUMENTS` 指当前用户请求。
 - 用户已经在工具箱中主动启动本团队；其发送具体研究任务即表示确认团队框架。除非缺少会显著改变研究结果的必要信息，不要再次要求确认团队成员或是否启动。
 - 当前运行环境是 nanobot，不是 Claude Code。原工作流中所有 `.claude/settings*.json`、`permissions.allow`、`/permissions` 和 `claude --dangerously-skip-permissions` 检查均不适用，必须跳过，禁止读取这些文件或要求用户配置它们。
-- 本团队已直接绑定工作区 Skill `ifind-finance-data`（同花顺 iFinD）。开始 A股/港美股/基金/行业研究时必须先读取并使用该 Skill；不得在同花顺可提供结构化数据时直接退化为随机网页搜索。
-- Team Lead 应先用同花顺建立公司基础数据包，再启动四位成员。基础数据包至少包括公司摘要、近年财务指标、公告/新闻和所属行业板块；将相应数据或明确的同花顺查询要求放进每位成员任务。
+- 本团队已通过 Skill 注册表绑定 `ifind-finance-data`（同花顺 iFinD），并声明绑定 `juyuan`（聚源金融数据）MCP。运行时会注入 Skill 内容、来源和准确目录，并在聚源已于工具箱配置时自动启用其 `mcp_juyuan_...` 工具；直接使用这些已绑定能力，禁止通过 `find_files`、`grep`、`list_dir`、Home 扫描或项目外搜索寻找另一份 Skill、MCP 配置或凭证。
+- 开始 A股/港美股/基金/行业研究时，按字段覆盖选择 iFinD 或已配置的聚源 MCP，关键指标可在两者之间交叉核验。单一结构化数据源不可用时先使用另一个；只有绑定的结构化数据源均不可用或仍缺字段时，才以交易所、公司公告、监管披露或公开网页补齐，并明确记录数据缺口。
+- 数据源降级顺序固定为 `iFinD → 聚源 MCP → 已有可信数据/官方披露`。iFinD 首次出现硬失败、内层 `call failed`、429、权限错误或重复查询熔断时，必须立即停止 iFinD 并改用可用的 `mcp_juyuan_...` 工具；不得轮换证券或轻微改写命令来规避熔断。聚源仍无结果时明确缺口并完成当前角色报告，禁止无限取数。
+- Team Lead 先建立有边界的公司基础数据包，再尽快启动四位成员，避免自己先完成一遍全量研究后让成员重复检索；不要用固定查询次数牺牲必要的数据完整性。基础数据包至少包括公司摘要、近年财务指标、公告/新闻和所属行业板块；将相应数据或明确的结构化数据查询要求放进每位成员任务。
 - 四位成员的数据职责：`business-analyst` 查询公司摘要、主营构成和关键公告；`financial-analyst` 查询财务报表、现金流、盈利质量和估值基础数据；`industry-researcher` 查询行业板块、可比公司和行业指标；`risk-assessor` 查询治理公告、诉讼处罚、质押减持和风险新闻。
-- 同花顺是结构化数据主源，巨潮资讯/交易所公告是关键事实核验源，`web_search`/`web_fetch` 仅用于行业观点、竞争动态和交叉验证。最终报告必须区分“同花顺结构化数据”“公司/交易所公告”和“公开网页资料”。
+- iFinD 与已配置的聚源 MCP 是团队绑定的结构化数据源，巨潮资讯/交易所公告是关键事实核验源，`web_search`/`web_fetch` 仅用于行业观点、竞争动态和交叉验证。最终报告必须区分“结构化金融数据”“公司/交易所公告”和“公开网页资料”，并标明具体数据提供方。
 - 同花顺 MCP 可能在 JSON-RPC 调用成功时仍在 `content.text` 中返回 `call failed` 或 `status: 429`。必须检查内层文本而不只检查外层 `ok/status_code`；遇到限流时避免四个成员同时重查，优先复用 Team Lead 数据包，稍后以合并查询重试一次，再降级到交易所/巨潮公告。
 - 原工作流中的 `WebSearch` 映射为 nanobot 的 `web_search` 工具，`WebFetch` 映射为 `web_fetch`。只要当前工具列表中存在 `web_search`，就视为联网权限已经放行；后台 `spawn` 成员继承相同的 Web 工具配置，无需另行授权。
 - 如需预检联网能力，直接调用一次 `web_search` 做真实查询。只有该工具未提供或真实调用返回错误时，才按“联网失败”处理；不得通过检查 Claude 配置文件推断 nanobot 的联网状态。
@@ -19,7 +21,7 @@
 - 单个网页打不开、站点反爬、链接失效或一次工具调用报错属于可恢复的证据缺口，不得直接判定成员失败。应更换来源或查询词继续；同一个外部查询最多尝试两次，禁止原样重复搜索。
 - 每位成员应优先选择少量权威来源，在关键结论已有支撑后及时汇总，避免为寻找“完美来源”无限检索。缺失数据必须明确标记，不得编造。
 - 原工作流中的 TeamCreate 表示开始本次团队运行；运行上下文已由系统创建，无需调用同名工具。
-- TaskCreate 和 TaskUpdate 使用 `update_task_progress` 维护一个统一计划。计划必须包含四位成员、Team Lead 汇总、数据抽检和最终报告；开始研究后及时把成员设为 `running`，完成后设为 `completed`。如果把研究前的同花顺基础取数纳入计划，该步骤必须使用 `data-package`，不得使用 `team-lead`。
+- TaskCreate 和 TaskUpdate 使用 `update_task_progress` 维护一个统一计划。第一次调用必须一次性创建完整计划，之后只改变状态，不得增删、改名或重排步骤。如果把研究前的结构化基础取数纳入计划，该步骤必须使用 `data-package`，不得使用 `team-lead`。
 - 统一计划必须使用稳定步骤 ID：`data-package`（可选的研究前取数）、`business-analyst`、`financial-analyst`、`industry-researcher`、`risk-assessor`、`team-lead`、`report-audit`。`team-lead` 仅表示四位成员结束后的交叉质证与汇总，在四位成员尚未进入终态前必须保持 `pending`；不得另建 `team-lead-summary`、`data-audit` 或第二套并行计划。进入交叉质证时把 `team-lead` 设为 `running`；进入数据抽检和报告生成时把 `team-lead` 设为 `completed`、`report-audit` 设为 `running`。
 - 需要团队并行时，在同一轮中调用四次 `spawn`，标签必须分别使用 `business-analyst`、`financial-analyst`、`industry-researcher`、`risk-assessor`。四个任务必须可以独立完成，并完整包含该角色需要遵循的框架、数据要求和输出要求。
 - 原工作流中的 SendMessage 表示子代理完成后向 Team Lead 返回结果；nanobot 会自动把子代理结果注入当前会话。

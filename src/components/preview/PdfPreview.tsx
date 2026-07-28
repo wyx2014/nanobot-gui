@@ -1,8 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { useI18n } from '@/i18n';
-import { format } from '@/i18n';
-import { Loader2, ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react';
+import { Loader2, ZoomIn, ZoomOut } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { readArtifactBytes, type ArtifactRef } from '@/core/artifacts';
@@ -22,12 +21,13 @@ function LoadingIndicator({ label }: { label?: string }) {
 }
 
 export default function PdfPreview({ artifact }: { artifact: ArtifactRef }) {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
+  const viewportRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [numPages, setNumPages] = useState(0);
-  const [currentPage, setCurrentPage] = useState(1);
   const [scale, setScale] = useState(1.0);
+  const [pageWidth, setPageWidth] = useState(720);
 
   useEffect(() => {
     let cancelled = false;
@@ -36,7 +36,6 @@ export default function PdfPreview({ artifact }: { artifact: ArtifactRef }) {
     const load = async () => {
       setError(null);
       setPdfUrl(null);
-      setCurrentPage(1);
       setNumPages(0);
       try {
         const data = await readArtifactBytes(artifact);
@@ -63,6 +62,23 @@ export default function PdfPreview({ artifact }: { artifact: ArtifactRef }) {
     };
   }, [artifact]);
 
+  useEffect(() => {
+    const node = viewportRef.current;
+    if (!node) return;
+    const updateWidth = () => {
+      const width = Math.max(280, Math.floor(node.clientWidth - 32));
+      setPageWidth(width);
+    };
+    updateWidth();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateWidth);
+      return () => window.removeEventListener('resize', updateWidth);
+    }
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [pdfUrl]);
+
   const loading = !pdfUrl && !error;
 
   const onDocumentLoadSuccess = ({ numPages: n }: { numPages: number }) => {
@@ -87,31 +103,9 @@ export default function PdfPreview({ artifact }: { artifact: ArtifactRef }) {
       {/* Controls */}
       {numPages > 0 && (
         <div className="shrink-0 flex items-center justify-between px-3 py-1.5 bg-[#f5f3ee] border-b border-[#e5e2db]">
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6"
-              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-              disabled={currentPage <= 1}
-              title={t.panel.pdfPrevPage}
-            >
-              <ChevronLeft className="h-3.5 w-3.5" />
-            </Button>
-            <span className="text-[11px] text-[#656358] min-w-[80px] text-center">
-              {format(t.panel.pdfPage, { current: String(currentPage), total: String(numPages) })}
-            </span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6"
-              onClick={() => setCurrentPage(p => Math.min(numPages, p + 1))}
-              disabled={currentPage >= numPages}
-              title={t.panel.pdfNextPage}
-            >
-              <ChevronRight className="h-3.5 w-3.5" />
-            </Button>
-          </div>
+          <span className="text-[11px] text-[#656358]">
+            {locale.startsWith('zh') ? `共 ${numPages} 页` : `${numPages} page${numPages === 1 ? '' : 's'}`}
+          </span>
           <div className="flex items-center gap-1">
             <Button
               variant="ghost"
@@ -142,7 +136,7 @@ export default function PdfPreview({ artifact }: { artifact: ArtifactRef }) {
 
       {/* PDF Content */}
       <ScrollArea className="flex-1 min-h-0">
-        <div className="flex justify-center p-4 bg-[#e8e5de]/50">
+        <div ref={viewportRef} className="min-h-full bg-[#e8e5de]/50 p-4">
           {loading && (
             <LoadingIndicator label={t.panel.loadingDocument} />
           )}
@@ -152,13 +146,18 @@ export default function PdfPreview({ artifact }: { artifact: ArtifactRef }) {
               onLoadSuccess={onDocumentLoadSuccess}
               onLoadError={onDocumentLoadError}
               loading={<LoadingIndicator label={t.panel.loadingDocument} />}
+              className="flex flex-col items-center gap-3.5"
             >
-              <Page
-                pageNumber={currentPage}
-                scale={scale}
-                className="shadow-lg"
-                loading={<div className="h-[400px]"><LoadingIndicator /></div>}
-              />
+              {Array.from({ length: numPages }, (_, index) => (
+                <Page
+                  key={index + 1}
+                  pageNumber={index + 1}
+                  width={pageWidth}
+                  scale={scale}
+                  className="overflow-hidden rounded-sm border border-[#d7d3ca] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.08)]"
+                  loading={<div className="h-[400px]"><LoadingIndicator /></div>}
+                />
+              ))}
             </Document>
           )}
         </div>

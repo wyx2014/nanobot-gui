@@ -206,6 +206,7 @@ function hasVisibleTracePayload(message: Message): boolean {
   if (message.toolEvents?.length) return true;
   if (message.fileEdits?.length) return true;
   if (message.mediaAttachments?.length) return true;
+  if (message.narration?.trim()) return true;
   return typeof message.content === 'string' && message.content.trim().length > 0;
 }
 

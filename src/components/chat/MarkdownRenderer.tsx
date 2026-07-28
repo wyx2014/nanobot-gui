@@ -106,6 +106,37 @@ function savedHtmlArtifactPath(children: ReactNode): string | null {
   return null;
 }
 
+function isArtifactTransportPayload(raw: string, language: string): boolean {
+  if (!['desktop', 'json', ''].includes(language)) return false;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return false;
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
+  const record = parsed as Record<string, unknown>;
+  const localPath = record.localPath ?? record.local_path;
+  const fileName = record.fileName ?? record.file_name;
+  return (
+    typeof localPath === 'string'
+    && isLocalFilePath(localPath)
+    && typeof fileName === 'string'
+    && fileName.trim().length > 0
+  );
+}
+
+function stripArtifactTransportBlocks(content: string): string {
+  return content.replace(
+    /```([A-Za-z0-9_-]*)[ \t]*\n([\s\S]*?)```/g,
+    (block, rawLanguage: string, body: string) => (
+      isArtifactTransportPayload(body.trim(), rawLanguage.toLowerCase())
+        ? ''
+        : block
+    ),
+  );
+}
+
 // --- Citation utilities ---
 
 const CITATION_REGEX = /\[(\d{1,2})\]/g;
@@ -536,7 +567,12 @@ interface MarkdownRendererProps {
 }
 
 export default memo(function MarkdownRenderer({ content, searchResults, onCitationClick, variant = 'assistant' }: MarkdownRendererProps) {
-  const normalizedContent = useMemo(() => normalizeMarkdownEmphasis(content), [content]);
+  const normalizedContent = useMemo(
+    () => normalizeMarkdownEmphasis(
+      variant === 'assistant' ? stripArtifactTransportBlocks(content) : content,
+    ),
+    [content, variant],
+  );
   const components = useMemo(
     () => searchResults && searchResults.length > 0
       ? buildMarkdownComponents(searchResults, onCitationClick, variant)

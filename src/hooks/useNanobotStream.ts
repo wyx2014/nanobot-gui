@@ -21,12 +21,15 @@ import type {
   GoalStateWsPayload,
   ToolProgressEvent,
   TaskProgressStep,
+  TurnPlanResource,
   UIImage,
   UIFileEdit,
   UIMediaAttachment,
   UIMessage,
   WorkspaceScopePayload,
 } from "@/core/types";
+import { useTurnPlanStore } from '@/stores/turnPlanStore';
+import { normalizeTurnPlan, planFromAgentUI } from '@/core/nanobot/planViewModel';
 import {
   initialStreamProtocolState,
   streamProtocolReducer,
@@ -35,6 +38,7 @@ import {
 interface StreamBuffer {
   /** ID of the assistant message currently receiving deltas (cleared on ``stream_end``). */
   messageId: string;
+  streamId?: string;
 }
 
 interface ActiveAssistantCursor {
@@ -43,8 +47,14 @@ interface ActiveAssistantCursor {
 }
 
 type PendingStreamEvent =
-  | { kind: "delta"; text: string }
-  | { kind: "reasoning"; text: string };
+  | { kind: "delta"; text: string; streamId?: string }
+  | { kind: "reasoning"; text: string }
+  | {
+      kind: "narration";
+      text: string;
+      streamId?: string;
+      replacesStreamId?: string;
+    };
 
 const FILE_EDIT_TOOL_NAMES = new Set(["write_file", "edit_file", "apply_patch"]);
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".svg", ".tif", ".tiff"]);
@@ -100,6 +110,21 @@ function findStreamingAssistantIndex(
     if (m.role === "user") break;
   }
   return null;
+}
+
+function runtimeSnapshotForClient(
+  client: ReturnType<typeof getNanobotClient> | null,
+  chatId: string | null,
+) {
+  if (!client || !chatId) return undefined;
+  const resolver = (
+    client as ReturnType<typeof getNanobotClient> & {
+      getRuntimeSnapshot?: ReturnType<typeof getNanobotClient>["getRuntimeSnapshot"];
+    }
+  ).getRuntimeSnapshot;
+  return typeof resolver === "function"
+    ? resolver.call(client, chatId)
+    : undefined;
 }
 
 /**
@@ -202,20 +227,219 @@ export function closeReasoningStream(prev: UIMessage[]): UIMessage[] {
 }
 
 /**
+ * Append public action narration to its own trace row.
+ *
+ * Narration is intentionally not stored in ``content``: conversational
+ * message bodies are reserved for the final answer, while this field is safe
+ * to render verbatim inside the activity timeline.
+ */
+export function attachNarrationChunk(
+  prev: UIMessage[],
+  chunk: string,
+  options?: {
+    ensure?: () => string;
+    streamId?: string;
+    replacesStreamId?: string;
+  },
+): UIMessage[] {
+  if (options?.replacesStreamId) {
+    let replacementIndex = prev.findIndex((message) => (
+      message.kind === "trace"
+      && (
+        message.streamId === options.replacesStreamId
+        || (
+          options.streamId !== undefined
+          && message.narrationStreamId === options.streamId
+        )
+      )
+    ));
+    if (replacementIndex < 0) {
+      replacementIndex = prev.findIndex((message) => (
+        message.streamId === options.replacesStreamId
+      ));
+    }
+    if (replacementIndex >= 0) {
+      const replacement = prev[replacementIndex];
+      const continuesSameNarration = !!(
+        options.streamId
+        && replacement.narrationStreamId === options.streamId
+        && replacement.narrationStreaming
+      );
+      return replaceMessageAt(prev, replacementIndex, {
+        ...replacement,
+        role: "tool",
+        kind: "trace",
+        content: "",
+        narration: continuesSameNarration
+          ? (replacement.narration ?? "") + chunk
+          : chunk,
+        narrationStreaming: true,
+        isStreaming: true,
+        narrationStreamId: options.streamId,
+      });
+    }
+  }
+  const last = prev[prev.length - 1];
+  if (
+    last?.kind === "trace"
+    && last.narrationStreaming
+    && (
+      !options?.streamId
+      || !last.narrationStreamId
+      || last.narrationStreamId === options.streamId
+    )
+  ) {
+    return replaceMessageAt(prev, prev.length - 1, {
+      ...last,
+      narration: (last.narration ?? "") + chunk,
+      isStreaming: true,
+      narrationStreaming: true,
+      narrationStreamId: options?.streamId ?? last.narrationStreamId,
+    });
+  }
+  const activitySegmentId = options?.ensure?.();
+  return [
+    ...prev,
+    {
+      id: crypto.randomUUID(),
+      role: "tool",
+      kind: "trace",
+      content: "",
+      narration: chunk,
+      narrationStreaming: true,
+      narrationStreamId: options?.streamId,
+      isStreaming: true,
+      ...(activitySegmentId ? { activitySegmentId } : {}),
+      createdAt: Date.now(),
+    },
+  ];
+}
+
+/** Close the currently streaming public narration row, if present. */
+export function closeNarrationStream(
+  prev: UIMessage[],
+  streamId?: string,
+): UIMessage[] {
+  for (let i = prev.length - 1; i >= 0; i -= 1) {
+    const candidate = prev[i];
+    if (candidate.role === "user") break;
+    if (!candidate.narrationStreaming) continue;
+    if (streamId && candidate.narrationStreamId && candidate.narrationStreamId !== streamId) {
+      continue;
+    }
+    return replaceMessageAt(prev, i, {
+      ...candidate,
+      narrationStreaming: false,
+      isStreaming: false,
+    });
+  }
+  return prev;
+}
+
+/**
+ * A gateway cannot always know whether streamed text is final until the model
+ * finishes the segment. ``stream_end.resuming`` marks a segment that is
+ * followed by tools. Move it out of the answer body and into public Steps
+ * narration without exposing any private reasoning attached to the same row.
+ */
+export function reclassifyAssistantStreamAsNarration(
+  prev: UIMessage[],
+  options?: {
+    messageId?: string;
+    streamId?: string;
+    ensureActivitySegment?: () => string;
+  },
+): UIMessage[] {
+  let index = options?.messageId
+    ? prev.findIndex((message) => message.id === options.messageId)
+    : options?.streamId
+      ? prev.findIndex((message) => message.streamId === options.streamId)
+      : -1;
+  if (index < 0) {
+    for (let i = prev.length - 1; i >= 0; i -= 1) {
+      const candidate = prev[i];
+      if (candidate.role === "user") break;
+      if (
+        candidate.role === "assistant"
+        && candidate.kind !== "trace"
+        && candidate.content.trim().length > 0
+        && candidate.isStreaming
+      ) {
+        index = i;
+        break;
+      }
+    }
+  }
+  if (index < 0) return prev;
+
+  const candidate = prev[index];
+  if (candidate.role !== "assistant" || candidate.kind === "trace") return prev;
+  const narration = candidate.content.trim();
+  if (!narration) return prev;
+  const activitySegmentId =
+    candidate.activitySegmentId ?? options?.ensureActivitySegment?.();
+  const narrationRow: UIMessage = {
+    id: candidate.id,
+    role: "tool",
+    kind: "trace",
+    content: "",
+    narration,
+    narrationStreaming: false,
+    streamId: options?.streamId ?? candidate.streamId,
+    isStreaming: false,
+    ...(activitySegmentId ? { activitySegmentId } : {}),
+    createdAt: candidate.createdAt,
+  };
+
+  const hasPrivateReasoning =
+    candidate.reasoning !== undefined || candidate.reasoningStreaming;
+  if (!hasPrivateReasoning) {
+    return replaceMessageAt(prev, index, narrationRow);
+  }
+
+  const reasoningRow: UIMessage = {
+    ...candidate,
+    content: "",
+    isStreaming: false,
+    reasoningStreaming: false,
+    ...(activitySegmentId ? { activitySegmentId } : {}),
+  };
+  delete reasoningRow.streamId;
+  return [
+    ...prev.slice(0, index),
+    reasoningRow,
+    { ...narrationRow, id: `${candidate.id}-narration` },
+    ...prev.slice(index + 1),
+  ];
+}
+
+/**
  * Close every locally-open stream when a user interrupts a turn.  The gateway
  * remains the authority for elapsed time, so an interrupted placeholder must
  * never turn its age into a fictional completed-turn latency.
  */
 export function finalizeInterruptedTurn(prev: UIMessage[]): UIMessage[] {
   return prev.map((message) => {
-    const cancelledPlan = message.agentUI?.kind === "task_progress"
+    const taskProgress = (
+      message.agentUI?.kind === "task_progress"
+      && Array.isArray(message.agentUI.steps)
+    )
+      ? message.agentUI as {
+        kind: "task_progress";
+        steps: TaskProgressStep[];
+        note?: string;
+        current_step_id?: string;
+        [key: string]: unknown;
+      }
+      : undefined;
+    const cancelledPlan = taskProgress
       ? {
-        ...message.agentUI,
-        steps: message.agentUI.steps.map((step) => (
-          step.status === "running"
+        ...taskProgress,
+        steps: taskProgress.steps.map((step) => (
+          step.status === "running" || step.status === "pending"
             ? {
               ...step,
-              status: "error" as const,
+              status: "interrupted" as const,
               detail: step.detail ? `${step.detail}（已由用户终止）` : "已由用户终止",
             }
             : step
@@ -236,7 +460,8 @@ export function finalizeInterruptedTurn(prev: UIMessage[]): UIMessage[] {
     ));
     const hasInterruptedWork = message.isStreaming
       || message.reasoningStreaming
-      || message.agentUI?.kind === "task_progress" && message.agentUI.steps.some((step) => step.status === "running")
+      || message.narrationStreaming
+      || taskProgress?.steps.some((step) => step.status === "running")
       || message.toolEvents?.some((event) => event.phase === "start")
       || message.fileEdits?.some((edit) => edit.status === "editing");
     if (!hasInterruptedWork) return message;
@@ -244,6 +469,7 @@ export function finalizeInterruptedTurn(prev: UIMessage[]): UIMessage[] {
       ...message,
       isStreaming: false,
       reasoningStreaming: false,
+      narrationStreaming: false,
       ...(cancelledPlan ? { agentUI: cancelledPlan } : {}),
       ...(cancelledToolEvents ? { toolEvents: cancelledToolEvents } : {}),
       ...(cancelledFileEdits ? { fileEdits: cancelledFileEdits } : {}),
@@ -253,10 +479,98 @@ export function finalizeInterruptedTurn(prev: UIMessage[]): UIMessage[] {
 
 function closeOpenStreams(prev: UIMessage[]): UIMessage[] {
   return prev.map((message) => (
-    message.isStreaming || message.reasoningStreaming
-      ? { ...message, isStreaming: false, reasoningStreaming: false }
+    message.isStreaming || message.reasoningStreaming || message.narrationStreaming
+      ? {
+        ...message,
+        isStreaming: false,
+        reasoningStreaming: false,
+        narrationStreaming: false,
+      }
       : message
   ));
+}
+
+export function finalizeCompletedTurnProgress(prev: UIMessage[]): UIMessage[] {
+  const turnStart = currentTurnStartIndex(prev);
+  return prev.map((message, index) => {
+    if (
+      index < turnStart
+      || message.agentUI?.kind !== "task_progress"
+      || !Array.isArray(message.agentUI.steps)
+    ) {
+      return message;
+    }
+    const progress = message.agentUI as {
+      kind: "task_progress";
+      steps: TaskProgressStep[];
+      current_step_id?: string;
+      [key: string]: unknown;
+    };
+    return {
+      ...message,
+      agentUI: {
+        ...progress,
+        steps: progress.steps.map((step) => (
+          step.status === "running"
+            ? { ...step, status: "completed" as const }
+            : step.status === "pending"
+              ? { ...step, status: "skipped" as const }
+              : step
+        )),
+        current_step_id: undefined,
+      },
+    };
+  });
+}
+
+function currentTurnStartIndex(messages: UIMessage[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].role === "user") return index + 1;
+  }
+  return 0;
+}
+
+/** A failed turn must stop animating without presenting unfinished work as
+ * successful. Existing completed/error steps remain truthful; only the active
+ * step is converted to an error and future pending steps remain pending. */
+export function finalizeFailedTurnProgress(prev: UIMessage[]): UIMessage[] {
+  const turnStart = currentTurnStartIndex(prev);
+  return prev.map((message, index) => {
+    if (
+      index < turnStart
+      || message.agentUI?.kind !== "task_progress"
+      || !Array.isArray(message.agentUI.steps)
+    ) {
+      return message;
+    }
+    const progress = message.agentUI as {
+      kind: "task_progress";
+      steps: TaskProgressStep[];
+      note?: string;
+      current_step_id?: string;
+      [key: string]: unknown;
+    };
+    const hasRunning = progress.steps.some((step) => step.status === "running");
+    if (!hasRunning && progress.current_step_id === undefined) return message;
+    return {
+      ...message,
+      agentUI: {
+        ...progress,
+        steps: progress.steps.map((step) => (
+          step.status === "running"
+            ? {
+              ...step,
+              status: "error" as const,
+              detail: step.detail ? `${step.detail}（执行失败）` : "执行失败",
+            }
+            : step.status === "pending"
+              ? { ...step, status: "skipped" as const }
+              : step
+        )),
+        current_step_id: undefined,
+      },
+    };
+  });
 }
 
 function isReasoningOnlyPlaceholder(message: UIMessage): boolean {
@@ -272,6 +586,12 @@ function isReasoningOnlyPlaceholder(message: UIMessage): boolean {
 
 function isToolTrace(message: UIMessage | undefined): boolean {
   return message?.kind === "trace";
+}
+
+export function isNarrationStreamEnd(
+  event: Extract<InboundEvent, { event: "stream_end" }>,
+): boolean {
+  return event.resuming === true || event.stream_kind === "narration";
 }
 
 function pruneReasoningOnlyPlaceholders(prev: UIMessage[]): UIMessage[] {
@@ -291,6 +611,39 @@ function stampLastAssistantLatency(prev: UIMessage[], latencyMs: number): UIMess
     if (m.role === "assistant" && m.kind !== "trace") {
       const merged: UIMessage = { ...m, latencyMs, isStreaming: false };
       return [...prev.slice(0, i), merged, ...prev.slice(i + 1)];
+    }
+  }
+  return prev;
+}
+
+export function normalizeTurnUsage(
+  usage: Extract<InboundEvent, { event: "turn_end" }>["usage"],
+): UIMessage["usage"] | undefined {
+  if (!usage) return undefined;
+  const inputTokens = Math.max(
+    0,
+    Math.round(usage.prompt_tokens ?? usage.input_tokens ?? 0),
+  );
+  const outputTokens = Math.max(
+    0,
+    Math.round(usage.completion_tokens ?? usage.output_tokens ?? 0),
+  );
+  if (inputTokens === 0 && outputTokens === 0) return undefined;
+  return { inputTokens, outputTokens };
+}
+
+function stampLastAssistantUsage(
+  prev: UIMessage[],
+  usage: NonNullable<UIMessage["usage"]>,
+): UIMessage[] {
+  for (let index = prev.length - 1; index >= 0; index -= 1) {
+    const message = prev[index];
+    if (message.role === "assistant" && message.kind !== "trace") {
+      return [
+        ...prev.slice(0, index),
+        { ...message, usage },
+        ...prev.slice(index + 1),
+      ];
     }
   }
   return prev;
@@ -558,13 +911,91 @@ function teamProgressMessageId(
   return undefined;
 }
 
+function planAgentUI(plan: TurnPlanResource) {
+  return {
+    kind: 'task_progress' as const,
+    plan_id: plan.id,
+    turn_id: plan.turn_id,
+    plan_kind: plan.kind,
+    owner: plan.owner,
+    policy: plan.policy,
+    execution: plan.execution,
+    status: plan.status,
+    revision: plan.revision,
+    active_step_ids: plan.active_step_ids,
+    steps: plan.steps.map((step) => ({
+      id: step.id,
+      title: step.title,
+      ...(step.detail ? { detail: step.detail } : {}),
+      status: (
+        step.status === 'inProgress'
+          ? 'running'
+          : step.status === 'failed'
+            ? 'error'
+            : step.status === 'cancelled'
+              ? 'interrupted'
+              : step.status
+      ) as TaskProgressStep['status'],
+    })),
+    ...(plan.note ? { note: plan.note } : {}),
+    ...(plan.current_step_id ? { current_step_id: plan.current_step_id } : {}),
+    ...(plan.team_id ? { team_id: plan.team_id } : {}),
+    ...(plan.team_run_id ? { team_run_id: plan.team_run_id } : {}),
+  };
+}
+
+function applyPlanToMessages(
+  previous: UIMessage[],
+  rawPlan: TurnPlanResource,
+): UIMessage[] {
+  const plan = normalizeTurnPlan(rawPlan);
+  const agentUI = planAgentUI(plan);
+  let targetIndex = -1;
+  for (let index = previous.length - 1; index >= 0; index -= 1) {
+    const ui = previous[index].agentUI;
+    if (ui?.kind !== 'task_progress') continue;
+    if (
+      ui.plan_id === plan.id
+      || ui.turn_id === plan.turn_id
+      || (plan.team_run_id && ui.team_run_id === plan.team_run_id)
+    ) {
+      targetIndex = index;
+      break;
+    }
+  }
+  if (targetIndex >= 0) {
+    return previous.map((message, index) => (
+      index === targetIndex ? { ...message, agentUI } : message
+    ));
+  }
+  return [
+    ...previous,
+    {
+      id: `turn-plan-${plan.id}`,
+      role: 'tool',
+      kind: 'trace',
+      content: plan.note || '',
+      traces: plan.note ? [plan.note] : [],
+      agentUI,
+      createdAt: Date.now(),
+    },
+  ];
+}
+
 export function useNanobotStream(
   chatId: string | null,
   initialMessages: UIMessage[] = [],
   hasPendingToolCalls = false,
   onTurnEnd?: () => void,
+  onArtifactCreated?: () => void,
 ): {
   messages: UIMessage[];
+  /** Conversation that owns the returned message projection.
+   *
+   * This is temporarily ``null`` while a chat switch is being committed, so
+   * consumers never reinterpret the previous chat's messages as belonging to
+   * the newly selected chat. */
+  messageConversationId: string | null;
   isStreaming: boolean;
   /** Unix epoch seconds when the current user turn started (WebSocket ``goal_status``). */
   runStartedAt: number | null;
@@ -587,15 +1018,17 @@ export function useNanobotStream(
     client = null;
   }
   const [messages, setMessages] = useState<UIMessage[]>(initialMessages);
-  /** If the last loaded message is a trace row (e.g. "Using 2 tools"),
-   * the model was still processing when the page loaded — keep the
-   * loading spinner alive so the user sees the model is active. */
-  const initialStreaming = initialMessages.length > 0
-    ? initialMessages[initialMessages.length - 1].kind === "trace"
-    : false;
+  const [messageConversationId, setMessageConversationId] = useState<string | null>(chatId);
+  const visibleMessages = messageConversationId === chatId ? messages : [];
+  /** Runtime Snapshot is authoritative after reconnect. Historical trace rows
+   * and pending-looking tool records must not resurrect a completed turn. */
+  const initialRuntimeSnapshot = runtimeSnapshotForClient(client, chatId);
+  const initialStreaming = initialRuntimeSnapshot
+    ? initialRuntimeSnapshot.thread_status.type === "active"
+    : hasPendingToolCalls;
   const [protocol, dispatchProtocol] = useReducer(streamProtocolReducer, {
     ...initialStreamProtocolState,
-    isStreaming: initialStreaming || hasPendingToolCalls,
+    isStreaming: initialStreaming,
   });
   const { isStreaming, runStartedAt, goalState, streamError } = protocol;
   const setIsStreaming = useCallback((value: boolean) => dispatchProtocol({ type: 'streaming', value }), []);
@@ -611,6 +1044,7 @@ export function useNanobotStream(
   const pendingStreamEventsRef = useRef<PendingStreamEvent[]>([]);
   const streamFrameRef = useRef<number | null>(null);
   const suppressStreamUntilTurnEndRef = useRef(false);
+  const lifecycleTerminalHandledRef = useRef(false);
   /** Timer that defers ``isStreaming = false`` after ``stream_end``.
    *
    * When the model finishes a text segment and calls a tool, the server
@@ -701,7 +1135,7 @@ export function useNanobotStream(
   }, []);
 
   const appendAnswerChunk = useCallback(
-    (prev: UIMessage[], chunk: string): UIMessage[] => {
+    (prev: UIMessage[], chunk: string, streamId?: string): UIMessage[] => {
       let next = prev;
       let targetIndex = resolveActiveAssistantIndex(next);
 
@@ -720,6 +1154,7 @@ export function useNanobotStream(
             role: "assistant",
             content: "",
             isStreaming: true,
+            ...(streamId ? { streamId } : {}),
             createdAt: Date.now(),
           },
         ];
@@ -731,10 +1166,14 @@ export function useNanobotStream(
         ...target,
         content: target.content + chunk,
         isStreaming: true,
+        streamId: streamId ?? target.streamId,
       };
       closedAssistantStreamIdsRef.current.delete(merged.id);
       activeAssistantRef.current = { id: merged.id, index: targetIndex };
-      buffer.current = { messageId: merged.id };
+      buffer.current = {
+        messageId: merged.id,
+        streamId: streamId ?? target.streamId,
+      };
       return replaceMessageAt(next, targetIndex, merged);
     },
     [resolveActiveAssistantIndex],
@@ -743,19 +1182,21 @@ export function useNanobotStream(
   const applyPendingStreamEvents = useCallback(
     (prev: UIMessage[], events: PendingStreamEvent[]): UIMessage[] => {
       let next = prev;
-      for (let i = 0; i < events.length;) {
-        const kind = events[i].kind;
-        let text = "";
-        while (i < events.length && events[i].kind === kind) {
-          text += events[i].text;
-          i += 1;
-        }
-        if (kind === "delta") {
-          next = appendAnswerChunk(next, text);
+      for (const event of events) {
+        if (event.kind === "delta") {
+          next = appendAnswerChunk(next, event.text, event.streamId);
+        } else if (event.kind === "reasoning") {
+          if (closeActiveAssistantStream()) clearActivitySegment();
+          next = attachReasoningChunk(next, event.text, {
+            ensure: ensureActivitySegmentId,
+          });
         } else {
           if (closeActiveAssistantStream()) clearActivitySegment();
-          next = attachReasoningChunk(next, text, {
+          next = closeReasoningStream(next);
+          next = attachNarrationChunk(next, event.text, {
             ensure: ensureActivitySegmentId,
+            streamId: event.streamId,
+            replacesStreamId: event.replacesStreamId,
           });
         }
       }
@@ -767,6 +1208,9 @@ export function useNanobotStream(
   const flushPendingStreamEvents = useCallback((options?: {
     closeAnswerSegment?: boolean;
     finalAnswerText?: string;
+    reclassifyAsNarration?: boolean;
+    streamId?: string;
+    messageId?: string;
   }) => {
     if (streamFrameRef.current !== null) {
       window.cancelAnimationFrame(streamFrameRef.current);
@@ -774,43 +1218,74 @@ export function useNanobotStream(
     }
     const events = pendingStreamEventsRef.current;
     const finalAnswerText = options?.finalAnswerText;
-    if (events.length === 0 && finalAnswerText === undefined) {
+    if (
+      events.length === 0
+      && finalAnswerText === undefined
+      && !options?.reclassifyAsNarration
+    ) {
       if (options?.closeAnswerSegment) closeActiveAssistantStream();
       return;
     }
     pendingStreamEventsRef.current = [];
     setMessages((prev) => {
       let next = events.length > 0 ? applyPendingStreamEvents(prev, events) : prev;
+      let targetIndex: number | null = options?.messageId
+        ? next.findIndex((message) => message.id === options.messageId)
+        : options?.streamId
+          ? next.findIndex((message) => message.streamId === options.streamId)
+          : null;
+      if (targetIndex !== null && targetIndex < 0) targetIndex = null;
       if (finalAnswerText !== undefined) {
-        const targetIndex =
-          resolveActiveAssistantIndex(next)
+        targetIndex =
+          targetIndex
+          ?? resolveActiveAssistantIndex(next)
           ?? findStreamingAssistantIndex(next, closedAssistantStreamIdsRef.current);
-          if (targetIndex !== null) {
-            const target = next[targetIndex];
-            next = replaceMessageAt(next, targetIndex, {
-              ...target,
+        if (targetIndex !== null) {
+          const target = next[targetIndex];
+          next = replaceMessageAt(next, targetIndex, {
+            ...target,
+            content: finalAnswerText,
+            isStreaming: true,
+            streamId: options?.streamId ?? target.streamId,
+          });
+        } else {
+          const id = crypto.randomUUID();
+          closedAssistantStreamIdsRef.current.add(id);
+          next = [
+            ...next,
+            {
+              id,
+              role: "assistant",
               content: finalAnswerText,
               isStreaming: true,
-            });
-          } else {
-            const id = crypto.randomUUID();
-            closedAssistantStreamIdsRef.current.add(id);
-            next = [
-              ...next,
-              {
-                id,
-                role: "assistant",
-                content: finalAnswerText,
-                isStreaming: true,
-                createdAt: Date.now(),
-              },
-            ];
-          }
+              ...(options?.streamId ? { streamId: options.streamId } : {}),
+              createdAt: Date.now(),
+            },
+          ];
+          targetIndex = next.length - 1;
         }
+      }
+      if (options?.reclassifyAsNarration) {
+        targetIndex =
+          targetIndex
+          ?? resolveActiveAssistantIndex(next)
+          ?? findStreamingAssistantIndex(next, closedAssistantStreamIdsRef.current);
+        const messageId = targetIndex === null ? undefined : next[targetIndex]?.id;
+        next = reclassifyAssistantStreamAsNarration(next, {
+          messageId,
+          streamId: options.streamId,
+          ensureActivitySegment: ensureActivitySegmentId,
+        });
+      }
       if (options?.closeAnswerSegment) closeActiveAssistantStream();
       return next;
     });
-  }, [applyPendingStreamEvents, closeActiveAssistantStream, resolveActiveAssistantIndex]);
+  }, [
+    applyPendingStreamEvents,
+    closeActiveAssistantStream,
+    ensureActivitySegmentId,
+    resolveActiveAssistantIndex,
+  ]);
 
   const schedulePendingStreamFlush = useCallback(() => {
     if (streamFrameRef.current !== null) return;
@@ -828,11 +1303,14 @@ export function useNanobotStream(
   // history response after the optimistic first message has already rendered.
   useEffect(() => {
     setMessages(initialMessages);
+    setMessageConversationId(chatId);
     dispatchProtocol({
       type: 'reset',
-      isStreaming: (initialMessages.length > 0
-        ? initialMessages[initialMessages.length - 1].kind === "trace"
-        : false) || hasPendingToolCalls,
+      isStreaming: (
+        runtimeSnapshotForClient(client, chatId)
+          ? runtimeSnapshotForClient(client, chatId)?.thread_status.type === "active"
+          : hasPendingToolCalls
+      ),
       runStartedAt: chatId && client ? client.getRunStartedAt(chatId) : null,
       goalState: chatId && client ? client.getGoalState(chatId) : undefined,
     });
@@ -842,6 +1320,7 @@ export function useNanobotStream(
     clearActivitySegment();
     clearPendingStreamWork();
     suppressStreamUntilTurnEndRef.current = false;
+    lifecycleTerminalHandledRef.current = false;
     if (streamEndTimerRef.current !== null) {
       clearTimeout(streamEndTimerRef.current);
       streamEndTimerRef.current = null;
@@ -851,8 +1330,13 @@ export function useNanobotStream(
   }, [chatId, client, clearActivitySegment, clearPendingStreamWork]);
 
   useEffect(() => {
-    if (hasPendingToolCalls) setIsStreaming(true);
-  }, [hasPendingToolCalls, setIsStreaming]);
+    if (
+      hasPendingToolCalls
+      && !runtimeSnapshotForClient(client, chatId)
+    ) {
+      setIsStreaming(true);
+    }
+  }, [chatId, client, hasPendingToolCalls, setIsStreaming]);
 
   useEffect(() => {
     if (!chatId || !client) return;
@@ -872,7 +1356,11 @@ export function useNanobotStream(
         if (!chunk) return;
         clearActivitySegment();
         setIsStreaming(true);
-        pendingStreamEventsRef.current.push({ kind: "delta", text: chunk });
+        pendingStreamEventsRef.current.push({
+          kind: "delta",
+          text: chunk,
+          streamId: ev.stream_id,
+        });
         schedulePendingStreamFlush();
         return;
       }
@@ -888,12 +1376,35 @@ export function useNanobotStream(
         return;
       }
 
+      if (ev.event === "narration_delta") {
+        const chunk = typeof ev.text === "string" ? ev.text : "";
+        if (!chunk) return;
+        setIsStreaming(true);
+        pendingStreamEventsRef.current.push({
+          kind: "narration",
+          text: chunk,
+          streamId: ev.stream_id,
+          replacesStreamId: ev.replaces_stream_id,
+        });
+        schedulePendingStreamFlush();
+        return;
+      }
+
       if (ev.event === "stream_end") {
+        const messageId = buffer.current?.messageId ?? activeAssistantRef.current?.id;
+        const streamId = ev.stream_id ?? buffer.current?.streamId;
+        const isNarration = isNarrationStreamEnd(ev);
+        // A media-bearing assistant frame is authoritative for the answer.
+        // Ignore a later duplicate answer terminator, but keep public
+        // narration protocol frames usable.
+        if (suppressStreamUntilTurnEndRef.current && !isNarration) return;
         flushPendingStreamEvents({
           closeAnswerSegment: true,
           ...(typeof ev.text === "string" ? { finalAnswerText: ev.text } : {}),
+          ...(streamId ? { streamId } : {}),
+          ...(messageId ? { messageId } : {}),
+          ...(isNarration ? { reclassifyAsNarration: true } : {}),
         });
-        if (suppressStreamUntilTurnEndRef.current) return;
         // stream_end only means the text segment finished — the model may
         // still be executing tools.  Do NOT reset isStreaming here; the
         // definitive "turn is complete" signal is ``turn_end``.
@@ -914,12 +1425,28 @@ export function useNanobotStream(
         return;
       }
 
+      if (ev.event === "narration_end") {
+        setMessages((prev) => closeNarrationStream(
+          prev,
+          ev.stream_id ?? ev.replaces_stream_id,
+        ));
+        return;
+      }
+
+      if (ev.event === "artifact_created") {
+        onArtifactCreated?.();
+        return;
+      }
+
       if (ev.event === "goal_state") {
         setGoalState(ev.goal_state);
         return;
       }
 
       if (ev.event === "goal_status") {
+        if (chatId && client?.getRuntimeSnapshot(chatId)) {
+          return;
+        }
         if (ev.status === "running" && typeof ev.started_at === "number") {
           setRunStartedAt(ev.started_at);
         } else {
@@ -927,6 +1454,58 @@ export function useNanobotStream(
           setIsStreaming(false);
           setMessages(closeOpenStreams);
         }
+        return;
+      }
+
+      if (ev.event === "turn_started") {
+        lifecycleTerminalHandledRef.current = false;
+        useTurnPlanStore.getState().activateTurn(ev.chat_id, ev.turn.id);
+        if (ev.turn.plan) {
+          useTurnPlanStore.getState().applyPlan(ev.chat_id, ev.turn.plan);
+          setMessages((prev) => applyPlanToMessages(prev, ev.turn.plan!));
+        }
+        setRunStartedAt(ev.turn.started_at);
+        setIsStreaming(true);
+        return;
+      }
+
+      if (ev.event === "thread_status_changed") {
+        const snapshotTurn = ev.thread_status.type === "active"
+          ? ev.active_turn
+          : ev.latest_turn;
+        if (snapshotTurn?.id) {
+          useTurnPlanStore.getState().activateTurn(ev.chat_id, snapshotTurn.id);
+        }
+        // While a new turn is active, the latest terminal turn is historical
+        // context, never a fallback for the current right-rail progress.
+        const snapshotPlan = snapshotTurn?.plan;
+        if (snapshotPlan) {
+          useTurnPlanStore.getState().applyPlan(ev.chat_id, snapshotPlan);
+          setMessages((prev) => applyPlanToMessages(prev, snapshotPlan));
+        }
+        if (ev.thread_status.type === "active") {
+          if (ev.active_turn?.started_at) setRunStartedAt(ev.active_turn.started_at);
+          setIsStreaming(true);
+        } else if (ev.thread_status.type === "systemError") {
+          setRunStartedAt(null);
+          setIsStreaming(false);
+          setMessages(finalizeFailedTurnProgress);
+        } else {
+          setRunStartedAt(null);
+          setIsStreaming(false);
+          setMessages(closeOpenStreams);
+        }
+        return;
+      }
+
+      if (
+        ev.event === 'turn_plan_created'
+        || ev.event === 'turn_plan_updated'
+        || ev.event === 'turn_plan_rebased'
+        || ev.event === 'turn_plan_terminalized'
+      ) {
+        useTurnPlanStore.getState().applyPlan(ev.chat_id, ev.plan);
+        setMessages((prev) => applyPlanToMessages(prev, ev.plan));
         return;
       }
 
@@ -985,6 +1564,11 @@ export function useNanobotStream(
       }
 
       if (ev.event === "team_member_updated") {
+        const canonicalTeamPlan = useTurnPlanStore.getState().planByConversation[ev.chat_id];
+        if (canonicalTeamPlan?.kind === 'workflow') {
+          setMessages((prev) => applyPlanToMessages(prev, canonicalTeamPlan));
+          return;
+        }
         setMessages((prev) => prev.map((message) => {
           const targetId = teamProgressMessageId(prev, ev.team_id, ev.run_id);
           if (message.id !== targetId || message.agentUI?.kind !== "task_progress") return message;
@@ -1034,6 +1618,11 @@ export function useNanobotStream(
       }
 
       if (ev.event === "team_run_completed") {
+        const canonicalTeamPlan = useTurnPlanStore.getState().planByConversation[ev.chat_id];
+        if (canonicalTeamPlan?.kind === 'workflow') {
+          setMessages((prev) => applyPlanToMessages(prev, canonicalTeamPlan));
+          return;
+        }
         setMessages((prev) => prev.map((message) => {
           const targetId = teamProgressMessageId(prev, ev.team_id, ev.run_id);
           if (message.id !== targetId || message.agentUI?.kind !== "task_progress") return message;
@@ -1062,8 +1651,9 @@ export function useNanobotStream(
         return;
       }
 
-      if (ev.event === "turn_end") {
-        if ("goal_state" in ev && ev.goal_state != null && typeof ev.goal_state === "object") {
+      if (ev.event === "turn_completed" || ev.event === "turn_end") {
+        const wasLifecycleHandled = lifecycleTerminalHandledRef.current;
+        if (ev.event === "turn_end" && ev.goal_state != null && typeof ev.goal_state === "object") {
           setGoalState(ev.goal_state);
         }
         setRunStartedAt(null);
@@ -1074,13 +1664,45 @@ export function useNanobotStream(
           streamEndTimerRef.current = null;
         }
         setIsStreaming(false);
+        if (ev.event === 'turn_completed' && ev.turn.plan) {
+          useTurnPlanStore.getState().activateTurn(ev.chat_id, ev.turn.id);
+          useTurnPlanStore.getState().applyPlan(ev.chat_id, ev.turn.plan);
+        }
         setMessages((prev) => {
-          let finalized = ev.finish_reason === "cancelled"
+          const interrupted = ev.event === "turn_completed"
+            ? ev.turn.status === "interrupted"
+            : ev.finish_reason === "cancelled";
+          const failed = ev.event === "turn_completed"
+            ? ev.turn.status === "failed"
+            : ev.finish_reason === "error";
+          let finalized = interrupted
             ? finalizeInterruptedTurn(prev)
             : closeOpenStreams(prev);
+          if (ev.event === 'turn_completed' && ev.turn.plan) {
+            finalized = applyPlanToMessages(finalized, ev.turn.plan);
+          }
+          if (
+            ev.event === "turn_completed"
+            && ev.turn.status === "completed"
+          ) {
+            finalized = finalizeCompletedTurnProgress(finalized);
+          }
+          if (failed) {
+            finalized = finalizeFailedTurnProgress(finalized);
+          }
           finalized = pruneReasoningOnlyPlaceholders(finalized);
-          if (typeof ev.latency_ms === "number" && ev.latency_ms >= 0) {
+          if (
+            ev.event === "turn_end"
+            && typeof ev.latency_ms === "number"
+            && ev.latency_ms >= 0
+          ) {
             finalized = stampLastAssistantLatency(finalized, Math.round(ev.latency_ms));
+          }
+          if (ev.event === "turn_end") {
+            const turnUsage = normalizeTurnUsage(ev.usage);
+            if (turnUsage) {
+              finalized = stampLastAssistantUsage(finalized, turnUsage);
+            }
           }
           buffer.current = null;
           activeAssistantRef.current = null;
@@ -1089,14 +1711,24 @@ export function useNanobotStream(
           return finalized;
         });
         suppressStreamUntilTurnEndRef.current = false;
-        onTurnEnd?.();
+        if (ev.event === "turn_completed") {
+          lifecycleTerminalHandledRef.current = true;
+        }
+        if (!wasLifecycleHandled) onTurnEnd?.();
         return;
       }
 
       if (ev.event === "message") {
         if (
           suppressStreamUntilTurnEndRef.current &&
-          (ev.kind === "tool_hint" || ev.kind === "progress" || ev.kind === "reasoning")
+          (
+            ev.kind === "reasoning"
+            || (
+              (ev.kind === "tool_hint" || ev.kind === "progress")
+              && ev.agent_ui == null
+              && normalizeToolProgressEvents(ev.tool_events).length === 0
+            )
+          )
         ) {
           return;
         }
@@ -1118,6 +1750,24 @@ export function useNanobotStream(
         if (ev.kind === "tool_hint" || ev.kind === "progress") {
           const structuredEvents = normalizeToolProgressEvents(ev.tool_events);
           const agentUI = ev.agent_ui;
+          if (agentUI?.kind === "task_progress") {
+            const currentTurnId = useTurnPlanStore.getState()
+              .currentTurnByConversation[ev.chat_id];
+            const plan = planFromAgentUI(
+              agentUI,
+              currentTurnId ?? ev.chat_id,
+            );
+            if (plan) {
+              const explicitTurnId = (
+                typeof agentUI.turn_id === 'string'
+                && agentUI.turn_id.trim()
+              ) || null;
+              if (explicitTurnId && !currentTurnId) {
+                useTurnPlanStore.getState().activateTurn(ev.chat_id, explicitTurnId);
+              }
+              useTurnPlanStore.getState().applyPlan(ev.chat_id, plan);
+            }
+          }
           const workspaceReason = workspaceAccessRequiredReason(structuredEvents);
           if (workspaceReason) {
             setStreamError({
@@ -1146,6 +1796,7 @@ export function useNanobotStream(
               last
               && last.kind === "trace"
               && !last.isStreaming
+              && !last.narration
               // Keep consecutive task-progress snapshots as separate timeline
               // moments. Tool start/end frames may still merge into either
               // snapshot through call_id, but a newer plan update must not
@@ -1197,6 +1848,12 @@ export function useNanobotStream(
           ? ev.media_urls.map((m) => toMediaAttachment(m))
           : ev.media?.map((url) => toMediaAttachment({ url }));
         const hasMedia = !!media && media.length > 0;
+        if (suppressStreamUntilTurnEndRef.current && !hasMedia) {
+          // A media-bearing assistant frame already supplied the authoritative
+          // answer. Ignore a later legacy duplicate body while still allowing
+          // additional attachment frames and structured progress above.
+          return;
+        }
 
         // A complete (non-streamed) assistant message. If a stream was in
         // flight, drop the placeholder so we don't render the text twice.
@@ -1274,6 +1931,11 @@ export function useNanobotStream(
             },
           ];
         });
+        if (normalized.some((edit) => (
+          edit.status === "done" && edit.operation !== "delete"
+        ))) {
+          onArtifactCreated?.();
+        }
         return;
       }
       // ``attached`` / ``error`` frames aren't actionable here; the client
@@ -1281,8 +1943,31 @@ export function useNanobotStream(
     };
 
     const unsub = client.onChat(chatId, handle);
+    const runtimeSubscriber = (
+      client as ReturnType<typeof getNanobotClient> & {
+        onRuntimeSnapshot?: ReturnType<typeof getNanobotClient>["onRuntimeSnapshot"];
+      }
+    ).onRuntimeSnapshot;
+    const unsubRuntime = typeof runtimeSubscriber === "function"
+      ? runtimeSubscriber.call(client, (snapshotChatId, snapshot) => {
+          if (snapshotChatId !== chatId) return;
+          const active = snapshot.thread_status.type === "active";
+          setRunStartedAt(
+            active && snapshot.active_turn
+              ? snapshot.active_turn.started_at
+              : null,
+          );
+          setIsStreaming(active);
+          if (!active) {
+            setMessages((prev) => snapshot.thread_status.type === "systemError"
+              ? finalizeFailedTurnProgress(prev)
+              : closeOpenStreams(prev));
+          }
+        })
+      : () => {};
     return () => {
       unsub();
+      unsubRuntime();
       buffer.current = null;
       activeAssistantRef.current = null;
       closedAssistantStreamIdsRef.current.clear();
@@ -1301,6 +1986,7 @@ export function useNanobotStream(
     detachedActivitySegmentId,
     ensureActivitySegmentId,
     flushPendingStreamEvents,
+    onArtifactCreated,
     onTurnEnd,
     schedulePendingStreamFlush,
     setGoalState,
@@ -1366,11 +2052,15 @@ export function useNanobotStream(
       return finalizeInterruptedTurn(prev);
     });
     suppressStreamUntilTurnEndRef.current = false;
+    lifecycleTerminalHandledRef.current = false;
     client.sendMessage(chatId, "/stop");
   }, [chatId, clearActivitySegment, client, flushPendingStreamEvents, setIsStreaming]);
 
   return {
-    messages,
+    messages: visibleMessages,
+    messageConversationId: messageConversationId === chatId
+      ? messageConversationId
+      : null,
     isStreaming,
     runStartedAt,
     goalState,

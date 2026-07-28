@@ -16,6 +16,7 @@ describe('chatStore', () => {
     useChatStore.setState({
       conversations: {},
       activeConversationId: null,
+      conversationNavigationHistory: [],
       agentStatus: 'idle',
       currentTool: null,
       currentUsage: null,
@@ -79,14 +80,53 @@ describe('chatStore', () => {
       expect(useChatStore.getState().conversations[id]).toBeUndefined();
     });
 
-    it('switches to another conversation when active is deleted', () => {
-      const id1 = useChatStore.getState().createConversation();
-      const id2 = useChatStore.getState().createConversation();
-      useChatStore.getState().switchConversation(id2);
-      useChatStore.getState().deleteConversation(id2);
-      // Should fallback to remaining conversation
+    it('returns to the previously loaded conversation when active is deleted', () => {
+      const id1 = useChatStore.getState().createConversation(null, { id: 'first' });
+      useChatStore.getState().createConversation(null, { id: 'second' });
+      useChatStore.getState().createConversation(null, { id: 'third' });
+      useChatStore.getState().switchConversation(id1);
+      useChatStore.getState().switchConversation('second');
+      useChatStore.getState().deleteConversation('second');
+
       const state = useChatStore.getState();
       expect(state.activeConversationId).toBe(id1);
+    });
+
+    it('opens the new task page when no previously loaded conversation exists', () => {
+      useChatStore.getState().createConversation(null, {
+        id: 'never-loaded',
+        skipActivate: true,
+      });
+      useChatStore.getState().createConversation(null, { id: 'only-loaded' });
+
+      useChatStore.getState().deleteConversation('only-loaded');
+
+      const state = useChatStore.getState();
+      expect(state.activeConversationId).toBeNull();
+      expect(state.conversations['never-loaded']).toBeDefined();
+    });
+
+    it('keeps the current page when a non-active conversation is deleted', () => {
+      useChatStore.getState().createConversation(null, { id: 'active' });
+      useChatStore.getState().createConversation(null, {
+        id: 'background',
+        skipActivate: true,
+      });
+
+      useChatStore.getState().deleteConversation('background');
+
+      expect(useChatStore.getState().activeConversationId).toBe('active');
+    });
+
+    it('skips deleted entries while walking back through navigation history', () => {
+      useChatStore.getState().createConversation(null, { id: 'first' });
+      useChatStore.getState().createConversation(null, { id: 'second' });
+      useChatStore.getState().createConversation(null, { id: 'third' });
+      useChatStore.getState().deleteConversation('second');
+
+      useChatStore.getState().deleteConversation('third');
+
+      expect(useChatStore.getState().activeConversationId).toBe('first');
     });
   });
 

@@ -46,6 +46,7 @@ describe('TaskNarrativeTimeline streaming UI', () => {
     const toggle = view.querySelector<HTMLButtonElement>('button[aria-label="折叠任务步骤"]');
     expect(toggle?.getAttribute('aria-expanded')).toBe('true');
     expect(toggle?.textContent).toContain('进行中');
+    expect(toggle?.textContent).toContain('1 step');
     expect(view.querySelectorAll('.animate-spin').length).toBeGreaterThanOrEqual(2);
   });
 
@@ -107,5 +108,79 @@ describe('TaskNarrativeTimeline streaming UI', () => {
     // separate status row, not a duplicate tool event.
     expect(view.querySelectorAll('li')).toHaveLength(2);
     expect(view.textContent).toContain('已查到相关公开资料');
+  });
+
+  it('does not render file edits, generated-file cards, or file paths in steps', () => {
+    const view = render([
+      {
+        id: 'file-edit',
+        role: 'tool',
+        kind: 'trace',
+        content: '',
+        timestamp: Date.now(),
+        fileEdits: [{
+          call_id: 'write-1',
+          tool: 'write_file',
+          path: 'reports/report.md',
+          absolute_path: '/project/reports/report.md',
+          added: 102,
+          deleted: 0,
+          status: 'done',
+        }],
+      },
+      {
+        id: 'pdf-output',
+        role: 'tool',
+        kind: 'trace',
+        content: '',
+        timestamp: Date.now(),
+        toolEvents: [{
+          phase: 'end',
+          call_id: 'pdf-1',
+          name: 'create_pdf',
+          arguments: {
+            source_path: '/project/reports/report.md',
+            output_path: '/project/reports/report.pdf',
+          },
+          files: [{
+            path: '/project/reports/report.pdf',
+            name: 'report.pdf',
+            mime_type: 'application/pdf',
+          }],
+        }],
+      },
+    ]);
+
+    expect(view.textContent).toContain('产物已生成');
+    expect(view.textContent).not.toContain('report.md');
+    expect(view.textContent).not.toContain('report.pdf');
+    expect(view.querySelector('[title="点击预览文件"]')).toBeNull();
+  });
+
+  it('shows public narration verbatim but never private reasoning text', () => {
+    const view = render([
+      {
+        id: 'reasoning',
+        role: 'assistant',
+        content: '',
+        thinking: 'private hidden chain of thought',
+        timestamp: Date.now(),
+      },
+      {
+        id: 'narration',
+        role: 'tool',
+        kind: 'trace',
+        content: '',
+        narration: 'Let me fetch more detailed market data from specific articles.',
+        timestamp: Date.now(),
+      },
+    ], { isActive: false });
+
+    const toggle = view.querySelector<HTMLButtonElement>('button[aria-label="展开任务步骤"]');
+    act(() => toggle?.click());
+
+    expect(view.textContent).toContain('Let me fetch more detailed market data from specific articles.');
+    expect(view.textContent).toContain('整理思路');
+    expect(view.textContent).not.toContain('private hidden chain of thought');
   });
 });

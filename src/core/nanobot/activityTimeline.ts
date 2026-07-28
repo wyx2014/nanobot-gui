@@ -1,7 +1,7 @@
 import type { Message, MessageMediaAttachment } from '@/types';
 import type { ToolProgressEvent } from '@/core/types';
 
-export type ActivityItemType = 'reasoning' | 'tool' | 'cli' | 'mcp' | 'file_edit' | 'media';
+export type ActivityItemType = 'reasoning' | 'narration' | 'tool' | 'cli' | 'mcp' | 'file_edit' | 'media';
 export type ActivityStepStatus = 'pending' | 'running' | 'done' | 'error';
 export type ActivityStepSource = 'reasoning' | 'tool' | 'web' | 'browser' | 'shell' | 'mcp' | 'file' | 'media';
 
@@ -49,7 +49,13 @@ export function isReasoningOnlyAssistant(message: Message): boolean {
     const textBlock = message.content.find((block) => block.type === 'text');
     if (textBlock?.type === 'text' && textBlock.text.trim().length > 0) return false;
   }
-  return !!(message.thinking?.length || message.reasoningStreaming || message.isStreaming);
+  return !!(
+    message.thinking?.length
+    || message.reasoningStreaming
+    || message.narration?.trim()
+    || message.narrationStreaming
+    || message.isStreaming
+  );
 }
 
 export function isAgentActivityMember(message: Message): boolean {
@@ -166,14 +172,20 @@ function isEmptyAssistantPlaceholder(message: Message): boolean {
 
 function assistantHasInlineReasoning(message: Message): boolean {
   if (message.role !== 'assistant' || message.kind === 'trace') return false;
+  const hasActivity = !!(
+    message.thinking?.trim()
+    || message.reasoningStreaming
+    || message.narration?.trim()
+    || message.narrationStreaming
+  );
   const text = typeof message.content === 'string' ? message.content.trim() : '';
   if (text.length === 0 && Array.isArray(message.content)) {
     const textBlock = message.content.find((block) => block.type === 'text');
     if (textBlock?.type === 'text') {
-      return textBlock.text.trim().length > 0 && (!!message.thinking?.trim() || !!message.reasoningStreaming);
+      return textBlock.text.trim().length > 0 && hasActivity;
     }
   }
-  return text.length > 0 && (!!message.thinking?.trim() || !!message.reasoningStreaming);
+  return text.length > 0 && hasActivity;
 }
 
 function reasoningOnlyMessageFromAnswer(message: Message): Message {
@@ -184,6 +196,8 @@ function reasoningOnlyMessageFromAnswer(message: Message): Message {
     timestamp: message.timestamp,
     thinking: message.thinking,
     reasoningStreaming: message.reasoningStreaming,
+    narration: message.narration,
+    narrationStreaming: message.narrationStreaming,
     isStreaming: !!(message.reasoningStreaming || message.isStreaming),
     activitySegmentId: message.activitySegmentId,
     thinkingDuration: message.thinkingDuration,
@@ -191,19 +205,31 @@ function reasoningOnlyMessageFromAnswer(message: Message): Message {
 }
 
 function stripInlineReasoning(message: Message): Message {
-  const next = { ...message };
-  delete (next as any).thinking;
-  delete (next as any).reasoningStreaming;
-  return next;
+  return {
+    ...message,
+    thinking: undefined,
+    reasoningStreaming: undefined,
+    narration: undefined,
+    narrationStreaming: undefined,
+  };
 }
 
 function activityItemsForMessage(message: Message): ActivityItem[] {
+  const items: ActivityItem[] = [];
   if (isReasoningOnlyAssistant(message)) {
-    return [{ type: 'reasoning', message }];
+    if (message.thinking?.trim() || message.reasoningStreaming) {
+      items.push({ type: 'reasoning', message });
+    }
+    if (message.narration?.trim() || message.narrationStreaming) {
+      items.push({ type: 'narration', message });
+    }
+    return items;
   }
   if (message.kind !== 'trace') return [];
 
-  const items: ActivityItem[] = [];
+  if (message.narration?.trim() || message.narrationStreaming) {
+    items.push({ type: 'narration', message });
+  }
   if (message.fileEdits?.length) {
     items.push({ type: 'file_edit', message });
   }

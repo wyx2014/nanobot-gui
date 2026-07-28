@@ -42,6 +42,26 @@ describe('normalizeActivityTimeline', () => {
     expect(units[1].type === 'activity' ? units[1].messages.map((message) => message.id) : []).toEqual(['r1', 't1']);
   });
 
+  it('keeps public narration in Steps while the final answer remains a separate message', () => {
+    const units = normalizeActivityTimeline([
+      msg({ id: 'u1', role: 'user', content: 'question' }),
+      msg({
+        id: 'n1',
+        role: 'tool',
+        kind: 'trace',
+        content: '',
+        narration: 'I will read the source articles next.',
+      }),
+      msg({ id: 'a1', role: 'assistant', content: 'final answer' }),
+    ]);
+
+    expect(units.map((unit) => unit.type)).toEqual(['message', 'activity', 'message']);
+    expect(units[1].type === 'activity' ? units[1].items.map((item) => item.type) : [])
+      .toContain('narration');
+    expect(units[2].type === 'message' ? units[2].message.content : '')
+      .toBe('final answer');
+  });
+
   it('splits inline assistant reasoning into activity before the visible answer', () => {
     const units = normalizeActivityTimeline([
       msg({ id: 'u1', role: 'user', content: 'question' }),

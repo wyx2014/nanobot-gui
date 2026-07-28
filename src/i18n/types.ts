@@ -50,7 +50,6 @@ export interface TranslationDict {
     exportConversation: string;
     deleteConversation: string;
     conversationDeleted: string;
-    undo: string;
     renameConversation: string;
     viewScheduledTask: string;
     archiveRun: string;
@@ -62,6 +61,52 @@ export interface TranslationDict {
     changeAvatar: string;
     defaultNickname: string;
     resetProfile: string;
+  };
+
+  projectMemory: {
+    title: string;
+    menu: string;
+    phase1: string;
+    phase2: string;
+    statusWaiting: string;
+    statusRunning: string;
+    statusFailed: string;
+    statusNoOutput: string;
+    statusDone: string;
+    retrievalMode: string;
+    searchPlaceholder: string;
+    refresh: string;
+    reindex: string;
+    consolidate: string;
+    loading: string;
+    noMatch: string;
+    empty: string;
+    emptyHint: string;
+    forget: string;
+    forgetConfirm: string;
+    clearConfirm: string;
+    loadFailed: string;
+    consolidateFailed: string;
+    reindexFailed: string;
+    forgetFailed: string;
+    clearFailed: string;
+    unnamed: string;
+    usageCount: string;
+    lastUsed: string;
+    neverUsed: string;
+    sourceCount: string;
+    confidence: string;
+    updatedAt: string;
+    sessionSource: string;
+    clear: string;
+    clearHint: string;
+    kindProjectPreference: string;
+    kindWorkflow: string;
+    kindRepoFact: string;
+    kindFailureShield: string;
+    kindDecisionRule: string;
+    kindReference: string;
+    kindLongTerm: string;
   };
 
   // Chat/Welcome
@@ -579,6 +624,14 @@ export interface TranslationDict {
     // TaskProgressPanel
     progress: string;
     progressEmptyHint: string;
+    progressPlanning: string;
+    progressRunning: string;
+    workbench: string;
+    artifacts: string;
+    artifactsEmptyHint: string;
+    artifactsLoadFailed: string;
+    artifactsRetry: string;
+    artifactsRefresh: string;
     // ContextSection
     context: string;
     contextEmptyHint: string;

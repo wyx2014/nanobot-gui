@@ -6,8 +6,9 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { usePromptHubStore } from '@/stores/promptHubStore';
 import { useI18n } from '@/i18n';
-import { Plus, Clock, Wrench, Trash2, Settings, Download, Pencil, Undo2, HelpCircle, ChevronRight, MoreHorizontal, SquarePen, FolderOpen, FolderClosed, X, Search, LogOut, UserRound } from 'lucide-react';
+import { Plus, Clock, Wrench, Trash2, Settings, Download, Pencil, HelpCircle, ChevronRight, MoreHorizontal, SquarePen, FolderOpen, FolderClosed, X, Search, LogOut, UserRound } from 'lucide-react';
 import GuideModal from '@/components/common/GuideModal';
+import ProjectMemoryDialog from '@/components/sidebar/ProjectMemoryDialog';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
@@ -16,8 +17,19 @@ import { dialogBridge, fsBridge, shellBridge } from '@/lib/ipc-factory';
 import { isMacOS } from '@/utils/platform';
 import { normalizeProjectPath, projectNameFromPath, visibleProjectPath } from '@/core/workspace';
 import type { Conversation } from '@/types';
-import { fetchProjectSkills, saveProjectSkills as saveProjectSkillsApi } from '@/core/api';
-import { getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/nanobotClient';
+import {
+  archiveProject,
+  exportProjectArchive,
+  fetchProjectSkills,
+  relocateProject,
+  saveProjectSkills as saveProjectSkillsApi,
+} from '@/core/api';
+import {
+  getNanobotStatus,
+  getNanobotToken,
+  refreshNanobotAuth,
+  syncProjectsFromGateway,
+} from '@/core/nanobotClient';
 
 interface StatusIndicatorProps {
   status: ConversationStatus;
@@ -46,7 +58,7 @@ function StatusIndicator({ status, onComplete }: StatusIndicatorProps) {
 
 const PROJECT_VISIBLE_LIMIT = 5;
 const PROJECT_MENU_WIDTH = 150;
-const PROJECT_MENU_HEIGHT = 140;
+const PROJECT_MENU_HEIGHT = 250;
 
 async function getProjectSkillsAuth(): Promise<{ token: string; baseUrl: string }> {
   const status = await getNanobotStatus();
@@ -67,7 +79,7 @@ function projectNameForConversation(conv: Conversation, path: string): string {
 }
 
 export default function Sidebar() {
-  const { conversations, activeConversationId, startNewConversation, switchConversation, deleteConversation, renameConversation, clearCompletedStatus, exportConversation, importConversation } = useChatStore();
+  const { conversations, activeConversationId, startNewConversation, switchConversation, deleteConversation, renameConversation, clearCompletedStatus, exportConversation } = useChatStore();
   const openToolbox = useSettingsStore((s) => s.openToolbox);
   const openSystemSettings = useSettingsStore((s) => s.openSystemSettings);
   const viewMode = useSettingsStore((s) => s.viewMode);
@@ -76,6 +88,7 @@ export default function Sidebar() {
   const unviewedRunCount = useScheduleStore((s) => s.getUnviewedRunCount());
   const scheduledTasks = useScheduleStore((s) => s.tasks);
   const recentWorkspacePaths = useWorkspaceStore((s) => s.recentPaths);
+  const gatewayProjects = useWorkspaceStore((s) => s.projects);
   const projectNames = useWorkspaceStore((s) => s.projectNames);
   const projectSkillBindings = useWorkspaceStore((s) => s.projectSkillBindings);
   const removeRecentPath = useWorkspaceStore((s) => s.removeRecentPath);
@@ -93,8 +106,9 @@ export default function Sidebar() {
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; convId: string } | null>(null);
-  const [projectMenu, setProjectMenu] = useState<{ x: number; y: number; path: string } | null>(null);
-  const [pendingRemoveProject, setPendingRemoveProject] = useState<{ path: string; name: string } | null>(null);
+  const [projectMenu, setProjectMenu] = useState<{ x: number; y: number; path: string; id?: string; name: string } | null>(null);
+  const [pendingRemoveProject, setPendingRemoveProject] = useState<{ path: string; name: string; id?: string } | null>(null);
+  const [memoryProject, setMemoryProject] = useState<{ id: string; name: string } | null>(null);
   const [skillProject, setSkillProject] = useState<{ path: string; name: string } | null>(null);
   const [skillSearch, setSkillSearch] = useState('');
   const [draftSkillBindings, setDraftSkillBindings] = useState<string[]>([]);
@@ -102,9 +116,10 @@ export default function Sidebar() {
   const [promptHubPassword, setPromptHubPassword] = useState('');
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
-  // Undo delete state
-  const [pendingDelete, setPendingDelete] = useState<{ id: string; data: string } | null>(null);
-  const undoTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const [showDeleteToast, setShowDeleteToast] = useState(false);
+  const deleteToastTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useEffect(() => () => clearTimeout(deleteToastTimerRef.current), []);
 
   // Inline rename state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -162,21 +177,57 @@ export default function Sidebar() {
 
   const sortedConvs = Object.values(conversations)
     .filter((c) => !c.scheduledTaskId && !scheduledConversationIds.has(c.id) && !c.id.startsWith('cron:'))
-    .filter((c) => c.messages.length > 0 || c.status === 'running' || c.id === activeConversationId)
+    .filter((c) => c.hasHistory || !!c.sessionId || c.messages.length > 0 || c.status === 'running' || c.id === activeConversationId)
     .sort((a, b) => b.createdAt - a.createdAt);
 
   const conversationGroups = useMemo(() => {
     const recentOrder = new Map<string, number>();
-    const projectMap = new Map<string, { path: string; name: string; conversations: Conversation[]; latestUpdatedAt: number; recentIndex: number }>();
+    const gatewayProjectById = new Map(gatewayProjects.map((project) => [project.id, project]));
+    const gatewayProjectByPath = new Map(
+      gatewayProjects.map((project) => [normalizeProjectPath(project.rootPath), project]),
+    );
+    const projectMap = new Map<string, {
+      key: string;
+      id?: string;
+      path: string;
+      name: string;
+      conversations: Conversation[];
+      latestUpdatedAt: number;
+      recentIndex: number;
+    }>();
     const unprojected: Conversation[] = [];
+
+    for (const project of gatewayProjects) {
+      if (project.kind !== 'workspace' || project.status === 'archived') continue;
+      const path = visibleProjectPath(project.rootPath);
+      if (!path) continue;
+      projectMap.set(project.id, {
+        key: project.id,
+        id: project.id,
+        path,
+        name: projectNames[path] ?? project.name,
+        conversations: [],
+        latestUpdatedAt: project.updatedAt,
+        recentIndex: Number.MAX_SAFE_INTEGER,
+      });
+    }
 
     for (const [index, recentPath] of recentWorkspacePaths.entries()) {
       const path = visibleProjectPath(recentPath);
-      if (!path || projectMap.has(path)) continue;
+      if (!path) continue;
+      const gatewayProject = gatewayProjectByPath.get(normalizeProjectPath(path));
+      const key = gatewayProject?.id ?? `path:${path}`;
+      if (projectMap.has(key)) {
+        const existing = projectMap.get(key);
+        if (existing) existing.recentIndex = Math.min(existing.recentIndex, index);
+        continue;
+      }
       recentOrder.set(path, index);
-      projectMap.set(path, {
+      projectMap.set(key, {
+        key,
+        id: gatewayProject?.id,
         path,
-        name: projectNames[path] ?? projectNameFromPath(path),
+        name: projectNames[path] ?? gatewayProject?.name ?? projectNameFromPath(path),
         conversations: [],
         latestUpdatedAt: 0,
         recentIndex: index,
@@ -184,19 +235,33 @@ export default function Sidebar() {
     }
 
     for (const conv of sortedConvs) {
-      const path = projectPathForConversation(conv);
+      const gatewayProject = conv.projectId
+        ? gatewayProjectById.get(conv.projectId)
+        : undefined;
+      if (gatewayProject && gatewayProject.kind !== 'workspace') {
+        unprojected.push(conv);
+        continue;
+      }
+      const path = visibleProjectPath(
+        gatewayProject?.rootPath ?? projectPathForConversation(conv),
+      );
       if (!path) {
         unprojected.push(conv);
         continue;
       }
-      const existing = projectMap.get(path);
+      const pathProject = gatewayProject
+        ?? gatewayProjectByPath.get(normalizeProjectPath(path));
+      const key = pathProject?.id ?? `path:${path}`;
+      const existing = projectMap.get(key);
       if (existing) {
         existing.conversations.push(conv);
         existing.latestUpdatedAt = Math.max(existing.latestUpdatedAt, conv.updatedAt);
       } else {
-        projectMap.set(path, {
+        projectMap.set(key, {
+          key,
+          id: pathProject?.id,
           path,
-          name: projectNames[path] ?? projectNameForConversation(conv, path),
+          name: projectNames[path] ?? pathProject?.name ?? projectNameForConversation(conv, path),
           conversations: [conv],
           latestUpdatedAt: conv.updatedAt,
           recentIndex: recentOrder.get(path) ?? Number.MAX_SAFE_INTEGER,
@@ -215,7 +280,7 @@ export default function Sidebar() {
       projects,
       unprojected: unprojected.sort((a, b) => b.updatedAt - a.updatedAt),
     };
-  }, [projectNames, recentWorkspacePaths, sortedConvs]);
+  }, [gatewayProjects, projectNames, recentWorkspacePaths, sortedConvs]);
 
   const workspaceSkills = useMemo(
     () => skills.filter((skill) => skill.tags?.[0] === 'workspace'),
@@ -233,23 +298,10 @@ export default function Sidebar() {
 
   const handleDeleteConversation = (e: React.MouseEvent, convId: string) => {
     e.stopPropagation();
-    // Save conversation data for undo before deleting
-    const json = exportConversation(convId);
     deleteConversation(convId);
-    if (json) {
-      // Cancel any previous undo timer
-      clearTimeout(undoTimerRef.current);
-      setPendingDelete({ id: convId, data: json });
-      undoTimerRef.current = setTimeout(() => setPendingDelete(null), 5000);
-    }
-  };
-
-  const handleUndoDelete = () => {
-    if (pendingDelete) {
-      importConversation(pendingDelete.data);
-      clearTimeout(undoTimerRef.current);
-      setPendingDelete(null);
-    }
+    clearTimeout(deleteToastTimerRef.current);
+    setShowDeleteToast(true);
+    deleteToastTimerRef.current = setTimeout(() => setShowDeleteToast(false), 5000);
   };
 
   const handleClearCompletedStatus = useCallback((convId: string) => {
@@ -294,11 +346,11 @@ export default function Sidebar() {
     });
   };
 
-  const openProjectMenu = (event: React.MouseEvent, path: string) => {
+  const openProjectMenu = (event: React.MouseEvent, project: { path: string; id?: string; name: string }) => {
     event.stopPropagation();
     const x = Math.min(event.clientX, window.innerWidth - PROJECT_MENU_WIDTH - 8);
     const y = Math.min(event.clientY, window.innerHeight - PROJECT_MENU_HEIGHT - 8);
-    setProjectMenu({ x, y, path });
+    setProjectMenu({ x, y, path: project.path, id: project.id, name: project.name });
   };
 
   const startProjectConversation = (path: string) => {
@@ -310,7 +362,40 @@ export default function Sidebar() {
   const requestRemoveProject = (path: string) => {
     const project = conversationGroups.projects.find((item) => item.path === path);
     const projectName = project?.name ?? projectNames[path] ?? projectNameFromPath(path);
-    setPendingRemoveProject({ path, name: projectName });
+    setPendingRemoveProject({ path, name: projectName, id: project?.id });
+  };
+
+  const exportProject = async (project: { id?: string; name: string }) => {
+    if (!project.id) return;
+    try {
+      const auth = await getProjectSkillsAuth();
+      const bytes = await exportProjectArchive(auth.token, project.id, auth.baseUrl);
+      const filePath = await dialogBridge.save({
+        defaultPath: `${project.name || project.id}-export.zip`,
+        filters: [{ name: 'ZIP', extensions: ['zip'] }],
+      });
+      if (filePath) await fsBridge.writeFile(filePath, bytes);
+    } catch (error) {
+      console.error('Project export failed:', error);
+    } finally {
+      setProjectMenu(null);
+    }
+  };
+
+  const relocateRegisteredProject = async (project: { id?: string }) => {
+    if (!project.id) return;
+    try {
+      const selected = await dialogBridge.open({ multiple: false, directory: true });
+      const path = Array.isArray(selected) ? selected[0] : selected;
+      if (typeof path !== 'string' || !path.trim()) return;
+      const auth = await getProjectSkillsAuth();
+      await relocateProject(auth.token, project.id, path, auth.baseUrl);
+      await syncProjectsFromGateway();
+    } catch (error) {
+      console.error('Project relocation failed:', error);
+    } finally {
+      setProjectMenu(null);
+    }
   };
 
   const openProjectSkills = async (path: string) => {
@@ -351,16 +436,25 @@ export default function Sidebar() {
     setSkillProject(null);
   };
 
-  const confirmRemoveProject = () => {
+  const confirmRemoveProject = async () => {
     if (!pendingRemoveProject) return;
     const project = conversationGroups.projects.find((item) => item.path === pendingRemoveProject.path);
-    const projectConversations = project?.conversations ?? [];
-    for (const conv of projectConversations) {
-      deleteConversation(conv.id);
+    try {
+      if (pendingRemoveProject.id) {
+        const auth = await getProjectSkillsAuth();
+        await archiveProject(auth.token, pendingRemoveProject.id, auth.baseUrl);
+        await syncProjectsFromGateway();
+      }
+      const projectConversations = project?.conversations ?? [];
+      for (const conv of projectConversations) {
+        deleteConversation(conv.id);
+      }
+      removeRecentPath(pendingRemoveProject.path);
+      window.dispatchEvent(new CustomEvent('nanobot-gui:workspace-settings-changed'));
+      setPendingRemoveProject(null);
+    } catch (error) {
+      console.error('Project archive failed:', error);
     }
-    removeRecentPath(pendingRemoveProject.path);
-    window.dispatchEvent(new CustomEvent('nanobot-gui:workspace-settings-changed'));
-    setPendingRemoveProject(null);
   };
 
   const accountInitial = (promptHubUser?.username?.trim()[0] || '').toUpperCase();
@@ -497,17 +591,17 @@ export default function Sidebar() {
                 <div className="px-3 pb-2 text-[14px] font-semibold tracking-[-0.01em] text-[#8a867c]">{t.sidebar.projects}</div>
                 <div className="space-y-1">
                   {conversationGroups.projects.map((project) => {
-                    const collapsed = collapsedProjects.has(project.path);
-                    const showAll = expandedProjects.has(project.path);
+                    const collapsed = collapsedProjects.has(project.key);
+                    const showAll = expandedProjects.has(project.key);
                     const visible = showAll ? project.conversations : project.conversations.slice(0, PROJECT_VISIBLE_LIMIT);
                     const hiddenCount = project.conversations.length - PROJECT_VISIBLE_LIMIT;
                     return (
-                      <div key={project.path} className="space-y-0.5">
+                      <div key={project.key} className="space-y-0.5">
                         <div
                           className="group/project flex items-center gap-2 px-3.5 py-2 text-[15px] font-semibold tracking-[-0.01em] text-[#34322d] hover:bg-[#eeeeea] rounded-xl transition-colors w-full text-left"
                         >
                           <button
-                            onClick={() => toggleProject(project.path)}
+                            onClick={() => toggleProject(project.key)}
                             className="flex min-w-0 flex-1 items-center gap-2 text-left"
                           >
                             {collapsed ? (
@@ -519,7 +613,7 @@ export default function Sidebar() {
                             <ChevronRight className={cn('h-4 w-4 text-[#8a867c] shrink-0 opacity-0 transition-all group-hover/project:opacity-100', !collapsed && 'rotate-90')} />
                           </button>
                           <button
-                            onClick={(event) => openProjectMenu(event, project.path)}
+                            onClick={(event) => openProjectMenu(event, project)}
                             className="flex h-6 w-6 items-center justify-center rounded-md text-[#656358] opacity-0 transition-opacity hover:bg-[#dedbd3] hover:text-[#29261b] group-hover/project:opacity-100"
                             aria-label={t.sidebar.projectMore}
                             title={t.sidebar.projectMore}
@@ -547,8 +641,8 @@ export default function Sidebar() {
                             onClick={() => {
                               setExpandedProjects((current) => {
                                 const next = new Set(current);
-                                if (showAll) next.delete(project.path);
-                                else next.add(project.path);
+                                if (showAll) next.delete(project.key);
+                                else next.add(project.key);
                                 return next;
                               });
                             }}
@@ -596,7 +690,7 @@ export default function Sidebar() {
                 {promptHubUser?.username || '连接使用'}
               </div>
               <div className="shrink-0 rounded border border-[#d97757]/30 bg-[#d97757]/8 px-1 py-[2px] text-[9.5px] font-semibold leading-none tracking-wide text-[#d97757]">
-                内测版
+                beta
               </div>
             </div>
           </button>
@@ -686,6 +780,34 @@ export default function Sidebar() {
             <Wrench className="h-3.5 w-3.5" />
             管理技能
           </button>
+          {projectMenu.id ? (
+            <>
+              <button
+                onClick={() => {
+                  setMemoryProject({ id: projectMenu.id!, name: projectMenu.name });
+                  setProjectMenu(null);
+                }}
+                className="flex items-center gap-2 w-full px-3 py-1.5 text-[13px] text-[#3d3929] hover:bg-[#f0ede6]"
+              >
+                <span className="flex h-3.5 w-3.5 items-center justify-center text-[13px]">◌</span>
+                {t.projectMemory.menu}
+              </button>
+              <button
+                onClick={() => void exportProject(projectMenu)}
+                className="flex items-center gap-2 w-full px-3 py-1.5 text-[13px] text-[#3d3929] hover:bg-[#f0ede6]"
+              >
+                <Download className="h-3.5 w-3.5" />
+                导出项目
+              </button>
+              <button
+                onClick={() => void relocateRegisteredProject(projectMenu)}
+                className="flex items-center gap-2 w-full px-3 py-1.5 text-[13px] text-[#3d3929] hover:bg-[#f0ede6]"
+              >
+                <FolderClosed className="h-3.5 w-3.5" />
+                迁移项目路径
+              </button>
+            </>
+          ) : null}
           <button
             onClick={() => {
               requestRemoveProject(projectMenu.path);
@@ -697,6 +819,13 @@ export default function Sidebar() {
             {t.sidebar.removeProject}
           </button>
         </div>
+      )}
+
+      {memoryProject && (
+        <ProjectMemoryDialog
+          project={memoryProject}
+          onClose={() => setMemoryProject(null)}
+        />
       )}
 
       {skillProject && (
@@ -814,7 +943,7 @@ export default function Sidebar() {
                 {t.common.cancel}
               </button>
               <button
-                onClick={confirmRemoveProject}
+                onClick={() => void confirmRemoveProject()}
                 className="h-10 rounded-[12px] bg-[#fae7e7] px-6 text-[15px] font-semibold text-[#d83434] hover:bg-[#f5dddd] transition-colors"
               >
                 {t.sidebar.removeProject}
@@ -927,17 +1056,9 @@ export default function Sidebar() {
         </div>
       )}
 
-      {/* Undo delete toast */}
-      {pendingDelete && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-2.5 bg-[#29261b] text-white rounded-xl shadow-lg animate-in fade-in slide-in-from-bottom-2 duration-200" role="alert" aria-live="assertive">
+      {showDeleteToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 bg-[#29261b] text-white rounded-xl shadow-lg animate-in fade-in slide-in-from-bottom-2 duration-200" role="alert" aria-live="assertive">
           <span className="text-sm">{t.sidebar.conversationDeleted}</span>
-          <button
-            onClick={handleUndoDelete}
-            className="flex items-center gap-1 text-sm font-medium text-[#d97757] hover:text-[#e8956e] transition-colors"
-          >
-            <Undo2 className="h-3.5 w-3.5" />
-            {t.sidebar.undo}
-          </button>
         </div>
       )}
     </div>

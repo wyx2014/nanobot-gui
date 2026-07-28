@@ -11,7 +11,7 @@ function msg(partial: Partial<Message> & Pick<Message, 'id' | 'role'>): Message 
 }
 
 describe('buildTaskNarrativeEntries', () => {
-  it('keeps analysis, plan, tools, and file changes in arrival order', () => {
+  it('keeps analysis, plan, and tools while omitting file changes', () => {
     const entries = buildTaskNarrativeEntries([
       msg({ id: 'reasoning', role: 'assistant', thinking: 'private reasoning summary' }),
       msg({
@@ -52,7 +52,7 @@ describe('buildTaskNarrativeEntries', () => {
       }),
     ]);
 
-    expect(entries.map((entry) => entry.kind)).toEqual(['analysis', 'plan', 'tool', 'file']);
+    expect(entries.map((entry) => entry.kind)).toEqual(['analysis', 'plan', 'tool']);
     expect(entries[1]).toMatchObject({
       title: '整理计划',
       detail: '处理：查询行业数据',
@@ -62,11 +62,60 @@ describe('buildTaskNarrativeEntries', () => {
       title: '查询资料',
       status: 'running',
     });
-    expect(entries[3]).toMatchObject({
-      title: '写入文件',
-      detail: 'idc-report.html',
-      status: 'running',
+    expect(JSON.stringify(entries)).not.toContain('idc-report.html');
+  });
+
+  it('keeps generated-file tools concise without file cards or technical paths', () => {
+    const entries = buildTaskNarrativeEntries([
+      msg({
+        id: 'pdf-start',
+        role: 'tool',
+        kind: 'trace',
+        toolEvents: [{
+          phase: 'start',
+          call_id: 'create-pdf',
+          name: 'create_pdf',
+          arguments: {
+            source_path: '/project/reports/report.md',
+            output_path: '/project/reports/report.pdf',
+          },
+        }],
+      }),
+      msg({
+        id: 'pdf-end',
+        role: 'tool',
+        kind: 'trace',
+        toolEvents: [{
+          phase: 'end',
+          call_id: 'create-pdf',
+          name: 'create_pdf',
+          result: {
+            files: [{
+              path: '/project/reports/report.pdf',
+              name: 'report.pdf',
+              mime_type: 'application/pdf',
+            }],
+          },
+          files: [{
+            path: '/project/reports/report.pdf',
+            name: 'report.pdf',
+            mime_type: 'application/pdf',
+          }],
+        }],
+      }),
+    ]);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      kind: 'tool',
+      status: 'done',
+      detail: '产物已生成',
+      artifactOutput: true,
     });
+    expect(entries[0].input).toBeUndefined();
+    expect(entries[0].result).toBeUndefined();
+    expect(entries[0].evidence).toBeUndefined();
+    expect(JSON.stringify(entries)).not.toContain('report.pdf');
   });
 
   it('updates tool phases in place by call_id', () => {
@@ -176,6 +225,35 @@ describe('buildTaskNarrativeEntries', () => {
     }]);
   });
 
+  it('renders public narration verbatim beside a generic private-reasoning summary', () => {
+    const entries = buildTaskNarrativeEntries([
+      msg({
+        id: 'reasoning',
+        role: 'assistant',
+        thinking: 'hidden chain of thought must not be rendered',
+        reasoningStreaming: false,
+      }),
+      msg({
+        id: 'narration',
+        role: 'tool',
+        kind: 'trace',
+        narration: 'Let me fetch more detailed market data from specific articles.',
+        narrationStreaming: false,
+      }),
+    ]);
+
+    expect(entries.map((entry) => entry.kind)).toEqual(['analysis', 'narration']);
+    expect(entries[0]).toMatchObject({
+      title: '整理思路',
+      detail: '已完成任务分析',
+    });
+    expect(entries[1]).toMatchObject({
+      title: 'Let me fetch more detailed market data from specific articles.',
+      status: 'done',
+    });
+    expect(JSON.stringify(entries)).not.toContain('hidden chain of thought');
+  });
+
   it('groups structured parallel tool calls and keeps gateway sequence order', () => {
     const entries = buildTaskNarrativeEntries([
       msg({
@@ -222,6 +300,80 @@ describe('buildTaskNarrativeEntries', () => {
       '查询资料',
       '查询外部数据',
     ]);
+  });
+
+  it('hides plan-barrier preflight calls that never actually executed', () => {
+    const blockedError = [
+      'Error [PLAN_REQUIRED]: this turn has become a multi-step task.',
+      'Call update_task_progress first.',
+    ].join(' ');
+    const entries = buildTaskNarrativeEntries([
+      msg({
+        id: 'blocked-start',
+        role: 'tool',
+        kind: 'trace',
+        toolEvents: [
+          {
+            phase: 'start',
+            call_id: 'blocked-cn',
+            name: 'web_search',
+            batch_id: 'turn-1:0',
+            arguments: { query: '中国出口' },
+          },
+          {
+            phase: 'start',
+            call_id: 'blocked-en',
+            name: 'web_search',
+            batch_id: 'turn-1:0',
+            arguments: { query: 'China exports' },
+          },
+        ],
+      }),
+      msg({
+        id: 'blocked-error',
+        role: 'tool',
+        kind: 'trace',
+        toolEvents: [
+          {
+            phase: 'error',
+            call_id: 'blocked-cn',
+            name: 'web_search',
+            batch_id: 'turn-1:0',
+            error: blockedError,
+          },
+          {
+            phase: 'error',
+            call_id: 'blocked-en',
+            name: 'web_search',
+            batch_id: 'turn-1:0',
+            error: blockedError,
+          },
+        ],
+      }),
+      msg({
+        id: 'actual-search',
+        role: 'tool',
+        kind: 'trace',
+        toolEvents: [{
+          phase: 'end',
+          call_id: 'actual-search',
+          name: 'web_search',
+          batch_id: 'turn-1:2',
+          arguments: { query: '中国出口' },
+          result: 'results',
+        }],
+      }),
+    ]);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      id: 'tool:actual-search',
+      title: '查询资料',
+      status: 'done',
+    });
+    expect(JSON.stringify(entries)).not.toContain('blocked-cn');
+    expect(JSON.stringify(entries)).not.toContain('blocked-en');
+    expect(JSON.stringify(entries)).not.toContain('并行执行');
   });
 
   it('shows role-specific expert research instead of generic parallel steps', () => {
@@ -358,6 +510,72 @@ describe('buildTaskNarrativeEntries', () => {
         { id: 'risk-assessor', status: 'pending' },
         { id: 'team-lead', status: 'pending' },
         { id: 'report-audit', status: 'pending' },
+      ],
+    });
+  });
+
+  it('does not let stale model progress reopen completed expert-team stages', () => {
+    const entries = buildTaskNarrativeEntries([
+      msg({
+        id: 'stale-model-progress',
+        role: 'tool',
+        kind: 'trace',
+        agentUI: {
+          kind: 'task_progress',
+          note: '主笔正在交叉质证与汇总',
+          steps: [
+            { id: 'team-lead-summary', title: '主笔交叉质证与汇总', status: 'running' },
+            { id: 'report-audit', title: '报告审校与交付', status: 'pending' },
+          ],
+        },
+      }),
+      msg({
+        id: 'team-run-terminal',
+        role: 'tool',
+        kind: 'trace',
+        agentUI: {
+          kind: 'task_progress',
+          plan_kind: 'workflow',
+          team_id: 'asset-research-team',
+          team_run_id: 'run-1',
+          status: 'completed',
+          revision: 7,
+          note: '研究与报告已完成',
+          active_step_ids: [],
+          steps: [
+            {
+              id: 'team-lead',
+              title: '主笔交叉质证与汇总',
+              detail: '已完成成员结论的交叉质证与汇总',
+              status: 'completed',
+            },
+            {
+              id: 'report-audit',
+              title: '报告审校与交付',
+              detail: '最终报告已完成审校并交付',
+              status: 'completed',
+            },
+          ],
+        },
+      }),
+    ]);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      title: '专家团队研究',
+      detail: '研究与报告已完成',
+      status: 'done',
+      planSteps: [
+        {
+          id: 'team-lead',
+          status: 'completed',
+          detail: '已完成成员结论的交叉质证与汇总',
+        },
+        {
+          id: 'report-audit',
+          status: 'completed',
+          detail: '最终报告已完成审校并交付',
+        },
       ],
     });
   });

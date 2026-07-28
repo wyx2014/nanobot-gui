@@ -62,4 +62,23 @@ describe('MarkdownRenderer emphasis', () => {
 
     expect(normalizeMarkdownEmphasis(markdown)).toBe(markdown);
   });
+
+  it('hides desktop file-delivery JSON while retaining the answer text', () => {
+    const view = render([
+      'PDF 已生成，共 4 页。',
+      '',
+      '```desktop',
+      '{',
+      '  "localPath": "/Users/test/reports/report.pdf",',
+      '  "fileName": "report.pdf"',
+      '}',
+      '```',
+    ].join('\n'));
+
+    expect(view.textContent).toContain('PDF 已生成，共 4 页。');
+    expect(view.textContent).not.toContain('localPath');
+    expect(view.textContent).not.toContain('fileName');
+    expect(view.textContent).not.toContain('/Users/test/reports/report.pdf');
+    expect(view.querySelector('pre')).toBeNull();
+  });
 });

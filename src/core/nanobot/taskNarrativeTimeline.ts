@@ -1,8 +1,6 @@
 import type { TaskProgressStep, ToolProgressEvent, UIFileEdit } from '@/core/types';
 import type { Message } from '@/types';
 import {
-  activityEvidenceFromMessageMedia,
-  activityEvidenceFromToolEvent,
   activitySourceFromToolName,
   type ActivityEvidence,
   type ActivityStepSource,
@@ -10,7 +8,7 @@ import {
 import { toolActivityLabel } from './toolDisplay';
 
 export type TaskNarrativeStatus = 'pending' | 'running' | 'done' | 'error';
-export type TaskNarrativeKind = 'analysis' | 'plan' | 'batch' | 'tool' | 'file' | 'media';
+export type TaskNarrativeKind = 'analysis' | 'narration' | 'plan' | 'batch' | 'tool' | 'file' | 'media';
 
 export interface TaskNarrativeEntry {
   id: string;
@@ -30,6 +28,7 @@ export interface TaskNarrativeEntry {
   occurredAt?: number;
   importance?: 'primary' | 'secondary' | string;
   childEntries?: TaskNarrativeEntry[];
+  artifactOutput?: boolean;
 }
 
 const STATUS_RANK: Record<TaskNarrativeStatus, number> = {
@@ -48,7 +47,8 @@ const STATUS_RANK: Record<TaskNarrativeStatus, number> = {
 export function buildTaskNarrativeEntries(messages: Message[]): TaskNarrativeEntry[] {
   const entries: TaskNarrativeEntry[] = [];
   const entryIndex = new Map<string, number>();
-  const hasExpertTeamPlan = messages.some((message) => message.id.startsWith('team-run-'));
+  const hiddenPreflightCallIds = planBarrierPreflightCallIds(messages);
+  const hasExpertTeamPlan = messages.some(isExpertTeamProgressMessage);
   const expertProjection = hasExpertTeamPlan ? buildExpertTeamProjection(messages) : undefined;
 
   const upsert = (key: string, entry: TaskNarrativeEntry) => {
@@ -65,13 +65,17 @@ export function buildTaskNarrativeEntries(messages: Message[]): TaskNarrativeEnt
       ...entry,
       id: previous.id,
       status: keepNewStatus ? entry.status : previous.status,
-      input: hasKeys(entry.input) ? entry.input : previous.input,
-      result: entry.result ?? previous.result,
+      input: entry.artifactOutput || previous.artifactOutput
+        ? undefined
+        : hasKeys(entry.input) ? entry.input : previous.input,
+      result: entry.artifactOutput || previous.artifactOutput
+        ? undefined
+        : entry.result ?? previous.result,
       error: entry.error ?? previous.error,
-      evidence: entry.evidence?.length ? entry.evidence : previous.evidence,
       planSteps: entry.planSteps?.length ? entry.planSteps : previous.planSteps,
       fileEdit: entry.fileEdit ?? previous.fileEdit,
       childEntries: entry.childEntries?.length ? entry.childEntries : previous.childEntries,
+      artifactOutput: entry.artifactOutput || previous.artifactOutput,
     };
   };
 
@@ -88,8 +92,19 @@ export function buildTaskNarrativeEntries(messages: Message[]): TaskNarrativeEnt
       });
     }
 
+    const narration = publicNarration(message);
+    if (narration) {
+      upsert(`narration:${message.id}`, {
+        id: `${message.id}:narration`,
+        kind: 'narration',
+        title: narration,
+        status: message.narrationStreaming ? 'running' : 'done',
+        source: 'reasoning',
+      });
+    }
+
     const explicitPlan = taskProgressSteps(message.agentUI);
-    const isExpertTeamPlan = message.id.startsWith('team-run-');
+    const isExpertTeamPlan = isExpertTeamProgressMessage(message);
     if (explicitPlan.length && (!hasExpertTeamPlan || isExpertTeamPlan)) {
       const visibleSteps = isExpertTeamPlan && expertProjection
         ? projectExpertTeamSteps(explicitPlan, expertProjection)
@@ -97,13 +112,14 @@ export function buildTaskNarrativeEntries(messages: Message[]): TaskNarrativeEnt
       upsert('plan', planEntry(
         `${message.id}:plan`,
         visibleSteps,
-        expertProjection?.note || taskProgressNote(message.agentUI),
+        taskProgressNote(message.agentUI) || expertProjection?.note,
         isExpertTeamPlan ? '专家团队研究' : '整理计划',
       ));
     }
 
     const toolEvents = orderedToolEvents(message.toolEvents ?? []);
     toolEvents.forEach(({ event, originalIndex: eventIndex }) => {
+      if (event.call_id && hiddenPreflightCallIds.has(event.call_id)) return;
       const name = toolEventName(event);
       const input = toolEventArgs(event);
       if (name === 'update_task_progress') {
@@ -128,57 +144,35 @@ export function buildTaskNarrativeEntries(messages: Message[]): TaskNarrativeEnt
       const callId = event.call_id || `${message.id}:${eventIndex}`;
       const display = event.display;
       const fallbackDetail = toolActivityLabel(name, status, input, result);
+      const artifactOutput = toolEventProducesArtifact(name, event, input);
       upsert(`tool:${callId}`, {
         id: `tool:${callId}`,
         kind: 'tool',
         title: display?.title?.trim() || taskActionTitle(name, source, display?.category),
-        detail: display?.detail?.trim() || displaySubjectDetail(display?.subject, fallbackDetail),
+        detail: artifactOutput
+          ? artifactToolStatus(status)
+          : display?.detail?.trim() || displaySubjectDetail(display?.subject, fallbackDetail),
         status,
         source,
-        input,
-        result,
+        input: artifactOutput ? undefined : input,
+        result: artifactOutput ? undefined : result,
         error,
-        evidence: activityEvidenceFromToolEvent(event),
         sequence: finiteNumber(event.sequence),
         batchId: cleanString(event.batch_id),
         occurredAt: finiteNumber(event.occurred_at),
         importance: display?.importance,
+        artifactOutput,
       });
     });
 
-    for (const edit of message.fileEdits ?? []) {
-      const key = `${edit.call_id || message.id}:${edit.tool}:${edit.path}`;
-      const status: TaskNarrativeStatus = edit.status === 'error'
-        ? 'error'
-        : edit.status === 'editing'
-          ? 'running'
-          : 'done';
-      upsert(`file:${key}`, {
-        id: `file:${key}`,
-        kind: 'file',
-        title: fileActionTitle(edit),
-        detail: edit.path || (status === 'running' ? '正在准备文件变更' : '文件变更已完成'),
-        status,
-        source: 'file',
-        error: edit.error,
-        fileEdit: edit,
-      });
-    }
-
-    const messageEvidence = activityEvidenceFromMessageMedia(message);
-    if (messageEvidence.length) {
-      upsert(`media:${message.id}`, {
-        id: `media:${message.id}`,
-        kind: 'media',
-        title: '生成内容',
-        detail: mediaDetail(messageEvidence),
-        status: message.isStreaming ? 'running' : 'done',
-        source: 'media',
-        evidence: messageEvidence,
-      });
-    }
-
-    if (!hasExpertTeamPlan && !explicitPlan.length && toolEvents.length === 0 && !message.fileEdits?.length && !messageEvidence.length) {
+    if (
+      !narration
+      && !hasExpertTeamPlan
+      && !explicitPlan.length
+      && toolEvents.length === 0
+      && !message.fileEdits?.length
+      && !message.mediaAttachments?.length
+    ) {
       traceLines(message).forEach((line, traceIndex) => {
         const source = activitySourceFromToolName(line);
         const status = message.isStreaming ? 'running' : 'done';
@@ -197,6 +191,77 @@ export function buildTaskNarrativeEntries(messages: Message[]): TaskNarrativeEnt
   return groupParallelEntries(entries);
 }
 
+function planBarrierPreflightCallIds(messages: Message[]): Set<string> {
+  const hidden = new Set<string>();
+  for (const message of messages) {
+    for (const event of message.toolEvents ?? []) {
+      if (
+        event.phase === 'error'
+        && typeof event.call_id === 'string'
+        && event.call_id
+        && isPlanBarrierPreflightError(event.error ?? event.result)
+      ) {
+        hidden.add(event.call_id);
+      }
+    }
+  }
+  return hidden;
+}
+
+function isPlanBarrierPreflightError(value: unknown): boolean {
+  if (typeof value === 'string') return value.includes('[PLAN_REQUIRED]');
+  if (value == null) return false;
+  try {
+    return JSON.stringify(value).includes('[PLAN_REQUIRED]');
+  } catch {
+    return false;
+  }
+}
+
+function isExpertTeamProgressMessage(message: Message): boolean {
+  const agentUI = message.agentUI;
+  return (
+    agentUI?.kind === 'task_progress'
+    && (
+      message.id.startsWith('team-run-')
+      || typeof agentUI.team_id === 'string'
+      || typeof agentUI.team_run_id === 'string'
+    )
+  );
+}
+
+function toolEventProducesArtifact(
+  name: string,
+  event: ToolProgressEvent,
+  input: Record<string, unknown>,
+): boolean {
+  const record = event as ToolProgressEvent & {
+    artifacts?: unknown;
+    files?: unknown;
+  };
+  if (
+    (Array.isArray(record.files) && record.files.length > 0)
+    || (Array.isArray(record.artifacts) && record.artifacts.length > 0)
+  ) {
+    return true;
+  }
+  if (
+    /(?:^|_)(?:create_pdf|write_file|edit_file|apply_patch|generate_image|generate_video|export)(?:$|_)/i.test(name)
+  ) {
+    return true;
+  }
+  return ['output_path', 'destination_path', 'target_path'].some((key) => (
+    typeof input[key] === 'string' && input[key].trim().length > 0
+  ));
+}
+
+function artifactToolStatus(status: TaskNarrativeStatus): string {
+  if (status === 'running') return '正在生成产物';
+  if (status === 'error') return '产物生成未完成';
+  if (status === 'done') return '产物已生成';
+  return '准备生成产物';
+}
+
 interface ExpertTeamProjection {
   teamLeadStatus?: TaskProgressStep['status'];
   auditStatus?: TaskProgressStep['status'];
@@ -210,7 +275,7 @@ function buildExpertTeamProjection(messages: Message[]): ExpertTeamProjection {
   for (const message of messages) {
     const snapshots: Array<{ steps: TaskProgressStep[]; note?: string }> = [];
     const directSteps = taskProgressSteps(message.agentUI);
-    if (directSteps.length && !message.id.startsWith('team-run-')) {
+    if (directSteps.length && !isExpertTeamProgressMessage(message)) {
       snapshots.push({ steps: directSteps, note: taskProgressNote(message.agentUI) });
     }
     const toolEvents = orderedToolEvents(message.toolEvents ?? []);
@@ -276,29 +341,54 @@ function projectExpertTeamSteps(
 ): TaskProgressStep[] {
   return steps.map((step) => {
     if (step.id === 'team-lead') {
+      const status = projectedStepStatus(step.status, projection.teamLeadStatus);
       return {
         ...step,
-        status: projection.teamLeadStatus || step.status,
-        detail: projection.activeStage === 'team-lead' && projection.activity
+        status,
+        detail: isTerminalStepStatus(step.status)
+          ? step.detail
+          : projection.activeStage === 'team-lead' && projection.activity
           ? projection.activity
-          : projection.teamLeadStatus === 'running'
+          : status === 'running'
             ? '正在交叉核验成员结论并补齐缺失维度'
             : step.detail,
       };
     }
     if (step.id === 'report-audit') {
+      const status = projectedStepStatus(step.status, projection.auditStatus);
       return {
         ...step,
-        status: projection.auditStatus || step.status,
-        detail: projection.activeStage === 'report-audit' && projection.activity
+        status,
+        detail: isTerminalStepStatus(step.status)
+          ? step.detail
+          : projection.activeStage === 'report-audit' && projection.activity
           ? projection.activity
-          : projection.auditStatus === 'running'
+          : status === 'running'
             ? '正在抽检关键财务数据并生成最终报告'
             : step.detail,
       };
     }
     return step;
   });
+}
+
+function projectedStepStatus(
+  canonical: TaskProgressStep['status'],
+  projected: TaskProgressStep['status'] | undefined,
+): TaskProgressStep['status'] {
+  // Expert-team snapshots persisted by the gateway are canonical. Model-authored
+  // progress may advance a pending/running row for live narration, but it must
+  // never regress a terminal SQLite-backed step to a loading state.
+  if (isTerminalStepStatus(canonical) || !projected) return canonical;
+  if (canonical === 'pending' && projected === 'running') return projected;
+  return canonical;
+}
+
+function isTerminalStepStatus(status: TaskProgressStep['status']): boolean {
+  return status === 'completed'
+    || status === 'error'
+    || status === 'skipped'
+    || status === 'interrupted';
 }
 
 function planEntry(id: string, steps: TaskProgressStep[], note?: string, title = '整理计划'): TaskNarrativeEntry {
@@ -468,6 +558,12 @@ function messageText(message: Message): string {
   return block?.type === 'text' ? block.text.trim() : '';
 }
 
+function publicNarration(message: Message): string {
+  const compact = message.narration?.replace(/\s+/g, ' ').trim() ?? '';
+  if (!compact) return '';
+  return compact.length > 240 ? `${compact.slice(0, 239)}…` : compact;
+}
+
 function toolEventName(event: ToolProgressEvent): string {
   const fn = (event as { function?: { name?: unknown } }).function;
   if (typeof event.name === 'string') return event.name;
@@ -536,18 +632,6 @@ function taskActionTitle(name: string, source: ActivityStepSource, category?: st
   if (source === 'file') return '处理文件';
   if (source === 'media') return '生成内容';
   return '执行步骤';
-}
-
-function fileActionTitle(edit: UIFileEdit): string {
-  if (edit.operation === 'delete') return '删除文件';
-  const tool = edit.tool.toLowerCase();
-  if (tool.includes('edit') || tool.includes('patch')) return '编辑文件';
-  return '写入文件';
-}
-
-function mediaDetail(evidence: ActivityEvidence[]): string {
-  if (evidence.length === 1) return evidence[0].caption || '已生成媒体内容';
-  return `已生成 ${evidence.length} 项内容`;
 }
 
 function compactTraceDetail(line: string): string {

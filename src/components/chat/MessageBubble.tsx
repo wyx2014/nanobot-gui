@@ -336,7 +336,13 @@ export default function MessageBubble({
               <MarkdownRenderer content={textContent} />
             </div>
           ) : null}
-          {mediaAttachments.length > 0 ? <MessageMedia media={mediaAttachments} align="left" /> : null}
+          {mediaAttachments.length > 0 ? (
+            <MessageMedia
+              media={mediaAttachments}
+              align="left"
+              visibility="html-only"
+            />
+          ) : null}
           {message.isStreaming && textContent ? <span className="streaming-cursor" /> : null}
           {showFooter ? (
             <div className="mt-2 flex min-h-8 flex-wrap items-center gap-x-2 gap-y-1 text-[#8b887c]">

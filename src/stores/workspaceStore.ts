@@ -3,17 +3,21 @@ import { persist } from 'zustand/middleware';
 import { authorizeWorkspace, revokeWorkspace } from '../core/safety/pathSafety';
 import { getBaseName } from '../utils/pathUtils';
 import { normalizeProjectPath, visibleProjectPath } from '@/core/workspace';
+import type { ProjectPayload } from '@/core/types';
 
 interface WorkspaceState {
   /** User-selected workspace path (null if user hasn't selected one) */
   currentPath: string | null;
   recentPaths: string[];
+  /** Gateway-owned project registry. recentPaths remains migration/UI fallback only. */
+  projects: ProjectPayload[];
   projectNames: Record<string, string>;
   projectSkillBindings: Record<string, string[]>;
 }
 
 interface WorkspaceActions {
   setWorkspace: (path: string | null) => void;
+  setProjects: (projects: ProjectPayload[]) => void;
   clearWorkspace: () => void;
   removeRecentPath: (path: string) => void;
   setProjectName: (path: string, name: string) => void;
@@ -28,6 +32,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
     (set, get) => ({
       currentPath: null,
       recentPaths: [],
+      projects: [],
       projectNames: {},
       projectSkillBindings: {},
 
@@ -61,6 +66,15 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
           currentPath: path,
           recentPaths: updated,
         });
+      },
+
+      setProjects: (projects) => {
+        const unique = new Map<string, ProjectPayload>();
+        for (const project of projects) {
+          if (!project?.id) continue;
+          unique.set(project.id, project);
+        }
+        set({ projects: [...unique.values()] });
       },
 
       clearWorkspace: () => {

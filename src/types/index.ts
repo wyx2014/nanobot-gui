@@ -82,6 +82,9 @@ export interface Message {
   agentUI?: import('@/core/types').AgentUIBlob;
   fileEdits?: UIFileEdit[];
   activitySegmentId?: string;
+  /** Public model narration rendered verbatim in the activity timeline. */
+  narration?: string;
+  narrationStreaming?: boolean;
   toolCalls?: ToolCall[];
   // Extended thinking content
   thinking?: string;
@@ -153,11 +156,18 @@ export interface ContextCache {
 
 export interface Conversation {
   id: string;
+  /** Stable gateway projection identities. ``id`` remains the GUI chat id. */
+  sessionId?: string;
+  projectId?: string;
+  /** True when the gateway has durable history that can be loaded on demand. */
+  hasHistory?: boolean;
   title: string;
   messages: Message[];
   createdAt: number;
   updatedAt: number;
   status: ConversationStatus;
+  /** Mirrored gateway Runtime Snapshot; never synthesized from token streaming. */
+  runtimeSnapshot?: import('@/core/types').ThreadRuntimeSnapshot;
   completedAt?: number;
   activeSkills?: string[];  // Skill names active in this conversation
   activeSkillArgs?: Record<string, string>;  // Per-skill invocation arguments

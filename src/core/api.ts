@@ -11,6 +11,13 @@ import type {
   ProviderSettingsCreate,
   ProviderModelsPayload,
   ProviderSettingsUpdate,
+  ProjectPayload,
+  ProjectMemoriesPayload,
+  ProjectMemoryJobPayload,
+  ProjectMemoryPayload,
+  ProjectMemorySourcePayload,
+  ProjectMemoryStatusPayload,
+  ProjectSessionPayload,
   ScheduleTasksPayload,
   SettingsPayload,
   SettingsUpdate,
@@ -20,6 +27,8 @@ import type {
   WebSearchSettingsUpdate,
   WorkspacesPayload,
   WebuiThreadPersistedPayload,
+  ThreadRuntimeSnapshot,
+  TurnPlanResource,
   WorkspaceScopePayload,
 } from "./types";
 import type { ScheduleConfig } from "@/types/schedule";
@@ -38,18 +47,22 @@ export class ApiError extends Error {
 
 let tokenProvider: (() => Promise<string>) | null = null;
 
-export function registerTokenProvider(provider: () => Promise<string>) {
+export function registerTokenProvider(provider: (() => Promise<string>) | null) {
   tokenProvider = provider;
 }
 
-async function request<T>(
+/**
+ * Execute one authenticated gateway request and refresh the short-lived token
+ * exactly once after a 401. Binary artifact reads use this same transport so
+ * list, preview and download cannot drift into different auth behaviour.
+ */
+export async function fetchGatewayResponse(
   url: string,
   token: string,
   init?: RequestInit,
   timeoutMs: number = 0,
-): Promise<T> {
-  let currentToken = token;
-  let res = await fetchWithTimeout(
+): Promise<Response> {
+  const execute = (currentToken: string) => fetchWithTimeout(
     url,
     {
       ...(init ?? {}),
@@ -62,25 +75,25 @@ async function request<T>(
     timeoutMs,
   );
 
-  if (res.status === 401 && tokenProvider) {
-    try {
-      currentToken = await tokenProvider();
-      res = await fetchWithTimeout(
-        url,
-        {
-          ...(init ?? {}),
-          headers: {
-            ...(init?.headers ?? {}),
-            Authorization: `Bearer ${currentToken}`,
-          },
-          credentials: "same-origin",
-        },
-        timeoutMs,
-      );
-    } catch (refreshErr) {
-      console.error("Token refresh failed during 401 retry:", refreshErr);
-    }
+  let res = await execute(token);
+  if (res.status !== 401 || !tokenProvider) return res;
+
+  try {
+    const refreshedToken = await tokenProvider();
+    res = await execute(refreshedToken);
+  } catch (refreshErr) {
+    console.error("Token refresh failed during 401 retry:", refreshErr);
   }
+  return res;
+}
+
+async function request<T>(
+  url: string,
+  token: string,
+  init?: RequestInit,
+  timeoutMs: number = 0,
+): Promise<T> {
+  const res = await fetchGatewayResponse(url, token, init, timeoutMs);
 
   if (!res.ok) {
     const text = typeof res.text === "function" ? (await res.text()).trim() : "";
@@ -154,6 +167,8 @@ export async function listSessions(
 ): Promise<ChatSummary[]> {
   type Row = {
     key: string;
+    session_id?: string;
+    project_id?: string;
     created_at: string | null;
     updated_at: string | null;
     title?: string;
@@ -171,6 +186,8 @@ export async function listSessions(
   return body.sessions.map((s) => ({
     key: s.key,
     ...splitKey(s.key),
+    sessionId: s.session_id,
+    projectId: s.project_id,
     createdAt: s.created_at,
     updatedAt: s.updated_at,
     title: s.title ?? "",
@@ -181,32 +198,338 @@ export async function listSessions(
   }));
 }
 
+export async function listProjects(
+  token: string,
+  base: string = "",
+): Promise<ProjectPayload[]> {
+  type Row = {
+    id: string;
+    kind: ProjectPayload["kind"];
+    name: string;
+    root_path: string;
+    status: ProjectPayload["status"];
+    created_at: number;
+    updated_at: number;
+  };
+  const body = await request<{ projects: Row[] }>(
+    `${base}/api/projects`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
+  );
+  return body.projects.map((project) => ({
+    id: project.id,
+    kind: project.kind,
+    name: project.name,
+    rootPath: project.root_path,
+    status: project.status,
+    createdAt: project.created_at,
+    updatedAt: project.updated_at,
+  }));
+}
+
+export async function listProjectSessions(
+  token: string,
+  projectId: string,
+  base: string = "",
+): Promise<ProjectSessionPayload[]> {
+  type Row = {
+    id: string;
+    project_id: string;
+    session_key: string;
+    title: string;
+    status: string;
+    created_at: number;
+    updated_at: number;
+  };
+  const body = await request<{ sessions: Row[] }>(
+    `${base}/api/projects/${encodeURIComponent(projectId)}/sessions`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
+  );
+  return body.sessions.map((session) => ({
+    id: session.id,
+    projectId: session.project_id,
+    sessionKey: session.session_key,
+    title: session.title,
+    status: session.status,
+    createdAt: session.created_at,
+    updatedAt: session.updated_at,
+  }));
+}
+
+function mapProjectMemoryJob(value: Record<string, unknown> | null): ProjectMemoryJobPayload | null {
+  if (!value) return null;
+  return {
+    status: String(value.status ?? "unknown"),
+    attemptCount: Number(value.attempt_count ?? 0),
+    inputWatermark: value.input_watermark == null ? null : Number(value.input_watermark),
+    completedWatermark: value.completed_watermark == null ? null : Number(value.completed_watermark),
+    updatedAt: Number(value.updated_at ?? 0),
+    completedAt: value.completed_at == null ? null : Number(value.completed_at),
+    error: (value.error as ProjectMemoryJobPayload["error"]) ?? null,
+  };
+}
+
+function mapProjectMemoryStatus(value: Record<string, unknown>): ProjectMemoryStatusPayload {
+  return {
+    projectId: String(value.project_id ?? ""),
+    inputWatermark: Number(value.input_watermark ?? 0),
+    phase1: mapProjectMemoryJob((value.phase1 as Record<string, unknown> | null) ?? null),
+    phase2: mapProjectMemoryJob((value.phase2 as Record<string, unknown> | null) ?? null),
+  };
+}
+
+function mapProjectMemorySource(value: Record<string, unknown>): ProjectMemorySourcePayload {
+  return {
+    id: String(value.id ?? ""),
+    stage1Id: value.stage1_id == null ? null : String(value.stage1_id),
+    sourceSessionId: String(value.source_session_id ?? ""),
+    sourceSessionKey: value.source_session_key == null ? null : String(value.source_session_key),
+    sourceTurnId: value.source_turn_id == null ? null : String(value.source_turn_id),
+    sourceEventId: value.source_event_id == null ? null : String(value.source_event_id),
+    evidenceLocator: value.evidence_locator == null ? null : String(value.evidence_locator),
+    createdAt: Number(value.created_at ?? 0),
+  };
+}
+
+export async function listProjectMemories(
+  token: string,
+  projectId: string,
+  base: string = "",
+): Promise<ProjectMemoriesPayload> {
+  const body = await request<{
+    project_id: string;
+    memories: Array<Record<string, unknown>>;
+    status: Record<string, unknown>;
+    retrieval: { mode: "bounded_lexical"; deep_rag_enabled: false };
+  }>(
+    `${base}/api/projects/${encodeURIComponent(projectId)}/memories`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
+  );
+  const memories: ProjectMemoryPayload[] = body.memories.map((value) => ({
+    id: String(value.id ?? ""),
+    projectId: String(value.project_id ?? ""),
+    kind: String(value.kind ?? "reference"),
+    title: String(value.title ?? ""),
+    content: String(value.content ?? ""),
+    confidence: value.confidence == null ? null : Number(value.confidence),
+    status: String(value.status ?? "active"),
+    usageCount: Number(value.usage_count ?? 0),
+    lastUsedAt: value.last_used_at == null ? null : Number(value.last_used_at),
+    createdAt: Number(value.created_at ?? 0),
+    updatedAt: Number(value.updated_at ?? 0),
+    sources: Array.isArray(value.sources)
+      ? value.sources.map((source) => mapProjectMemorySource(source as Record<string, unknown>))
+      : [],
+  }));
+  return {
+    projectId: body.project_id,
+    memories,
+    status: mapProjectMemoryStatus(body.status),
+    retrieval: {
+      mode: body.retrieval.mode,
+      deepRagEnabled: body.retrieval.deep_rag_enabled,
+    },
+  };
+}
+
+export async function consolidateProjectMemories(
+  token: string,
+  projectId: string,
+  base: string = "",
+): Promise<{ refreshed: boolean; status: ProjectMemoryStatusPayload }> {
+  const body = await request<{
+    refreshed: boolean;
+    status: Record<string, unknown>;
+  }>(
+    `${base}/api/projects/${encodeURIComponent(projectId)}/memories/consolidate`,
+    token,
+  );
+  return {
+    refreshed: body.refreshed,
+    status: mapProjectMemoryStatus(body.status),
+  };
+}
+
+export async function forgetProjectMemory(
+  token: string,
+  projectId: string,
+  memoryId: string,
+  base: string = "",
+): Promise<boolean> {
+  const body = await request<{ ok: boolean }>(
+    `${base}/api/projects/${encodeURIComponent(projectId)}/memories/${encodeURIComponent(memoryId)}/forget`,
+    token,
+  );
+  return body.ok;
+}
+
+export async function clearProjectMemories(
+  token: string,
+  projectId: string,
+  base: string = "",
+): Promise<number> {
+  const body = await request<{ removed: number }>(
+    `${base}/api/projects/${encodeURIComponent(projectId)}/memories/clear`,
+    token,
+  );
+  return body.removed;
+}
+
+export async function reindexProjectMemories(
+  token: string,
+  projectId: string,
+  base: string = "",
+): Promise<{ artifactsSeen: number; indexed: number; skipped: number; missing: number }> {
+  const body = await request<{
+    artifacts_seen: number;
+    indexed: number;
+    skipped: number;
+    missing: number;
+  }>(
+    `${base}/api/projects/${encodeURIComponent(projectId)}/memories/reindex`,
+    token,
+  );
+  return {
+    artifactsSeen: body.artifacts_seen,
+    indexed: body.indexed,
+    skipped: body.skipped,
+    missing: body.missing,
+  };
+}
+
+function mapProject(project: {
+  id: string;
+  kind: ProjectPayload["kind"];
+  name: string;
+  root_path: string;
+  status: ProjectPayload["status"];
+  created_at: number;
+  updated_at: number;
+}): ProjectPayload {
+  return {
+    id: project.id,
+    kind: project.kind,
+    name: project.name,
+    rootPath: project.root_path,
+    status: project.status,
+    createdAt: project.created_at,
+    updatedAt: project.updated_at,
+  };
+}
+
+export async function archiveProject(
+  token: string,
+  projectId: string,
+  base: string = "",
+): Promise<ProjectPayload> {
+  const body = await request<{ project: Parameters<typeof mapProject>[0] }>(
+    `${base}/api/projects/${encodeURIComponent(projectId)}/archive`,
+    token,
+  );
+  return mapProject(body.project);
+}
+
+export async function restoreProject(
+  token: string,
+  projectId: string,
+  base: string = "",
+): Promise<ProjectPayload> {
+  const body = await request<{ project: Parameters<typeof mapProject>[0] }>(
+    `${base}/api/projects/${encodeURIComponent(projectId)}/restore`,
+    token,
+  );
+  return mapProject(body.project);
+}
+
+export async function relocateProject(
+  token: string,
+  projectId: string,
+  path: string,
+  base: string = "",
+): Promise<ProjectPayload> {
+  const query = new URLSearchParams({ path });
+  const body = await request<{ project: Parameters<typeof mapProject>[0] }>(
+    `${base}/api/projects/${encodeURIComponent(projectId)}/relocate?${query}`,
+    token,
+  );
+  return mapProject(body.project);
+}
+
+export async function exportProjectArchive(
+  token: string,
+  projectId: string,
+  base: string = "",
+): Promise<Uint8Array> {
+  const response = await fetchGatewayResponse(
+    `${base}/api/projects/${encodeURIComponent(projectId)}/export`,
+    token,
+    { method: "GET" },
+    API_READ_TIMEOUT_MS,
+  );
+  if (!response.ok) {
+    const detail = typeof response.text === "function" ? await response.text() : "";
+    throw new ApiError(response.status, detail || `HTTP ${response.status}`);
+  }
+  return new Uint8Array(await response.arrayBuffer());
+}
+
 /** Disk-backed WebUI display thread snapshot. */
 export async function fetchWebuiThread(
   token: string,
   key: string,
   base: string = "",
+  options: {
+    limit?: number;
+    direction?: "latest";
+    before?: string;
+  } = {},
 ): Promise<WebuiThreadPersistedPayload | null> {
-  const url = `${base}/api/sessions/${encodeURIComponent(key)}/webui-thread`;
-  let currentToken = token;
-  let res = await fetchWithTimeout(url, {
-    headers: { Authorization: `Bearer ${currentToken}` },
-    credentials: "same-origin",
-  });
-  if (res.status === 401 && tokenProvider) {
-    try {
-      currentToken = await tokenProvider();
-      res = await fetchWithTimeout(url, {
-        headers: { Authorization: `Bearer ${currentToken}` },
-        credentials: "same-origin",
-      });
-    } catch (err) {
-      console.error("Token refresh failed during fetchWebuiThread 401 retry:", err);
-    }
-  }
+  const query = new URLSearchParams();
+  if (options.limit != null) query.set("limit", String(options.limit));
+  if (options.direction) query.set("direction", options.direction);
+  if (options.before) query.set("before", options.before);
+  const queryString = query.toString();
+  const suffix = queryString ? `?${queryString}` : "";
+  const url = `${base}/api/sessions/${encodeURIComponent(key)}/webui-thread${suffix}`;
+  const res = await fetchGatewayResponse(url, token);
   if (res.status === 404) return null;
   if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}`);
   return (await res.json()) as WebuiThreadPersistedPayload;
+}
+
+/** Authoritative process-local runtime state plus the latest durable terminal turn. */
+export async function fetchSessionRuntimeSnapshot(
+  token: string,
+  key: string,
+  base: string = "",
+): Promise<ThreadRuntimeSnapshot | null> {
+  const url = `${base}/api/sessions/${encodeURIComponent(key)}/runtime-snapshot`;
+  const res = await fetchGatewayResponse(url, token, undefined, API_READ_TIMEOUT_MS);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}`);
+  return (await res.json()) as ThreadRuntimeSnapshot;
+}
+
+export async function fetchTurnPlan(
+  token: string,
+  key: string,
+  turnId: string,
+  base: string = "",
+): Promise<TurnPlanResource | null> {
+  const url = (
+    `${base}/api/sessions/${encodeURIComponent(key)}`
+    + `/turns/${encodeURIComponent(turnId)}/plan`
+  );
+  const res = await fetchGatewayResponse(url, token, undefined, API_READ_TIMEOUT_MS);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}`);
+  const body = (await res.json()) as { plan?: TurnPlanResource };
+  return body.plan ?? null;
 }
 
 export async function deleteSession(
@@ -219,6 +542,18 @@ export async function deleteSession(
     token,
   );
   return body.deleted;
+}
+
+export async function restoreSession(
+  token: string,
+  key: string,
+  base: string = "",
+): Promise<boolean> {
+  const body = await request<{ restored: boolean }>(
+    `${base}/api/sessions/${encodeURIComponent(key)}/restore`,
+    token,
+  );
+  return body.restored;
 }
 
 export async function fetchSettings(

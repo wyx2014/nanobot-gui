@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 const BOTTOM_THRESHOLD_PX = 48;
+const MAX_SETTLE_FRAMES = 12;
+const MIN_SETTLE_FRAMES = 4;
 
 function maxScrollTop(container: HTMLDivElement): number {
   return Math.max(0, container.scrollHeight - container.clientHeight);
@@ -28,8 +30,9 @@ export function useAutoScroll() {
     setBottomState(isNearBottom(container));
   }, [setBottomState]);
 
-  const scrollToBottom = useCallback((options: { force?: boolean } = {}) => {
+  const scrollToBottom = useCallback((options: { force?: boolean; settle?: boolean } = {}) => {
     const force = options.force ?? true;
+    const settle = options.settle ?? false;
     if (force) setBottomState(true);
 
     const container = containerNodeRef.current;
@@ -39,15 +42,35 @@ export function useAutoScroll() {
     landAtBottom(container);
 
     if (rafRef.current !== null) window.cancelAnimationFrame(rafRef.current);
-    rafRef.current = window.requestAnimationFrame(() => {
+    let previousMax = maxScrollTop(container);
+    let stableFrames = 0;
+    let observedFrames = 0;
+    let remainingFrames = settle ? MAX_SETTLE_FRAMES : 1;
+
+    const followLayout = () => {
       rafRef.current = null;
       const latest = containerNodeRef.current;
       if (!latest || (!force && !stickToBottomRef.current)) return;
+      const nextMax = maxScrollTop(latest);
+      stableFrames = Math.abs(nextMax - previousMax) < 1 ? stableFrames + 1 : 0;
+      previousMax = nextMax;
+      observedFrames += 1;
+      remainingFrames -= 1;
       landAtBottom(latest);
-    });
+      const layoutSettled = observedFrames >= MIN_SETTLE_FRAMES && stableFrames >= 2;
+      if (remainingFrames > 0 && (!settle || !layoutSettled)) {
+        rafRef.current = window.requestAnimationFrame(followLayout);
+      }
+    };
+
+    rafRef.current = window.requestAnimationFrame(followLayout);
   }, [landAtBottom, setBottomState]);
 
   const containerRef = useCallback((node: HTMLDivElement | null) => {
+    if (rafRef.current !== null) {
+      window.cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
     detachScrollRef.current?.();
     detachScrollRef.current = null;
     containerNodeRef.current = node;
@@ -66,7 +89,10 @@ export function useAutoScroll() {
       detachScrollRef.current = null;
       containerNodeRef.current = null;
       setScrollElement(null);
-      if (rafRef.current !== null) window.cancelAnimationFrame(rafRef.current);
+      if (rafRef.current !== null) {
+        window.cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
     }
   ), []);
 

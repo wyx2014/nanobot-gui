@@ -52,7 +52,7 @@
         "filter": [
           "nanobot/**/*.py",
           "nanobot/templates/**/*.md",
-          "nanobot/skills/**/*.md",
+          "nanobot/skills/**/*",
           "pyproject.toml",
           "!**/__pycache__/**",
           "!**/venv/**",

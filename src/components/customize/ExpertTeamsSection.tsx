@@ -9,9 +9,9 @@ import {
   Play,
   ShieldCheck,
   Sparkles,
-  Users,
 } from 'lucide-react';
 
+import ExpertTeamIcon from '@/components/common/ExpertTeamIcon';
 import { fetchExpertTeamDetail, fetchExpertTeams } from '@/core/api';
 import { getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/nanobotClient';
 import type { ExpertTeamDetail, ExpertTeamSummary } from '@/core/types';
@@ -29,13 +29,22 @@ async function getAuth(): Promise<{ token: string; baseUrl: string }> {
   return { token: refreshed.token, baseUrl: refreshed.baseUrl };
 }
 
-function TeamAvatar({ compact = false }: { compact?: boolean }) {
+function TeamAvatar({
+  teamId,
+  compact = false,
+}: {
+  teamId: string;
+  compact?: boolean;
+}) {
   return (
     <div className={cn(
       'flex shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#29261b] to-[#5a5141] text-[#fff8ee] shadow-sm',
       compact ? 'h-12 w-12' : 'h-16 w-16',
     )}>
-      <Users className={compact ? 'h-5 w-5' : 'h-7 w-7'} />
+      <ExpertTeamIcon
+        teamId={teamId}
+        className={compact ? 'h-5 w-5' : 'h-7 w-7'}
+      />
     </div>
   );
 }
@@ -50,6 +59,7 @@ export default function ExpertTeamsSection() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dataSources = detail?.data_sources ?? [];
+  const mcpPresets = detail?.mcp_presets ?? [];
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -114,7 +124,7 @@ export default function ExpertTeamsSection() {
 
         <div className="rounded-2xl border border-[#e6e0d7] bg-white p-6 shadow-sm">
           <div className="flex items-start gap-4">
-            <TeamAvatar />
+            <TeamAvatar teamId={detail.id} />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-xl font-semibold text-[#29261b]">{detail.name}</h2>
@@ -125,7 +135,7 @@ export default function ExpertTeamsSection() {
               <div className="mt-3 flex flex-wrap gap-3 text-xs text-[#777368]">
                 <span>{detail.member_count} 位专家</span>
                 <span>{detail.workflow_count} 个工作流</span>
-                <span>{dataSources.length} 个结构化数据源</span>
+                <span>{dataSources.length + mcpPresets.length} 个绑定数据源</span>
                 <span>版本 {detail.version}</span>
               </div>
             </div>
@@ -206,6 +216,33 @@ export default function ExpertTeamsSection() {
           </section>
         )}
 
+        {mcpPresets.length > 0 && (
+          <section className="mt-5">
+            <h3 className="mb-3 text-sm font-semibold text-[#29261b]">团队绑定 MCP</h3>
+            <div className="space-y-2 rounded-xl border border-[#e2e0ec] bg-[#faf9fd] p-3">
+              {mcpPresets.map((preset) => (
+                <div key={preset.name} className="flex items-start gap-3 rounded-lg bg-white/80 px-3 py-2.5">
+                  <Database className="mt-0.5 h-4 w-4 shrink-0 text-[#6f67a8]" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-[#454064]">
+                      {preset.display_name}
+                      <span className={cn(
+                        'rounded px-1.5 py-0.5 text-[10px]',
+                        preset.configured
+                          ? 'bg-emerald-50 text-emerald-700'
+                          : 'bg-amber-50 text-amber-700',
+                      )}>
+                        {preset.configured ? '已配置 · 启动团队时自动启用' : '未配置 · 配置后自动启用'}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-[#6b6780]">{preset.description}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         <section className="mt-5 grid grid-cols-2 gap-3">
           <div className="rounded-xl border border-[#dce9df] bg-[#f7fbf8] p-4">
             <div className="flex items-center gap-2 text-sm font-medium text-[#345c40]">
@@ -219,7 +256,7 @@ export default function ExpertTeamsSection() {
               <CheckCircle2 className="h-4 w-4" />
               运行依赖
             </div>
-            <p className="mt-2 text-xs leading-5 text-[#777368]">团队复用当前 Cowork 的模型、联网搜索和已配置数据 Skill；可选依赖不可用时会在报告中如实降级。</p>
+            <p className="mt-2 text-xs leading-5 text-[#777368]">团队复用当前 Cowork 的模型、联网搜索、内置 iFinD Skill 和已配置的聚源 MCP；单一来源不可用时自动换用另一绑定来源。</p>
           </div>
         </section>
       </div>
@@ -249,7 +286,7 @@ export default function ExpertTeamsSection() {
               className="group rounded-2xl border border-[#e5ded4] bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[#d8c9bd] hover:shadow-md"
             >
               <div className="flex items-start gap-4">
-                <TeamAvatar compact />
+                <TeamAvatar teamId={team.id} compact />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <h3 className="truncate text-base font-semibold text-[#29261b]">{team.name}</h3>

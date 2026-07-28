@@ -6,6 +6,7 @@ import os from 'os'
 import { pythonBridge } from './pythonBridge'
 import { syncNanobotConfig, type NanobotConfigInput } from './nanobotConfig'
 import { MermaidBridge } from './mermaidBridge'
+import { MAIN_WINDOW_BOUNDS } from './mainWindowConfig'
 
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 
@@ -26,8 +27,7 @@ let isQuitting = false;
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    ...MAIN_WINDOW_BOUNDS,
     show: false,
     autoHideMenuBar: true,
     webPreferences: {
@@ -177,6 +177,16 @@ app.whenReady().then(async () => {
     const { dirname } = await import('path');
     await fs.mkdir(dirname(path), { recursive: true });
     return await fs.writeFile(path, content);
+  });
+
+  safeInvoke('fs:writeFile', async (data) => {
+    const path = data?.path;
+    const bytes = data?.data;
+    if (!path) throw new Error('fs:writeFile failed: path is missing');
+    if (!Array.isArray(bytes)) throw new Error('fs:writeFile failed: data must be a byte array');
+    const { dirname } = await import('path');
+    await fs.mkdir(dirname(path), { recursive: true });
+    return await fs.writeFile(path, Buffer.from(bytes));
   });
 
   safeInvoke('fs:mkdir', async (data) => {

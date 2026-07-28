@@ -23,12 +23,17 @@ data_sources:
     skill: ifind-finance-data
     priority: primary
     required: true
-    description: A股公司资料、财务指标、行情、公告、新闻与行业板块结构化数据。
+    description: A股、港美股公司资料、财务指标、行情、公告、新闻与行业板块结构化数据。
     assignments:
       business-analyst: 公司摘要、主营构成、业务变化与关键公告
       financial-analyst: 财务报表、核心指标、现金流、盈利质量与估值基础数据
       industry-researcher: 行业板块、可比公司、竞争格局与行业经济指标
       risk-assessor: 公司公告、治理事件、诉讼处罚、质押减持与风险新闻
+mcp_presets:
+  - name: juyuan
+    display_name: 聚源金融数据 MCP
+    required: false
+    description: 工具箱已配置时由团队自动启用，补充行情、财务、估值、公告与机构数据，并与 iFinD 交叉核验。
 members:
   - id: business-analyst
     name: 商业分析师

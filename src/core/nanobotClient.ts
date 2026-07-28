@@ -29,6 +29,8 @@ let currentBaseUrl = '';
 let globalConnectionStatus: ConnectionStatus = 'idle';
 let globalStatusUnsubscribe: (() => void) | null = null;
 let globalRuntimeStatusUnsubscribe: (() => void) | null = null;
+let globalRuntimeSnapshotUnsubscribe: (() => void) | null = null;
+let globalRuntimeSnapshotGapUnsubscribe: (() => void) | null = null;
 let globalMcpStatus: NonNullable<BootstrapResponse['mcp_status']> = 'unknown';
 const globalConnectionListeners = new Set<() => void>();
 
@@ -104,6 +106,10 @@ export async function bootstrapNanobotGateway(): Promise<NanobotClient> {
   globalStatusUnsubscribe = null;
   globalRuntimeStatusUnsubscribe?.();
   globalRuntimeStatusUnsubscribe = null;
+  globalRuntimeSnapshotUnsubscribe?.();
+  globalRuntimeSnapshotUnsubscribe = null;
+  globalRuntimeSnapshotGapUnsubscribe?.();
+  globalRuntimeSnapshotGapUnsubscribe = null;
   globalClient?.close();
   globalClient = new NanobotClient({
     url: wsUrl,
@@ -121,11 +127,33 @@ export async function bootstrapNanobotGateway(): Promise<NanobotClient> {
     }
   });
 
-  globalStatusUnsubscribe = globalClient.onStatus(setGlobalConnectionStatus);
+  let hasOpened = false;
+  globalStatusUnsubscribe = globalClient.onStatus((connectionStatus) => {
+    setGlobalConnectionStatus(connectionStatus);
+    if (connectionStatus !== 'open') return;
+    if (hasOpened) {
+      void syncSessionsFromGateway();
+    }
+    hasOpened = true;
+  });
   globalRuntimeStatusUnsubscribe = globalClient.onRuntimeStatus((_agentReady, mcpStatus) => {
     if (globalMcpStatus === mcpStatus) return;
     globalMcpStatus = mcpStatus;
     for (const listener of globalConnectionListeners) listener();
+  });
+  globalRuntimeSnapshotUnsubscribe = globalClient.onRuntimeSnapshot((chatId, snapshot) => {
+    useChatStore.getState().setConversationRuntimeSnapshot(chatId, snapshot);
+  });
+  globalRuntimeSnapshotGapUnsubscribe = globalClient.onRuntimeSnapshotGap((chatId) => {
+    void fetchSessionRuntimeSnapshot(
+      currentToken,
+      `websocket:${chatId}`,
+      currentBaseUrl,
+    ).then((snapshot) => {
+      if (snapshot) globalClient?.applyRuntimeSnapshot(chatId, snapshot);
+    }).catch((error) => {
+      console.warn('[nanobotClient] Runtime snapshot gap refresh failed:', error);
+    });
   });
   globalClient.connect();
   try {
@@ -272,11 +300,19 @@ export async function getNanobotSessionInfo(conversationId: string): Promise<{
 
 // ─── Session Synchronization ────────────────────────────────────────────────
 
-import type { UIMessage, ToolProgressEvent } from './types';
-import type { Message, MessageContent, MessageMediaAttachment, ToolCall } from '@/types';
+import type { ChatSummary, UIMessage, ToolProgressEvent } from './types';
+import type { Conversation, Message, MessageContent, MessageMediaAttachment, ToolCall } from '@/types';
 import { useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
-import { listSessions, fetchWebuiThread, fetchSettings, registerTokenProvider } from './api';
+import {
+  listProjects,
+  listSessions,
+  fetchWebuiThread,
+  fetchSessionRuntimeSnapshot,
+  fetchSettings,
+  registerTokenProvider,
+} from './api';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { normalizeFileEditToolTraces } from './nanobot/toolTraceMerge';
 import { scrubSubagentUiMessages } from './nanobot/subagent-channel-display';
 import { normalizeLegacyLongTaskMessages } from './nanobot/thread-display-compat';
@@ -393,6 +429,45 @@ function toolCallFromEvent(event: ToolProgressEvent): ToolCall | null {
   };
 }
 
+export function stripRedundantMcpMentionPrefix(
+  content: string,
+  mcpPresets: ReadonlyArray<{ name: string }> | undefined,
+): string {
+  if (!content || !mcpPresets?.length) return content;
+
+  const connectorNames = new Set(
+    mcpPresets
+      .map((preset) => preset.name.trim().toLocaleLowerCase())
+      .filter(Boolean),
+  );
+  if (connectorNames.size === 0) return content;
+
+  const lineBreak = content.match(/\r?\n/);
+  const firstLineEnd = lineBreak?.index ?? content.length;
+  const firstLine = content.slice(0, firstLineEnd).trim();
+  const tokens = firstLine ? firstLine.split(/\s+/) : [];
+
+  // Composer-generated capability prefixes consist only of @mentions. Never
+  // rewrite natural-language text merely because it happens to contain @name.
+  if (tokens.length === 0 || tokens.some((token) => !/^@\S+$/.test(token))) {
+    return content;
+  }
+
+  const remainingTokens = tokens.filter(
+    (token) => !connectorNames.has(token.slice(1).toLocaleLowerCase()),
+  );
+  if (remainingTokens.length === tokens.length) return content;
+
+  const suffix = lineBreak
+    ? content.slice(firstLineEnd + lineBreak[0].length)
+    : '';
+  if (remainingTokens.length > 0) {
+    return `${remainingTokens.join(' ')}${lineBreak?.[0] ?? ''}${suffix}`;
+  }
+
+  return suffix.replace(/^(?:[ \t]*\r?\n)+/, '');
+}
+
 export function mapWebuiThreadToGuiMessages(webuiMessages: UIMessage[]): Message[] {
   const guiMessages: Message[] = [];
   let lastAssistantMsg: Message | null = null;
@@ -404,8 +479,10 @@ export function mapWebuiThreadToGuiMessages(webuiMessages: UIMessage[]): Message
     if (msg.role === 'user') {
       currentLoopId = timestamp.toString(36) + Math.random().toString(36).substring(2, 6);
       
-      // Handle content types
-      let content: string | MessageContent[] = msg.content;
+      // MCP attachments already render as chips. Older transcripts may also
+      // contain the composer-generated @preset prefix; hide that duplicate.
+      const visibleContent = stripRedundantMcpMentionPrefix(msg.content, msg.mcpPresets);
+      let content: string | MessageContent[] = visibleContent;
       if (msg.images && msg.images.length > 0) {
         content = msg.images.map(img => ({
           type: 'image' as const,
@@ -415,8 +492,8 @@ export function mapWebuiThreadToGuiMessages(webuiMessages: UIMessage[]): Message
             data: img.url?.split(',')[1] || '',
           }
         }));
-        if (msg.content) {
-          (content as any).push({ type: 'text' as const, text: msg.content });
+        if (visibleContent) {
+          (content as any).push({ type: 'text' as const, text: visibleContent });
         }
       }
 
@@ -432,7 +509,7 @@ export function mapWebuiThreadToGuiMessages(webuiMessages: UIMessage[]): Message
       });
     } 
     
-    else if (msg.role === 'assistant') {
+    else if (msg.role === 'assistant' && msg.kind !== 'trace') {
       const guiMsg: Message = {
         id: msg.id,
         role: 'assistant',
@@ -443,11 +520,14 @@ export function mapWebuiThreadToGuiMessages(webuiMessages: UIMessage[]): Message
         thinkingDuration: typeof msg.latencyMs === 'number' && Number.isFinite(msg.latencyMs)
           ? Math.max(0, msg.latencyMs / 1000)
           : undefined,
+        usage: msg.usage,
         reasoningStreaming: msg.reasoningStreaming,
         isStreaming: msg.isStreaming,
         toolCalls: [],
         mediaAttachments: mediaAttachmentsFromUiMessage(msg),
         activitySegmentId: msg.activitySegmentId,
+        narration: msg.narration,
+        narrationStreaming: msg.narrationStreaming,
         loopId: currentLoopId,
       };
       guiMessages.push(guiMsg);
@@ -467,6 +547,8 @@ export function mapWebuiThreadToGuiMessages(webuiMessages: UIMessage[]): Message
         fileEdits: msg.fileEdits,
         mediaAttachments: mediaAttachmentsFromUiMessage(msg),
         activitySegmentId: msg.activitySegmentId,
+        narration: msg.narration,
+        narrationStreaming: msg.narrationStreaming,
         timestamp,
         loopId: currentLoopId,
       };
@@ -558,6 +640,7 @@ function finalizeReplayMessage(message: Message): Message {
   };
   if (message.isStreaming) next.isStreaming = false;
   if (message.reasoningStreaming) next.reasoningStreaming = false;
+  if (message.narrationStreaming) next.narrationStreaming = false;
   if (message.toolCalls) {
     next.toolCalls = message.toolCalls.map((toolCall) => ({ ...toolCall, isExecuting: false }));
   }
@@ -590,8 +673,17 @@ export async function syncSessionFromGateway(
 
     const token = getNanobotToken();
     const baseUrl = `http://127.0.0.1:${status.port}`;
-    const thread = await fetchWebuiThread(token, sessionKey, baseUrl);
+    const [thread, runtimeSnapshot] = await Promise.all([
+      fetchWebuiThread(token, sessionKey, baseUrl),
+      fetchSessionRuntimeSnapshot(token, sessionKey, baseUrl),
+    ]);
     if (!thread) return false;
+    const chatId = sessionKey.startsWith('websocket:')
+      ? sessionKey.slice('websocket:'.length)
+      : sessionKey;
+    if (runtimeSnapshot) {
+      globalClient?.applyRuntimeSnapshot(chatId, runtimeSnapshot);
+    }
 
     const gatewayMessages = mapWebuiThreadToGuiMessages(scrubSubagentUiMessages(normalizeLegacyLongTaskMessages(thread.messages)));
     const guiMessages = projectGatewayMessagesForHistory(gatewayMessages);
@@ -603,11 +695,18 @@ export async function syncSessionFromGateway(
 
     useChatStore.getState().upsertConversation(sessionKey, {
       id: sessionKey,
+      sessionId: thread.session_id,
+      projectId: thread.project_id,
       title: options.title ?? titleFromSession(undefined, guiMessages),
       messages: guiMessages,
       createdAt: firstTimestamp,
       updatedAt: Number.isFinite(savedAt) ? savedAt : lastTimestamp,
-      status: 'idle',
+      status: runtimeSnapshot?.thread_status.type === 'active'
+        ? 'running'
+        : runtimeSnapshot?.thread_status.type === 'systemError'
+          ? 'error'
+          : 'idle',
+      ...(runtimeSnapshot ? { runtimeSnapshot } : {}),
       workspacePath: thread.workspace_scope?.project_path ?? null,
       workspaceScope: thread.workspace_scope ?? null,
       expertTeam: thread.expert_team ?? null,
@@ -618,6 +717,54 @@ export async function syncSessionFromGateway(
     console.error('[nanobotClient] syncSessionFromGateway error:', err);
     return false;
   }
+}
+
+export function shouldPreserveRunningConversation(
+  localStatus: string | undefined,
+  runtimeStartedAt: number | null | undefined,
+  listedRunStartedAt: number | null | undefined,
+): boolean {
+  return (
+    localStatus === 'running'
+    && (runtimeStartedAt != null || listedRunStartedAt != null)
+  );
+}
+
+export function conversationFromSessionSummary(
+  session: ChatSummary,
+  existing?: Conversation,
+): Conversation {
+  const preview = session.preview?.trim();
+  const listedTitle = session.title?.trim();
+  const existingTitle = existing?.title?.trim();
+  const createdAt = session.createdAt
+    ? new Date(session.createdAt).getTime()
+    : existing?.createdAt ?? Date.now();
+  const updatedAt = session.updatedAt
+    ? new Date(session.updatedAt).getTime()
+    : existing?.updatedAt ?? createdAt;
+  const safeCreatedAt = Number.isFinite(createdAt) ? createdAt : Date.now();
+
+  return {
+    id: session.chatId,
+    sessionId: session.sessionId ?? existing?.sessionId,
+    projectId: session.projectId ?? existing?.projectId,
+    hasHistory: true,
+    title: (
+      listedTitle
+      || (existingTitle && existingTitle !== '新对话' ? existingTitle : '')
+      || preview
+      || '新对话'
+    ).slice(0, 30),
+    messages: existing?.messages ?? [],
+    createdAt: safeCreatedAt,
+    updatedAt: Number.isFinite(updatedAt) ? updatedAt : safeCreatedAt,
+    status: session.runStartedAt != null ? 'running' : 'idle',
+    workspacePath: session.workspaceScope?.project_path ?? existing?.workspacePath ?? null,
+    workspaceScope: session.workspaceScope ?? existing?.workspaceScope ?? null,
+    expertTeam: session.expertTeam ?? existing?.expertTeam ?? null,
+    ...(existing?.scheduledTaskId ? { scheduledTaskId: existing.scheduledTaskId } : {}),
+  };
 }
 
 export async function syncSessionsFromGateway(): Promise<void> {
@@ -632,39 +779,45 @@ export async function syncSessionsFromGateway(): Promise<void> {
 
     console.log('[nanobotClient] Found backend sessions:', sessions.length);
 
+    const runningSessions: Array<{ chatId: string; key: string }> = [];
+    const conversations: Record<string, Conversation> = {};
     for (const session of sessions) {
       const chatId = session.chatId;
-      const thread = await fetchWebuiThread(token, session.key, baseUrl);
-      if (thread) {
-        const gatewayMessages = mapWebuiThreadToGuiMessages(scrubSubagentUiMessages(normalizeLegacyLongTaskMessages(thread.messages)));
-        const localStatus = chatStore.conversations[chatId]?.status;
-        if (localStatus === 'running') {
-          continue;
-        }
-        const guiMessages = projectGatewayMessagesForHistory(gatewayMessages);
-        if (guiMessages.length === 0) {
-          continue;
-        }
-        
-        // Save to store using action or setState
-        const createdAt = session.createdAt ? new Date(session.createdAt).getTime() : Date.now();
-        const updatedAt = session.updatedAt ? new Date(session.updatedAt).getTime() : Date.now();
-        
-        chatStore.upsertConversation(chatId, {
-          id: chatId,
-          title: titleFromSession(session.title, guiMessages),
-          messages: guiMessages,
-          createdAt,
-          updatedAt,
-          status: 'idle',
-          workspacePath: thread.workspace_scope?.project_path ?? null,
-          workspaceScope: thread.workspace_scope ?? session.workspaceScope ?? null,
-          expertTeam: thread.expert_team ?? session.expertTeam ?? null,
-        });
+      const existing = useChatStore.getState().conversations[chatId];
+      const isRunning = session.runStartedAt != null;
+
+      // Startup synchronization is metadata-only. ChatView already loads the
+      // canonical thread on demand when the user opens a conversation.
+      conversations[chatId] = conversationFromSessionSummary(session, existing);
+      if (isRunning) {
+        runningSessions.push({ chatId, key: session.key });
       }
     }
+    chatStore.upsertConversations(conversations);
+
+    // Only active turns need a process-local runtime snapshot at startup.
+    // Completed conversations are hydrated lazily by ChatView.
+    await Promise.allSettled(runningSessions.map(async ({ chatId, key }) => {
+      const runtimeSnapshot = await fetchSessionRuntimeSnapshot(token, key, baseUrl);
+      if (!runtimeSnapshot) return;
+      globalClient?.applyRuntimeSnapshot(chatId, runtimeSnapshot);
+      useChatStore.getState().setConversationRuntimeSnapshot(chatId, runtimeSnapshot);
+    }));
   } catch (err) {
     console.error('[nanobotClient] syncSessionsFromGateway error:', err);
+  }
+}
+
+export async function syncProjectsFromGateway(): Promise<void> {
+  try {
+    const status = await getNanobotStatus();
+    if (!status.ready) return;
+    const token = getNanobotToken();
+    const baseUrl = `http://127.0.0.1:${status.port}`;
+    const projects = await listProjects(token, baseUrl);
+    useWorkspaceStore.getState().setProjects(projects);
+  } catch (err) {
+    console.error('[nanobotClient] syncProjectsFromGateway error:', err);
   }
 }
 

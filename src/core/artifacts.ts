@@ -1,6 +1,7 @@
 import type { MessageMediaAttachment } from '@/types';
 import { fsBridge } from '@/lib/ipc-factory';
-import { getGatewayBaseUrl } from '@/core/nanobotClient';
+import { getGatewayBaseUrl, getNanobotToken } from '@/core/nanobotClient';
+import { fetchGatewayResponse } from '@/core/api';
 import { getBaseName, isLocalFilePath } from '@/utils/pathUtils';
 
 export type ArtifactPreviewKind =
@@ -18,7 +19,7 @@ export type ArtifactPreviewKind =
 
 export type ArtifactSource =
   | { kind: 'local'; path: string }
-  | { kind: 'gateway'; previewUrl: string; downloadUrl: string }
+  | { kind: 'gateway'; previewUrl: string; downloadUrl: string; requiresAuth?: boolean }
   | { kind: 'remote'; url: string }
   | { kind: 'data'; url: string };
 
@@ -27,6 +28,14 @@ export interface ArtifactRef {
   name: string;
   mimeType: string;
   size?: number;
+  /** User-facing workspace-relative path shown in the artifact viewer. */
+  displayPath?: string;
+  /**
+   * Trusted absolute path reconstructed from the active conversation workspace.
+   * This is used only for native shell actions (open/reveal/copy); gateway-backed
+   * preview reads still go through the authenticated artifact endpoint.
+   */
+  nativePath?: string;
   source: ArtifactSource;
 }
 
@@ -126,7 +135,7 @@ export function resolveArtifactUrl(url: string): string {
 
 export function artifactFromPath(
   path: string,
-  metadata: Partial<Pick<ArtifactRef, 'id' | 'name' | 'mimeType' | 'size'>> = {},
+  metadata: Partial<Pick<ArtifactRef, 'id' | 'name' | 'mimeType' | 'size' | 'displayPath'>> = {},
 ): ArtifactRef {
   const name = metadata.name || getBaseName(path);
   return {
@@ -134,13 +143,21 @@ export function artifactFromPath(
     name,
     mimeType: artifactMimeType(name, metadata.mimeType),
     ...(metadata.size !== undefined ? { size: metadata.size } : {}),
+    displayPath: metadata.displayPath || path,
+    nativePath: path,
     source: { kind: 'local', path },
   };
 }
 
 export function artifactFromUrl(
   rawUrl: string,
-  metadata: Partial<Pick<ArtifactRef, 'id' | 'name' | 'mimeType' | 'size'>> & { downloadUrl?: string } = {},
+  metadata: Partial<Pick<
+    ArtifactRef,
+    'id' | 'name' | 'mimeType' | 'size' | 'displayPath' | 'nativePath'
+  >> & {
+    downloadUrl?: string;
+    requiresAuth?: boolean;
+  } = {},
 ): ArtifactRef {
   const url = resolveArtifactUrl(rawUrl);
   const name = metadata.name || getBaseName(cleanUrlPath(url)) || '文件';
@@ -149,9 +166,13 @@ export function artifactFromUrl(
     name,
     mimeType: artifactMimeType(name, metadata.mimeType),
     ...(metadata.size !== undefined ? { size: metadata.size } : {}),
+    ...(metadata.displayPath ? { displayPath: metadata.displayPath } : {}),
+    ...(metadata.nativePath ? { nativePath: metadata.nativePath } : {}),
   };
   if (url.startsWith('data:')) return { ...common, source: { kind: 'data', url } };
-  const isGateway = rawUrl.startsWith('/api/') || /\/api\/(?:media|artifacts)\//.test(url);
+  const isGateway = metadata.requiresAuth
+    || rawUrl.startsWith('/api/')
+    || /\/api\/(?:media|artifacts)\//.test(url);
   if (isGateway) {
     return {
       ...common,
@@ -159,6 +180,7 @@ export function artifactFromUrl(
         kind: 'gateway',
         previewUrl: url,
         downloadUrl: resolveArtifactUrl(metadata.downloadUrl || url),
+        ...(metadata.requiresAuth ? { requiresAuth: true } : {}),
       },
     };
   }
@@ -185,6 +207,19 @@ export function artifactLocalPath(artifact: ArtifactRef): string | null {
   return artifact.source.kind === 'local' ? artifact.source.path : null;
 }
 
+/** Absolute path available to native desktop actions without changing the preview data source. */
+export function artifactNativePath(artifact: ArtifactRef): string | null {
+  return artifact.source.kind === 'local'
+    ? artifact.source.path
+    : artifact.nativePath || null;
+}
+
+export function artifactDisplayPath(artifact: ArtifactRef): string {
+  return artifact.displayPath
+    || artifactNativePath(artifact)
+    || artifact.name;
+}
+
 export function artifactContentUrl(artifact: ArtifactRef): string | null {
   if (artifact.source.kind === 'gateway') return artifact.source.previewUrl;
   if (artifact.source.kind === 'remote' || artifact.source.kind === 'data') return artifact.source.url;
@@ -197,12 +232,26 @@ export function artifactDownloadUrl(artifact: ArtifactRef): string | null {
   return null;
 }
 
+export function artifactRequiresAuth(artifact: ArtifactRef): boolean {
+  return artifact.source.kind === 'gateway' && artifact.source.requiresAuth === true;
+}
+
 export async function readArtifactBytes(artifact: ArtifactRef): Promise<Uint8Array> {
   const path = artifactLocalPath(artifact);
   if (path) return fsBridge.readFile(path);
   const url = artifactContentUrl(artifact);
   if (!url) throw new Error('文件内容地址不可用');
-  const response = await fetch(url);
+  let response: Response;
+  if (artifact.source.kind === 'gateway' && artifact.source.requiresAuth) {
+    const gatewayOrigin = new URL(getGatewayBaseUrl()).origin;
+    const artifactOrigin = new URL(url, getGatewayBaseUrl()).origin;
+    if (artifactOrigin !== gatewayOrigin) {
+      throw new Error('受保护文件地址不属于当前 nanobot gateway');
+    }
+    response = await fetchGatewayResponse(url, getNanobotToken());
+  } else {
+    response = await fetch(url);
+  }
   if (!response.ok) throw new Error(`读取文件失败：HTTP ${response.status}`);
   return new Uint8Array(await response.arrayBuffer());
 }
@@ -216,13 +265,29 @@ export async function readArtifactText(artifact: ArtifactRef): Promise<string> {
 
 export async function artifactObjectUrl(artifact: ArtifactRef): Promise<string> {
   if (artifact.source.kind === 'data' || artifact.source.kind === 'remote') return artifact.source.url;
-  if (artifact.source.kind === 'gateway' && artifact.mimeType.startsWith('video/')) {
-    return artifact.source.previewUrl;
-  }
   const bytes = await readArtifactBytes(artifact);
   const copy = new Uint8Array(bytes.byteLength);
   copy.set(bytes);
   return URL.createObjectURL(new Blob([copy.buffer], { type: artifact.mimeType }));
+}
+
+/** Download an authenticated gateway artifact without exposing the bearer token in a URL. */
+export async function downloadArtifact(artifact: ArtifactRef): Promise<void> {
+  const bytes = await readArtifactBytes(artifact);
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  const objectUrl = URL.createObjectURL(new Blob([copy.buffer], { type: artifact.mimeType }));
+  try {
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = artifact.name;
+    anchor.style.display = 'none';
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+  } finally {
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+  }
 }
 
 export function looksLikeArtifactUrl(url: string): boolean {

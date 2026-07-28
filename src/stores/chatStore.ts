@@ -3,9 +3,11 @@ import { persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import type { Message, Conversation, AgentStatus, TokenUsage, ConversationStatus, ToolCall, ToolCallContext, ToolResultContent, MessageMediaAttachment } from '../types';
 import type { ExecutionStepSnapshot } from '../types/execution';
-import type { ExpertTeamBinding, WorkspaceScopePayload } from '@/core/types';
+import type { ExpertTeamBinding, ThreadRuntimeSnapshot, WorkspaceScopePayload } from '@/core/types';
 import { useWorkspaceStore } from './workspaceStore';
 import { useTaskExecutionStore } from './taskExecutionStore';
+import { useConversationWorkbenchStore } from './conversationWorkbenchStore';
+import { useTurnPlanStore } from './turnPlanStore';
 import { clearTodos } from '../core/nanobot/todoManager';
 import { clearInputQueue } from '../core/nanobot/userInputQueue';
 import { getNanobotToken, getNanobotStatus } from '@/core/nanobotClient';
@@ -21,6 +23,53 @@ const abortControllers: Map<string, AbortController> = new Map();
 
 // Persistence limits
 const MAX_CONVERSATIONS = 50;
+const MAX_CONVERSATION_NAVIGATION_HISTORY = 100;
+
+interface ConversationNavigationState {
+  conversations: Record<string, Conversation>;
+  activeConversationId: string | null;
+  conversationNavigationHistory: string[];
+}
+
+function activateConversation(
+  state: ConversationNavigationState,
+  targetId: string | null,
+): void {
+  const currentId = state.activeConversationId;
+  if (currentId === targetId) return;
+
+  let history = state.conversationNavigationHistory.filter(
+    (id) => id !== targetId && id !== currentId && state.conversations[id] !== undefined,
+  );
+  if (currentId && state.conversations[currentId]) {
+    history.push(currentId);
+  }
+  if (history.length > MAX_CONVERSATION_NAVIGATION_HISTORY) {
+    history = history.slice(-MAX_CONVERSATION_NAVIGATION_HISTORY);
+  }
+  state.conversationNavigationHistory = history;
+  state.activeConversationId = targetId;
+}
+
+function removeConversationFromNavigation(
+  state: ConversationNavigationState,
+  deletedId: string,
+): void {
+  state.conversationNavigationHistory = state.conversationNavigationHistory.filter(
+    (id) => id !== deletedId,
+  );
+  if (state.activeConversationId !== deletedId) return;
+
+  let previousId: string | null = null;
+  while (state.conversationNavigationHistory.length > 0) {
+    const candidate = state.conversationNavigationHistory.pop();
+    if (candidate && state.conversations[candidate]) {
+      previousId = candidate;
+      break;
+    }
+  }
+  state.activeConversationId = previousId;
+}
 
 /**
  * Persist only conversation metadata. Nanobot's `/webui-thread` snapshot is the
@@ -34,6 +83,7 @@ function stripMessagesForPersist(conversations: Record<string, Conversation>): R
       ...conv,
       messages: [],
       status: conv.status === 'running' ? 'idle' : conv.status,
+      runtimeSnapshot: undefined,
       completedAt: undefined,
       contextCache: undefined,
     };
@@ -44,6 +94,8 @@ function stripMessagesForPersist(conversations: Record<string, Conversation>): R
 interface ChatState {
   conversations: Record<string, Conversation>;
   activeConversationId: string | null;
+  /** Ephemeral back stack of conversations loaded during this app run. */
+  conversationNavigationHistory: string[];
   agentStatus: AgentStatus;
   currentTool: string | null;
   // Token usage tracking
@@ -62,6 +114,7 @@ interface ChatActions {
   switchConversation: (id: string) => void;
   setConversationWorkspace: (convId: string, path: string | null) => void;
   setConversationWorkspaceScope: (convId: string, scope: WorkspaceScopePayload | null) => void;
+  setConversationIdentity: (convId: string, sessionId?: string, projectId?: string) => void;
   setConversationExpertTeam: (convId: string, team: ExpertTeamBinding | null) => void;
   deleteConversation: (id: string) => void;
   renameConversation: (id: string, title: string) => void;
@@ -99,6 +152,7 @@ interface ChatActions {
   setCurrentUsage: (usage: TokenUsage | null) => void;
   setPendingInput: (text: string | null) => void;
   setConversationStatus: (convId: string, status: ConversationStatus) => void;
+  setConversationRuntimeSnapshot: (convId: string, snapshot: ThreadRuntimeSnapshot) => void;
   clearCompletedStatus: (convId: string) => void;
 
   // MCP per-session toggle
@@ -110,6 +164,7 @@ interface ChatActions {
 
   addToolCall: (convId: string, messageId: string, toolCall: ToolCall) => void;
   upsertConversation: (id: string, conversation: Conversation) => void;
+  upsertConversations: (conversations: Record<string, Conversation>) => void;
 
   // Export/Import
   exportConversation: (convId: string) => string | null;
@@ -123,6 +178,7 @@ export const useChatStore = create<ChatStore>()(
     immer((set, get) => ({
       conversations: {},
       activeConversationId: null,
+      conversationNavigationHistory: [],
       agentStatus: 'idle' as AgentStatus,
       currentTool: null,
       currentUsage: null,
@@ -150,7 +206,7 @@ export const useChatStore = create<ChatStore>()(
             ...(options?.scheduledTaskId ? { scheduledTaskId: options.scheduledTaskId } : {}),
           };
           if (!options?.skipActivate) {
-            state.activeConversationId = id;
+            activateConversation(state, id);
           }
         });
         // Sync global workspace to match the new conversation
@@ -162,7 +218,7 @@ export const useChatStore = create<ChatStore>()(
 
       startNewConversation: () => {
         set((state) => {
-          state.activeConversationId = null;
+          activateConversation(state, null);
         });
         // Clear global workspace so welcome page starts clean
         useWorkspaceStore.getState().clearWorkspace();
@@ -170,8 +226,9 @@ export const useChatStore = create<ChatStore>()(
 
       switchConversation: (id) => {
         const conv = get().conversations[id];
+        if (!conv) return;
         set((state) => {
-          state.activeConversationId = id;
+          activateConversation(state, id);
         });
         // Sync global workspace to match the target conversation
         const ws = useWorkspaceStore.getState();
@@ -199,6 +256,15 @@ export const useChatStore = create<ChatStore>()(
             conv.workspaceScope = scope;
             conv.workspacePath = scope?.project_path ?? null;
           }
+        });
+      },
+
+      setConversationIdentity: (convId, sessionId, projectId) => {
+        set((state) => {
+          const conv = state.conversations[convId];
+          if (!conv) return;
+          if (sessionId) conv.sessionId = sessionId;
+          if (projectId) conv.projectId = projectId;
         });
       },
 
@@ -231,13 +297,12 @@ export const useChatStore = create<ChatStore>()(
         clearTodos(id);
         clearInputQueue(id);
         useTaskExecutionStore.getState().clearConversation(id);
+        useConversationWorkbenchStore.getState().clearConversation(id);
+        useTurnPlanStore.getState().clearConversation(id);
         const wasActive = get().activeConversationId === id;
         set((state) => {
           delete state.conversations[id];
-          if (state.activeConversationId === id) {
-            const ids = Object.keys(state.conversations);
-            state.activeConversationId = ids.length > 0 ? ids[ids.length - 1] : null;
-          }
+          removeConversationFromNavigation(state, id);
         });
         // Sync workspace to the newly active conversation
         if (wasActive) {
@@ -400,6 +465,14 @@ export const useChatStore = create<ChatStore>()(
       upsertConversation: (id, conversation) => {
         set((state) => {
           state.conversations[id] = conversation;
+        });
+      },
+
+      upsertConversations: (conversations) => {
+        set((state) => {
+          for (const [id, conversation] of Object.entries(conversations)) {
+            state.conversations[id] = conversation;
+          }
         });
       },
 
@@ -631,6 +704,20 @@ export const useChatStore = create<ChatStore>()(
         });
       },
 
+      setConversationRuntimeSnapshot: (convId, snapshot) => {
+        set((state) => {
+          const conv = state.conversations[convId];
+          if (!conv) return;
+          conv.runtimeSnapshot = snapshot;
+          conv.status = snapshot.thread_status.type === 'active'
+            ? 'running'
+            : snapshot.thread_status.type === 'systemError'
+              ? 'error'
+              : 'idle';
+          conv.completedAt = undefined;
+        });
+      },
+
       clearCompletedStatus: (convId) => {
         set((state) => {
           const conv = state.conversations[convId];
@@ -711,7 +798,7 @@ export const useChatStore = create<ChatStore>()(
 
           set((state) => {
             state.conversations[newId] = imported;
-            state.activeConversationId = newId;
+            activateConversation(state, newId);
           });
           // Sync workspace to imported conversation
           const ws = useWorkspaceStore.getState();

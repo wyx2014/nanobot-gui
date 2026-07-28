@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronRight,
   Circle,
+  CircleMinus,
   ClipboardList,
   FilePenLine,
   Globe2,
@@ -28,7 +29,6 @@ import {
   type TaskNarrativeEntry,
 } from '@/core/nanobot/taskNarrativeTimeline';
 import { getBaseName } from '@/utils/pathUtils';
-import { ActivityEvidencePreview } from './activity/ActivityEvidencePreview';
 import { DiffPair } from './activity/DiffPair';
 
 interface TaskNarrativeTimelineProps {
@@ -65,6 +65,7 @@ export default function TaskNarrativeTimeline({
     : taskFailed
       ? `未完成 ${formatElapsed(elapsedMs)}`
       : `已完成 ${formatElapsed(elapsedMs)}`;
+  const summaryWithCount = `${summary} · ${entries.length} ${entries.length === 1 ? 'step' : 'steps'}`;
   const showContinuation = isActive
     && entries.length > 0
     && !hasBodyBelow
@@ -115,7 +116,7 @@ export default function TaskNarrativeTimeline({
           isActive && 'streaming-text-sheen',
           taskFailed && 'text-[#8a5f46]',
         )}>
-          {summary}
+          {summaryWithCount}
         </span>
         <ChevronRight
           className={cn(
@@ -207,6 +208,7 @@ function NarrativeActionRow({ entry }: { entry: TaskNarrativeEntry }) {
           <span
             className={cn(
               'shrink-0 font-medium text-[#77746b]',
+              entry.kind === 'narration' && 'min-w-0 shrink whitespace-normal break-words font-normal text-[#656358]',
               entry.status === 'running' && 'streaming-text-sheen',
               entry.status === 'error' && 'text-[#8a5f46]',
             )}
@@ -243,10 +245,6 @@ function NarrativeActionRow({ entry }: { entry: TaskNarrativeEntry }) {
           ) : null}
         </button>
 
-        {entry.evidence?.length ? (
-          <ActivityEvidencePreview evidence={entry.evidence} className="mt-1.5" />
-        ) : null}
-
         {expanded ? <EntryDetails entry={entry} /> : null}
       </div>
     </li>
@@ -254,6 +252,7 @@ function NarrativeActionRow({ entry }: { entry: TaskNarrativeEntry }) {
 }
 
 function EntryDetails({ entry }: { entry: TaskNarrativeEntry }) {
+  if (entry.artifactOutput) return null;
   if (entry.kind === 'batch' && entry.childEntries?.length) {
     return <BatchEntries entries={entry.childEntries} />;
   }
@@ -379,6 +378,7 @@ function DetailLine({ label, value, error = false }: { label: string; value: str
 function entryIcon(entry: TaskNarrativeEntry): LucideIcon {
   if (entry.status === 'error') return AlertCircle;
   if (entry.kind === 'analysis') return Brain;
+  if (entry.kind === 'narration') return BookOpenText;
   if (entry.kind === 'plan') return ClipboardList;
   if (entry.kind === 'batch') return Layers3;
   if (entry.kind === 'file') return FilePenLine;
@@ -397,6 +397,7 @@ function planStepIcon(status: TaskProgressStep['status']): LucideIcon {
   if (status === 'completed') return CheckCircle2;
   if (status === 'running') return Loader2;
   if (status === 'error') return AlertCircle;
+  if (status === 'skipped' || status === 'interrupted') return CircleMinus;
   return Circle;
 }
 
@@ -439,6 +440,7 @@ function formatElapsed(ms: number): string {
 }
 
 function hasExpandableDetails(entry: TaskNarrativeEntry): boolean {
+  if (entry.artifactOutput) return false;
   if (entry.kind === 'batch') return !!entry.childEntries?.length;
   if (entry.kind === 'plan') return !!entry.planSteps?.length;
   if (entry.kind === 'file') return !!(entry.fileEdit?.absolute_path || entry.error);

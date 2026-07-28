@@ -9,6 +9,7 @@ import { artifactFromMediaAttachment, artifactFromUrl } from '@/core/artifacts';
 import { usePreviewStore } from '@/stores/previewStore';
 
 type Align = 'left' | 'right';
+type Visibility = 'all' | 'html-only';
 
 function mediaKey(item: MessageMediaAttachment, index: number): string {
   return item.path || item.url || item.name || `${item.kind ?? 'media'}-${index}`;
@@ -34,6 +35,11 @@ function displayName(item: MessageMediaAttachment): string {
   if (item.path) return getBaseName(item.path);
   if (item.url) return getBaseName(urlPath(item.url)) || item.url;
   return item.kind === 'image' ? 'Image' : 'File';
+}
+
+function isHtmlMedia(item: MessageMediaAttachment): boolean {
+  if (item.mimeType?.toLowerCase().split(';', 1)[0] === 'text/html') return true;
+  return /\.html?$/i.test(displayName(item));
 }
 
 function ImagePlaceholder({ label, compact }: { label: string; compact?: boolean }) {
@@ -309,17 +315,22 @@ export function MessageMedia({
   align = 'left',
   compact,
   className,
+  visibility = 'all',
 }: {
   media: MessageMediaAttachment[];
   align?: Align;
   compact?: boolean;
   className?: string;
+  visibility?: Visibility;
 }) {
-  if (media.length === 0) return null;
+  const visibleMedia = visibility === 'html-only'
+    ? media.filter(isHtmlMedia)
+    : media;
+  if (visibleMedia.length === 0) return null;
 
   return (
     <div className={cn(compact ? 'mt-0' : 'mt-2', 'flex flex-wrap gap-2', align === 'right' ? 'justify-end' : 'justify-start', className)}>
-      {media.map((item, index) => {
+      {visibleMedia.map((item, index) => {
         const key = mediaKey(item, index);
         if (mediaKind(item) === 'image') {
           if (item.path) return <LocalImageTile key={key} item={item} compact={compact} />;

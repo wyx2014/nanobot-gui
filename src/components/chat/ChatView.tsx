@@ -13,8 +13,8 @@ import {
   subscribeNanobotConnectionStatus,
   syncSessionsFromGateway,
 } from '@/core/nanobotClient';
-import type { GoalStateWsPayload, UIMessage, WorkspaceScopePayload, WorkspacesPayload } from '@/core/types';
-import { fetchWebuiThread } from '@/core/api';
+import type { UIMessage, WorkspaceScopePayload, WorkspacesPayload } from '@/core/types';
+import { fetchSessionRuntimeSnapshot, fetchWebuiThread } from '@/core/api';
 import { conversationIdToSessionKey } from '@/core/sessionKey';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useScheduleStore } from '@/stores/scheduleStore';
@@ -22,6 +22,8 @@ import { usePromptHubStore } from '@/stores/promptHubStore';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useToastStore } from '@/stores/toastStore';
+import { useConversationWorkbenchStore } from '@/stores/conversationWorkbenchStore';
+import { useTurnPlanStore } from '@/stores/turnPlanStore';
 import { useI18n } from '@/i18n';
 import ThreadMessages from './ThreadMessages';
 import InteractivePromptCard, { type InteractivePromptSubmitPayload } from './InteractivePromptCard';
@@ -36,41 +38,8 @@ import { normalizeLegacyLongTaskMessages } from '@/core/nanobot/thread-display-c
 import { scrubSubagentUiMessages } from '@/core/nanobot/subagent-channel-display';
 import { projectUsableSkills, stripUnavailableLeadingSkillMentions } from '@/core/skills/filter';
 import { normalizeProjectPath, visibleProjectPath } from '@/core/workspace';
-
-function formatRunDuration(startedAt: number | null): string {
-  if (!startedAt) return '';
-  const startedMs = startedAt > 1_000_000_000_000 ? startedAt : startedAt * 1000;
-  const seconds = Math.max(0, Math.round((Date.now() - startedMs) / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  return `${minutes}m ${seconds % 60}s`;
-}
-
-function GoalStatusBar({
-  goalState,
-  runStartedAt,
-}: {
-  goalState?: GoalStateWsPayload;
-  runStartedAt: number | null;
-}) {
-  const [, tick] = useState(0);
-  useEffect(() => {
-    if (!runStartedAt) return;
-    const timer = window.setInterval(() => tick((value) => value + 1), 1000);
-    return () => window.clearInterval(timer);
-  }, [runStartedAt]);
-
-  const text = goalState?.ui_summary || goalState?.objective;
-  if (!runStartedAt && !text) return null;
-  return (
-    <div className="mb-2 flex items-center gap-2 rounded-xl border border-[#e5e2db] bg-white/85 px-3 py-2 text-[12.5px] text-[#656358] shadow-sm">
-      <span className="h-2 w-2 rounded-full bg-[#d97757]" />
-      <span className="font-medium text-[#29261b]">{runStartedAt ? '执行中' : '目标'}</span>
-      {runStartedAt && <span>{formatRunDuration(runStartedAt)}</span>}
-      {text && <span className="min-w-0 truncate">{text}</span>}
-    </div>
-  );
-}
+import GenerationStatusBar, { type GenerationPhase } from './GenerationStatusBar';
+import { historyHasPendingActivity } from '@/core/nanobot/historyActivity';
 
 interface PendingFirstMessage {
   text: string;
@@ -78,6 +47,8 @@ interface PendingFirstMessage {
   options?: ChatInputSendOptions;
   workspaceScope?: WorkspaceScopePayload | null;
 }
+
+const HISTORY_PAGE_LIMIT = 200;
 
 function imageAttachmentsToSendImages(images?: ImageAttachment[]): SendImage[] | undefined {
   if (!images?.length) return undefined;
@@ -92,11 +63,6 @@ function imageAttachmentsToSendImages(images?: ImageAttachment[]): SendImage[] |
 
 function projectWebuiThreadMessages(messages: UIMessage[]): UIMessage[] {
   return scrubSubagentUiMessages(normalizeLegacyLongTaskMessages(messages));
-}
-
-function lastMessageLooksPending(messages: UIMessage[]): boolean {
-  const last = messages[messages.length - 1];
-  return last?.kind === 'trace';
 }
 
 function sendImagesFromUiMessage(message: UIMessage): SendImage[] | undefined {
@@ -132,7 +98,7 @@ export default function ChatView({
 }) {
   const activeConv = useActiveConversation();
   const activeConvId = activeConv?.id;
-  const { createConversation, setConversationStatus } = useChatStore();
+  const { createConversation } = useChatStore();
   const scheduleReturnTarget = useScheduleStore((s) => s.returnTarget);
   const setScheduleActiveTaskId = useScheduleStore((s) => s.setActiveTaskId);
   const setScheduleReturnTarget = useScheduleStore((s) => s.setReturnTarget);
@@ -166,14 +132,24 @@ export default function ChatView({
         ? t.chat.mcpUnavailable
         : null;
   const [historyMessages, setHistoryMessages] = useState<UIMessage[]>([]);
+  const [historyConversationId, setHistoryConversationId] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyLoadingOlder, setHistoryLoadingOlder] = useState(false);
+  const [historyPage, setHistoryPage] = useState<{
+    beforeCursor: string | null;
+    hasMoreBefore: boolean;
+  }>({ beforeCursor: null, hasMoreBefore: false });
   const [historyVersion, setHistoryVersion] = useState(0);
+  const preserveScrollOnHistoryVersionRef = useRef(false);
   const [promptSubmitState, setPromptSubmitState] = useState<{
     promptId: string;
     status: 'submitting' | 'error';
     error?: string;
   } | null>(null);
   const pendingFirstRef = useRef<PendingFirstMessage | null>(null);
+  const activeHistoryMessages = historyConversationId === activeConvId
+    ? historyMessages
+    : [];
 
   const [greeting, setGreeting] = useState('');
   const [userName, setUserName] = useState('');
@@ -214,16 +190,44 @@ export default function ChatView({
   useEffect(() => {
     if (!activeConvId) {
       setHistoryMessages([]);
+      setHistoryConversationId(null);
       setHistoryLoading(false);
+      setHistoryLoadingOlder(false);
+      setHistoryPage({ beforeCursor: null, hasMoreBefore: false });
       return;
     }
     let cancelled = false;
     setHistoryLoading(true);
+    setHistoryLoadingOlder(false);
+    setHistoryPage({ beforeCursor: null, hasMoreBefore: false });
     (async () => {
       try {
         const token = getNanobotToken();
         const base = getGatewayBaseUrl();
-        const thread = await fetchWebuiThread(token, conversationIdToSessionKey(activeConvId), base);
+        const sessionKey = conversationIdToSessionKey(activeConvId);
+        void fetchSessionRuntimeSnapshot(token, sessionKey, base)
+          .then((runtimeSnapshot) => {
+            if (cancelled || !runtimeSnapshot) return;
+            try {
+              getNanobotClient().applyRuntimeSnapshot(activeConvId, runtimeSnapshot);
+            } catch {
+              // The chat store still receives the authoritative HTTP snapshot
+              // when the WebSocket client is not ready yet.
+            }
+            useChatStore.getState().setConversationRuntimeSnapshot(
+              activeConvId,
+              runtimeSnapshot,
+            );
+          })
+          .catch(() => {
+            // History remains usable when a runtime snapshot is unavailable.
+          });
+        const thread = await fetchWebuiThread(
+          token,
+          sessionKey,
+          base,
+          { limit: HISTORY_PAGE_LIMIT, direction: 'latest' },
+        );
         if (cancelled) return;
         const ui = projectWebuiThreadMessages((thread?.messages ?? []).map((message, index) => ({
           ...message,
@@ -231,10 +235,16 @@ export default function ChatView({
           createdAt: typeof message.createdAt === 'number' ? message.createdAt : Date.now(),
         })));
         setHistoryMessages(ui);
+        setHistoryConversationId(activeConvId);
+        setHistoryPage({
+          beforeCursor: thread?.page?.before_cursor ?? null,
+          hasMoreBefore: thread?.page?.has_more_before ?? false,
+        });
         setHistoryVersion((value) => value + 1);
       } catch {
         if (!cancelled) {
           setHistoryMessages([]);
+          setHistoryConversationId(activeConvId);
           setHistoryVersion((value) => value + 1);
         }
       } finally {
@@ -246,32 +256,95 @@ export default function ChatView({
     };
   }, [activeConvId]);
 
+  const loadOlderHistory = useCallback(async () => {
+    if (
+      !activeConvId
+      || historyConversationId !== activeConvId
+      || historyLoadingOlder
+      || !historyPage.hasMoreBefore
+      || !historyPage.beforeCursor
+    ) return;
+    setHistoryLoadingOlder(true);
+    const previousHeight = scrollElement?.scrollHeight ?? 0;
+    const previousTop = scrollElement?.scrollTop ?? 0;
+    try {
+      const thread = await fetchWebuiThread(
+        getNanobotToken(),
+        conversationIdToSessionKey(activeConvId),
+        getGatewayBaseUrl(),
+        {
+          limit: HISTORY_PAGE_LIMIT,
+          before: historyPage.beforeCursor,
+        },
+      );
+      if (useChatStore.getState().activeConversationId !== activeConvId) return;
+      const older = projectWebuiThreadMessages((thread?.messages ?? []).map((message, index) => ({
+        ...message,
+        id: message.id ?? `hist-older-${index}`,
+        createdAt: typeof message.createdAt === 'number' ? message.createdAt : Date.now(),
+      })));
+      preserveScrollOnHistoryVersionRef.current = true;
+      setHistoryMessages((current) => {
+        const seen = new Set(current.map((message) => message.id));
+        return [...older.filter((message) => !seen.has(message.id)), ...current];
+      });
+      setHistoryPage({
+        beforeCursor: thread?.page?.before_cursor ?? null,
+        hasMoreBefore: thread?.page?.has_more_before ?? false,
+      });
+      setHistoryVersion((value) => value + 1);
+      window.requestAnimationFrame(() => {
+        if (!scrollElement) return;
+        scrollElement.scrollTop = previousTop + Math.max(
+          0,
+          scrollElement.scrollHeight - previousHeight,
+        );
+      });
+    } catch {
+      // Keep the currently loaded page when older history cannot be read.
+    } finally {
+      setHistoryLoadingOlder(false);
+    }
+  }, [
+    activeConvId,
+    historyConversationId,
+    historyLoadingOlder,
+    historyPage.beforeCursor,
+    historyPage.hasMoreBefore,
+    scrollElement,
+  ]);
+
   const handleTurnEnd = useCallback(() => {
     void syncSessionsFromGateway();
-  }, []);
+    if (activeConvId) {
+      useConversationWorkbenchStore.getState().requestArtifactRefresh(activeConvId);
+    }
+  }, [activeConvId]);
+
+  const handleArtifactCreated = useCallback(() => {
+    if (activeConvId) {
+      useConversationWorkbenchStore.getState().requestArtifactRefresh(activeConvId);
+    }
+  }, [activeConvId]);
 
   const stream = useNanobotStream(
     activeConvId ?? null,
-    historyMessages,
-    lastMessageLooksPending(historyMessages),
+    activeHistoryMessages,
+    historyHasPendingActivity(activeHistoryMessages),
     handleTurnEnd,
+    handleArtifactCreated,
   );
   const creatingConversationRef = useRef(false);
 
   useEffect(() => {
     if (!activeConvId || historyLoading) return;
     stream.setMessages((current) => {
-      const projected = projectWebuiThreadMessages(historyMessages);
+      const projected = projectWebuiThreadMessages(activeHistoryMessages);
       if (projected.length === 0 && current.length > 0) return current;
       return projected;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeConvId, historyVersion, historyLoading]);
-
-  useEffect(() => {
-    if (!activeConvId) return;
-    setConversationStatus(activeConvId, stream.isStreaming ? 'running' : 'idle');
-  }, [activeConvId, setConversationStatus, stream.isStreaming]);
+  }, [activeConvId, historyConversationId, historyVersion, historyLoading]);
 
   useEffect(() => {
     if (!activeConvId) return;
@@ -302,10 +375,74 @@ export default function ChatView({
     () => displayMessages.filter((message) => !message.interactivePrompt),
     [displayMessages],
   );
+  const latestTurnMessages = useMemo(() => {
+    let lastUserIndex = -1;
+    for (let index = timelineMessages.length - 1; index >= 0; index -= 1) {
+      if (timelineMessages[index].role === 'user') {
+        lastUserIndex = index;
+        break;
+      }
+    }
+    return lastUserIndex >= 0 ? timelineMessages.slice(lastUserIndex + 1) : timelineMessages;
+  }, [timelineMessages]);
+  const latestAssistantMessage = useMemo(() => {
+    for (let index = latestTurnMessages.length - 1; index >= 0; index -= 1) {
+      if (latestTurnMessages[index].role === 'assistant') {
+        return latestTurnMessages[index];
+      }
+    }
+    return undefined;
+  }, [latestTurnMessages]);
+  const runtimeActive = activeConv?.runtimeSnapshot?.thread_status.type === 'active';
+  const generationActive = stream.isStreaming || runtimeActive;
+  const generationPhase = useMemo<GenerationPhase | null>(() => {
+    if (!generationActive) return null;
+    return latestAssistantMessage?.reasoningStreaming ? 'thinking' : 'generating';
+  }, [generationActive, latestAssistantMessage?.reasoningStreaming]);
+  const generationTokenCount = useMemo(
+    () => latestTurnMessages.reduce((total, message) => (
+      total
+      + (message.usage?.inputTokens ?? 0)
+      + (message.usage?.outputTokens ?? 0)
+    ), 0),
+    [latestTurnMessages],
+  );
+  useEffect(() => {
+    if (!activeConvId) return;
+    const activeRuntimeTurn = activeConv?.runtimeSnapshot?.active_turn;
+    const latestRuntimeTurn = activeConv?.runtimeSnapshot?.latest_turn;
+    const selectedRuntimeTurn = activeRuntimeTurn
+      ?? (stream.isStreaming ? undefined : latestRuntimeTurn);
+    if (selectedRuntimeTurn?.id) {
+      useTurnPlanStore.getState().activateTurn(activeConvId, selectedRuntimeTurn.id);
+    }
+    const runtimePlan = selectedRuntimeTurn?.plan;
+    if (runtimePlan) {
+      useTurnPlanStore.getState().applyPlan(activeConvId, runtimePlan);
+      return;
+    }
+    if (stream.messageConversationId !== activeConvId) return;
+    useTurnPlanStore.getState().hydrateLegacyMessages(
+      activeConvId,
+      stream.messageConversationId,
+      timelineMessages,
+      selectedRuntimeTurn?.id ?? activeConvId,
+    );
+  }, [
+    activeConv?.runtimeSnapshot,
+    activeConvId,
+    stream.isStreaming,
+    stream.messageConversationId,
+    timelineMessages,
+  ]);
 
   useLayoutEffect(() => {
     if (!activeConvId || historyLoading) return;
-    scrollToBottom({ force: true });
+    if (preserveScrollOnHistoryVersionRef.current) {
+      preserveScrollOnHistoryVersionRef.current = false;
+      return;
+    }
+    scrollToBottom({ force: true, settle: true });
   }, [activeConvId, historyLoading, historyVersion, scrollToBottom]);
 
   useLayoutEffect(() => {
@@ -397,7 +534,6 @@ export default function ChatView({
   };
 
   const runStartedAt = stream.runStartedAt;
-  const goalState = stream.goalState;
 
   const resendFromUserMessage = useCallback((
     userMessage: UIMessage,
@@ -528,9 +664,19 @@ export default function ChatView({
         try {
           const token = getNanobotToken();
           const base = getGatewayBaseUrl();
-          const thread = await fetchWebuiThread(token, conversationIdToSessionKey(activeConvId), base);
+          const thread = await fetchWebuiThread(
+            token,
+            conversationIdToSessionKey(activeConvId),
+            base,
+            { limit: HISTORY_PAGE_LIMIT, direction: 'latest' },
+          );
           if (cancelled) return;
           setHistoryMessages(projectWebuiThreadMessages(thread?.messages ?? []));
+          setHistoryConversationId(activeConvId);
+          setHistoryPage({
+            beforeCursor: thread?.page?.before_cursor ?? null,
+            hasMoreBefore: thread?.page?.has_more_before ?? false,
+          });
           setHistoryVersion((value) => value + 1);
         } catch {
           // Keep live messages if canonical refresh fails.
@@ -623,9 +769,27 @@ export default function ChatView({
     <div className="flex flex-col h-full min-h-0 min-w-0 bg-[#fbfaf7]">
       {/* Messages Area */}
       <div className="relative flex-1 min-h-0">
-        <div className="h-full overflow-y-auto" ref={containerRef}>
+        <div
+          key={activeConvId}
+          className="h-full overflow-y-auto"
+          ref={containerRef}
+        >
           <div className="w-full max-w-4xl mx-auto px-6 md:px-10 py-8 overflow-hidden">
             <div>
+              {historyPage.hasMoreBefore ? (
+                <div className="mb-5 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => void loadOlderHistory()}
+                    disabled={historyLoadingOlder}
+                    className="rounded-full border border-[#d8d5ce] bg-white/80 px-3 py-1.5 text-[12px] text-[#656358] transition-colors hover:bg-white hover:text-[#29261b] disabled:opacity-50"
+                  >
+                    {historyLoadingOlder
+                      ? (useSettingsStore.getState().language === 'en-US' ? 'Loading…' : '正在加载…')
+                      : (useSettingsStore.getState().language === 'en-US' ? 'Load earlier messages' : '加载更早消息')}
+                  </button>
+                </div>
+              ) : null}
               <ThreadMessages
                 messages={timelineMessages}
                 isStreaming={stream.isStreaming}
@@ -671,7 +835,13 @@ export default function ChatView({
               返回定时任务
             </button>
           )}
-          <GoalStatusBar goalState={goalState} runStartedAt={runStartedAt} />
+          {generationPhase ? (
+            <GenerationStatusBar
+              phase={generationPhase}
+              startedAt={runStartedAt}
+              tokenCount={generationTokenCount}
+            />
+          ) : null}
           {stream.streamError ? (
             <StreamErrorNotice
               error={stream.streamError}

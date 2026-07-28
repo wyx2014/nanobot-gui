@@ -92,7 +92,14 @@ describe("NanobotClient readiness", () => {
     });
 
     await expect(update).resolves.toBeNull();
-    expect(sessionUpdates).toHaveBeenCalledWith("chat-1", "metadata", undefined, null);
+    expect(sessionUpdates).toHaveBeenCalledWith(
+      "chat-1",
+      "metadata",
+      undefined,
+      null,
+      undefined,
+      undefined,
+    );
   });
 
   it("rejects an expert-team update when the gateway refuses it", async () => {
@@ -154,5 +161,95 @@ describe("NanobotClient readiness", () => {
 
     socket.receive({ event: "attached", chat_id: "gateway-created-chat" });
     await expect(created).resolves.toBe("gateway-created-chat");
+  });
+
+  it("preserves runtime state across disconnect until a snapshot replaces it", () => {
+    const socket = new FakeSocket();
+    const client = new NanobotClient({
+      url: "ws://127.0.0.1:8900/",
+      reconnect: false,
+      socketFactory: () => socket as unknown as WebSocket,
+    });
+    const runStatus = vi.fn();
+    client.onRunStatus(runStatus);
+    client.connect();
+    socket.open();
+    socket.receive({
+      event: "ready",
+      chat_id: "default-chat",
+      client_id: "desktop",
+      agent_ready: true,
+      mcp_status: "ready",
+    });
+    socket.receive({
+      event: "goal_status",
+      chat_id: "chat-1",
+      status: "running",
+      started_at: 123,
+    });
+
+    expect(client.getRunStartedAt("chat-1")).toBe(123);
+    socket.onclose?.({ code: 1006 });
+
+    expect(client.getRunStartedAt("chat-1")).toBe(123);
+    expect(runStatus).toHaveBeenLastCalledWith("chat-1", 123);
+  });
+
+  it("uses revisioned lifecycle snapshots and rejects stale patches", () => {
+    const socket = new FakeSocket();
+    const client = new NanobotClient({
+      url: "ws://127.0.0.1:8900/",
+      reconnect: false,
+      socketFactory: () => socket as unknown as WebSocket,
+    });
+    const runStatus = vi.fn();
+    client.onRunStatus(runStatus);
+    client.connect();
+    socket.open();
+    socket.receive({
+      event: "ready",
+      chat_id: "default-chat",
+      client_id: "desktop",
+      agent_ready: true,
+      mcp_status: "ready",
+    });
+    socket.receive({
+      event: "turn_started",
+      chat_id: "chat-1",
+      snapshot_revision: 2,
+      turn: {
+        id: "turn-a",
+        runtime_epoch: "epoch-a",
+        status: "inProgress",
+        started_at: 2_000,
+      },
+    });
+    socket.receive({
+      event: "thread_status_changed",
+      chat_id: "chat-1",
+      runtime_epoch: "epoch-a",
+      snapshot_revision: 1,
+      thread_status: { type: "idle" },
+      active_turn: null,
+      latest_turn: null,
+    });
+
+    expect(client.getRunStartedAt("chat-1")).toBe(2_000);
+
+    socket.receive({
+      event: "turn_completed",
+      chat_id: "chat-1",
+      snapshot_revision: 3,
+      turn: {
+        id: "turn-a",
+        runtime_epoch: "epoch-a",
+        status: "completed",
+        started_at: 2_000,
+        completed_at: 3_000,
+        finish_reason: "success",
+      },
+    });
+    expect(client.getRunStartedAt("chat-1")).toBeNull();
+    expect(runStatus).toHaveBeenLastCalledWith("chat-1", null);
   });
 });

@@ -5,6 +5,9 @@
 - `nanobot gateway`：本地 Python gateway，默认由 Electron 启动，运行在 `127.0.0.1:{port}`。
 - `PromptHub`：技能商店服务，默认地址来自 `promptHubStore.baseUrl`。
 
+Turn 生命周期 v2、Runtime Snapshot 和任务计划终态协议见
+[turn-lifecycle-runtime-spec.md](turn-lifecycle-runtime-spec.md)。
+
 ## nanobot gateway
 
 ### 启动与认证
@@ -22,6 +25,8 @@
 | --- | --- | --- |
 | GET | `/api/sessions` | 获取会话列表。 |
 | GET | `/api/sessions/{key}/webui-thread` | 获取会话消息快照。 |
+| GET | `/api/sessions/{key}/artifacts` | 获取当前会话工作区内的安全产物列表。 |
+| GET | `/api/sessions/{key}/artifacts/content?path=...` | 鉴权读取或下载会话产物。 |
 | GET | `/api/sessions/{key}/delete` | 删除会话。 |
 | GET | `/v1/session/websocket:{conversationId}/info` | 获取会话信息。 |
 | GET | `/v1/memory` | 读取 nanobot memory。 |
@@ -37,8 +42,14 @@ WebSocket 发送：
 WebSocket 接收：
 
 - `delta`
+- `stream_end`
 - `reasoning_delta`
+- `reasoning_end`
+- `narration_delta`
+- `narration_end`
 - `message`
+- `file_edit`
+- `artifact_created`
 - `turn_end`
 - `error`
 - `session_update`
@@ -72,6 +83,90 @@ WebSocket 接收：
 | --- | --- | --- |
 | GET | `/api/workspaces` | 获取工作区列表和控制信息。 |
 | WebSocket | `setWorkspaceScope` payload | 设置当前会话 workspace scope。 |
+
+### 会话工作台
+
+完整产品和协议说明见 [conversation-workbench-spec.md](conversation-workbench-spec.md)。
+
+#### Steps narration
+
+普通 `delta` 在片段结束前是 provisional 文本。gateway 确认该片段后面会继续调用工具时发送：
+
+```json
+{
+  "event": "stream_end",
+  "chat_id": "conversation-id",
+  "stream_id": "stream-id",
+  "resuming": true,
+  "stream_kind": "narration"
+}
+```
+
+随后用 `narration_delta` / `narration_end` 提交公开行动说明：
+
+```json
+{
+  "event": "narration_delta",
+  "chat_id": "conversation-id",
+  "stream_id": "stream-id",
+  "replaces_stream_id": "stream-id",
+  "text": "接下来核对具体报道中的市场数据。"
+}
+```
+
+没有工具跟随的最终回答以
+`stream_end { "resuming": false, "stream_kind": "answer" }` 结束。GUI 将 narration 放进
+Steps，把 answer 保留为 assistant 正文。`reasoning_delta` 仍是独立的私有推理通道，
+不得当作 narration 或正文渲染。
+
+#### Progress
+
+新协议下右栏 Progress 以 Runtime Snapshot 中的 Turn Plan Resource 为准；
+`message.agent_ui.kind === "task_progress"` 的最新快照仅作为 legacy transcript fallback。
+没有结构化计划时只显示通用规划/工作状态。GUI 不把 `tool_events` 或 `tool_calls`
+投影成计划步骤；工具轨迹只属于聊天中的 Steps。gateway 也不得按 search/read/exec/write
+等工具类别自动合成 `task_progress`。
+
+预计调用工具的 Agent 轮次必须先通过 `update_task_progress` 发布完整的 2–4 项计划。
+计划标题描述用户目标或交付物，每次更新发送完整列表并保持 id、标题和顺序稳定；
+非终态快照恰好一个 `running`，最终回答前所有步骤必须进入 `completed` 或 `error`。
+
+#### Artifacts
+
+列表和内容请求都必须使用显式 gateway base URL，并携带：
+
+```http
+Authorization: Bearer {bootstrap_token}
+```
+
+`GET /api/sessions/{encoded_key}/artifacts` 以 SQLite artifact registry 为事实来源，返回
+`project_id/session_id/artifact id/status/relation` 和相对 workspace path。只有首次访问的
+legacy session 可执行一次受限项目内迁移扫描；新会话不扫描目录。
+
+新客户端使用 `GET /api/artifacts/{artifact_id}/content?session={encoded_key}`，服务端同时校验
+artifact-session 显式 link、project id、realpath 和 symlink containment；`download=1` 返回
+attachment。旧 path content API 仅为滚动升级兼容。文件编辑 start/end 会发送
+`artifact_created` 状态提示，HTTP registry 仍是恢复后的事实来源。
+
+GUI 对受保护产物使用 Bearer fetch 后创建临时 object URL 供 PDF、Office、图片和视频预览，
+不把 token 放入 URL，也拒绝向 gateway 之外的绝对 URL 发送凭证。
+
+桌面端右栏列表宽度为 `332px`；打开产物后替换为 `min(62vw, 960px)` 阅读栏，聊天保持可见，
+左侧导航临时收起并在返回产物列表后恢复。阅读栏提供 breadcrumb、HTML 刷新、系统默认应用
+打开、复制路径、在文件管理器中显示和鉴权下载；PDF 使用连续多页预览。
+
+### 项目
+
+| 方法 | 接口 | 用途 |
+| --- | --- | --- |
+| GET | `/api/projects` | 获取 active project registry。 |
+| GET | `/api/projects/{id}/sessions` | 获取同一项目的非归档会话。 |
+| GET | `/api/projects/{id}/archive` | 软归档项目注册，不删除用户目录。 |
+| GET | `/api/projects/{id}/restore` | 恢复归档项目。 |
+| GET | `/api/projects/{id}/relocate?path=...` | 保留 project id 并更新根目录。 |
+| GET | `/api/projects/{id}/export` | 导出 manifest、状态、会话日志和项目记忆 ZIP。 |
+
+项目动作沿用当前 WebSocket HTTP gateway 的 GET transport 约定，全部要求短期 Bearer token。
 
 ### 定时任务
 
@@ -247,6 +342,7 @@ GUI 当前主要读取 `SKILL.md` 或 `skills.md`。
 | `src/core/api.ts` | nanobot REST API wrapper。 |
 | `src/core/nanobotClient.ts` | nanobot bootstrap、token、WebSocket client 初始化、会话同步。 |
 | `src/core/nanobot-client.ts` | WebSocket client 实现。 |
+| `src/core/sessionArtifacts.ts` | 会话 Artifacts API、鉴权和 payload 归一化。 |
 | `src/core/prompthubApi.ts` | PromptHub API wrapper。 |
 | `electron/pythonBridge.ts` | 启动 `python -m nanobot desktop-gateway`。 |
 | `electron/main.ts` | 暴露 `nanobot:status`、`nanobot:sync-config` IPC。 |

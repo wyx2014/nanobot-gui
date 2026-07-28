@@ -2,6 +2,97 @@ export type Role = "user" | "assistant" | "tool" | "system";
 
 import type { ScheduledTask } from "@/types/schedule";
 
+export type TurnLifecycleStatus =
+  | "queued"
+  | "inProgress"
+  | "completed"
+  | "failed"
+  | "interrupted";
+
+export type TurnPlanStatus =
+  | "created"
+  | "pending"
+  | "inProgress"
+  | "running"
+  | "completed"
+  | "failed"
+  | "interrupted";
+
+export interface TurnPlanStepResource {
+  id: string;
+  key?: string;
+  ordinal?: number;
+  title: string;
+  detail?: string;
+  kind?: "goal" | "member" | "synthesis" | "audit" | "delivery" | string;
+  stage_key?: string;
+  status: TaskProgressStatus | "inProgress" | "failed" | "cancelled";
+  warning?: string;
+  started_at?: number;
+  ended_at?: number;
+  updated_at?: number;
+}
+
+export interface TurnPlanResource {
+  id: string;
+  project_id?: string;
+  session_id?: string;
+  turn_id: string;
+  kind: "dynamic" | "workflow";
+  owner: string;
+  policy: "optional" | "required";
+  execution: "serial" | "parallel" | "staged";
+  status: TurnPlanStatus;
+  revision: number;
+  signature_version?: number;
+  active_step_ids: string[];
+  current_step_id?: string | null;
+  note?: string | null;
+  steps: TurnPlanStepResource[];
+  created_at?: number;
+  updated_at?: number;
+  terminalized_at?: number;
+  terminalization_reason?: string;
+  stage_key?: string;
+  team_id?: string;
+  team_run_id?: string;
+}
+
+export interface TurnLifecycleResource {
+  id: string;
+  runtime_epoch?: string | null;
+  project_id?: string | null;
+  session_id?: string | null;
+  status: TurnLifecycleStatus;
+  started_at: number;
+  completed_at?: number | null;
+  duration_ms?: number | null;
+  finish_reason?: string | null;
+  plan?: TurnPlanResource;
+  error?: {
+    code: string;
+    message: string;
+    retryable?: boolean;
+  };
+}
+
+export type ThreadRuntimeStatus =
+  | { type: "notLoaded" }
+  | { type: "idle" }
+  | { type: "active"; active_flags?: string[] }
+  | { type: "systemError"; error_code?: string };
+
+export interface ThreadRuntimeSnapshot {
+  session_key: string;
+  project_id?: string;
+  session_id?: string;
+  runtime_epoch: string | null;
+  snapshot_revision: number;
+  thread_status: ThreadRuntimeStatus;
+  active_turn: TurnLifecycleResource | null;
+  latest_turn: TurnLifecycleResource | null;
+}
+
 /** "trace" rows are intermediate agent breadcrumbs (tool-call hints,
  * progress pings) that should not be rendered as conversational replies. */
 export type MessageKind = "message" | "trace";
@@ -44,6 +135,15 @@ export interface UIMessage {
   fileEdits?: UIFileEdit[];
   /** Activity rows created during the same agent phase share one collapsible block. */
   activitySegmentId?: string;
+  /** Public, user-facing explanation of the next action. Unlike ``reasoning``,
+   * this text is safe to render verbatim inside the Steps timeline. */
+  narration?: string;
+  /** True while ``narration_delta`` frames are still extending this row. */
+  narrationStreaming?: boolean;
+  /** Transport identities retained while a provisional answer stream is
+   * reclassified as narration. They are not rendered. */
+  streamId?: string;
+  narrationStreamId?: string;
   /** User turn: optimistic blob URLs for preview. Replay: placeholder chips. */
   images?: UIImage[];
   /** Signed or local UI-renderable media attachments. */
@@ -61,6 +161,11 @@ export interface UIMessage {
   reasoningStreaming?: boolean;
   /** End-to-end wall time for this assistant turn (persisted ``latency_ms`` / ``turn_end``). */
   latencyMs?: number;
+  /** Per-turn provider token usage, normalized for renderer consumption. */
+  usage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+  };
   /** Assistant turn: structured interactive prompt card persisted in transcript. */
   interactivePrompt?: UIInteractivePrompt;
   /** User turn: structured answer metadata for an interactive prompt. */
@@ -132,7 +237,13 @@ export interface UIInteractivePromptAnswer {
 }
 
 /** Structured UI blob on ``progress`` WS frames; channels may add more ``kind`` values later. */
-export type TaskProgressStatus = "pending" | "running" | "completed" | "error";
+export type TaskProgressStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "error"
+  | "skipped"
+  | "interrupted";
 
 export interface TaskProgressStep {
   id: string;
@@ -145,6 +256,15 @@ export type AgentUIBlob =
   | {
       kind: "task_progress";
       steps: TaskProgressStep[];
+      plan_id?: string;
+      turn_id?: string;
+      plan_kind?: "dynamic" | "workflow";
+      owner?: string;
+      policy?: "optional" | "required";
+      execution?: "serial" | "parallel" | "staged";
+      status?: TurnPlanStatus;
+      revision?: number;
+      active_step_ids?: string[];
       /** Optional public progress note; never contains private reasoning. */
       note?: string;
       current_step_id?: string;
@@ -216,6 +336,9 @@ export interface ChatSummary {
   /** Local channel + chat_id parts derived from ``key`` for convenience. */
   channel: string;
   chatId: string;
+  /** Stable SQLite projection identities returned by the gateway. */
+  sessionId?: string;
+  projectId?: string;
   createdAt: string | null;
   updatedAt: string | null;
   title?: string;
@@ -224,6 +347,79 @@ export interface ChatSummary {
   runStartedAt?: number | null;
   workspaceScope?: WorkspaceScopePayload | null;
   expertTeam?: ExpertTeamBinding | null;
+}
+
+export interface ProjectPayload {
+  id: string;
+  kind: "workspace" | "inbox" | "legacy_quarantine";
+  name: string;
+  rootPath: string;
+  status: "active" | "missing" | "detached" | "archived";
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ProjectSessionPayload {
+  id: string;
+  projectId: string;
+  sessionKey: string;
+  title: string;
+  status: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ProjectMemorySourcePayload {
+  id: string;
+  stage1Id?: string | null;
+  sourceSessionId: string;
+  sourceSessionKey?: string | null;
+  sourceTurnId?: string | null;
+  sourceEventId?: string | null;
+  evidenceLocator?: string | null;
+  createdAt: number;
+}
+
+export interface ProjectMemoryPayload {
+  id: string;
+  projectId: string;
+  kind: string;
+  title: string;
+  content: string;
+  confidence?: number | null;
+  status: string;
+  usageCount: number;
+  lastUsedAt?: number | null;
+  createdAt: number;
+  updatedAt: number;
+  sources: ProjectMemorySourcePayload[];
+}
+
+export interface ProjectMemoryJobPayload {
+  status: string;
+  attemptCount: number;
+  inputWatermark?: number | null;
+  completedWatermark?: number | null;
+  updatedAt: number;
+  completedAt?: number | null;
+  error?: { code?: string; message?: string; retryable?: boolean } | null;
+}
+
+export interface ProjectMemoryStatusPayload {
+  projectId: string;
+  inputWatermark: number;
+  phase1?: ProjectMemoryJobPayload | null;
+  phase2?: ProjectMemoryJobPayload | null;
+}
+
+export interface ProjectMemoriesPayload {
+  projectId: string;
+  memories: ProjectMemoryPayload[];
+  status: ProjectMemoryStatusPayload;
+  retrieval: {
+    mode: "bounded_lexical";
+    deepRagEnabled: false;
+  };
 }
 
 export type WorkspaceAccessMode = "restricted" | "full";
@@ -634,10 +830,19 @@ export interface ExpertTeamDataSource {
   assignments: Record<string, string>;
 }
 
+export interface ExpertTeamMcpPreset {
+  name: string;
+  display_name: string;
+  required: boolean;
+  configured: boolean;
+  description?: string;
+}
+
 export interface ExpertTeamDetail extends ExpertTeamSummary {
   members: ExpertTeamMember[];
   workflows: ExpertTeamWorkflow[];
   data_sources?: ExpertTeamDataSource[];
+  mcp_presets?: ExpertTeamMcpPreset[];
   optional_dependencies: Array<{
     name: string;
     available: boolean;
@@ -859,6 +1064,10 @@ export type InboundEvent =
       chat_id: string;
       stream_id?: string;
       text?: string;
+      /** The completed text segment is public action narration followed by
+       * tool execution, not the turn's final conversational answer. */
+      resuming?: boolean;
+      stream_kind?: "narration" | "answer" | string;
     }
   | {
       event: "reasoning_delta";
@@ -872,14 +1081,93 @@ export type InboundEvent =
       stream_id?: string;
     }
   | {
+      /** Public action narration shown in the Steps timeline, never in the
+       * final assistant answer body. */
+      event: "narration_delta";
+      chat_id: string;
+      text: string;
+      stream_id?: string;
+      /** Replaces the provisional normal-delta stream with this public
+       * narration instead of appending a duplicate row. */
+      replaces_stream_id?: string;
+    }
+  | {
+      event: "narration_end";
+      chat_id: string;
+      stream_id?: string;
+      replaces_stream_id?: string;
+    }
+  | {
+      /** Hint that a successful file operation produced a session artifact.
+       * The HTTP artifact index remains the source of truth. */
+      event: "artifact_created";
+      chat_id: string;
+      artifact: {
+        id?: string;
+        project_id?: string;
+        session_id?: string;
+        status?: "staging" | "ready" | "failed" | "missing" | "quarantined" | string;
+        path: string;
+        name?: string;
+        kind?: string;
+        size?: number;
+        modified_at?: string | number;
+        mime_type?: string;
+        preview_url?: string;
+        download_url?: string;
+      };
+    }
+  | {
       event: "runtime_model_updated";
       model_name: string;
       model_preset?: string | null;
     }
   | {
+      event: "turn_started";
+      chat_id: string;
+      snapshot_revision: number;
+      turn: TurnLifecycleResource;
+    }
+  | {
+      event: "turn_completed";
+      chat_id: string;
+      snapshot_revision: number;
+      turn: TurnLifecycleResource;
+    }
+  | {
+      schema_version?: number;
+      event:
+        | "turn_plan_created"
+        | "turn_plan_updated"
+        | "turn_plan_rebased"
+        | "turn_plan_terminalized";
+      event_id?: string;
+      chat_id: string;
+      project_id?: string;
+      session_id?: string;
+      turn_id: string;
+      plan: TurnPlanResource;
+    }
+  | {
+      event: "thread_status_changed";
+      chat_id: string;
+      runtime_epoch?: string | null;
+      snapshot_revision: number;
+      thread_status: ThreadRuntimeStatus;
+      active_turn?: TurnLifecycleResource | null;
+      latest_turn?: TurnLifecycleResource | null;
+    }
+  | {
       event: "turn_end";
       chat_id: string;
       latency_ms?: number;
+      usage?: {
+        prompt_tokens?: number;
+        completion_tokens?: number;
+        input_tokens?: number;
+        output_tokens?: number;
+        total_tokens?: number;
+      };
       /** Terminal disposition for a completed, failed, or user-cancelled turn. */
       finish_reason?: "cancelled" | "completed" | "error" | string;
       /** Authoritative sustained-goal snapshot for this chat (same shape as ``goal_state`` events). */
@@ -901,6 +1189,8 @@ export type InboundEvent =
   | {
       event: "session_updated";
       chat_id: string;
+      session_id?: string;
+      project_id?: string;
       scope?: "metadata" | "thread" | string;
       workspace_scope?: WorkspaceScopePayload;
       expert_team?: ExpertTeamBinding | null;
@@ -971,10 +1261,18 @@ export interface OutboundSkillScope {
 export interface WebuiThreadPersistedPayload {
   schemaVersion: number;
   sessionKey?: string;
+  session_id?: string;
+  project_id?: string;
   savedAt?: string;
   messages: UIMessage[];
   workspace_scope?: WorkspaceScopePayload;
   expert_team?: ExpertTeamBinding;
+  page?: {
+    before_cursor: string | null;
+    has_more_before: boolean;
+    loaded_message_count: number;
+    user_message_offset: number;
+  };
 }
 
 export type Outbound =

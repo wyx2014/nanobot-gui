@@ -176,6 +176,19 @@ runtime:
   report_directory: reports
   adapter: adapter.md
 
+data_sources:
+  - id: ifind-finance-data
+    name: 同花顺 iFinD 金融数据
+    skill: ifind-finance-data
+    priority: primary
+    required: true
+
+mcp_presets:
+  - name: juyuan
+    display_name: 聚源金融数据 MCP
+    required: false
+    description: 工具箱已配置时由团队自动启用，并继承给团队成员。
+
 members:
   - id: business-analyst
     name: 商业分析师
@@ -510,7 +523,12 @@ API 不返回原始文件绝对路径。封面通过 gateway 的受控资源接�
 3. 按工作流路由加载对应的原始 Markdown。
 4. 将团队资源根目录加入本次运行的只读访问范围。
 5. 将报告目录加入本次运行的可写范围。
-6. 启动 Team Lead，按原始工作流调度成员。
+6. 将团队声明的内置 Skill 加入本轮精确 Skill scope；禁止为发现 Skill 扫描 Home 或项目外目录。
+7. 对团队声明的 MCP preset 读取当前 gateway 配置，只自动激活已配置项；未配置项只在工具箱显示“配置后自动启用”，不得伪造连接或寻找凭证。
+8. 将已激活的团队 MCP 工具按前缀加入 Team Lead，并继承给本次团队成员；不继承未绑定的其他 MCP。
+9. 启动 Team Lead，按原始工作流调度成员。
+
+资产投研团队与股票交易分析团队默认绑定 `ifind-finance-data` 和 `juyuan`。两者按字段覆盖互补；单一来源失败时先切换另一绑定结构化数据源，均不可用或仍缺字段时再使用交易所、公司公告、监管披露和公开网页。不得用固定取数次数代替数据完整性判断。
 
 不能把 19 个工作流全量永久塞入每轮上下文。应先注入工作流摘要，由 Team Lead 选择后再加载全文。
 

@@ -1,6 +1,74 @@
 import { describe, expect, it } from 'vitest';
 import type { Message } from '@/types';
-import { mapWebuiThreadToGuiMessages, projectGatewayMessagesForHistory } from './nanobotClient';
+import {
+  conversationFromSessionSummary,
+  mapWebuiThreadToGuiMessages,
+  projectGatewayMessagesForHistory,
+  shouldPreserveRunningConversation,
+  stripRedundantMcpMentionPrefix,
+} from './nanobotClient';
+
+describe('conversationFromSessionSummary', () => {
+  it('hydrates only metadata and preserves already loaded messages', () => {
+    const existing = {
+      id: 'chat-a',
+      title: '已有标题',
+      messages: [{ id: 'm1', role: 'user' as const, content: '历史', timestamp: 1 }],
+      createdAt: 1,
+      updatedAt: 2,
+      status: 'idle' as const,
+    };
+
+    const conversation = conversationFromSessionSummary({
+      key: 'websocket:chat-a',
+      channel: 'websocket',
+      chatId: 'chat-a',
+      sessionId: 'ses-a',
+      projectId: 'prj-a',
+      createdAt: '2026-07-26T10:00:00',
+      updatedAt: '2026-07-26T11:00:00',
+      title: '',
+      preview: '第一条用户消息',
+      runStartedAt: 123,
+      workspaceScope: null,
+      expertTeam: null,
+    }, existing);
+
+    expect(conversation.messages).toBe(existing.messages);
+    expect(conversation.title).toBe('已有标题');
+    expect(conversation.status).toBe('running');
+    expect(conversation.sessionId).toBe('ses-a');
+    expect(conversation.projectId).toBe('prj-a');
+    expect(conversation.hasHistory).toBe(true);
+  });
+
+  it('uses the server preview without loading a thread for a new session', () => {
+    const conversation = conversationFromSessionSummary({
+      key: 'websocket:chat-b',
+      channel: 'websocket',
+      chatId: 'chat-b',
+      createdAt: null,
+      updatedAt: null,
+      title: '',
+      preview: '帮我分析启动速度',
+      runStartedAt: null,
+    });
+
+    expect(conversation.title).toBe('帮我分析启动速度');
+    expect(conversation.messages).toEqual([]);
+    expect(conversation.status).toBe('idle');
+    expect(conversation.hasHistory).toBe(true);
+  });
+});
+
+describe('shouldPreserveRunningConversation', () => {
+  it('only protects a local running snapshot while the gateway still has an active run', () => {
+    expect(shouldPreserveRunningConversation('running', 123, null)).toBe(true);
+    expect(shouldPreserveRunningConversation('running', null, 123)).toBe(true);
+    expect(shouldPreserveRunningConversation('running', null, null)).toBe(false);
+    expect(shouldPreserveRunningConversation('idle', 123, 123)).toBe(false);
+  });
+});
 
 describe('projectGatewayMessagesForHistory', () => {
   it('uses gateway history as the canonical transcript', () => {
@@ -61,6 +129,54 @@ describe('projectGatewayMessagesForHistory', () => {
 });
 
 describe('mapWebuiThreadToGuiMessages artifacts', () => {
+  it('hides a legacy MCP mention prefix while preserving the connector attachment', () => {
+    const messages = mapWebuiThreadToGuiMessages([{
+      id: 'user-with-connector',
+      role: 'user',
+      content: '@juyuan\n\n帮我分析下啤酒股票',
+      createdAt: 1,
+      mcpPresets: [{ name: 'juyuan', display_name: '聚源' }],
+    }]);
+
+    expect(messages[0].content).toBe('帮我分析下啤酒股票');
+    expect(messages[0].mcpPresets).toEqual([{ name: 'juyuan', display_name: '聚源' }]);
+  });
+
+  it('removes only the MCP token from a mixed capability prefix', () => {
+    expect(stripRedundantMcpMentionPrefix(
+      '@terminal @juyuan\n分析贵州茅台',
+      [{ name: 'juyuan' }],
+    )).toBe('@terminal\n分析贵州茅台');
+  });
+
+  it('does not rewrite natural-language connector references', () => {
+    expect(stripRedundantMcpMentionPrefix(
+      '请比较 @juyuan 的数据来源',
+      [{ name: 'juyuan' }],
+    )).toBe('请比较 @juyuan 的数据来源');
+  });
+
+  it('restores persisted public narration as an activity trace', () => {
+    const messages = mapWebuiThreadToGuiMessages([{
+      id: 'narration-history',
+      role: 'tool',
+      kind: 'trace',
+      content: '',
+      narration: 'I will inspect the detailed source articles.',
+      narrationStreaming: false,
+      createdAt: 1,
+    }]);
+
+    expect(messages[0]).toMatchObject({
+      id: 'narration-history',
+      role: 'tool',
+      kind: 'trace',
+      content: '',
+      narration: 'I will inspect the detailed source articles.',
+      narrationStreaming: false,
+    });
+  });
+
   it('preserves server turn latency for task duration summaries', () => {
     const messages = mapWebuiThreadToGuiMessages([{
       id: 'assistant-latency',

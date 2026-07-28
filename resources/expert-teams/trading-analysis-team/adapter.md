@@ -15,28 +15,18 @@
 
 ## 数据源优先级
 
-1. 必须优先读取并使用团队绑定的 `ifind-finance-data` Skill。同花顺 iFinD 是本团队唯一的优先结构化金融数据源。
-2. 四位第一阶段分析师分别使用 iFinD 获取行情与技术底表、财务与估值、公告与行业信息、资金与机构数据。能从 iFinD 取得的结构化字段，不应先退化为随机网页搜索。
-3. iFinD 缺少字段、返回限流或需要核验关键事实时，回到交易所公告、监管披露、公司 IR、定期报告、政策原文和可信行业资料。`web_search` 只用于定位来源，关键数字必须尽可能回到原始文件。
-4. 数据源失败属于证据缺口，不是编造许可。同一查询原样重试不超过一次；更换查询方式、使用官方来源或缩窄结论。
+1. 团队通过 Skill 注册表绑定 `ifind-finance-data`，并声明绑定 `juyuan` MCP。运行时已经注入 iFinD Skill 内容、来源和准确目录；聚源在工具箱已配置时会自动启用 `mcp_juyuan_...` 工具。禁止用 `find_files`、`grep`、`list_dir`、Home 扫描或项目外搜索寻找另一份 Skill、MCP 配置或凭证。
+2. 四位第一阶段分析师按字段覆盖使用 iFinD 或已配置的聚源 MCP，获取行情与技术底表、财务与估值、公告与行业信息、资金与机构数据；关键指标可在两者之间交叉核验。能从绑定结构化数据源取得的字段，不应先退化为随机网页搜索。
+3. 单一结构化数据源缺少字段或限流时先使用另一个。绑定数据源均不可用、仍缺字段或需要核验关键事实时，再回到交易所公告、监管披露、公司 IR、定期报告、政策原文和可信行业资料。`web_search` 只用于定位来源，关键数字必须尽可能回到原始文件。
+4. 数据源降级顺序固定为 `iFinD → 聚源 MCP → 已有可信数据/官方披露`。iFinD 首次出现硬失败、内层 `call failed`、429、权限错误或重复查询熔断时，立即停止 iFinD 并切换到可用的 `mcp_juyuan_...` 工具；不得轮换证券或轻微改写命令规避熔断。聚源也失败时标注证据缺口并完成当前角色报告。
 
-iFinD Skill 内容已由运行时注入角色上下文。不要再次读取 `SKILL.md` 或
-`call-node.js` 源码确认用法。进入 Skill 目录后使用固定 CLI：
+iFinD Skill 内容和准确目录已由运行时注入角色上下文。不要再次读取 `SKILL.md` 或
+脚本源码确认用法；直接遵循已注入 Skill 的固定 CLI。聚源 MCP 是否已配置以及对应
+工具是否存在由运行时判定，不得搜索配置文件或凭证。任一来源调用失败时切换到另一
+个已绑定来源；禁止搜索其他 Skill 副本、生成临时包装脚本或对同一个读取/取数命令
+原样循环。
 
-```bash
-node call-node.js <server_type> <tool_name> '<json_params>'
-```
-
-例如：
-
-```bash
-node call-node.js stock get_stock_info '{"query":"闻泰科技 600745.SH 日频行情 2026-07-01 至 2026-07-15"}'
-```
-
-只有参数格式不明确时可执行一次 `node call-node.js --help`。不得无参数直接运行脚本，
-不得生成临时 Node 包装脚本，也不得对同一个 `read_file`、`list_dir` 或取数命令原样循环。
-
-同花顺不可用时不要停止整个团队，但降级时必须在报告列出缺失字段、替代来源和置信度影响。不得声称使用未绑定的外部金融数据源或并不存在的连接认证流程。
+单一数据源不可用时不要停止整个团队；结构化数据整体降级时必须在报告列出缺失字段、替代来源和置信度影响。不得声称使用未绑定的外部金融数据源或并不存在的连接认证流程。
 
 ## 研究与交易边界
 
@@ -48,7 +38,7 @@ node call-node.js stock get_stock_info '{"query":"闻泰科技 600745.SH 日频�
 
 ## 进度与完成
 
-- `update_task_progress` 每次最多提交 8 个步骤，禁止把 12 位成员和交付阶段一次性展开成 14 项。使用以下 8 个稳定阶段 ID：`phase-1-research`、`bull-researcher`、`bear-researcher`、`research-manager`、`trader`、`risk-panel`、`risk-manager`、`report-audit`。
+- `update_task_progress` 第一次调用必须一次性创建以下 8 个稳定阶段，之后只更新状态，禁止增删、改名或重排：`phase-1-research`、`bull-researcher`、`bear-researcher`、`research-manager`、`trader`、`risk-panel`、`risk-manager`、`report-audit`。禁止把 12 位成员和交付阶段展开成 14 项。
 - `phase-1-research` 内含四位第一阶段分析师；`risk-panel` 内含三位风险分析师；`report-audit` 同时覆盖首席策略官汇总、数据审校和三格式交付。具体成员状态由 `spawn` 的团队事件展示，不要为每个成员重复创建进度步骤。
 - 只有正在执行的阶段可标为 `running`；后续阶段保持 `pending`。成员交付后再更新为 `completed`。失败角色先重试一次；仍失败则由首席策略官补齐或降低结论置信度。
 - 最终必须写出 `reports/<证券代码或简称>-交易分析-<日期>.md`。Markdown 写入后会生成同名 HTML；再由同一 Markdown 生成 DOCX 和 `research_report` 模板 PDF。

@@ -180,7 +180,7 @@ export class PythonBridge {
         console.warn('[PythonBridge] Force-killing nanobot (SIGKILL)');
         this.proc?.kill('SIGKILL');
         resolve();
-      }, 4000);
+      }, 8000);
 
       this.proc!.once('exit', () => {
         clearTimeout(forceKill);

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Plus, ArrowUp, ArrowRight, Square, X, ChevronDown, Check, FileText, CornerDownRight, Pencil, Trash2, GraduationCap, Code, Coffee, Lightbulb, Paperclip, ChevronRight, Puzzle, Globe, Search, Users } from 'lucide-react';
+import ExpertTeamIcon from '@/components/common/ExpertTeamIcon';
 import { dialogBridge, fsBridge } from '@/lib/ipc-factory';
 import { useFileDragDrop } from '@/hooks/useFileDragDrop';
 import { uint8ArrayToBase64 } from '@/utils/base64';
@@ -876,10 +877,10 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
         ].join('\n')
       : '';
 
-    const capabilityMentions = [
-      ...(draft.cliApps?.map((app) => `@${app.name}`) ?? []),
-      ...(draft.mcpPresets?.map((preset) => `@${preset.name}`) ?? []),
-    ].join(' ');
+    // CLI apps still use an explicit text mention for their command adapter.
+    // MCP connectors are carried by structured metadata and already render as
+    // attachment chips, so repeating them in the user-visible body is redundant.
+    const cliAppMentions = draft.cliApps?.map((app) => `@${app.name}`).join(' ') ?? '';
 
     const projectPath = visibleProjectPath(workspacePath ?? workspaceScope?.project_path ?? localWorkspace);
     const usableSkillNames = projectUsableSkills(
@@ -897,7 +898,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
 
     // Compose parts, then join with newline
     const cleanText = stripUnavailableLeadingSkillMentions(trimmed, usableSkillNames);
-    const bodyParts = [fileContext, capabilityMentions, skillPrefix, cleanText].filter(Boolean).join('\n');
+    const bodyParts = [fileContext, cliAppMentions, skillPrefix, cleanText].filter(Boolean).join('\n');
 
     const message = bodyParts;
 
@@ -1210,11 +1211,17 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                         }}
                         className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 hover:bg-[#f5f3ee] transition-colors text-left cursor-pointer disabled:cursor-not-allowed disabled:opacity-45"
                       >
-                        <div className="min-w-0 flex flex-col">
-                          <span className="font-medium text-[#29261b] truncate">{team.name}</span>
-                          <span className="text-[11px] text-[#8a867c] line-clamp-1">
-                            {team.member_count} {isEn ? 'experts' : '位专家'} · {team.description}
-                          </span>
+                        <div className="flex min-w-0 items-start gap-2.5">
+                          <ExpertTeamIcon
+                            teamId={team.id}
+                            className="mt-0.5 h-4 w-4 text-[#656358]"
+                          />
+                          <div className="min-w-0 flex flex-col">
+                            <span className="font-medium text-[#29261b] truncate">{team.name}</span>
+                            <span className="text-[11px] text-[#8a867c] line-clamp-1">
+                              {team.member_count} {isEn ? 'experts' : '位专家'} · {team.description}
+                            </span>
+                          </div>
                         </div>
                         {isSelected && <Check className="h-3.5 w-3.5 text-[#d97757] shrink-0" />}
                       </button>
@@ -1302,6 +1309,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
 
         {/* Add connector */}
         <div
+          data-plus-menu-item="connector"
           className="relative"
           onMouseEnter={() => setActiveSubmenu('connector')}
           onMouseLeave={() => setActiveSubmenu(null)}
@@ -1502,7 +1510,10 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       className="group/team inline-flex h-8 max-w-[220px] shrink-0 items-center gap-1.5 rounded-xl bg-[#f0efec] px-2.5 text-[13px] font-medium text-[#29261b] transition-colors hover:bg-[#e8e6e1] disabled:cursor-wait disabled:opacity-60"
     >
       <span className="relative h-4 w-4 shrink-0">
-        <Users className="absolute inset-0 h-4 w-4 text-[#656358] transition-opacity group-hover/team:opacity-0" />
+        <ExpertTeamIcon
+          teamId={selectedExpertTeam.id}
+          className="absolute inset-0 h-4 w-4 text-[#656358] transition-opacity group-hover/team:opacity-0"
+        />
         <X className="absolute inset-0 h-4 w-4 text-[#656358] opacity-0 transition-opacity group-hover/team:opacity-100" />
       </span>
       <span className="truncate">{selectedExpertTeam.name || selectedExpertTeam.id}</span>

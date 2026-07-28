@@ -6,6 +6,7 @@ import ChatInput from './ChatInput';
 
 const mocks = vi.hoisted(() => ({
   fetchExpertTeams: vi.fn(),
+  fetchMcpPresets: vi.fn(),
   setExpertTeam: vi.fn(),
 }));
 
@@ -26,7 +27,7 @@ vi.mock('@/core/api', async () => {
     fetchExpertTeams: mocks.fetchExpertTeams,
     listSlashCommands: vi.fn().mockResolvedValue([]),
     fetchCliApps: vi.fn().mockResolvedValue({ apps: [] }),
-    fetchMcpPresets: vi.fn().mockResolvedValue({ presets: [] }),
+    fetchMcpPresets: mocks.fetchMcpPresets,
   };
 });
 
@@ -50,6 +51,26 @@ let root: Root | undefined;
 
 beforeEach(() => {
   mocks.fetchExpertTeams.mockResolvedValue({ teams: [investmentTeam] });
+  mocks.fetchMcpPresets.mockResolvedValue({
+    presets: [{
+      name: 'juyuan',
+      display_name: 'juyuan',
+      category: 'finance',
+      description: '聚源金融数据',
+      docs_url: '',
+      transport: 'stdio',
+      requires: '',
+      note: '',
+      install_supported: true,
+      installed: true,
+      configured: true,
+      available: true,
+      status: 'configured',
+      required_fields: [],
+      connection_summary: '已连接',
+    }],
+    installed_count: 1,
+  });
   mocks.setExpertTeam.mockImplementation(async (_chatId, team) => team);
 });
 
@@ -103,6 +124,7 @@ describe('ChatInput expert-team menu', () => {
     const teamButton = [...view.querySelectorAll('button')]
       .find((button) => button.textContent?.includes('资产投研团队'));
     expect(teamButton).toBeDefined();
+    expect(teamButton?.querySelector('[data-expert-team-icon="asset-research"]')).not.toBeNull();
 
     await act(async () => teamButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
 
@@ -123,7 +145,7 @@ describe('ChatInput expert-team menu', () => {
 
     const selectedTeam = view.querySelector<HTMLButtonElement>('[data-selected-expert-team="asset-research"]');
     expect(selectedTeam?.textContent).toContain('资产投研团队');
-    expect(selectedTeam?.querySelector('svg.lucide-users')).not.toBeNull();
+    expect(selectedTeam?.querySelector('svg.lucide-chart-no-axes-combined')).not.toBeNull();
     expect(selectedTeam?.querySelector('svg.lucide-x')).not.toBeNull();
 
     await act(async () => selectedTeam?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
@@ -185,6 +207,49 @@ describe('ChatInput expert-team menu', () => {
           version: '1.0.0',
           member_count: 5,
         },
+      }),
+    );
+  });
+});
+
+describe('ChatInput connector messages', () => {
+  it('sends the MCP connector as metadata without adding @name to the message body', async () => {
+    const onSend = vi.fn().mockReturnValue(true);
+    const view = await renderChatInput('chat', onSend);
+
+    const plusButton = view.querySelector('svg.lucide-plus')?.closest('button');
+    act(() => plusButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    const connectorItem = view.querySelector<HTMLElement>('[data-plus-menu-item="connector"]');
+    await act(async () => {
+      connectorItem?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    });
+    const connectorButton = [...view.querySelectorAll('button')]
+      .find((button) => button.textContent?.includes('聚源金融数据'));
+    expect(connectorButton).toBeDefined();
+    act(() => connectorButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+    const textarea = view.querySelector('textarea');
+    await act(async () => {
+      if (!textarea) return;
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        'value',
+      )?.set;
+      valueSetter?.call(textarea, '帮我分析下啤酒股票');
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(textarea?.value).toBe('帮我分析下啤酒股票');
+
+    const sendButton = view.querySelector('svg.lucide-arrow-up')?.closest('button');
+    expect(sendButton).not.toBeNull();
+    act(() => sendButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+    expect(onSend).toHaveBeenCalledWith(
+      '帮我分析下啤酒股票',
+      undefined,
+      undefined,
+      expect.objectContaining({
+        mcpPresets: [expect.objectContaining({ name: 'juyuan' })],
       }),
     );
   });

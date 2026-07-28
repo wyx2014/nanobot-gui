@@ -31,6 +31,7 @@ describe('trading analysis expert team package', () => {
         completion: { required_tools: string[]; required_artifacts: string[] };
       };
       data_sources: Array<{ id: string; skill: string; priority: string; required: boolean }>;
+      mcp_presets: Array<{ name: string; display_name: string; required: boolean }>;
       members: Array<{ id: string; phase: string; playbook: string }>;
       workflows: Array<{ id: string; source: string }>;
     };
@@ -50,6 +51,13 @@ describe('trading analysis expert team package', () => {
       priority: 'primary',
       required: true,
     });
+    expect(manifest.mcp_presets).toEqual([
+      expect.objectContaining({
+        name: 'juyuan',
+        display_name: '聚源金融数据 MCP',
+        required: false,
+      }),
+    ]);
     expect(manifest.members.map((member) => member.id)).toEqual(expectedMembers);
     expect(new Set(manifest.members.map((member) => member.phase)).size).toBe(5);
 
@@ -69,9 +77,12 @@ describe('trading analysis expert team package', () => {
     expect(workflowText).toContain('create_pdf');
 
     const adapterText = fs.readFileSync(path.join(teamRoot, 'adapter.md'), 'utf8');
-    expect(adapterText).toContain("node call-node.js <server_type> <tool_name> '<json_params>'");
+    expect(adapterText).toContain('Skill 注册表');
+    expect(adapterText).toContain('禁止用 `find_files`、`grep`、`list_dir`');
     expect(adapterText).toContain('不要再次读取 `SKILL.md` 或');
-    expect(adapterText).toContain('每次最多提交 8 个步骤');
+    expect(adapterText).toContain('聚源在工具箱已配置时会自动启用');
+    expect(adapterText).toContain('iFinD → 聚源 MCP → 已有可信数据/官方披露');
+    expect(adapterText).toContain('第一次调用必须一次性创建以下 8 个稳定阶段');
     expect(workflowText).toContain('8 个稳定阶段 ID');
   });
 });

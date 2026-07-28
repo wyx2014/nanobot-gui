@@ -36,7 +36,7 @@ import { useI18n } from '@/i18n';
 import CloseDialog from '@/components/common/CloseDialog';
 import { checkForUpdate } from '@/core/updates/checker';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
-import { syncNanobotSettings, bootstrapNanobotGateway, syncSessionsFromGateway, syncGatewaySettingsToStore } from '@/core/nanobotClient';
+import { syncNanobotSettings, bootstrapNanobotGateway, syncProjectsFromGateway, syncSessionsFromGateway, syncGatewaySettingsToStore } from '@/core/nanobotClient';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { usePreviewStore } from '@/stores/previewStore';
 import { renderMermaidPng } from '@/core/mermaid';
@@ -63,11 +63,13 @@ function normalizeWorkspaceScope(scope: WorkspaceScopePayload): WorkspaceScopePa
 function App() {
   const refreshDiscovery = useDiscoveryStore((s) => s.refresh);
   const sidebarCollapsed = useSettingsStore((s) => s.sidebarCollapsed);
+  const previewArtifact = usePreviewStore((s) => s.previewArtifact);
   const previewExpanded = usePreviewStore((s) => s.isExpanded);
   const toggleSidebar = useSettingsStore((s) => s.toggleSidebar);
   const viewMode = useSettingsStore((s) => s.viewMode);
   const { t } = useI18n();
   const [showCloseDialog, setShowCloseDialog] = useState(false);
+  const artifactPreviewOpen = previewArtifact !== null;
 
   useEffect(() => ipc.on('mermaid:render', async ({ id, code }: { id: string; code: string }) => {
     try {
@@ -217,13 +219,24 @@ function App() {
   useEffect(() => {
     let client;
     try { client = getNanobotClient(); } catch { return; }
-    return client.onSessionUpdate((_chatId, _scope, workspaceScope, expertTeam) => {
+    return client.onSessionUpdate((
+      _chatId,
+      _scope,
+      workspaceScope,
+      expertTeam,
+      sessionId,
+      projectId,
+    ) => {
+      if (sessionId || projectId) {
+        useChatStore.getState().setConversationIdentity(_chatId, sessionId, projectId);
+      }
       if (workspaceScope) {
         const next = normalizeWorkspaceScope(workspaceScope);
         useChatStore.getState().setConversationWorkspaceScope(_chatId, next);
         setWorkspaceOverrides((current) => ({ ...current, [_chatId]: next }));
         setWorkspaceError(null);
         void refreshWorkspaces();
+        void syncProjectsFromGateway();
       }
       if (expertTeam !== undefined) {
         useChatStore.getState().setConversationExpertTeam(_chatId, expertTeam);
@@ -257,7 +270,19 @@ function App() {
     try { client = getNanobotClient(); } catch { return; }
     return client.onError((error) => {
       if (error.kind !== 'workspace_scope_rejected') return;
-      setWorkspaceError('工作区路径被拒绝，请确认路径有效且 nanobot 有权访问');
+      setWorkspaceError(
+        error.reason === 'session_project_mismatch'
+          ? '会话创建后不能切换到其他项目；请在目标项目中新建对话'
+          : '工作区路径被拒绝，请确认路径有效且 nanobot 有权访问',
+      );
+      if (error.chatId) {
+        setWorkspaceOverrides((current) => {
+          const next = { ...current };
+          delete next[error.chatId!];
+          return next;
+        });
+        void syncSessionsFromGateway();
+      }
       void refreshWorkspaces();
     });
   });
@@ -349,9 +374,14 @@ function App() {
             });
             void refreshWorkspaces();
           });
-          syncSessionsFromGateway().then(() => {
-            console.log('[App] Session history sync completed');
-          });
+          void Promise.all([
+            syncSessionsFromGateway().then(() => {
+              console.log('[App] Session history sync completed');
+            }),
+            syncProjectsFromGateway().then(() => {
+              console.log('[App] Project registry sync completed');
+            }),
+          ]);
           useScheduleStore.getState().loadTasks().then(() => {
             console.log('[App] Scheduled tasks sync completed');
           });
@@ -399,10 +429,10 @@ function App() {
         <div
           className={cn(
             'fixed left-0 right-0 z-40 pointer-events-none transition-opacity duration-150',
-            previewExpanded && 'opacity-0 [&_button]:pointer-events-none',
+            (artifactPreviewOpen || previewExpanded) && 'opacity-0 [&_button]:pointer-events-none',
             mac ? 'top-0 h-7' : 'top-0 h-8',
           )}
-          style={{ transitionDelay: previewExpanded ? '0ms' : '180ms' }}
+          style={{ transitionDelay: artifactPreviewOpen || previewExpanded ? '0ms' : '180ms' }}
         >
           <button
             onClick={toggleSidebar}
@@ -421,12 +451,12 @@ function App() {
           <div
             className={cn(
               'sidebar-transition shrink-0 overflow-hidden transition-opacity duration-150',
-              previewExpanded && 'pointer-events-none',
+              (artifactPreviewOpen || previewExpanded) && 'pointer-events-none',
             )}
             style={{
-              width: previewExpanded ? 0 : sidebarCollapsed ? 0 : 260,
-              opacity: previewExpanded ? 0 : 1,
-              transitionDelay: previewExpanded ? '0ms' : '180ms',
+              width: artifactPreviewOpen || previewExpanded ? 0 : sidebarCollapsed ? 0 : 260,
+              opacity: artifactPreviewOpen || previewExpanded ? 0 : 1,
+              transitionDelay: artifactPreviewOpen || previewExpanded ? '0ms' : '180ms',
             }}
           >
             <Sidebar />

@@ -36,12 +36,17 @@ data_sources:
     skill: ifind-finance-data
     priority: primary
     required: true
-    description: 团队唯一的优先结构化金融数据源，用于行情、财务、公告、新闻、资金、机构与行业数据；关键事实再由交易所、公司公告或监管披露核验。
+    description: 团队内置的优先结构化金融数据源，用于行情、财务、公告、新闻、资金、机构与行业数据，并可与已配置的聚源 MCP 交叉核验。
     assignments:
       market-analyst: 行情、日线、成交量与技术指标候选数据
       fundamentals-analyst: 财务指标、估值、分红与可比公司数据
       news-analyst: 公告、新闻、行业板块与政策线索
       sentiment-analyst: 资金流、研报评级、融资融券与机构持仓
+mcp_presets:
+  - name: juyuan
+    display_name: 聚源金融数据 MCP
+    required: false
+    description: 工具箱已配置时由团队自动启用，补充行情、财务、估值、公告、资金与机构数据。
 members:
   - id: market-analyst
     name: 技术分析师

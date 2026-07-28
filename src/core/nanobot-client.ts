@@ -12,6 +12,7 @@ import type {
   OutboundMedia,
   GoalStateWsPayload,
   WorkspaceScopePayload,
+  ThreadRuntimeSnapshot,
 } from "./types";
 
 const WS_OPEN = 1;
@@ -40,7 +41,7 @@ function wsInboundDebugEnabled(): boolean {
 
 function summarizeInboundWsPayload(ev: InboundEvent): unknown {
   const kind = (ev as { event?: string }).event;
-  if (kind !== "delta" && kind !== "reasoning_delta") return ev;
+  if (kind !== "delta" && kind !== "reasoning_delta" && kind !== "narration_delta") return ev;
   const row = { ...(ev as object) } as Record<string, unknown>;
   const text = typeof row.text === "string" ? row.text : "";
   const max = 240;
@@ -64,8 +65,15 @@ type SessionUpdateHandler = (
   scope?: SessionUpdateScope,
   workspaceScope?: WorkspaceScopePayload,
   expertTeam?: ExpertTeamBinding | null,
+  sessionId?: string,
+  projectId?: string,
 ) => void;
 type RunStatusHandler = (chatId: string, startedAt: number | null) => void;
+type RuntimeSnapshotHandler = (
+  chatId: string,
+  snapshot: ThreadRuntimeSnapshot,
+) => void;
+type RuntimeSnapshotGapHandler = (chatId: string) => void;
 
 export type StreamError =
   | { kind: "message_too_big" }
@@ -101,16 +109,18 @@ export class NanobotClient {
   private runtimeModelHandlers = new Set<RuntimeModelHandler>();
   private sessionUpdateHandlers = new Set<SessionUpdateHandler>();
   private runStatusHandlers = new Set<RunStatusHandler>();
+  private runtimeSnapshotHandlers = new Set<RuntimeSnapshotHandler>();
+  private runtimeSnapshotGapHandlers = new Set<RuntimeSnapshotGapHandler>();
   private errorHandlers = new Set<ErrorHandler>();
   private chatHandlers = new Map<string, Set<EventHandler>>();
   private pendingInboundByChat = new Map<string, InboundEvent[]>();
   private static readonly PENDING_INBOUND_MAX = 2000;
   private knownChats = new Set<string>();
   private runStartedAtByChatId = new Map<string, number>();
+  private runtimeSnapshotByChatId = new Map<string, ThreadRuntimeSnapshot>();
   private goalStateByChatId = new Map<string, GoalStateWsPayload>();
   private pendingNewChat: PendingNewChat | null = null;
   private pendingExpertTeamUpdates = new Map<string, PendingExpertTeamUpdate>();
-  private suppressNextWorkspaceScopeRejectedForChat: string | null = null;
   private sendQueue: Outbound[] = [];
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -192,6 +202,23 @@ export class NanobotClient {
     };
   }
 
+  onRuntimeSnapshot(handler: RuntimeSnapshotHandler): Unsubscribe {
+    this.runtimeSnapshotHandlers.add(handler);
+    for (const [chatId, snapshot] of this.runtimeSnapshotByChatId) {
+      handler(chatId, snapshot);
+    }
+    return () => {
+      this.runtimeSnapshotHandlers.delete(handler);
+    };
+  }
+
+  onRuntimeSnapshotGap(handler: RuntimeSnapshotGapHandler): Unsubscribe {
+    this.runtimeSnapshotGapHandlers.add(handler);
+    return () => {
+      this.runtimeSnapshotGapHandlers.delete(handler);
+    };
+  }
+
   onError(handler: ErrorHandler): Unsubscribe {
     this.errorHandlers.add(handler);
     return () => {
@@ -208,7 +235,95 @@ export class NanobotClient {
     return this.goalStateByChatId.get(chatId);
   }
 
+  getRuntimeSnapshot(chatId: string): ThreadRuntimeSnapshot | undefined {
+    return this.runtimeSnapshotByChatId.get(chatId);
+  }
+
+  applyRuntimeSnapshot(chatId: string, snapshot: ThreadRuntimeSnapshot): boolean {
+    const previous = this.runtimeSnapshotByChatId.get(chatId);
+    const sameEpoch = previous?.runtime_epoch === snapshot.runtime_epoch;
+    if (
+      previous
+      && sameEpoch
+      && snapshot.snapshot_revision < previous.snapshot_revision
+    ) {
+      return false;
+    }
+    const hasRevisionGap = Boolean(
+      previous
+      && sameEpoch
+      && snapshot.snapshot_revision > previous.snapshot_revision + 1
+    );
+    this.runtimeSnapshotByChatId.set(chatId, snapshot);
+    for (const handler of this.runtimeSnapshotHandlers) {
+      handler(chatId, snapshot);
+    }
+    const startedAt = snapshot.active_turn?.status === "inProgress"
+      ? snapshot.active_turn.started_at
+      : null;
+    const oldStartedAt = this.runStartedAtByChatId.get(chatId) ?? null;
+    if (startedAt == null) {
+      this.runStartedAtByChatId.delete(chatId);
+    } else {
+      this.runStartedAtByChatId.set(chatId, startedAt);
+    }
+    if (oldStartedAt !== startedAt) {
+      this.emitRunStatus(chatId, startedAt);
+    }
+    if (hasRevisionGap) {
+      for (const handler of this.runtimeSnapshotGapHandlers) {
+        handler(chatId);
+      }
+    }
+    return true;
+  }
+
   private recordGoalStatusForRunStrip(chatId: string, ev: InboundEvent): void {
+    if (
+      ev.event === "turn_started"
+      || ev.event === "turn_completed"
+      || ev.event === "thread_status_changed"
+    ) {
+      const previous = this.runtimeSnapshotByChatId.get(chatId);
+      const runtimeEpoch = (
+        ev.event === "thread_status_changed"
+          ? ev.runtime_epoch
+          : ev.turn.runtime_epoch
+      ) ?? previous?.runtime_epoch ?? null;
+      const snapshot: ThreadRuntimeSnapshot = ev.event === "turn_started"
+        ? {
+            session_key: `websocket:${chatId}`,
+            runtime_epoch: runtimeEpoch,
+            snapshot_revision: ev.snapshot_revision,
+            thread_status: { type: "active", active_flags: [] },
+            active_turn: ev.turn,
+            latest_turn: previous?.latest_turn ?? null,
+          }
+        : ev.event === "turn_completed"
+          ? {
+              session_key: `websocket:${chatId}`,
+              runtime_epoch: runtimeEpoch,
+              snapshot_revision: ev.snapshot_revision,
+              thread_status: { type: "idle" },
+              active_turn: null,
+              latest_turn: ev.turn,
+            }
+          : {
+              session_key: `websocket:${chatId}`,
+              runtime_epoch: runtimeEpoch,
+              snapshot_revision: ev.snapshot_revision,
+              thread_status: ev.thread_status,
+              active_turn: ev.active_turn ?? (
+                ev.thread_status.type === "active" ? previous?.active_turn ?? null : null
+              ),
+              latest_turn: ev.latest_turn ?? previous?.latest_turn ?? null,
+            };
+      this.applyRuntimeSnapshot(chatId, snapshot);
+      return;
+    }
+    // Once v2 runtime state has been observed, legacy goal/turn frames are
+    // display compatibility only and may not mutate authoritative run state.
+    if (this.runtimeSnapshotByChatId.has(chatId)) return;
     if (ev.event === "turn_end") {
       if (this.runStartedAtByChatId.has(chatId)) {
         this.runStartedAtByChatId.delete(chatId);
@@ -381,7 +496,6 @@ export class NanobotClient {
 
   setWorkspaceScope(chatId: string, workspaceScope: WorkspaceScopePayload): void {
     this.knownChats.add(chatId);
-    this.suppressNextWorkspaceScopeRejectedForChat = chatId;
     this.queueSend({
       type: "set_workspace_scope",
       chat_id: chatId,
@@ -476,7 +590,14 @@ export class NanobotClient {
     }
 
     if (parsed.event === "session_updated") {
-      this.emitSessionUpdate(parsed.chat_id, parsed.scope, parsed.workspace_scope, parsed.expert_team);
+      this.emitSessionUpdate(
+        parsed.chat_id,
+        parsed.scope,
+        parsed.workspace_scope,
+        parsed.expert_team,
+        parsed.session_id,
+        parsed.project_id,
+      );
       if (Object.prototype.hasOwnProperty.call(parsed, "expert_team")) {
         const pending = this.pendingExpertTeamUpdates.get(parsed.chat_id);
         if (pending) {
@@ -499,15 +620,11 @@ export class NanobotClient {
     }
 
     if (parsed.event === "error" && parsed.detail === "workspace_scope_rejected") {
-      if (parsed.chat_id && parsed.chat_id === this.suppressNextWorkspaceScopeRejectedForChat) {
-        this.suppressNextWorkspaceScopeRejectedForChat = null;
-      } else {
-        this.emitError({
-          kind: "workspace_scope_rejected",
-          reason: parsed.reason,
-          chatId: parsed.chat_id,
-        });
-      }
+      this.emitError({
+        kind: "workspace_scope_rejected",
+        reason: parsed.reason,
+        chatId: parsed.chat_id,
+      });
       if (this.pendingNewChat) {
         clearTimeout(this.pendingNewChat.timer);
         this.pendingNewChat.reject(new Error(`workspace_scope_rejected:${parsed.reason || ""}`));
@@ -545,9 +662,11 @@ export class NanobotClient {
     scope?: SessionUpdateScope,
     workspaceScope?: WorkspaceScopePayload,
     expertTeam?: ExpertTeamBinding | null,
+    sessionId?: string,
+    projectId?: string,
   ): void {
     for (const handler of this.sessionUpdateHandlers) {
-      handler(chatId, scope, workspaceScope, expertTeam);
+      handler(chatId, scope, workspaceScope, expertTeam, sessionId, projectId);
     }
   }
 
@@ -579,6 +698,9 @@ export class NanobotClient {
 
   private handleClose(event?: { code?: number }): void {
     this.socket = null;
+    // Preserve the last revision across reconnect. The HTTP Runtime Snapshot
+    // will authoritatively replace it after re-authentication; socket closure
+    // by itself is not a turn terminal event.
     if (this.pendingNewChat) {
       clearTimeout(this.pendingNewChat.timer);
       this.pendingNewChat.reject(new Error("socket closed"));

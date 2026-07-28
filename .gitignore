@@ -16,6 +16,8 @@ embedded-python/
 
 # Logs
 *.log
+.nanobot/
+electron.vite.config.*.mjs
 
 # OS
 .DS_Store

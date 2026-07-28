@@ -19,11 +19,14 @@ afterEach(() => {
   root = undefined;
 });
 
-function render(media: Parameters<typeof MessageMedia>[0]['media']) {
+function render(
+  media: Parameters<typeof MessageMedia>[0]['media'],
+  visibility: Parameters<typeof MessageMedia>[0]['visibility'] = 'all',
+) {
   container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
-  act(() => root?.render(<MessageMedia media={media} />));
+  act(() => root?.render(<MessageMedia media={media} visibility={visibility} />));
   return container;
 }
 
@@ -76,5 +79,32 @@ describe('MessageMedia artifact opening', () => {
       'http://127.0.0.1:8900/api/media/sig/html?download=1',
     );
     open.mockRestore();
+  });
+
+  it('keeps only HTML in assistant conversation media', () => {
+    const view = render([
+      {
+        url: '/api/media/pdf',
+        name: 'report.pdf',
+        mimeType: 'application/pdf',
+        kind: 'file',
+      },
+      {
+        url: '/api/media/html',
+        name: 'report.html',
+        mimeType: 'text/html',
+        kind: 'file',
+      },
+      {
+        url: '/api/media/image',
+        name: 'chart.png',
+        mimeType: 'image/png',
+        kind: 'image',
+      },
+    ], 'html-only');
+
+    expect(view.textContent).toContain('report.html');
+    expect(view.textContent).not.toContain('report.pdf');
+    expect(view.querySelector('img')).toBeNull();
   });
 });

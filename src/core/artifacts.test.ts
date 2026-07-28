@@ -1,11 +1,21 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as nanobotClient from './nanobotClient';
+import { registerTokenProvider } from './api';
 import {
   artifactFromMediaAttachment,
   artifactFromPath,
   artifactFromUrl,
+  artifactNativePath,
   artifactPreviewKind,
   isPreviewableArtifact,
+  readArtifactBytes,
 } from './artifacts';
+
+afterEach(() => {
+  registerTokenProvider(null);
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 describe('artifact normalization', () => {
   it('normalizes a local PDF into a right-panel preview artifact', () => {
@@ -58,5 +68,62 @@ describe('artifact normalization', () => {
 
     expect(artifact.source).toEqual({ kind: 'local', path: '/workspace/report.xlsx' });
     expect(artifactPreviewKind(artifact)).toBe('xlsx');
+  });
+
+  it('reads protected gateway artifacts with a bearer header, never a tokenized URL', async () => {
+    vi.spyOn(nanobotClient, 'getNanobotToken').mockReturnValue('private-token');
+    vi.spyOn(nanobotClient, 'getGatewayBaseUrl').mockReturnValue('http://127.0.0.1:8900');
+    const fetchMock = vi.fn().mockResolvedValue(new Response(new Uint8Array([1, 2, 3]), {
+      status: 200,
+      headers: { 'content-type': 'application/pdf' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    const artifact = artifactFromUrl(
+      'http://127.0.0.1:8900/api/sessions/websocket%3Achat/artifacts/content?path=report.pdf',
+      {
+        name: 'report.pdf',
+        requiresAuth: true,
+        nativePath: '/workspace/report.pdf',
+      },
+    );
+
+    expect(artifactNativePath(artifact)).toBe('/workspace/report.pdf');
+    await expect(readArtifactBytes(artifact)).resolves.toEqual(new Uint8Array([1, 2, 3]));
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:8900/api/sessions/websocket%3Achat/artifacts/content?path=report.pdf',
+      {
+        credentials: 'same-origin',
+        headers: { Authorization: 'Bearer private-token' },
+      },
+    );
+    expect(String(fetchMock.mock.calls[0][0])).not.toContain('private-token');
+  });
+
+  it('refreshes an expired token before retrying protected artifact content', async () => {
+    vi.spyOn(nanobotClient, 'getNanobotToken').mockReturnValue('expired-token');
+    vi.spyOn(nanobotClient, 'getGatewayBaseUrl').mockReturnValue('http://127.0.0.1:8900');
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response('Unauthorized', { status: 401 }))
+      .mockResolvedValueOnce(new Response(new Uint8Array([4, 5, 6]), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const refresh = vi.fn().mockResolvedValue('fresh-token');
+    registerTokenProvider(refresh);
+    const artifact = artifactFromUrl(
+      'http://127.0.0.1:8900/api/artifacts/art-1/content',
+      {
+        name: 'report.pdf',
+        requiresAuth: true,
+      },
+    );
+
+    await expect(readArtifactBytes(artifact)).resolves.toEqual(new Uint8Array([4, 5, 6]));
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      expect.any(String),
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer fresh-token' }),
+      }),
+    );
   });
 });

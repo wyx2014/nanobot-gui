@@ -94,6 +94,62 @@ interface PendingExpertTeamUpdate {
   timer: ReturnType<typeof setTimeout>;
 }
 
+interface PendingTranscription {
+  resolve: (text: string) => void;
+  reject: (err: TranscriptionRequestError) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+export type VoiceStreamMode = "realtime" | "batch";
+export type VoiceStreamState = "listening" | "finalizing" | "done";
+
+export interface VoiceStreamCallbacks {
+  onState?: (state: VoiceStreamState, mode: VoiceStreamMode) => void;
+  onPartial?: (text: string, stable: boolean) => void;
+  onFinal?: (text: string) => void;
+  onError?: (error: VoiceStreamError) => void;
+}
+
+interface ActiveVoiceStream {
+  callbacks: VoiceStreamCallbacks;
+  mode?: VoiceStreamMode;
+  startResolve: (mode: VoiceStreamMode) => void;
+  startReject: (error: VoiceStreamError) => void;
+  startTimer: ReturnType<typeof setTimeout>;
+  stopResolve?: (text: string) => void;
+  stopReject?: (error: VoiceStreamError) => void;
+  stopTimer?: ReturnType<typeof setTimeout>;
+}
+
+export class TranscriptionRequestError extends Error {
+  readonly detail: string;
+  readonly provider?: string;
+
+  constructor(
+    detail: string,
+    provider?: string,
+  ) {
+    super(detail);
+    this.name = "TranscriptionRequestError";
+    this.detail = detail;
+    this.provider = provider;
+  }
+}
+
+export class VoiceStreamError extends Error {
+  readonly detail: string;
+  readonly provider?: string;
+  readonly recoverable: boolean;
+
+  constructor(detail: string, provider?: string, recoverable: boolean = false) {
+    super(detail);
+    this.name = "VoiceStreamError";
+    this.detail = detail;
+    this.provider = provider;
+    this.recoverable = recoverable;
+  }
+}
+
 export interface NanobotClientOptions {
   url: string;
   reconnect?: boolean;
@@ -121,6 +177,8 @@ export class NanobotClient {
   private goalStateByChatId = new Map<string, GoalStateWsPayload>();
   private pendingNewChat: PendingNewChat | null = null;
   private pendingExpertTeamUpdates = new Map<string, PendingExpertTeamUpdate>();
+  private pendingTranscriptions = new Map<string, PendingTranscription>();
+  private voiceStreams = new Map<string, ActiveVoiceStream>();
   private sendQueue: Outbound[] = [];
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -526,6 +584,101 @@ export class NanobotClient {
     });
   }
 
+  transcribeAudio(
+    dataUrl: string,
+    durationMs?: number,
+    timeoutMs: number = 90_000,
+  ): Promise<string> {
+    const requestId = globalThis.crypto?.randomUUID?.()
+      ?? `voice-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    return new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingTranscriptions.delete(requestId);
+        reject(new TranscriptionRequestError("timeout"));
+      }, timeoutMs);
+      this.pendingTranscriptions.set(requestId, { resolve, reject, timer });
+      this.queueSend({
+        type: "transcribe_audio",
+        request_id: requestId,
+        data_url: dataUrl,
+        ...(durationMs !== undefined ? { duration_ms: durationMs } : {}),
+      });
+    });
+  }
+
+  startVoiceStream(
+    streamId: string,
+    callbacks: VoiceStreamCallbacks = {},
+    timeoutMs: number = 12_000,
+  ): Promise<VoiceStreamMode> {
+    if (this.voiceStreams.has(streamId)) {
+      return Promise.reject(new VoiceStreamError("already_started"));
+    }
+    return new Promise<VoiceStreamMode>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.voiceStreams.delete(streamId);
+        reject(new VoiceStreamError("timeout"));
+      }, timeoutMs);
+      this.voiceStreams.set(streamId, {
+        callbacks,
+        startResolve: resolve,
+        startReject: reject,
+        startTimer: timer,
+      });
+      this.queueSend({
+        type: "voice_stream_start",
+        stream_id: streamId,
+        sample_rate: 16000,
+      });
+    });
+  }
+
+  appendVoiceAudio(
+    streamId: string,
+    chunk: ArrayBuffer,
+    sequence: number,
+    durationMs: number,
+  ): void {
+    const bytes = new Uint8Array(chunk);
+    let binary = "";
+    const sliceSize = 0x8000;
+    for (let offset = 0; offset < bytes.length; offset += sliceSize) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + sliceSize));
+    }
+    this.queueSend({
+      type: "voice_audio_chunk",
+      stream_id: streamId,
+      sequence,
+      audio: btoa(binary),
+      duration_ms: durationMs,
+    });
+  }
+
+  stopVoiceStream(streamId: string, timeoutMs: number = 12_000): Promise<string> {
+    const active = this.voiceStreams.get(streamId);
+    if (!active) return Promise.reject(new VoiceStreamError("not_started"));
+    if (active.stopResolve) return Promise.reject(new VoiceStreamError("already_stopping"));
+    return new Promise<string>((resolve, reject) => {
+      active.stopResolve = resolve;
+      active.stopReject = reject;
+      active.stopTimer = setTimeout(() => {
+        this.voiceStreams.delete(streamId);
+        reject(new VoiceStreamError("timeout", undefined, true));
+      }, timeoutMs);
+      this.queueSend({ type: "voice_stream_stop", stream_id: streamId });
+    });
+  }
+
+  cancelVoiceStream(streamId: string): void {
+    const active = this.voiceStreams.get(streamId);
+    if (active) {
+      clearTimeout(active.startTimer);
+      if (active.stopTimer) clearTimeout(active.stopTimer);
+      this.voiceStreams.delete(streamId);
+    }
+    this.queueSend({ type: "voice_stream_cancel", stream_id: streamId });
+  }
+
   private setStatus(status: ConnectionStatus): void {
     if (this.status_ === status) return;
     this.status_ = status;
@@ -570,6 +723,73 @@ export class NanobotClient {
 
     if (parsed.event === "runtime_status") {
       this.updateRuntimeStatus(parsed.agent_ready, parsed.mcp_status);
+      return;
+    }
+
+    if (parsed.event === "transcription_result" || parsed.event === "transcription_error") {
+      const requestId = parsed.request_id;
+      if (!requestId) return;
+      const pending = this.pendingTranscriptions.get(requestId);
+      if (!pending) return;
+      clearTimeout(pending.timer);
+      this.pendingTranscriptions.delete(requestId);
+      if (parsed.event === "transcription_result") {
+        pending.resolve(parsed.text);
+      } else {
+        pending.reject(new TranscriptionRequestError(parsed.detail, parsed.provider));
+      }
+      return;
+    }
+
+    if (
+      parsed.event === "voice_stream_state"
+      || parsed.event === "voice_transcript_partial"
+      || parsed.event === "voice_transcript_stable"
+      || parsed.event === "voice_transcript_final"
+      || parsed.event === "voice_stream_error"
+    ) {
+      const streamId = parsed.stream_id;
+      if (!streamId) return;
+      const active = this.voiceStreams.get(streamId);
+      if (!active) return;
+      if (parsed.event === "voice_stream_state") {
+        active.mode = parsed.mode;
+        active.callbacks.onState?.(parsed.state, parsed.mode);
+        if (parsed.state === "listening") {
+          clearTimeout(active.startTimer);
+          active.startResolve(parsed.mode);
+        } else if (parsed.state === "done" && parsed.outcome === "cancelled") {
+          clearTimeout(active.startTimer);
+          if (active.stopTimer) clearTimeout(active.stopTimer);
+          this.voiceStreams.delete(streamId);
+        }
+      } else if (
+        parsed.event === "voice_transcript_partial"
+        || parsed.event === "voice_transcript_stable"
+      ) {
+        active.callbacks.onPartial?.(
+          parsed.text,
+          parsed.event === "voice_transcript_stable",
+        );
+      } else if (parsed.event === "voice_transcript_final") {
+        clearTimeout(active.startTimer);
+        if (active.stopTimer) clearTimeout(active.stopTimer);
+        active.callbacks.onFinal?.(parsed.text);
+        active.stopResolve?.(parsed.text);
+        this.voiceStreams.delete(streamId);
+      } else {
+        const error = new VoiceStreamError(
+          parsed.detail,
+          parsed.provider,
+          parsed.recoverable,
+        );
+        clearTimeout(active.startTimer);
+        if (active.stopTimer) clearTimeout(active.stopTimer);
+        active.callbacks.onError?.(error);
+        active.startReject(error);
+        active.stopReject?.(error);
+        this.voiceStreams.delete(streamId);
+      }
       return;
     }
 
@@ -711,6 +931,20 @@ export class NanobotClient {
       pending.reject(new Error("socket closed"));
     }
     this.pendingExpertTeamUpdates.clear();
+    for (const pending of this.pendingTranscriptions.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(new TranscriptionRequestError("socket_closed"));
+    }
+    this.pendingTranscriptions.clear();
+    for (const active of this.voiceStreams.values()) {
+      clearTimeout(active.startTimer);
+      if (active.stopTimer) clearTimeout(active.stopTimer);
+      const error = new VoiceStreamError("socket_closed", undefined, true);
+      active.startReject(error);
+      active.stopReject?.(error);
+      active.callbacks.onError?.(error);
+    }
+    this.voiceStreams.clear();
     if (event?.code === 1009) {
       this.emitError({ kind: "message_too_big" });
     }

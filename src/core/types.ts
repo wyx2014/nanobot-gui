@@ -68,6 +68,18 @@ export interface TurnLifecycleResource {
   completed_at?: number | null;
   duration_ms?: number | null;
   finish_reason?: string | null;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    input_tokens?: number;
+    output_tokens?: number;
+    total_tokens?: number;
+    estimated_tokens?: number;
+    cached_tokens?: number;
+    cache_read_input_tokens?: number;
+    confirmed_new_tokens?: number;
+    new_tokens?: number;
+  };
   plan?: TurnPlanResource;
   error?: {
     code: string;
@@ -161,6 +173,8 @@ export interface UIMessage {
   reasoningStreaming?: boolean;
   /** End-to-end wall time for this assistant turn (persisted ``latency_ms`` / ``turn_end``). */
   latencyMs?: number;
+  /** Authoritative wall-clock time when this turn reached a terminal state. */
+  completedAt?: number;
   /** Per-turn provider token usage, normalized for renderer consumption. */
   usage?: {
     inputTokens?: number;
@@ -534,6 +548,10 @@ export interface ProviderModelsPayload {
   fetched_at?: number;
 }
 
+export type ModelCapability =
+  | "text"
+  | "speech_to_text";
+
 export interface SettingsPayload {
   surface?: RuntimeSurface;
   runtime_surface?: RuntimeSurface;
@@ -569,7 +587,9 @@ export interface SettingsPayload {
     context_window_tokens: number;
     temperature: number;
     reasoning_effort: string | null;
+    capabilities: ModelCapability[];
   }>;
+  model_defaults: Record<ModelCapability, string | null>;
   providers: Array<{
     name: string;
     label: string;
@@ -627,6 +647,29 @@ export interface SettingsPayload {
       api_base?: string | null;
       default_api_base?: string | null;
     }>;
+  };
+  transcription: {
+    enabled: boolean;
+    provider: string;
+    provider_configured: boolean;
+    model: string;
+    language?: string | null;
+    max_duration_sec: number;
+    max_upload_mb: number;
+    providers: Array<{
+      name: string;
+      label: string;
+      configured: boolean;
+      api_key_hint?: string | null;
+      api_base?: string | null;
+      default_api_base?: string | null;
+    }>;
+    streaming?: {
+      supported: boolean;
+      profile?: string | null;
+      upstream_model?: string | null;
+      batch_fallback?: boolean;
+    };
   };
   runtime: {
     config_path: string;
@@ -940,6 +983,7 @@ export interface ModelConfigurationCreate {
   label: string;
   provider: string;
   model: string;
+  capabilities?: ModelCapability[];
 }
 
 export interface ModelConfigurationUpdate {
@@ -948,6 +992,12 @@ export interface ModelConfigurationUpdate {
   provider?: string;
   model?: string;
   contextWindowTokens?: number;
+  capabilities?: ModelCapability[];
+}
+
+export interface ModelDefaultUpdate {
+  capability: ModelCapability;
+  name: string;
 }
 
 export interface ProviderSettingsUpdate {
@@ -986,6 +1036,15 @@ export interface ImageGenerationSettingsUpdate {
   defaultAspectRatio: string;
   defaultImageSize: string;
   maxImagesPerTurn: number;
+}
+
+export interface TranscriptionSettingsUpdate {
+  enabled?: boolean;
+  provider?: string;
+  model?: string;
+  language?: string;
+  maxDurationSec?: number;
+  maxUploadMb?: number;
 }
 
 export interface SlashCommand {
@@ -1167,6 +1226,10 @@ export type InboundEvent =
         input_tokens?: number;
         output_tokens?: number;
         total_tokens?: number;
+        cached_tokens?: number;
+        cache_read_input_tokens?: number;
+        confirmed_new_tokens?: number;
+        new_tokens?: number;
       };
       /** Terminal disposition for a completed, failed, or user-cancelled turn. */
       finish_reason?: "cancelled" | "completed" | "error" | string;
@@ -1220,6 +1283,66 @@ export type InboundEvent =
       run_id: string;
       team_id: string;
       status: "completed" | "completed_with_warnings" | "failed" | "cancelled";
+    }
+  | {
+      event: "turn_usage_updated";
+      chat_id: string;
+      turn_id?: string;
+      estimated: boolean;
+      usage: {
+        prompt_tokens?: number;
+        completion_tokens?: number;
+        input_tokens?: number;
+        output_tokens?: number;
+        total_tokens?: number;
+        estimated_tokens?: number;
+        cached_tokens?: number;
+        cache_read_input_tokens?: number;
+        confirmed_new_tokens?: number;
+        new_tokens?: number;
+      };
+    }
+  | {
+      event: "transcription_result";
+      request_id: string;
+      text: string;
+    }
+  | {
+      event: "transcription_error";
+      request_id?: string;
+      detail: string;
+      provider?: string;
+    }
+  | {
+      event: "voice_stream_state";
+      stream_id: string;
+      state: "listening" | "finalizing" | "done";
+      mode: "realtime" | "batch";
+      provider?: string;
+      model?: string;
+      outcome?: "cancelled";
+    }
+  | {
+      event: "voice_transcript_partial";
+      stream_id: string;
+      text: string;
+    }
+  | {
+      event: "voice_transcript_stable";
+      stream_id: string;
+      text: string;
+    }
+  | {
+      event: "voice_transcript_final";
+      stream_id: string;
+      text: string;
+    }
+  | {
+      event: "voice_stream_error";
+      stream_id?: string;
+      detail: string;
+      provider?: string;
+      recoverable?: boolean;
     }
   | { event: "error"; chat_id?: string; detail?: string; reason?: string };
 
@@ -1280,6 +1403,28 @@ export type Outbound =
   | { type: "attach"; chat_id: string }
   | { type: "set_workspace_scope"; chat_id: string; workspace_scope: WorkspaceScopePayload }
   | { type: "set_expert_team"; chat_id: string; expert_team: ExpertTeamBinding | null }
+  | {
+      type: "transcribe_audio";
+      request_id: string;
+      data_url: string;
+      duration_ms?: number;
+    }
+  | {
+      type: "voice_stream_start";
+      stream_id: string;
+      sample_rate: 16000;
+    }
+  | {
+      type: "voice_audio_chunk";
+      stream_id: string;
+      sequence: number;
+      audio: string;
+      duration_ms: number;
+    }
+  | {
+      type: "voice_stream_stop" | "voice_stream_cancel";
+      stream_id: string;
+    }
   | {
       type: "message";
       chat_id: string;

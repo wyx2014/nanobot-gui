@@ -10,6 +10,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint . --max-warnings 56",
     "preview": "vite preview",
+    "preelectron:dev": "node scripts/prepare-electron-dev-macos.mjs",
     "electron:dev": "electron-vite dev",
     "electron:build": "electron-vite build",
     "electron:preview": "electron-vite preview",
@@ -72,7 +73,10 @@
       "target": [
         "zip"
       ],
-      "icon": "public/icon.icns"
+      "icon": "public/icon.icns",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "太资如意需要使用麦克风，将录音通过默认语音识别模型转换为输入文字。"
+      }
     },
     "win": {
       "compression": "store",

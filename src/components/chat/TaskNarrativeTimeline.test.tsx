@@ -18,7 +18,12 @@ afterEach(() => {
 
 function render(
   messages: Message[],
-  options: { isActive?: boolean; turnLatencyMs?: number; hasBodyBelow?: boolean } = {},
+  options: {
+    isActive?: boolean;
+    turnLatencyMs?: number;
+    activeElapsedMs?: number;
+    hasBodyBelow?: boolean;
+  } = {},
 ) {
   if (!container) {
     container = document.createElement('div');
@@ -30,6 +35,7 @@ function render(
       messages={messages}
       isActive={options.isActive ?? true}
       turnLatencyMs={options.turnLatencyMs}
+      activeElapsedMs={options.activeElapsedMs}
       hasBodyBelow={options.hasBodyBelow}
     />,
   ));
@@ -50,6 +56,15 @@ describe('TaskNarrativeTimeline streaming UI', () => {
     expect(view.querySelectorAll('.animate-spin').length).toBeGreaterThanOrEqual(2);
   });
 
+  it('uses the shared authoritative elapsed duration while active', () => {
+    const view = render([{
+      id: 'tool-frame', role: 'tool', kind: 'trace', content: '', timestamp: Date.now() - 2_000,
+      toolEvents: [{ phase: 'start', call_id: 'search-1', name: 'web_search' }],
+    }], { activeElapsedMs: 23_945 });
+
+    expect(view.textContent).toContain('进行中 24s');
+  });
+
   it('collapses completed steps into a duration summary and can reopen them', () => {
     const view = render([{
       id: 'tool-end', role: 'tool', kind: 'trace', content: '', timestamp: Date.now(),
@@ -65,6 +80,29 @@ describe('TaskNarrativeTimeline streaming UI', () => {
 
     expect(toggle?.getAttribute('aria-expanded')).toBe('true');
     expect(toggle?.getAttribute('aria-label')).toBe('折叠任务步骤');
+  });
+
+  it('shows the authoritative duration without duplicating task completion time', () => {
+    const completedAt = Date.parse('2026-07-28T15:01:23+08:00');
+    const view = render([{
+      id: 'tool-end', role: 'tool', kind: 'trace', content: '', timestamp: completedAt - 23_945,
+      toolEvents: [{ phase: 'end', call_id: 'weather-1', name: 'weather', result: 'sunny' }],
+    }], {
+      isActive: false,
+      turnLatencyMs: 23_945,
+    });
+
+    expect(view.textContent).toContain('已完成 24s');
+    expect(view.textContent).not.toContain('结束于');
+  });
+
+  it('formats long task duration with hour, minute, and second units', () => {
+    const view = render([{
+      id: 'tool-end', role: 'tool', kind: 'trace', content: '', timestamp: Date.now(),
+      toolEvents: [{ phase: 'end', call_id: 'long-task', name: 'exec', result: 'done' }],
+    }], { isActive: false, turnLatencyMs: 3_723_000 });
+
+    expect(view.textContent).toContain('已完成 1h2m3s');
   });
 
   it('treats a failed inner step as completed when a final answer exists', () => {

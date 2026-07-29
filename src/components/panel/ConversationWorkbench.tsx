@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   Check,
+  ChevronRight,
   File,
   FileCode2,
   FileImage,
@@ -122,6 +123,16 @@ export default function ConversationWorkbench() {
         source: 'task_progress',
       }
     : legacyProgress ?? EMPTY_PROGRESS;
+  const progressCompleted = turnPlan
+    ? turnPlan.status === 'completed'
+    : progress.steps.length > 0
+      && progress.steps.every((step) => step.status === 'completed' || step.status === 'skipped');
+  const [progressExpanded, setProgressExpanded] = useState(() => !progressCompleted);
+  const progressDisplayState = useRef({
+    conversationId: activeConversationId,
+    completed: progressCompleted,
+    active: progress.isActive,
+  });
   const artifactRevision = useConversationWorkbenchStore((state) => (
     activeConversationId
       ? state.artifactRevisionByConversation[activeConversationId] ?? 0
@@ -137,6 +148,34 @@ export default function ConversationWorkbench() {
   const shouldPollActiveTurn = turnPlan
     ? progress.isActive
     : conversationStatus === 'running';
+
+  useEffect(() => {
+    const previous = progressDisplayState.current;
+    if (previous.conversationId !== activeConversationId) {
+      progressDisplayState.current = {
+        conversationId: activeConversationId,
+        completed: progressCompleted,
+        active: progress.isActive,
+      };
+      setProgressExpanded(progress.isActive || !progressCompleted);
+      return;
+    }
+
+    if (progress.isActive) {
+      setProgressExpanded(true);
+    } else if (
+      progressCompleted
+      && (previous.active || !previous.completed)
+    ) {
+      setProgressExpanded(false);
+    }
+
+    progressDisplayState.current = {
+      conversationId: activeConversationId,
+      completed: progressCompleted,
+      active: progress.isActive,
+    };
+  }, [activeConversationId, progress.isActive, progressCompleted]);
 
   const refreshArtifacts = useCallback(async (background = false) => {
     if (!activeConversationId) return;
@@ -210,69 +249,85 @@ export default function ConversationWorkbench() {
       </div>
 
       <section className="shrink-0 border-b border-[#e5e2db] px-4 py-4" aria-label={t.panel.progress}>
-        <div className="mb-3 flex items-center justify-between gap-3">
+        <button
+          type="button"
+          className={cn(
+            'flex w-full items-center justify-between gap-3 rounded-md text-left',
+            progressExpanded && 'mb-3',
+          )}
+          onClick={() => setProgressExpanded((expanded) => !expanded)}
+          aria-expanded={progressExpanded}
+        >
           <h2 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#656358]">
             {t.panel.progress}
           </h2>
-        </div>
+          <ChevronRight
+            className={cn(
+              'h-3.5 w-3.5 text-[#8b887c] transition-transform duration-200',
+              progressExpanded && 'rotate-90',
+            )}
+          />
+        </button>
 
-        {progress.steps.length ? (
-          <>
-            {progress.note ? (
-              <p className="mb-3 text-[12px] leading-5 text-[#656358]">{progress.note}</p>
-            ) : null}
-            <ol className="space-y-[9px]">
-              {progress.steps.map((step) => {
-                return (
-                  <li key={step.id} className="grid min-w-0 grid-cols-[16px_minmax(0,1fr)] items-start gap-2">
-                    <span
-                      className={cn(
-                        'mt-0.5 flex h-3 w-3 items-center justify-center border',
-                        step.status === 'completed' && 'rounded-[3px] border-[#d97757] bg-[#d97757] text-white',
-                        step.status === 'running' && 'rounded-full border-[#d97757] bg-[#d97757] shadow-[inset_0_0_0_3px_#f7f5f0]',
-                        step.status === 'pending' && 'rounded-[3px] border-[#aaa69c] bg-transparent',
-                        step.status === 'error' && 'rounded-full border-red-500 bg-red-50 text-red-600',
-                        (step.status === 'skipped' || step.status === 'interrupted')
-                          && 'rounded-[3px] border-[#bbb7ad] bg-transparent text-[#9a968c]',
-                      )}
-                    >
-                      {step.status === 'completed' ? <Check className="h-2.5 w-2.5 stroke-[2.4]" /> : null}
-                      {step.status === 'error' ? <AlertCircle className="h-2.5 w-2.5" /> : null}
-                      {step.status === 'skipped' || step.status === 'interrupted'
-                        ? <Minus className="h-2.5 w-2.5" />
-                        : null}
-                    </span>
-                    <div className="min-w-0">
-                      <div
+        {progressExpanded ? (
+          progress.steps.length ? (
+            <>
+              {progress.note ? (
+                <p className="mb-3 text-[12px] leading-5 text-[#656358]">{progress.note}</p>
+              ) : null}
+              <ol className="space-y-[9px]">
+                {progress.steps.map((step) => {
+                  return (
+                    <li key={step.id} className="grid min-w-0 grid-cols-[16px_minmax(0,1fr)] items-start gap-2">
+                      <span
                         className={cn(
-                          'text-[12.5px] leading-[1.35]',
-                          step.status === 'running' && 'font-medium text-[#29261b]',
-                          step.status === 'completed' && 'text-[#9a968c] line-through decoration-[1px]',
-                          step.status === 'pending' && 'text-[#8b887c]',
-                          step.status === 'error' && 'text-red-600',
+                          'mt-0.5 flex h-3 w-3 items-center justify-center border',
+                          step.status === 'completed' && 'rounded-[3px] border-[#d97757] bg-[#d97757] text-white',
+                          step.status === 'running' && 'rounded-full border-[#d97757] bg-[#d97757] shadow-[inset_0_0_0_3px_#f7f5f0]',
+                          step.status === 'pending' && 'rounded-[3px] border-[#aaa69c] bg-transparent',
+                          step.status === 'error' && 'rounded-full border-red-500 bg-red-50 text-red-600',
                           (step.status === 'skipped' || step.status === 'interrupted')
-                            && 'text-[#aaa69b] line-through decoration-[1px]',
+                            && 'rounded-[3px] border-[#bbb7ad] bg-transparent text-[#9a968c]',
                         )}
                       >
-                        {step.title}
+                        {step.status === 'completed' ? <Check className="h-2.5 w-2.5 stroke-[2.4]" /> : null}
+                        {step.status === 'error' ? <AlertCircle className="h-2.5 w-2.5" /> : null}
+                        {step.status === 'skipped' || step.status === 'interrupted'
+                          ? <Minus className="h-2.5 w-2.5" />
+                          : null}
+                      </span>
+                      <div className="min-w-0">
+                        <div
+                          className={cn(
+                            'text-[12.5px] leading-[1.35]',
+                            step.status === 'running' && 'font-medium text-[#29261b]',
+                            step.status === 'completed' && 'text-[#9a968c] line-through decoration-[1px]',
+                            step.status === 'pending' && 'text-[#8b887c]',
+                            step.status === 'error' && 'text-red-600',
+                            (step.status === 'skipped' || step.status === 'interrupted')
+                              && 'text-[#aaa69b] line-through decoration-[1px]',
+                          )}
+                        >
+                          {step.title}
+                        </div>
+                        {step.detail ? (
+                          <div className="truncate text-[11px] text-[#9a968c]">{step.detail}</div>
+                        ) : null}
                       </div>
-                      {step.detail ? (
-                        <div className="truncate text-[11px] text-[#9a968c]">{step.detail}</div>
-                      ) : null}
-                    </div>
-                  </li>
-                );
-              })}
-            </ol>
-            {progress.isActive ? (
-              <p className="mt-3 text-[11.5px] leading-5 text-[#9a968c]">{t.panel.progressRunning}</p>
-            ) : null}
-          </>
-        ) : (
-          <p className="rounded-xl border border-dashed border-[#ddd9d0] bg-white/50 px-3 py-4 text-center text-[12px] leading-5 text-[#8b887c]">
-            {progress.isActive ? t.panel.progressPlanning : t.panel.progressEmptyHint}
-          </p>
-        )}
+                    </li>
+                  );
+                })}
+              </ol>
+              {progress.isActive ? (
+                <p className="mt-3 text-[11.5px] leading-5 text-[#9a968c]">{t.panel.progressRunning}</p>
+              ) : null}
+            </>
+          ) : (
+            <p className="rounded-xl border border-dashed border-[#ddd9d0] bg-white/50 px-3 py-4 text-center text-[12px] leading-5 text-[#8b887c]">
+              {progress.isActive ? t.panel.progressPlanning : t.panel.progressEmptyHint}
+            </p>
+          )
+        ) : null}
       </section>
 
       <section className="flex min-h-0 flex-1 flex-col" aria-label={t.panel.artifacts}>

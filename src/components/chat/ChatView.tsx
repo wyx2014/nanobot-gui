@@ -40,6 +40,7 @@ import { projectUsableSkills, stripUnavailableLeadingSkillMentions } from '@/cor
 import { normalizeProjectPath, visibleProjectPath } from '@/core/workspace';
 import GenerationStatusBar, { type GenerationPhase } from './GenerationStatusBar';
 import { historyHasPendingActivity } from '@/core/nanobot/historyActivity';
+import { normalizeTaskTimestamp } from '@/utils/taskDuration';
 
 interface PendingFirstMessage {
   text: string;
@@ -393,19 +394,32 @@ export default function ChatView({
     }
     return undefined;
   }, [latestTurnMessages]);
+  const runStartedAt = stream.runStartedAt;
   const runtimeActive = activeConv?.runtimeSnapshot?.thread_status.type === 'active';
   const generationActive = stream.isStreaming || runtimeActive;
+  const [turnClockNow, setTurnClockNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!generationActive) return;
+    setTurnClockNow(Date.now());
+    const timer = window.setInterval(() => setTurnClockNow(Date.now()), 500);
+    return () => window.clearInterval(timer);
+  }, [generationActive, runStartedAt]);
+  const activeTurnElapsedMs = useMemo(() => {
+    if (!generationActive) return undefined;
+    const startedAtMs = normalizeTaskTimestamp(runStartedAt);
+    return startedAtMs === undefined ? 0 : Math.max(0, turnClockNow - startedAtMs);
+  }, [generationActive, runStartedAt, turnClockNow]);
   const generationPhase = useMemo<GenerationPhase | null>(() => {
     if (!generationActive) return null;
     return latestAssistantMessage?.reasoningStreaming ? 'thinking' : 'generating';
   }, [generationActive, latestAssistantMessage?.reasoningStreaming]);
   const generationTokenCount = useMemo(
-    () => latestTurnMessages.reduce((total, message) => (
+    () => stream.turnUsage?.newTokens ?? latestTurnMessages.reduce((total, message) => (
       total
       + (message.usage?.inputTokens ?? 0)
       + (message.usage?.outputTokens ?? 0)
     ), 0),
-    [latestTurnMessages],
+    [latestTurnMessages, stream.turnUsage?.newTokens],
   );
   useEffect(() => {
     if (!activeConvId) return;
@@ -532,8 +546,6 @@ export default function ChatView({
     scrollToBottom({ force: true });
     return true;
   };
-
-  const runStartedAt = stream.runStartedAt;
 
   const resendFromUserMessage = useCallback((
     userMessage: UIMessage,
@@ -793,6 +805,7 @@ export default function ChatView({
               <ThreadMessages
                 messages={timelineMessages}
                 isStreaming={stream.isStreaming}
+                activeTurnElapsedMs={activeTurnElapsedMs}
                 scrollElement={scrollElement}
                 onEditUserMessage={handleEditUserMessage}
                 onRegenerateAssistant={handleRegenerateAssistant}
@@ -823,7 +836,7 @@ export default function ChatView({
       </div>
 
       {/* Bottom Input */}
-      <div className="shrink-0 px-6 md:px-10 pb-4 pt-2 bg-gradient-to-t from-[#fbfaf7] via-[#fbfaf7] to-[#fbfaf7]/80">
+      <div className="shrink-0 bg-gradient-to-t from-[#fbfaf7] via-[#fbfaf7]/95 to-transparent px-6 pb-4 pt-2 md:px-10">
         <div className="max-w-4xl mx-auto">
           <ActiveSkillsBar />
           {scheduleReturnTarget && (
@@ -839,7 +852,9 @@ export default function ChatView({
             <GenerationStatusBar
               phase={generationPhase}
               startedAt={runStartedAt}
+              elapsedMs={activeTurnElapsedMs}
               tokenCount={generationTokenCount}
+              tokenCountEstimated={stream.turnUsage?.estimated ?? false}
             />
           ) : null}
           {stream.streamError ? (

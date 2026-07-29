@@ -12,6 +12,7 @@ import {
 interface ThreadMessagesProps {
   messages: Message[];
   isStreaming?: boolean;
+  activeTurnElapsedMs?: number;
   scrollElement?: HTMLDivElement | null;
   onEditUserMessage?: (message: Message, newContent: string) => void;
   onRegenerateAssistant?: (message: Message) => void;
@@ -23,33 +24,27 @@ export function buildDisplayUnits(messages: Message[]): DisplayUnit[] {
   return normalizeActivityTimeline(messages);
 }
 
-export function assistantCopyFlags(units: DisplayUnit[]): boolean[] {
-  const flags = new Array<boolean>(units.length).fill(true);
-  let hasLaterUnitBeforeUser = false;
+export function lastAssistantReplyIndex(units: DisplayUnit[]): number {
   for (let i = units.length - 1; i >= 0; i -= 1) {
     const unit = units[i];
-    if (unit.type === 'message' && unit.message.role === 'user') {
-      hasLaterUnitBeforeUser = false;
-      continue;
-    }
     if (unit.type === 'message' && unit.message.role === 'assistant') {
-      flags[i] = !hasLaterUnitBeforeUser;
+      return i;
     }
-    hasLaterUnitBeforeUser = true;
   }
-  return flags;
+  return -1;
 }
 
 export default function ThreadMessages({
   messages,
   isStreaming = false,
+  activeTurnElapsedMs,
   scrollElement = null,
   onEditUserMessage,
   onRegenerateAssistant,
 }: ThreadMessagesProps) {
   const [projector] = useState(createActivityTimelineProjector);
   const units = useMemo(() => projector.project(messages), [messages, projector]);
-  const copyFlags = useMemo(() => assistantCopyFlags(units), [units]);
+  const lastAssistantIndex = useMemo(() => lastAssistantReplyIndex(units), [units]);
   const liveActivityTimelineIndices = useMemo(
     () => isStreaming ? currentActivityTimelineIndices(units) : new Set<number>(),
     [isStreaming, units],
@@ -80,6 +75,7 @@ export default function ThreadMessages({
           unit.type === 'activity'
           && next?.type === 'message'
           && next.message.role === 'assistant';
+        const isLiveActivity = liveActivityTimelineIndices.has(index);
 
         return (
           <div
@@ -92,18 +88,16 @@ export default function ThreadMessages({
             {unit.type === 'activity' ? (
               <TaskNarrativeTimeline
                 messages={unit.messages}
-                isActive={liveActivityTimelineIndices.has(index)}
+                isActive={isLiveActivity}
                 hasBodyBelow={hasBodyBelow}
                 turnLatencyMs={unit.turnLatencyMs}
+                activeElapsedMs={isLiveActivity ? activeTurnElapsedMs : undefined}
               />
             ) : (
               <MessageBubble
                 message={unit.message}
-                showAssistantCopyAction={
-                  unit.message.role === 'assistant'
-                    ? copyFlags[index]
-                    : true
-                }
+                showAssistantCopyAction={unit.message.role === 'assistant'}
+                isLastAssistantReply={index === lastAssistantIndex}
                 onEditUserMessage={onEditUserMessage}
                 onRegenerateAssistant={onRegenerateAssistant}
               />

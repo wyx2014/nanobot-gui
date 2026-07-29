@@ -117,6 +117,7 @@ describe('normalizeActivityTimeline', () => {
   });
 
   it('creates only one activity summary for multiple activity segments in a turn', () => {
+    const completedAt = 1_785_222_083_788;
     const units = normalizeActivityTimeline([
       msg({ id: 'u1', role: 'user', content: 'research' }),
       msg({ id: 'r1', role: 'assistant', content: '', thinking: 'plan', activitySegmentId: 'analysis' }),
@@ -128,7 +129,13 @@ describe('normalizeActivityTimeline', () => {
         id: 'f1', role: 'tool', kind: 'trace', activitySegmentId: 'files',
         fileEdits: [{ tool: 'write_file', path: '/tmp/report.md', operation: 'create', status: 'done' }],
       }),
-      msg({ id: 'a1', role: 'assistant', content: 'done', thinkingDuration: 110 }),
+      msg({
+        id: 'a1',
+        role: 'assistant',
+        content: 'done',
+        thinkingDuration: 110,
+        completedAt,
+      }),
     ]);
 
     const activityUnits = units.filter((unit) => unit.type === 'activity');
@@ -136,6 +143,7 @@ describe('normalizeActivityTimeline', () => {
     expect(activityUnits[0].type === 'activity' ? activityUnits[0].messages.map((message) => message.id) : [])
       .toEqual(['r1', 't1', 'f1']);
     expect(activityUnits[0].type === 'activity' ? activityUnits[0].turnLatencyMs : undefined).toBe(110_000);
+    expect(activityUnits[0].type === 'activity' ? activityUnits[0].turnCompletedAt : undefined).toBe(completedAt);
   });
 
   it('classifies tool events and media attachments as structured activity items', () => {

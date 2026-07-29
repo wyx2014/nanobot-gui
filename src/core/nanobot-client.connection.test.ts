@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { NanobotClient } from "./nanobot-client";
+import { NanobotClient, TranscriptionRequestError } from "./nanobot-client";
 
 class FakeSocket {
   readyState = 0;
@@ -251,5 +251,135 @@ describe("NanobotClient readiness", () => {
     });
     expect(client.getRunStartedAt("chat-1")).toBeNull();
     expect(runStatus).toHaveBeenLastCalledWith("chat-1", null);
+  });
+
+  it("sends an audio transcription request and resolves its matching response", async () => {
+    const socket = new FakeSocket();
+    const client = new NanobotClient({
+      url: "ws://127.0.0.1:8900/",
+      reconnect: false,
+      socketFactory: () => socket as unknown as WebSocket,
+    });
+    client.connect();
+    socket.open();
+    socket.receive({
+      event: "ready",
+      chat_id: "default-chat",
+      client_id: "desktop",
+      agent_ready: true,
+      mcp_status: "ready",
+    });
+
+    const pending = client.transcribeAudio("data:audio/wav;base64,UklGRg==", 1200);
+    const frame = JSON.parse(String(socket.send.mock.calls.at(-1)?.[0]));
+    expect(frame).toMatchObject({
+      type: "transcribe_audio",
+      data_url: "data:audio/wav;base64,UklGRg==",
+      duration_ms: 1200,
+    });
+
+    socket.receive({
+      event: "transcription_result",
+      request_id: frame.request_id,
+      text: "语音输入成功",
+    });
+
+    await expect(pending).resolves.toBe("语音输入成功");
+  });
+
+  it("surfaces structured transcription configuration errors", async () => {
+    const socket = new FakeSocket();
+    const client = new NanobotClient({
+      url: "ws://127.0.0.1:8900/",
+      reconnect: false,
+      socketFactory: () => socket as unknown as WebSocket,
+    });
+    client.connect();
+    socket.open();
+    socket.receive({
+      event: "ready",
+      chat_id: "default-chat",
+      client_id: "desktop",
+      agent_ready: true,
+      mcp_status: "ready",
+    });
+
+    const pending = client.transcribeAudio("data:audio/wav;base64,UklGRg==");
+    const frame = JSON.parse(String(socket.send.mock.calls.at(-1)?.[0]));
+    socket.receive({
+      event: "transcription_error",
+      request_id: frame.request_id,
+      detail: "not_configured",
+      provider: "stepfun",
+    });
+
+    await expect(pending).rejects.toEqual(
+      expect.objectContaining<Partial<TranscriptionRequestError>>({
+        detail: "not_configured",
+        provider: "stepfun",
+      }),
+    );
+  });
+
+  it("streams PCM chunks and resolves the final realtime transcript", async () => {
+    const socket = new FakeSocket();
+    const client = new NanobotClient({
+      url: "ws://127.0.0.1:8900/",
+      reconnect: false,
+      socketFactory: () => socket as unknown as WebSocket,
+    });
+    const onPartial = vi.fn();
+    client.connect();
+    socket.open();
+    socket.receive({
+      event: "ready",
+      chat_id: "default-chat",
+      client_id: "desktop",
+      agent_ready: true,
+      mcp_status: "ready",
+    });
+
+    const started = client.startVoiceStream("voice-test", { onPartial });
+    expect(JSON.parse(String(socket.send.mock.calls.at(-1)?.[0]))).toEqual({
+      type: "voice_stream_start",
+      stream_id: "voice-test",
+      sample_rate: 16000,
+    });
+    socket.receive({
+      event: "voice_stream_state",
+      stream_id: "voice-test",
+      state: "listening",
+      mode: "realtime",
+    });
+    await expect(started).resolves.toBe("realtime");
+
+    client.appendVoiceAudio(
+      "voice-test",
+      new Uint8Array([1, 2, 3, 4]).buffer,
+      0,
+      40,
+    );
+    expect(JSON.parse(String(socket.send.mock.calls.at(-1)?.[0]))).toMatchObject({
+      type: "voice_audio_chunk",
+      stream_id: "voice-test",
+      sequence: 0,
+      duration_ms: 40,
+      audio: "AQIDBA==",
+    });
+
+    socket.receive({
+      event: "voice_transcript_partial",
+      stream_id: "voice-test",
+      text: "帮我分析",
+    });
+    expect(onPartial).toHaveBeenCalledWith("帮我分析", false);
+
+    const stopped = client.stopVoiceStream("voice-test");
+    socket.receive({
+      event: "voice_transcript_final",
+      stream_id: "voice-test",
+      text: "帮我分析青岛啤酒",
+    });
+    await expect(stopped).resolves.toBe("帮我分析青岛啤酒");
   });
 });

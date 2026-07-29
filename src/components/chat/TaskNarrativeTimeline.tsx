@@ -29,6 +29,7 @@ import {
   type TaskNarrativeEntry,
 } from '@/core/nanobot/taskNarrativeTimeline';
 import { getBaseName } from '@/utils/pathUtils';
+import { formatTaskDuration } from '@/utils/taskDuration';
 import { DiffPair } from './activity/DiffPair';
 
 interface TaskNarrativeTimelineProps {
@@ -36,6 +37,7 @@ interface TaskNarrativeTimelineProps {
   isActive?: boolean;
   hasBodyBelow?: boolean;
   turnLatencyMs?: number;
+  activeElapsedMs?: number;
 }
 
 export default function TaskNarrativeTimeline({
@@ -43,6 +45,7 @@ export default function TaskNarrativeTimeline({
   isActive = false,
   hasBodyBelow = false,
   turnLatencyMs,
+  activeElapsedMs,
 }: TaskNarrativeTimelineProps) {
   const entries = useMemo(() => buildTaskNarrativeEntries(messages), [messages]);
   const [userToggled, setUserToggled] = useState(false);
@@ -58,13 +61,15 @@ export default function TaskNarrativeTimeline({
   const hasError = entries.some((entry) => entry.status === 'error');
   const taskFailed = !isActive && hasError && !hasBodyBelow;
   const elapsedMs = isActive
-    ? Math.max(0, Date.now() - startedAt)
+    ? activeElapsedMs !== undefined
+      ? Math.max(0, activeElapsedMs)
+      : Math.max(0, Date.now() - startedAt)
     : completedDurationMs(messages, entries, turnLatencyMs);
   const summary = isActive
-    ? `进行中 ${formatElapsed(elapsedMs)}`
+    ? `进行中 ${formatTaskDuration(elapsedMs)}`
     : taskFailed
-      ? `未完成 ${formatElapsed(elapsedMs)}`
-      : `已完成 ${formatElapsed(elapsedMs)}`;
+      ? `未完成 ${formatTaskDuration(elapsedMs)}`
+      : `已完成 ${formatTaskDuration(elapsedMs)}`;
   const summaryWithCount = `${summary} · ${entries.length} ${entries.length === 1 ? 'step' : 'steps'}`;
   const showContinuation = isActive
     && entries.length > 0
@@ -72,10 +77,10 @@ export default function TaskNarrativeTimeline({
     && !entries.some((entry) => entry.status === 'running');
 
   useEffect(() => {
-    if (!isActive) return;
+    if (!isActive || activeElapsedMs !== undefined) return;
     const timer = window.setInterval(() => tick((value) => value + 1), 500);
     return () => window.clearInterval(timer);
-  }, [isActive]);
+  }, [activeElapsedMs, isActive]);
 
   useEffect(() => {
     if (userToggled) return;
@@ -417,10 +422,15 @@ function completedDurationMs(
   if (typeof turnLatencyMs === 'number' && Number.isFinite(turnLatencyMs) && turnLatencyMs >= 0) {
     return turnLatencyMs;
   }
-  const candidates = [
-    ...messages.map((message) => normalizedTimestamp(message.timestamp)),
-    ...entries.map((entry) => normalizedTimestamp(entry.occurredAt)),
-  ].filter((value): value is number => value !== undefined);
+  // Historical messages and tool events used to be stamped by different clocks.
+  // Keep each clock domain separate so a reload time can never inflate execution duration.
+  const eventCandidates = entries
+    .map((entry) => normalizedTimestamp(entry.occurredAt))
+    .filter((value): value is number => value !== undefined);
+  const messageCandidates = messages
+    .map((message) => normalizedTimestamp(message.timestamp))
+    .filter((value): value is number => value !== undefined);
+  const candidates = eventCandidates.length >= 2 ? eventCandidates : messageCandidates;
   if (candidates.length < 2) return 0;
   return Math.max(0, Math.max(...candidates) - Math.min(...candidates));
 }
@@ -430,13 +440,6 @@ function normalizedTimestamp(value: unknown): number | undefined {
   if (value >= 1_000_000_000_000) return value;
   if (value >= 1_000_000_000) return value * 1000;
   return undefined;
-}
-
-function formatElapsed(ms: number): string {
-  const seconds = Math.max(0, Math.round(ms / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  return `${minutes}m${seconds % 60}s`;
 }
 
 function hasExpandableDetails(entry: TaskNarrativeEntry): boolean {

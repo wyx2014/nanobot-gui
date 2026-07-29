@@ -1,25 +1,21 @@
 import { ArrowDown, BrainCircuit, Sparkles } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
+import { formatTaskDuration, normalizeTaskTimestamp } from '@/utils/taskDuration';
 
 export type GenerationPhase = 'generating' | 'thinking';
 
 interface GenerationStatusBarProps {
   phase: GenerationPhase;
   startedAt?: number | null;
+  elapsedMs?: number;
   tokenCount?: number;
+  tokenCountEstimated?: boolean;
   className?: string;
 }
 
-function timestampMs(value: number): number {
-  return value > 1_000_000_000_000 ? value : value * 1000;
-}
-
 export function formatGenerationDuration(durationMs: number): string {
-  const seconds = Math.max(0, Math.round(durationMs / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  return `${minutes}m ${seconds % 60}s`;
+  return formatTaskDuration(durationMs);
 }
 
 export function formatGenerationTokens(tokenCount: number): string {
@@ -51,21 +47,26 @@ const PHASE_PRESENTATION = {
 export default function GenerationStatusBar({
   phase,
   startedAt = null,
+  elapsedMs: sharedElapsedMs,
   tokenCount = 0,
+  tokenCountEstimated = false,
   className,
 }: GenerationStatusBarProps) {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    if (startedAt == null) return;
+    if (sharedElapsedMs !== undefined || startedAt == null) return;
     setNow(Date.now());
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [startedAt]);
+  }, [sharedElapsedMs, startedAt]);
 
-  const elapsedMs = startedAt != null
-    ? Math.max(0, now - timestampMs(startedAt))
-    : 0;
+  const startedAtMs = normalizeTaskTimestamp(startedAt);
+  const elapsedMs = sharedElapsedMs !== undefined
+    ? Math.max(0, sharedElapsedMs)
+    : startedAtMs !== undefined
+      ? Math.max(0, now - startedAtMs)
+      : 0;
   const presentation = PHASE_PRESENTATION[phase];
   const Icon = presentation.Icon;
 
@@ -75,7 +76,7 @@ export default function GenerationStatusBar({
       aria-live="polite"
       data-generation-phase={phase}
       className={cn(
-        'mb-2 flex min-h-8 items-center justify-between gap-4 px-1 text-[13px]',
+        'relative -mx-3 mb-1 flex min-h-7 items-center justify-between gap-4 bg-gradient-to-t from-[#fbfaf7] via-[#fbfaf7]/70 to-transparent px-4 text-[13px]',
         className,
       )}
     >
@@ -94,7 +95,10 @@ export default function GenerationStatusBar({
         <span className="tabular-nums">{formatGenerationDuration(elapsedMs)}</span>
         <span aria-hidden className="text-[#b4b0a6]">·</span>
         <ArrowDown className="h-3.5 w-3.5 text-[#9b978d]" strokeWidth={1.8} aria-hidden />
-        <span className="tabular-nums">{formatGenerationTokens(tokenCount)}</span>
+        <span className="tabular-nums">
+          {tokenCountEstimated && tokenCount > 0 ? '~' : ''}
+          {formatGenerationTokens(tokenCount)}
+        </span>
       </div>
     </div>
   );

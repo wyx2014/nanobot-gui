@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Plus, ArrowUp, ArrowRight, Square, X, ChevronDown, Check, FileText, CornerDownRight, Pencil, Trash2, GraduationCap, Code, Coffee, Lightbulb, Paperclip, ChevronRight, Puzzle, Globe, Search, Users } from 'lucide-react';
+import { Plus, ArrowUp, ArrowRight, Square, X, ChevronDown, Check, FileText, CornerDownRight, Pencil, Trash2, GraduationCap, Code, Coffee, Lightbulb, Paperclip, ChevronRight, Puzzle, Globe, Search, Users, Mic, AudioLines, Loader2 } from 'lucide-react';
 import ExpertTeamIcon from '@/components/common/ExpertTeamIcon';
-import { dialogBridge, fsBridge } from '@/lib/ipc-factory';
+import { dialogBridge, fsBridge, mediaBridge } from '@/lib/ipc-factory';
 import { useFileDragDrop } from '@/hooks/useFileDragDrop';
 import { uint8ArrayToBase64 } from '@/utils/base64';
 import { getBaseName, IMAGE_MIME_MAP } from '@/utils/pathUtils';
@@ -20,6 +20,17 @@ import type { OutboundCliAppMention, OutboundMcpPresetMention, OutboundSkillScop
 import type { CliAppInfo, ExpertTeamBinding, ExpertTeamSummary, McpPresetInfo, SlashCommand, WorkspaceScopePayload } from '@/core/types';
 import { fetchCliApps, fetchExpertTeams, fetchMcpPresets, listSlashCommands } from '@/core/api';
 import { getNanobotClient, getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/nanobotClient';
+import {
+  TranscriptionRequestError,
+  VoiceStreamError,
+  type VoiceStreamMode,
+} from '@/core/nanobot-client';
+import {
+  startPcmVoiceRecorder,
+  type PcmVoiceRecorder,
+  type VoiceAudioChunk,
+  type VoiceRecordingResult,
+} from '@/core/audio/pcmVoiceRecorder';
 import {
   CLI_APPS_CHANGED_EVENT,
   installedCliAppsFromPayload,
@@ -385,6 +396,23 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   const [cliApps, setCliApps] = useState<CliAppInfo[]>([]);
   const [mcpPresets, setMcpPresets] = useState<McpPresetInfo[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const voiceRecorderRef = useRef<PcmVoiceRecorder | null>(null);
+  const voiceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const voiceStartedAtRef = useRef(0);
+  const voiceStreamIdRef = useRef<string | null>(null);
+  const voiceStreamModeRef = useRef<VoiceStreamMode | null>(null);
+  const voiceFinalizingStreamRef = useRef<string | null>(null);
+  const voicePendingChunksRef = useRef<VoiceAudioChunk[]>([]);
+  const voiceDraftRef = useRef<{
+    originalText: string;
+    start: number;
+    end: number;
+    latest: string;
+  } | null>(null);
+  const [voiceState, setVoiceState] = useState<
+    'idle' | 'connecting' | 'recording' | 'finalizing' | 'transcribing'
+  >('idle');
+  const [voiceElapsedSec, setVoiceElapsedSec] = useState(0);
 
   const [showPlusMenu, setShowPlusMenu] = useState(false);
   const [activeSubmenu, setActiveSubmenu] = useState<'project' | 'expert-team' | 'skills' | 'connector' | null>(null);
@@ -430,6 +458,8 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   const currentModel = useSettingsStore((s) => getEffectiveModel(s));
   const provider = useSettingsStore((s) => s.provider);
   const setModel = useSettingsStore((s) => s.setModel);
+  const openSystemSettings = useSettingsStore((s) => s.openSystemSettings);
+  const voiceMaxDurationSec = useSettingsStore((s) => s.voiceMaxDurationSec);
   const recentPaths = useWorkspaceStore((s) => s.recentPaths);
   const projectSkillBindings = useWorkspaceStore((s) => s.projectSkillBindings);
   const conversations = useChatStore((s) => s.conversations);
@@ -927,9 +957,37 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     mcpPresets: selectedMcpPresets,
   });
 
+  const stopVoiceInputForSend = () => {
+    if (voiceTimeoutRef.current) {
+      clearTimeout(voiceTimeoutRef.current);
+      voiceTimeoutRef.current = null;
+    }
+    const recorder = voiceRecorderRef.current;
+    voiceRecorderRef.current = null;
+    void recorder?.cancel();
+    const streamId = voiceStreamIdRef.current;
+    if (streamId) getNanobotClient().cancelVoiceStream?.(streamId);
+    voiceStreamIdRef.current = null;
+    voiceStreamModeRef.current = null;
+    voiceFinalizingStreamRef.current = null;
+    voicePendingChunksRef.current = [];
+    // The current visible transcript is already captured in `currentDraft`.
+    // Drop the voice draft so late provider events cannot write into the next message.
+    voiceDraftRef.current = null;
+    setVoiceState('idle');
+    setVoiceElapsedSec(0);
+  };
+
   const handleSend = () => {
     const draft = currentDraft();
     if (!hasDraftPayload(draft) || disabled || sendDisabled) return;
+    if (
+      voiceState !== 'idle'
+      || voiceRecorderRef.current
+      || voiceStreamIdRef.current
+    ) {
+      stopVoiceInputForSend();
+    }
     if (isStreaming) {
       setQueuedPrompts((items) => [
         ...items,
@@ -1063,6 +1121,345 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       );
       textareaRef.current?.focus();
     }
+  }, []);
+
+  const clearVoiceTimeout = () => {
+    if (voiceTimeoutRef.current) {
+      clearTimeout(voiceTimeoutRef.current);
+      voiceTimeoutRef.current = null;
+    }
+  };
+
+  const writeVoiceDraft = (transcript: string) => {
+    const clean = transcript.trim();
+    if (!clean) return;
+    const draft = voiceDraftRef.current;
+    if (!draft) return;
+    draft.latest = clean;
+    const before = draft.originalText.slice(0, draft.start);
+    const after = draft.originalText.slice(draft.end);
+    setText(`${before}${clean}${after}`);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      const cursor = draft.start + clean.length;
+      textareaRef.current?.setSelectionRange(cursor, cursor);
+    });
+  };
+
+  const commitVoiceTranscript = (transcript: string) => {
+    writeVoiceDraft(transcript);
+    voiceDraftRef.current = null;
+  };
+
+  const restoreVoiceDraft = () => {
+    const draft = voiceDraftRef.current;
+    if (!draft) return;
+    setText(draft.originalText);
+    voiceDraftRef.current = null;
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(draft.start, draft.end);
+    });
+  };
+
+  const failRealtimeVoiceInput = async (message: string) => {
+    const recorder = voiceRecorderRef.current;
+    voiceRecorderRef.current = null;
+    clearVoiceTimeout();
+    await recorder?.cancel();
+    const retained = voiceDraftRef.current?.latest.trim();
+    if (retained) {
+      commitVoiceTranscript(retained);
+    } else {
+      restoreVoiceDraft();
+    }
+    voiceStreamIdRef.current = null;
+    voiceStreamModeRef.current = null;
+    voiceFinalizingStreamRef.current = null;
+    voicePendingChunksRef.current = [];
+    setVoiceState('idle');
+    setVoiceElapsedSec(0);
+    addToast({
+      type: retained ? 'info' : 'error',
+      title: retained
+        ? (isEn ? 'Voice connection ended' : '语音连接已中断')
+        : (isEn ? 'Voice input failed' : '语音识别失败'),
+      message: retained
+        ? (isEn ? 'Recognized text was kept in the input.' : '已识别的文字已保留在输入框中。')
+        : message,
+      duration: 5000,
+    });
+  };
+
+  const transcribeVoiceRecording = async (recording: VoiceRecordingResult) => {
+    setVoiceState('transcribing');
+    try {
+      const transcript = await getNanobotClient().transcribeAudio(
+        recording.dataUrl,
+        recording.durationMs,
+      );
+      commitVoiceTranscript(transcript);
+    } catch (error) {
+      restoreVoiceDraft();
+      if (error instanceof TranscriptionRequestError && error.detail === 'not_configured') {
+        addToast({
+          type: 'info',
+          title: isEn ? 'Voice input is not configured' : '语音输入尚未配置',
+          message: isEn
+            ? 'Configure a default ASR model and credentials in Settings → Voice.'
+            : '请在“系统设置 → 语音设置”中配置默认 ASR 模型和密钥。',
+          duration: 5000,
+        });
+        openSystemSettings('voice');
+      } else {
+        addToast({
+          type: 'error',
+          title: isEn ? 'Voice transcription failed' : '语音识别失败',
+          message: error instanceof TranscriptionRequestError
+            ? (isEn ? `ASR service error: ${error.detail}` : `ASR 服务返回：${error.detail}`)
+            : error instanceof Error ? error.message : String(error),
+          duration: 5000,
+        });
+      }
+    } finally {
+      setVoiceState('idle');
+      setVoiceElapsedSec(0);
+    }
+  };
+
+  const stopVoiceRecording = async () => {
+    const recorder = voiceRecorderRef.current;
+    if (!recorder) return;
+    voiceRecorderRef.current = null;
+    clearVoiceTimeout();
+    const streamId = voiceStreamIdRef.current;
+    const streamMode = voiceStreamModeRef.current;
+    const client = getNanobotClient();
+    setVoiceState(streamMode === 'realtime' ? 'finalizing' : 'transcribing');
+    let recording: VoiceRecordingResult | null = null;
+    try {
+      recording = await recorder.stop();
+      if (recording.durationMs < 250) {
+        throw new Error('recording_too_short');
+      }
+      if (
+        streamId
+        && streamMode === 'realtime'
+        && typeof client.stopVoiceStream === 'function'
+      ) {
+        voiceFinalizingStreamRef.current = streamId;
+        const transcript = await client.stopVoiceStream(streamId);
+        commitVoiceTranscript(transcript);
+        setVoiceState('idle');
+        setVoiceElapsedSec(0);
+      } else {
+        if (streamId && typeof client.cancelVoiceStream === 'function') {
+          client.cancelVoiceStream(streamId);
+        }
+        await transcribeVoiceRecording(recording);
+      }
+    } catch (error) {
+      const retained = voiceDraftRef.current?.latest.trim();
+      const shouldRetryWithBatch = Boolean(
+        recording
+        && !retained
+        && error instanceof VoiceStreamError
+        && ['empty', 'connection_interrupted', 'timeout'].includes(error.detail),
+      );
+      if (shouldRetryWithBatch && recording) {
+        voiceStreamIdRef.current = null;
+        voiceStreamModeRef.current = null;
+        voiceFinalizingStreamRef.current = null;
+        await transcribeVoiceRecording(recording);
+        return;
+      }
+      if (streamId && !recording) {
+        client.cancelVoiceStream?.(streamId);
+      }
+      if (retained) {
+        commitVoiceTranscript(retained);
+      } else {
+        restoreVoiceDraft();
+      }
+      setVoiceState('idle');
+      setVoiceElapsedSec(0);
+      addToast({
+        type: retained ? 'info' : 'error',
+        title: retained
+          ? (isEn ? 'Voice connection ended' : '语音连接已中断')
+          : (isEn ? 'Could not record audio' : '录音失败'),
+        message: error instanceof Error && error.message === 'recording_too_short'
+          ? (isEn ? 'The recording was too short.' : '录音时间太短，请重试。')
+          : retained
+            ? (isEn ? 'Recognized text was kept in the input.' : '已识别的文字已保留在输入框中。')
+            : error instanceof Error ? error.message : String(error),
+        duration: 4000,
+      });
+    } finally {
+      voiceStreamIdRef.current = null;
+      voiceStreamModeRef.current = null;
+      if (voiceFinalizingStreamRef.current === streamId) {
+        voiceFinalizingStreamRef.current = null;
+      }
+      voicePendingChunksRef.current = [];
+    }
+  };
+
+  const toggleVoiceRecording = async () => {
+    if (voiceState === 'recording') {
+      await stopVoiceRecording();
+      return;
+    }
+    if (voiceState !== 'idle' || disabled) return;
+    try {
+      const microphonePermission = await mediaBridge.requestMicrophoneAccess();
+      if (!microphonePermission.granted) {
+        if (microphonePermission.status === 'denied') {
+          void mediaBridge.openMicrophoneSettings();
+        }
+        addToast({
+          type: 'error',
+          title: isEn ? 'Microphone access is required' : '需要麦克风权限',
+          message: microphonePermission.development && microphonePermission.status === 'denied'
+            ? (
+                isEn
+                  ? 'In development, macOS may assign microphone permission to the IDE or terminal that launched Electron. Enable microphone access for that host app (for example Antigravity IDE or Terminal), then try again.'
+                  : '开发模式下，macOS 可能把麦克风权限归到启动 Electron 的 IDE 或终端。请为宿主应用（例如 Antigravity IDE 或“终端”）开启麦克风权限后重试。'
+              )
+            : microphonePermission.status === 'restricted'
+            ? (
+                isEn
+                  ? 'Microphone access is restricted by system policy.'
+                  : '麦克风权限受到系统策略限制，请联系设备管理员。'
+              )
+            : (
+                isEn
+                  ? 'Allow access in Privacy & Security → Microphone, then click the microphone again.'
+                  : '请在“隐私与安全性 → 麦克风”中允许访问，然后再次点击麦克风。'
+              ),
+          duration: 6000,
+        });
+        return;
+      }
+      const textarea = textareaRef.current;
+      const start = textarea?.selectionStart ?? text.length;
+      const end = textarea?.selectionEnd ?? start;
+      voiceDraftRef.current = {
+        originalText: text,
+        start,
+        end,
+        latest: '',
+      };
+      const client = getNanobotClient();
+      const streamId = globalThis.crypto?.randomUUID?.()
+        ?? `voice_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      voiceStreamIdRef.current = streamId;
+      voiceStreamModeRef.current = null;
+      voiceFinalizingStreamRef.current = null;
+      voicePendingChunksRef.current = [];
+      setVoiceState('connecting');
+
+      const streamStart = typeof client.startVoiceStream === 'function'
+        ? client.startVoiceStream(streamId, {
+            onState: (state) => {
+              if (voiceStreamIdRef.current !== streamId) return;
+              if (state === 'finalizing') setVoiceState('finalizing');
+            },
+            onPartial: (draft) => {
+              if (voiceStreamIdRef.current !== streamId) return;
+              writeVoiceDraft(draft);
+            },
+            onError: (error) => {
+              if (
+                voiceStreamIdRef.current !== streamId
+                || voiceStreamModeRef.current !== 'realtime'
+                || voiceFinalizingStreamRef.current === streamId
+              ) return;
+              void failRealtimeVoiceInput(error.message);
+            },
+          })
+        : Promise.resolve<VoiceStreamMode>('batch');
+      const recorder = await startPcmVoiceRecorder({
+        chunkMs: 40,
+        onChunk: (chunk) => {
+          if (voiceStreamIdRef.current !== streamId) return;
+          if (voiceStreamModeRef.current === 'realtime') {
+            client.appendVoiceAudio?.(
+              streamId,
+              chunk.pcm16,
+              chunk.sequence,
+              chunk.durationMs,
+            );
+          } else if (voiceStreamModeRef.current === null) {
+            voicePendingChunksRef.current.push(chunk);
+          }
+        },
+      });
+      voiceRecorderRef.current = recorder;
+      const streamMode = await streamStart;
+      if (voiceStreamIdRef.current !== streamId) {
+        await recorder.cancel();
+        return;
+      }
+      voiceStreamModeRef.current = streamMode;
+      if (streamMode === 'realtime') {
+        for (const chunk of voicePendingChunksRef.current) {
+          client.appendVoiceAudio?.(
+            streamId,
+            chunk.pcm16,
+            chunk.sequence,
+            chunk.durationMs,
+          );
+        }
+      }
+      voicePendingChunksRef.current = [];
+      voiceStartedAtRef.current = Date.now();
+      setVoiceElapsedSec(0);
+      setVoiceState('recording');
+      voiceTimeoutRef.current = setTimeout(() => {
+        void stopVoiceRecording();
+      }, Math.max(1, Math.min(600, voiceMaxDurationSec)) * 1000);
+    } catch (error) {
+      const streamId = voiceStreamIdRef.current;
+      if (streamId) getNanobotClient().cancelVoiceStream?.(streamId);
+      await voiceRecorderRef.current?.cancel();
+      voiceRecorderRef.current = null;
+      voiceStreamIdRef.current = null;
+      voiceStreamModeRef.current = null;
+      voiceFinalizingStreamRef.current = null;
+      voicePendingChunksRef.current = [];
+      restoreVoiceDraft();
+      setVoiceState('idle');
+      const denied = error instanceof DOMException && (
+        error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError'
+      );
+      addToast({
+        type: 'error',
+        title: isEn ? 'Microphone unavailable' : '无法使用麦克风',
+        message: denied
+          ? (isEn ? 'Allow microphone access in system settings and try again.' : '请在系统设置中允许太资如意访问麦克风后重试。')
+          : error instanceof Error ? error.message : String(error),
+        duration: 5000,
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (voiceState !== 'recording') return;
+    const timer = setInterval(() => {
+      setVoiceElapsedSec(Math.floor((Date.now() - voiceStartedAtRef.current) / 1000));
+    }, 250);
+    return () => clearInterval(timer);
+  }, [voiceState]);
+
+  useEffect(() => () => {
+    clearVoiceTimeout();
+    void voiceRecorderRef.current?.cancel();
+    voiceRecorderRef.current = null;
+    const streamId = voiceStreamIdRef.current;
+    if (streamId) getNanobotClient().cancelVoiceStream?.(streamId);
+    voiceStreamIdRef.current = null;
+    voiceFinalizingStreamRef.current = null;
   }, []);
 
   const updateSelectedExpertTeam = (team: ExpertTeamBinding | null) => {
@@ -1520,6 +1917,70 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     </button>
   ) : null;
 
+  const renderVoiceControl = () => {
+    const elapsed = `${Math.floor(voiceElapsedSec / 60)}:${String(voiceElapsedSec % 60).padStart(2, '0')}`;
+    const voiceBusy = voiceState !== 'idle';
+    return (
+      <div className="relative flex items-center">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={() => void toggleVoiceRecording()}
+          disabled={disabled || (voiceBusy && voiceState !== 'recording')}
+          aria-label={
+            voiceState === 'recording'
+              ? (isEn ? 'Stop recording' : '结束录音')
+              : voiceState === 'connecting'
+                ? (isEn ? 'Connecting voice input' : '正在连接语音识别')
+                : voiceState === 'finalizing' || voiceState === 'transcribing'
+                  ? (isEn ? 'Finalizing transcription' : '正在整理识别结果')
+                  : (isEn ? 'Voice input' : '语音输入')
+          }
+          aria-pressed={voiceState === 'recording'}
+          title={
+            voiceState === 'recording'
+              ? (isEn ? 'Stop recording' : '结束录音并识别')
+              : voiceState === 'connecting'
+                ? (isEn ? 'Connecting…' : '正在连接…')
+                : voiceState === 'transcribing' || voiceState === 'finalizing'
+                ? (isEn ? 'Transcribing…' : '正在识别…')
+                : (isEn ? 'Voice input' : '语音输入')
+          }
+          className={cn(
+            'h-8 w-8 rounded-xl transition-colors',
+            voiceState === 'recording'
+              ? 'bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700'
+              : voiceState !== 'idle'
+                ? 'bg-[#f5eee9] text-[#d97757]'
+                : 'text-[#656358] hover:bg-[#eeeeea] hover:text-[#29261b]',
+          )}
+        >
+          {voiceState === 'recording' ? (
+            <AudioLines className="h-4 w-4 animate-pulse" />
+          ) : voiceState !== 'idle' ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Mic className="h-4 w-4" />
+          )}
+        </Button>
+        {voiceState === 'recording' ? (
+          <span className="ml-1 min-w-9 font-mono text-[11px] font-medium tabular-nums text-red-600">
+            {elapsed}
+          </span>
+        ) : voiceState === 'connecting' ? (
+          <span className="ml-1 text-[11px] font-medium text-[#d97757]">
+            {isEn ? 'Connecting' : '连接中'}
+          </span>
+        ) : voiceState === 'finalizing' || voiceState === 'transcribing' ? (
+          <span className="ml-1 text-[11px] font-medium text-[#d97757]">
+            {isEn ? 'Finalizing' : '整理中'}
+          </span>
+        ) : null}
+      </div>
+    );
+  };
+
   return (
     <>
       {/* Welcome-only: Permission Dialog */}
@@ -1723,6 +2184,8 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
               }}
               placeholder={placeholder}
               disabled={disabled}
+              readOnly={voiceState !== 'idle'}
+              data-voice-input-state={voiceState}
               rows={isWelcome ? 2 : 1}
               className={cn(
                 'flex-1 bg-transparent resize-none outline-none text-[#29261b] leading-relaxed placeholder:text-[#8f8b82] font-user-message',
@@ -1752,6 +2215,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                 </Button>
                 {showPlusMenu && renderPlusMenu()}
               </div>
+              {renderVoiceControl()}
               {renderSelectedExpertTeam()}
               <div className="flex-1" />
 
@@ -1789,6 +2253,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                   </Button>
                   {showPlusMenu && renderPlusMenu()}
                 </div>
+                {renderVoiceControl()}
                 {renderSelectedExpertTeam()}
               </div>
 

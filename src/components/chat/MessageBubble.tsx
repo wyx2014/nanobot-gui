@@ -18,11 +18,45 @@ function getImageBlocks(content: string | MessageContent[]): Extract<MessageCont
   return content.filter((c): c is Extract<MessageContent, { type: 'image' }> => c.type === 'image');
 }
 
-function formatLatency(seconds?: number): string | null {
-  if (seconds === undefined || !Number.isFinite(seconds) || seconds < 0) return null;
-  if (seconds < 1) return `${Math.round(seconds * 1000)}ms`;
-  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
-  return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+export function formatAssistantCompletedAt(
+  value?: number,
+  nowValue = Date.now(),
+): string | null {
+  const timestamp = normalizeTimestamp(value);
+  const nowTimestamp = normalizeTimestamp(nowValue);
+  if (timestamp === undefined || nowTimestamp === undefined) return null;
+
+  const date = new Date(timestamp);
+  const now = new Date(nowTimestamp);
+  const time = `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+  if (isSameLocalDay(date, now)) return time;
+  if (startOfLocalWeek(date).getTime() === startOfLocalWeek(now).getTime()) {
+    const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+    return `${weekdays[date.getDay()]}${time}`;
+  }
+  return `${date.getMonth() + 1}月${date.getDate()}日 ${time}`;
+}
+
+function normalizeTimestamp(value?: number): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return undefined;
+  return value >= 1_000_000_000_000 ? value : value * 1000;
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+function isSameLocalDay(left: Date, right: Date): boolean {
+  return left.getFullYear() === right.getFullYear()
+    && left.getMonth() === right.getMonth()
+    && left.getDate() === right.getDate();
+}
+
+function startOfLocalWeek(value: Date): Date {
+  const result = new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  const daysSinceMonday = (result.getDay() + 6) % 7;
+  result.setDate(result.getDate() - daysSinceMonday);
+  return result;
 }
 
 function EditInput({
@@ -178,11 +212,13 @@ function TypingDots() {
 export default function MessageBubble({
   message,
   showAssistantCopyAction = true,
+  isLastAssistantReply = false,
   onEditUserMessage,
   onRegenerateAssistant,
 }: {
   message: Message;
   showAssistantCopyAction?: boolean;
+  isLastAssistantReply?: boolean;
   onEditUserMessage?: (message: Message, newContent: string) => void;
   onRegenerateAssistant?: (message: Message) => void;
 }) {
@@ -323,10 +359,11 @@ export default function MessageBubble({
 
   const empty = textContent.trim().length === 0;
   const showAssistantActions = message.role === 'assistant' && !message.isStreaming && !empty;
-  const showFooter = (showAssistantCopyAction && showAssistantActions) || (!!formatLatency(message.thinkingDuration) && !message.isStreaming);
+  const completedAt = formatAssistantCompletedAt(message.completedAt ?? message.timestamp);
+  const showFooter = showAssistantCopyAction && showAssistantActions;
 
   return (
-    <div className="w-full animate-in fade-in-0 slide-in-from-bottom-1 duration-300 text-[15px] leading-[1.78]">
+    <div className="group/assistant w-full animate-in fade-in-0 slide-in-from-bottom-1 duration-300 text-[15px] leading-[1.78]">
       {empty && message.isStreaming ? (
         <TypingDots />
       ) : (
@@ -345,7 +382,15 @@ export default function MessageBubble({
           ) : null}
           {message.isStreaming && textContent ? <span className="streaming-cursor" /> : null}
           {showFooter ? (
-            <div className="mt-2 flex min-h-8 flex-wrap items-center gap-x-2 gap-y-1 text-[#8b887c]">
+            <div
+              data-testid="assistant-reply-actions"
+              className={cn(
+                'mt-2 flex min-h-8 flex-wrap items-center gap-x-2 gap-y-1 text-[#8b887c] transition-opacity duration-150',
+                isLastAssistantReply
+                  ? 'opacity-100'
+                  : 'pointer-events-none opacity-0 group-hover/assistant:pointer-events-auto group-hover/assistant:opacity-100 group-focus-within/assistant:pointer-events-auto group-focus-within/assistant:opacity-100',
+              )}
+            >
               {showAssistantCopyAction && showAssistantActions ? (
                 <>
                   <button
@@ -368,9 +413,9 @@ export default function MessageBubble({
                   </button>
                 </>
               ) : null}
-              {formatLatency(message.thinkingDuration) ? (
+              {completedAt ? (
                 <span className="text-[11px] leading-none text-[#8b887c]/75 tabular-nums">
-                  {formatLatency(message.thinkingDuration)}
+                  {completedAt}
                 </span>
               ) : null}
             </div>

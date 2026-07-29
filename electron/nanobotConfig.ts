@@ -12,6 +12,35 @@ import path from 'path';
 import fs from 'fs/promises';
 import { app } from 'electron';
 
+const PLAYWRIGHT_MCP_PACKAGE = '@playwright/mcp@0.0.78';
+const JUYUAN_MCP_URL = 'https://api.gildata.com/mcp-servers/aidata-assistant-srv-api';
+
+export function buildDesktopDefaultMcpServers(
+  nanobotDir: string,
+  juyuanToken = process.env.JUYUAN_MCP_TOKEN?.trim(),
+) {
+  return {
+    juyuan: {
+      type: 'streamableHttp',
+      url: juyuanToken
+        ? `${JUYUAN_MCP_URL}?token=${encodeURIComponent(juyuanToken)}`
+        : '',
+      connectTimeout: 10,
+      toolTimeout: 60,
+      enabledTools: ['*'],
+    },
+    playwright: {
+      type: 'stdio',
+      command: 'npx',
+      args: ['-y', PLAYWRIGHT_MCP_PACKAGE],
+      cwd: path.join(nanobotDir, 'mcp', 'playwright'),
+      connectTimeout: 15,
+      toolTimeout: 60,
+      enabledTools: ['*'],
+    },
+  };
+}
+
 type GuiProvider =
   | 'volcengine'
   | 'bailian'
@@ -157,6 +186,7 @@ export async function syncNanobotConfig(cfg: NanobotConfigInput): Promise<boolea
   } catch {
     // First launch: config does not exist yet — start from empty object.
   }
+  const firstLaunch = existingContent.length === 0;
   const hasGatewayModelPresets =
     Object.keys(existing.modelPresets ?? existing.model_presets ?? {}).length > 0;
 
@@ -195,6 +225,19 @@ export async function syncNanobotConfig(cfg: NanobotConfigInput): Promise<boolea
       },
     },
   };
+  if (!existing?.transcription?.provider) {
+    patch.transcription = {
+      enabled: true,
+      provider: 'stepfun',
+      model: 'stepaudio-2.5-asr',
+      language: 'zh',
+    };
+  }
+  if (firstLaunch) {
+    const playwrightCwd = path.join(nanobotDir, 'mcp', 'playwright');
+    await fs.mkdir(playwrightCwd, { recursive: true });
+    patch.tools.mcpServers = buildDesktopDefaultMcpServers(nanobotDir);
+  }
   if (!hasGatewayModelPresets) {
     patch.agents = {
       defaults: {

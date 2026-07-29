@@ -86,6 +86,89 @@ afterEach(() => {
 });
 
 describe("useNanobotStream media progress lifecycle", () => {
+  it("exposes live estimated usage and replaces it with provider usage", () => {
+    emit({
+      event: "turn_usage_updated",
+      chat_id: "chat-media-progress",
+      turn_id: "turn-usage",
+      estimated: true,
+      usage: {
+        prompt_tokens: 1_200,
+        completion_tokens: 34,
+        total_tokens: 1_234,
+        confirmed_new_tokens: 300,
+        new_tokens: 300,
+      },
+    });
+
+    expect(latest?.turnUsage).toEqual({
+      inputTokens: 1_200,
+      outputTokens: 34,
+      totalTokens: 1_234,
+      cachedTokens: 0,
+      newTokens: 300,
+      estimated: true,
+    });
+
+    emit({
+      event: "turn_usage_updated",
+      chat_id: "chat-media-progress",
+      turn_id: "turn-usage",
+      estimated: false,
+      usage: {
+        prompt_tokens: 1_180,
+        completion_tokens: 40,
+        total_tokens: 1_220,
+        cached_tokens: 900,
+      },
+    });
+
+    expect(latest?.turnUsage).toEqual({
+      inputTokens: 1_180,
+      outputTokens: 40,
+      totalTokens: 1_220,
+      cachedTokens: 900,
+      newTokens: 320,
+      estimated: false,
+    });
+  });
+
+  it("never lets the active turn's displayed new-token count move backwards", () => {
+    emit({
+      event: "turn_usage_updated",
+      chat_id: "chat-media-progress",
+      turn_id: "turn-usage",
+      estimated: true,
+      usage: {
+        prompt_tokens: 100_000,
+        completion_tokens: 120,
+        total_tokens: 100_120,
+        confirmed_new_tokens: 25_000,
+        new_tokens: 25_120,
+      },
+    });
+
+    emit({
+      event: "turn_usage_updated",
+      chat_id: "chat-media-progress",
+      turn_id: "turn-usage",
+      estimated: false,
+      usage: {
+        prompt_tokens: 100_000,
+        completion_tokens: 140,
+        total_tokens: 100_140,
+        cached_tokens: 75_050,
+      },
+    });
+
+    expect(latest?.turnUsage).toMatchObject({
+      totalTokens: 100_140,
+      cachedTokens: 75_050,
+      newTokens: 25_120,
+      estimated: false,
+    });
+  });
+
   it("does not expose the previous conversation messages after switching chats", () => {
     const chatAMessages: UIMessage[] = [{
       id: "chat-a-plan",
@@ -289,6 +372,34 @@ describe("useNanobotStream media progress lifecycle", () => {
       message.media?.some((media) => media.name === "小红书上市分析报告.pdf")
     ))).toBe(true);
     expect(latest?.isStreaming).toBe(false);
+  });
+
+  it("stamps authoritative duration and completion time from turn_completed", () => {
+    const completedAt = 1_785_222_083_788;
+    emit({
+      event: "message",
+      chat_id: "chat-media-progress",
+      text: "天气查询完成。",
+    });
+    emit({
+      event: "turn_completed",
+      chat_id: "chat-media-progress",
+      snapshot_revision: 2,
+      turn: {
+        id: "turn-weather",
+        status: "completed",
+        started_at: completedAt - 23_945,
+        completed_at: completedAt,
+        duration_ms: 23_945,
+      },
+    });
+
+    const assistant = [...(latest?.messages ?? [])].reverse().find(
+      (message) => message.role === "assistant" && message.kind !== "trace",
+    );
+    expect(assistant?.latencyMs).toBe(23_945);
+    expect(assistant?.completedAt).toBe(completedAt);
+    expect(assistant?.isStreaming).toBe(false);
   });
 
   it("does not misreport a lost final progress snapshot as completed", () => {

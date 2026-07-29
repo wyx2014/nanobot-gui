@@ -178,15 +178,18 @@ describe('mapWebuiThreadToGuiMessages artifacts', () => {
   });
 
   it('preserves server turn latency for task duration summaries', () => {
+    const completedAt = 1_785_222_083_788;
     const messages = mapWebuiThreadToGuiMessages([{
       id: 'assistant-latency',
       role: 'assistant',
       content: '完成',
       createdAt: 1,
       latencyMs: 548_000,
+      completedAt,
     }]);
 
     expect(messages[0].thinkingDuration).toBe(548);
+    expect(messages[0].completedAt).toBe(completedAt);
   });
 
   it('preserves signed PDF preview and download metadata from gateway history', () => {

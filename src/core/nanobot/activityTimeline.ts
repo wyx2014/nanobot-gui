@@ -35,7 +35,13 @@ export interface ActivityGroup {
 }
 
 export type ChatDisplayUnit =
-  | { type: 'activity'; messages: Message[]; items: ActivityItem[]; turnLatencyMs?: number }
+  | {
+      type: 'activity';
+      messages: Message[];
+      items: ActivityItem[];
+      turnLatencyMs?: number;
+      turnCompletedAt?: number;
+    }
   | { type: 'message'; message: Message };
 
 export interface ActivityTimelineProjector {
@@ -97,6 +103,7 @@ export function normalizeActivityTimeline(messages: Message[]): ChatDisplayUnit[
         messages: activityMessages,
         items: activityMessages.flatMap(activityItemsForMessage),
         turnLatencyMs: activityTurnLatencyMs(activityMessages, visibleMessages),
+        turnCompletedAt: activityTurnCompletedAt(activityMessages, visibleMessages),
       });
     }
     visibleMessages.forEach((message) => units.push({ type: 'message', message }));
@@ -201,6 +208,7 @@ function reasoningOnlyMessageFromAnswer(message: Message): Message {
     isStreaming: !!(message.reasoningStreaming || message.isStreaming),
     activitySegmentId: message.activitySegmentId,
     thinkingDuration: message.thinkingDuration,
+    completedAt: message.completedAt,
   };
 }
 
@@ -270,8 +278,27 @@ function activityTurnLatencyMs(activityMessages: Message[], visibleMessages: Mes
   return undefined;
 }
 
+function activityTurnCompletedAt(
+  activityMessages: Message[],
+  visibleMessages: Message[],
+): number | undefined {
+  for (let i = visibleMessages.length - 1; i >= 0; i -= 1) {
+    const completedAt = visibleMessages[i].completedAt;
+    if (isValidTimestamp(completedAt)) return completedAt;
+  }
+  for (let i = activityMessages.length - 1; i >= 0; i -= 1) {
+    const completedAt = activityMessages[i].completedAt;
+    if (isValidTimestamp(completedAt)) return completedAt;
+  }
+  return undefined;
+}
+
 function isValidLatency(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function isValidTimestamp(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0;
 }
 
 export function activityEvidenceFromToolEvent(event: ToolProgressEvent): ActivityEvidence[] {

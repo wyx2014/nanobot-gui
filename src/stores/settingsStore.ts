@@ -195,7 +195,7 @@ export const AVAILABLE_MODELS = Object.fromEntries(
 export type ViewMode = 'chat' | 'schedule' | 'toolbox' | 'settings';
 
 // System settings tabs
-export type SystemSettingsTab = 'general' | 'ai-services' | 'sandbox' | 'about';
+export type SystemSettingsTab = 'general' | 'ai-services' | 'voice' | 'sandbox' | 'about';
 
 // Toolbox tabs (Skills, MCP, skill store)
 export type ToolboxTab = 'expert-teams' | 'skills' | 'mcp' | 'skill-store';
@@ -227,6 +227,8 @@ interface SettingsState {
   webSearchProvider: WebSearchProviderType;
   webSearchApiKey: string;
   webSearchBaseUrl: string;
+  // Gateway-mirrored voice input settings
+  voiceMaxDurationSec: number;
   // New: Language setting
   language: LanguageSetting;
   // System settings tab
@@ -299,6 +301,7 @@ interface SettingsActions {
   setWebSearchProvider: (provider: WebSearchProviderType) => void;
   setWebSearchApiKey: (key: string) => void;
   setWebSearchBaseUrl: (url: string) => void;
+  setVoiceMaxDurationSec: (seconds: number) => void;
   // Language action
   setLanguage: (lang: LanguageSetting) => void;
   // System settings modal actions
@@ -411,6 +414,7 @@ export const useSettingsStore = create<SettingsStore>()(
       webSearchProvider: 'duckduckgo' as WebSearchProviderType,
       webSearchApiKey: '',
       webSearchBaseUrl: '',
+      voiceMaxDurationSec: 120,
       // Language default
       language: 'system' as LanguageSetting,
       // System settings defaults
@@ -473,6 +477,7 @@ export const useSettingsStore = create<SettingsStore>()(
       setWebSearchProvider: (webSearchProvider) => set({ webSearchProvider }),
       setWebSearchApiKey: (webSearchApiKey) => set({ webSearchApiKey }),
       setWebSearchBaseUrl: (webSearchBaseUrl) => set({ webSearchBaseUrl }),
+      setVoiceMaxDurationSec: (voiceMaxDurationSec) => set({ voiceMaxDurationSec }),
       // Language action - updates both store and i18n module
       setLanguage: (lang) => {
         setLanguage(lang);

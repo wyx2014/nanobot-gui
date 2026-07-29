@@ -520,6 +520,9 @@ export function mapWebuiThreadToGuiMessages(webuiMessages: UIMessage[]): Message
         thinkingDuration: typeof msg.latencyMs === 'number' && Number.isFinite(msg.latencyMs)
           ? Math.max(0, msg.latencyMs / 1000)
           : undefined,
+        completedAt: typeof msg.completedAt === 'number' && Number.isFinite(msg.completedAt)
+          ? msg.completedAt
+          : undefined,
         usage: msg.usage,
         reasoningStreaming: msg.reasoningStreaming,
         isStreaming: msg.isStreaming,
@@ -855,6 +858,7 @@ export async function syncGatewaySettingsToStore(): Promise<void> {
     store.setUseBuiltinWebSearch(payload.web.enable);
     store.setWebSearchProvider(payload.web_search.provider as unknown as Parameters<typeof store.setWebSearchProvider>[0]);
     store.setWebSearchBaseUrl(payload.web_search.base_url || '');
+    store.setVoiceMaxDurationSec(payload.transcription.max_duration_sec);
 
     store.setSandboxEnabled(payload.advanced.restrict_to_workspace);
     store.setAllowPrivateNetworks(payload.advanced.webui_allow_local_service_access);

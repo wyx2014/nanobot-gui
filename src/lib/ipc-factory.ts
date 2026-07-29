@@ -85,6 +85,27 @@ export const osBridge = {
   }
 };
 
+export type MicrophonePermissionStatus =
+  | 'not-determined'
+  | 'granted'
+  | 'denied'
+  | 'restricted'
+  | 'unknown'
+  | 'not-applicable';
+
+export const mediaBridge = {
+  requestMicrophoneAccess: async (): Promise<{
+    granted: boolean;
+    status: MicrophonePermissionStatus;
+    development?: boolean;
+  }> => {
+    return window.ipc.invoke('media:requestMicrophoneAccess');
+  },
+  openMicrophoneSettings: async (): Promise<boolean> => {
+    return window.ipc.invoke('media:openMicrophoneSettings');
+  },
+};
+
 export const dialogBridge = {
   open: async (options: any): Promise<any> => {
     return window.ipc.invoke('dialog:open', options);

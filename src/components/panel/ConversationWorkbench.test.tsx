@@ -171,4 +171,98 @@ describe("ConversationWorkbench progress activity", () => {
       vi.useRealTimers();
     }
   });
+
+  it("collapses completed progress and lets the user expand it again", () => {
+    useTurnPlanStore.setState({
+      currentTurnByConversation: { "chat-progress": "turn-1" },
+      planByConversation: {
+        "chat-progress": {
+          id: "plan:turn-1",
+          turn_id: "turn-1",
+          kind: "workflow",
+          owner: "agent",
+          policy: "required",
+          execution: "staged",
+          status: "running",
+          revision: 1,
+          active_step_ids: ["report-audit"],
+          steps: [{
+            id: "report-audit",
+            title: "Report audit and delivery",
+            status: "inProgress",
+          }],
+        },
+      },
+    });
+
+    const view = renderWorkbench();
+    const progressSection = view.querySelector('section[aria-label="Progress"]');
+    const toggle = progressSection?.querySelector("button");
+
+    expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+    expect(progressSection?.textContent).toContain("Report audit and delivery");
+
+    act(() => {
+      useTurnPlanStore.setState({
+        currentTurnByConversation: { "chat-progress": "turn-1" },
+        planByConversation: {
+          "chat-progress": {
+            id: "plan:turn-1",
+            turn_id: "turn-1",
+            kind: "workflow",
+            owner: "agent",
+            policy: "required",
+            execution: "staged",
+            status: "completed",
+            revision: 2,
+            active_step_ids: [],
+            steps: [{
+              id: "report-audit",
+              title: "Report audit and delivery",
+              status: "completed",
+            }],
+          },
+        },
+      });
+    });
+
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    expect(progressSection?.textContent).not.toContain("Report audit and delivery");
+
+    act(() => toggle?.click());
+
+    expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+    expect(progressSection?.textContent).toContain("Report audit and delivery");
+  });
+
+  it("keeps failed progress expanded for diagnosis", () => {
+    useTurnPlanStore.setState({
+      currentTurnByConversation: { "chat-progress": "turn-2" },
+      planByConversation: {
+        "chat-progress": {
+          id: "plan:turn-2",
+          turn_id: "turn-2",
+          kind: "workflow",
+          owner: "agent",
+          policy: "required",
+          execution: "staged",
+          status: "failed",
+          revision: 1,
+          active_step_ids: [],
+          steps: [{
+            id: "fetch-data",
+            title: "Fetch market data",
+            status: "failed",
+          }],
+        },
+      },
+    });
+
+    const view = renderWorkbench();
+    const progressSection = view.querySelector('section[aria-label="Progress"]');
+    const toggle = progressSection?.querySelector("button");
+
+    expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+    expect(progressSection?.textContent).toContain("Fetch market data");
+  });
 });

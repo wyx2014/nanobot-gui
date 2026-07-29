@@ -42,6 +42,8 @@ describe('GenerationStatusBar', () => {
     expect(container.textContent).toContain('328 tokens');
     expect(container.querySelector('svg.lucide-sparkles')).not.toBeNull();
     expect(container.querySelector('.generation-status-breathe')).not.toBeNull();
+    expect(container.querySelector('[role="status"]')?.classList.contains('bg-gradient-to-t')).toBe(true);
+    expect(container.querySelector('[role="status"]')?.classList.contains('to-transparent')).toBe(true);
   });
 
   it('uses the distinct thinking icon and keeps the active breathing state', () => {
@@ -56,8 +58,38 @@ describe('GenerationStatusBar', () => {
   });
 
   it('formats long durations and compact token counts', () => {
-    expect(formatGenerationDuration(125_000)).toBe('2m 5s');
+    expect(formatGenerationDuration(125_000)).toBe('2m5s');
+    expect(formatGenerationDuration(3_723_000)).toBe('1h2m3s');
     expect(formatGenerationTokens(9_500)).toBe('9.5k tokens');
     expect(formatGenerationTokens(25_000)).toBe('25k tokens');
+  });
+
+  it('uses a shared authoritative elapsed duration when provided', () => {
+    act(() => {
+      root.render(
+        <GenerationStatusBar
+          phase="generating"
+          startedAt={Date.parse('2026-07-26T11:00:00.000Z')}
+          elapsedMs={23_945}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('24s');
+  });
+
+  it('marks live estimated token usage until provider usage is available', () => {
+    act(() => {
+      root.render(
+        <GenerationStatusBar
+          phase="thinking"
+          elapsedMs={2_000}
+          tokenCount={1_234}
+          tokenCountEstimated
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('~1.2k tokens');
   });
 });

@@ -91,6 +91,8 @@ export interface Message {
   reasoningStreaming?: boolean;
   // Thinking duration in seconds
   thinkingDuration?: number;
+  // Authoritative wall-clock time when the assistant turn completed.
+  completedAt?: number;
   interactivePrompt?: UIInteractivePrompt;
   interactivePromptAnswer?: UIInteractivePromptAnswer;
   // Token usage for this message

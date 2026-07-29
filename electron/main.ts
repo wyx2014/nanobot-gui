@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, systemPreferences } from 'electron'
 import { join } from 'path'
 import fs from 'fs/promises'
 import { exec, spawn } from 'child_process'
@@ -331,6 +331,36 @@ app.whenReady().then(async () => {
   safeInvoke('os:desktopDir', async () => app.getPath('desktop'));
   safeInvoke('os:documentDir', async () => app.getPath('documents'));
   safeInvoke('os:downloadDir', async () => app.getPath('downloads'));
+  safeInvoke('media:requestMicrophoneAccess', async () => {
+    if (process.platform !== 'darwin') {
+      return { granted: true, status: 'not-applicable', development: !app.isPackaged };
+    }
+    let status = systemPreferences.getMediaAccessStatus('microphone');
+    console.log('[Media] microphone permission before request', {
+      status,
+      appName: app.getName(),
+      appPath: app.getAppPath(),
+      packaged: app.isPackaged,
+    });
+    if (status === 'not-determined' || status === 'unknown') {
+      const granted = await systemPreferences.askForMediaAccess('microphone');
+      status = systemPreferences.getMediaAccessStatus('microphone');
+      console.log('[Media] microphone permission after request', { granted, status });
+      return { granted, status, development: !app.isPackaged };
+    }
+    return {
+      granted: status === 'granted',
+      status,
+      development: !app.isPackaged,
+    };
+  });
+  safeInvoke('media:openMicrophoneSettings', async () => {
+    if (process.platform !== 'darwin') return false;
+    await shell.openExternal(
+      'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone',
+    );
+    return true;
+  });
   safeInvoke('get_env_vars', async (data) => {
     const names = data?.names || []
     const result: Record<string, string> = {}

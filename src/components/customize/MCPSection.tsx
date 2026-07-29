@@ -437,7 +437,7 @@ function McpPresetRow({
               </IconButton>
             </>
           ) : preset.install_supported ? (
-            <IconButton busy={enableBusy} disabled={busy || !canEnable} title={needsSetup ? '配置并启用' : '启用'} onClick={enable}>
+            <IconButton busy={enableBusy} disabled={busy} title={needsSetup ? '配置并启用' : '启用'} onClick={enable}>
               <Plus className="h-4 w-4" />
             </IconButton>
           ) : (

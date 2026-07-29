@@ -14,6 +14,7 @@ import {
   Link,
   Loader2,
   MessageSquare,
+  Mic,
   RefreshCw,
   Save,
   Shield,
@@ -33,9 +34,10 @@ import {
   fetchSettings,
   updateModelConfiguration,
   updateImageGenerationSettings,
+  updateModelDefault,
   updateNetworkSafetySettings,
   updateProviderSettings,
-  updateSettings,
+  updateTranscriptionSettings,
 } from "@/core/api";
 import {
   bootstrapNanobotGateway,
@@ -46,6 +48,7 @@ import {
 } from "@/core/nanobotClient";
 import type {
   SettingsPayload,
+  ModelCapability,
   WebuiDefaultAccessMode,
 } from "@/core/types";
 import type { LanguageSetting } from "@/i18n";
@@ -67,6 +70,7 @@ type TabKey =
   | "account"
   | "providers"
   | "models"
+  | "voice"
   | "search"
   | "image"
   | "safety"
@@ -99,6 +103,14 @@ type ImageForm = {
   maxImagesPerTurn: number;
 };
 
+type VoiceForm = {
+  enabled: boolean;
+  language: string;
+  maxDurationSec: number;
+  apiKey: string;
+  apiBase: string;
+};
+
 type SafetyForm = {
   webuiAllowLocalServiceAccess: boolean;
   webuiDefaultAccessMode: WebuiDefaultAccessMode;
@@ -109,6 +121,7 @@ type ActionKey = string;
 const tabs: Array<{ key: TabKey; label: string; description: string; icon: typeof Cpu }> = [
   { key: "general", label: "系统设置", description: "语言、关闭行为、助手信息", icon: SlidersHorizontal },
   { key: "providers", label: "模型配置", description: "提供商 / API 密钥 / OAuth 授权", icon: Cpu },
+  { key: "voice", label: "语音设置", description: "默认 ASR 模型和语音输入", icon: Mic },
   { key: "image", label: "个性化", description: "图片模型和默认尺寸", icon: Sparkles },
   { key: "safety", label: "安全中心", description: "工作区权限和本机服务访问", icon: Shield },
   { key: "about", label: "数据管理", description: "网关状态和配置路径", icon: Database },
@@ -148,6 +161,15 @@ const sizeOptions = [
   { value: "1536x1024", label: "1536x1024" },
   { value: "1024x1536", label: "1024x1536" },
   { value: "auto", label: "自动 (auto)" },
+];
+
+const modelCapabilityOptions: Array<{
+  value: ModelCapability;
+  label: string;
+  description: string;
+}> = [
+  { value: "text", label: "文字", description: "新会话与普通文字任务" },
+  { value: "speech_to_text", label: "语音识别", description: "麦克风录音转文字（ASR）" },
 ];
 
 function gatewayBase(port: number): string {
@@ -268,7 +290,14 @@ export function SettingsView({
   const logoutPromptHub = usePromptHubStore((state) => state.logout);
   const addToast = useToastStore((state) => state.addToast);
 
-  const [activeTab, setActiveTab] = useState<TabKey>("general");
+  const requestedSystemTab = useSettingsStore((state) => state.activeSystemTab);
+  const initialTab: TabKey =
+    requestedSystemTab === "ai-services"
+      ? "providers"
+      : requestedSystemTab === "sandbox"
+        ? "safety"
+        : requestedSystemTab;
+  const [activeTab, setActiveTab] = useState<TabKey>(initialTab);
   const [settings, setSettings] = useState<SettingsPayload | null>(null);
   const [apiBase, setApiBase] = useState("");
   const [token, setToken] = useState("");
@@ -280,9 +309,9 @@ export function SettingsView({
   const [feedbackText, setFeedbackText] = useState("");
   const [feedbackImages, setFeedbackImages] = useState<string[]>([]);
   const [feedbackIncludeLogs, setFeedbackIncludeLogs] = useState(true);
+  const [modelManagerCapability, setModelManagerCapability] = useState<ModelCapability>("text");
 
   const [selectedProvider, setSelectedProvider] = useState("");
-  const [selectedPreset, setSelectedPreset] = useState("");
   const [imageForm, setImageForm] = useState<ImageForm>({
     enabled: false,
     provider: "openai",
@@ -291,24 +320,17 @@ export function SettingsView({
     defaultImageSize: "1024x1024",
     maxImagesPerTurn: 1,
   });
+  const [voiceForm, setVoiceForm] = useState<VoiceForm>({
+    enabled: false,
+    language: "zh",
+    maxDurationSec: 120,
+    apiKey: "",
+    apiBase: "",
+  });
   const [safetyForm, setSafetyForm] = useState<SafetyForm>({
     webuiAllowLocalServiceAccess: false,
     webuiDefaultAccessMode: "full",
   });
-
-  const selectedModelPreset = useMemo(
-    () => settings?.model_presets.find((preset) => preset.name === selectedPreset) ?? null,
-    [selectedPreset, settings],
-  );
-
-  const imageProviderOptions = useMemo(
-    () =>
-      (settings?.image_generation.providers ?? []).map((provider) => ({
-        value: provider.name,
-        label: provider.configured ? provider.label : `${provider.label}（未配置）`,
-      })),
-    [settings],
-  );
 
   const withAction = useCallback(
     async (id: ActionKey, task: () => Promise<void>, success?: string) => {
@@ -333,11 +355,6 @@ export function SettingsView({
       setSelectedProvider(provider.name);
     }
 
-    const activePreset = payload.model_presets.find((preset) => preset.active) ?? payload.model_presets[0];
-    if (activePreset) {
-      setSelectedPreset(activePreset.name);
-    }
-
     setImageForm({
       enabled: payload.image_generation.enabled,
       provider: payload.image_generation.provider,
@@ -346,11 +363,31 @@ export function SettingsView({
       defaultImageSize: payload.image_generation.default_image_size,
       maxImagesPerTurn: payload.image_generation.max_images_per_turn,
     });
+    const voiceProvider = payload.transcription.providers.find(
+      (provider) => provider.name === payload.transcription.provider,
+    );
+    setVoiceForm({
+      enabled: payload.transcription.enabled,
+      language: payload.transcription.language || "zh",
+      maxDurationSec: payload.transcription.max_duration_sec,
+      apiKey: "",
+      apiBase: voiceProvider?.api_base || voiceProvider?.default_api_base || "",
+    });
     setSafetyForm({
       webuiAllowLocalServiceAccess: payload.advanced.webui_allow_local_service_access,
       webuiDefaultAccessMode: "full",
     });
   }, []);
+
+  useEffect(() => {
+    const nextTab: TabKey =
+      requestedSystemTab === "ai-services"
+        ? "providers"
+        : requestedSystemTab === "sandbox"
+          ? "safety"
+          : requestedSystemTab;
+    setActiveTab(nextTab);
+  }, [requestedSystemTab]);
 
   const refreshSettingsAuth = useCallback(async () => {
     const refreshed = await refreshNanobotAuth();
@@ -597,26 +634,100 @@ export function SettingsView({
     return models;
   };
 
-  const activateModelPreset = (presetName = selectedModelPreset?.name) => {
-    if (!presetName) return Promise.resolve();
+  const setCapabilityDefault = (capability: ModelCapability, presetName: string) => {
     return withAction(
-      "model-active",
+      `model-default:${capability}`,
       async () => {
         const payload = await withGatewayAuth((authToken, base) =>
-          updateSettings(authToken, { modelPreset: presetName === "default" ? null : presetName }, base),
+          updateModelDefault(authToken, { capability, name: presetName }, base),
         );
         await replaceSettings(payload);
       },
-      "默认模型预设已切换",
+      "默认模型已更新",
     );
   };
+
+  const addModelCapability = (presetName: string, capability: ModelCapability) => {
+    const preset = settings?.model_presets.find((item) => item.name === presetName);
+    if (!preset || preset.is_default || preset.capabilities.includes(capability)) {
+      return Promise.resolve();
+    }
+    return withAction(
+      `model-capability:${presetName}:${capability}`,
+      async () => {
+        const payload = await withGatewayAuth((authToken, base) =>
+          updateModelConfiguration(
+            authToken,
+            {
+              name: presetName,
+              capabilities: [...preset.capabilities, capability],
+            },
+            base,
+          ),
+        );
+        await replaceSettings(payload);
+      },
+      "模型分类已更新",
+    );
+  };
+
+  const saveVoice = () =>
+    withAction(
+      "voice",
+      async () => {
+        const defaultName = settings?.model_defaults.speech_to_text;
+        const preset = settings?.model_presets.find((item) => item.name === defaultName);
+        if (!preset) {
+          throw new Error("请先在“模型配置 → 使用 → 语音识别”中选择默认 ASR 模型。");
+        }
+        const provider = settings?.transcription.providers.find(
+          (item) => item.name === preset.provider,
+        );
+        if (voiceForm.enabled && !provider?.configured && !voiceForm.apiKey.trim()) {
+          throw new Error("开启语音输入前需要填写当前 ASR 服务的 API Key。");
+        }
+        let payload = await withGatewayAuth((authToken, base) =>
+          updateProviderSettings(
+            authToken,
+            {
+              provider: preset.provider,
+              apiKey: voiceForm.apiKey.trim() || undefined,
+              apiBase: voiceForm.apiBase.trim() || undefined,
+            },
+            base,
+          ),
+        );
+        payload = await withGatewayAuth((authToken, base) =>
+          updateTranscriptionSettings(
+            authToken,
+            {
+              enabled: voiceForm.enabled,
+              provider: preset.provider,
+              model: preset.model,
+              language: voiceForm.language,
+              maxDurationSec: voiceForm.maxDurationSec,
+            },
+            base,
+          ),
+        );
+        await replaceSettings(payload);
+      },
+      "语音设置已保存",
+    );
 
   const saveImage = () =>
     withAction(
       "image",
       async () => {
+        if (!imageForm.provider.trim() || !imageForm.model.trim()) {
+          throw new Error("请先选择图片服务并填写图片生成模型。");
+        }
         const payload = await withGatewayAuth((authToken, base) =>
-          updateImageGenerationSettings(authToken, imageForm, base),
+          updateImageGenerationSettings(
+            authToken,
+            imageForm,
+            base,
+          ),
         );
         await replaceSettings(payload);
       },
@@ -794,22 +905,36 @@ export function SettingsView({
                   settings={settings}
                   selectedProvider={selectedProvider}
                   setSelectedProvider={setSelectedProvider}
-                  setSelectedPreset={setSelectedPreset}
                   saving={saving}
                   onCreateModelService={createModelService}
                   onUpdateModelService={updateModelService}
                   onProbeModelService={probeModelService}
-                  onActivateModelPreset={activateModelPreset}
+                  onSetModelDefault={setCapabilityDefault}
+                  onAddModelCapability={addModelCapability}
+                  initialCapability={modelManagerCapability}
+                />
+              )}
+
+              {activeTab === "voice" && settings && (
+                <VoiceSection
+                  settings={settings}
+                  form={voiceForm}
+                  setForm={setVoiceForm}
+                  saving={saving["voice"]}
+                  onSave={saveVoice}
+                  onOpenModelSettings={() => {
+                    setModelManagerCapability("speech_to_text");
+                    setActiveTab("providers");
+                  }}
                 />
               )}
 
               {activeTab === "image" && settings && (
                 <ImageSection
+                  settings={settings}
                   form={imageForm}
                   setForm={setImageForm}
-                  providerOptions={imageProviderOptions}
                   saveDir={settings.image_generation.save_dir}
-                  providerConfigured={settings.image_generation.provider_configured}
                   saving={saving["image"]}
                   onSave={saveImage}
                 />
@@ -1038,17 +1163,17 @@ function ModelManagerSection({
   settings,
   selectedProvider,
   setSelectedProvider,
-  setSelectedPreset,
   saving,
   onCreateModelService,
   onUpdateModelService,
   onProbeModelService,
-  onActivateModelPreset,
+  onSetModelDefault,
+  onAddModelCapability,
+  initialCapability,
 }: {
   settings: SettingsPayload;
   selectedProvider: string;
   setSelectedProvider: (value: string) => void;
-  setSelectedPreset: (value: string) => void;
   saving: Record<ActionKey, boolean>;
   onCreateModelService: (data: {
     providerName: string;
@@ -1070,9 +1195,12 @@ function ModelManagerSection({
     apiKey: string;
     apiType: ProviderForm["apiType"];
   }) => Promise<string[]>;
-  onActivateModelPreset: (presetName?: string) => Promise<void>;
+  onSetModelDefault: (capability: ModelCapability, presetName: string) => Promise<void>;
+  onAddModelCapability: (presetName: string, capability: ModelCapability) => Promise<void>;
+  initialCapability: ModelCapability;
 }) {
   const [subTab, setSubTab] = useState<"use" | "access">("use");
+  const [selectedCapability, setSelectedCapability] = useState<ModelCapability>(initialCapability);
   const [addOpen, setAddOpen] = useState(false);
   const [addForm, setAddForm] = useState({
     providerName: "",
@@ -1097,9 +1225,18 @@ function ModelManagerSection({
     () => customProviders.find((provider) => provider.name === selectedProvider) ?? null,
     [selectedProvider, customProviders],
   );
-  const userModelPresets = useMemo(
-    () => uniqueModelPresets(settings.model_presets.filter((preset) => !preset.is_default)),
-    [settings.model_presets],
+  const visiblePresets = useMemo(
+    () =>
+      uniqueModelPresets(
+        settings.model_presets.filter(
+          (preset) => selectedCapability === "text" || !preset.is_default,
+        ),
+      ).sort((left, right) => {
+        const leftSupports = left.capabilities.includes(selectedCapability) ? 1 : 0;
+        const rightSupports = right.capabilities.includes(selectedCapability) ? 1 : 0;
+        return rightSupports - leftSupports;
+      }),
+    [selectedCapability, settings.model_presets],
   );
   const providerPresets = useMemo(
     () =>
@@ -1126,11 +1263,6 @@ function ModelManagerSection({
       setAddOpen(false);
     }
   }, [subTab, setSelectedProvider]);
-
-  const selectPreset = (preset: SettingsPayload["model_presets"][number]) => {
-    setSelectedPreset(preset.name);
-    setSelectedProvider(preset.provider);
-  };
 
   const submitAddProvider = () => {
     const models = addForm.models.split(/[，,\n]/).map((item) => item.trim()).filter(Boolean);
@@ -1225,21 +1357,59 @@ function ModelManagerSection({
       {subTab === "use" ? (
         <div className="space-y-3">
           <div className="rounded-lg bg-[#f7f7f8] p-4">
-            <div className="text-[15px] font-semibold text-[#202020]">默认模型</div>
-            <div className="mt-1 text-[13px] text-[#6f6f73]">选择已接入的模型作为新会话默认使用模型。</div>
+            <div className="text-[15px] font-semibold text-[#202020]">按能力选择默认模型</div>
+            <div className="mt-1 text-[13px] text-[#6f6f73]">
+              文字和语音识别分别拥有独立默认模型，修改语音默认不会影响文字模型。
+            </div>
           </div>
-          {userModelPresets.length ? (
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {modelCapabilityOptions.map((capability) => {
+              const active = selectedCapability === capability.value;
+              const defaultName = settings.model_defaults[capability.value];
+              const defaultPreset = settings.model_presets.find((preset) => preset.name === defaultName);
+              return (
+                <button
+                  key={capability.value}
+                  type="button"
+                  onClick={() => setSelectedCapability(capability.value)}
+                  className={cn(
+                    "rounded-lg border p-3 text-left transition-colors",
+                    active
+                      ? "border-[#202020] bg-white shadow-sm"
+                      : "border-[#e6e6e8] bg-[#fafafa] hover:border-[#cfcfd2]",
+                  )}
+                >
+                  <div className="text-sm font-semibold text-[#202020]">{capability.label}</div>
+                  <div className="mt-1 truncate text-xs text-[#6f6f73]">
+                    {defaultPreset?.model || "尚未设置默认模型"}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          <div className="rounded-lg border border-[#ececee] bg-white px-4 py-3">
+            <div className="text-sm font-semibold text-[#202020]">
+              {modelCapabilityOptions.find((item) => item.value === selectedCapability)?.label}
+            </div>
+            <div className="mt-1 text-xs text-[#6f6f73]">
+              {modelCapabilityOptions.find((item) => item.value === selectedCapability)?.description}
+            </div>
+          </div>
+          {visiblePresets.length ? (
             <div className="grid gap-3 md:grid-cols-2">
-              {userModelPresets.map((preset) => {
+              {visiblePresets.map((preset) => {
                 const provider = settings.providers.find((item) => item.name === preset.provider);
+                const active = settings.model_defaults[selectedCapability] === preset.name;
+                const supportsCapability = preset.capabilities.includes(selectedCapability);
+                const busy =
+                  saving[`model-default:${selectedCapability}`] ||
+                  saving[`model-capability:${preset.name}:${selectedCapability}`];
                 return (
-                  <button
+                  <div
                     key={preset.name}
-                    type="button"
-                    onClick={() => selectPreset(preset)}
                     className={cn(
                       "rounded-lg border bg-white p-4 text-left transition-colors hover:border-[#cfcfd2]",
-                      preset.active ? "border-[#202020] shadow-sm" : "border-[#e6e6e8]",
+                      active ? "border-[#202020] shadow-sm" : "border-[#e6e6e8]",
                     )}
                   >
                     <div className="flex items-start justify-between gap-3">
@@ -1247,29 +1417,44 @@ function ModelManagerSection({
                         <div className="truncate text-sm font-semibold text-[#202020]">{preset.label}</div>
                         <div className="mt-1 truncate text-xs text-[#6f6f73]">{provider?.label || preset.provider}</div>
                       </div>
-                      {preset.active ? <StatusPill ok>当前默认</StatusPill> : null}
+                      {active ? <StatusPill ok>当前默认</StatusPill> : null}
                     </div>
                     <div className="mt-3 truncate text-[13px] text-[#444]">{preset.model}</div>
-                    {!preset.active ? (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {preset.capabilities.map((capability) => (
+                        <span key={capability} className="rounded-full bg-[#f3f3f4] px-2 py-0.5 text-[10px] text-[#666]">
+                          {modelCapabilityOptions.find((item) => item.value === capability)?.label || capability}
+                        </span>
+                      ))}
+                    </div>
+                    {!active && supportsCapability ? (
                       <Button
                         variant="outline"
                         className="mt-4 border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void onActivateModelPreset(preset.name);
-                        }}
-                        disabled={saving["model-active"]}
+                        onClick={() => void onSetModelDefault(selectedCapability, preset.name)}
+                        disabled={busy}
                       >
+                        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                         设为默认
                       </Button>
+                    ) : !supportsCapability && !preset.is_default ? (
+                      <Button
+                        variant="outline"
+                        className="mt-4 border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]"
+                        onClick={() => void onAddModelCapability(preset.name, selectedCapability)}
+                        disabled={busy}
+                      >
+                        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                        加入此分类
+                      </Button>
                     ) : null}
-                  </button>
+                  </div>
                 );
               })}
             </div>
           ) : (
             <div className="rounded-lg border border-dashed border-[#dedede] bg-[#fafafa] p-8 text-center text-sm text-[#6f6f73]">
-              还没有可用模型，请先在“接入”里添加模型服务。
+              当前没有可分类的模型配置，请先在“接入”中添加模型服务。
             </div>
           )}
         </div>
@@ -1473,42 +1658,227 @@ function ModelManagerSection({
   );
 }
 
-function ImageSection({
+function VoiceSection({
+  settings,
   form,
   setForm,
-  providerOptions,
+  saving,
+  onSave,
+  onOpenModelSettings,
+}: {
+  settings: SettingsPayload;
+  form: VoiceForm;
+  setForm: (form: VoiceForm) => void;
+  saving?: boolean;
+  onSave: () => void;
+  onOpenModelSettings: () => void;
+}) {
+  const defaultName = settings.model_defaults.speech_to_text;
+  const preset = settings.model_presets.find((item) => item.name === defaultName);
+  const provider = preset
+    ? settings.transcription.providers.find((item) => item.name === preset.provider)
+    : undefined;
+  const providerReady = Boolean(provider?.configured);
+  const normalizedVoiceModel = preset?.model.trim().toLowerCase() ?? "";
+  const realtimeCapable = Boolean(
+    preset && settings.transcription.streaming?.supported,
+  );
+  const isStepfunConversationModel = (
+    preset?.provider === "stepfun"
+    && normalizedVoiceModel === "stepaudio-2.5-realtime"
+  );
+
+  return (
+    <div className="space-y-4">
+      <SettingsCard
+        title="语音输入"
+        description="麦克风录音由默认 ASR 模型转成文字；这里保存服务密钥和录音参数。"
+        actions={
+          <StatusPill ok={providerReady}>
+            {providerReady ? "ASR 服务可用" : "ASR 服务未配置"}
+          </StatusPill>
+        }
+      >
+        <div className="mb-4 rounded-lg border border-[#e8e4dd] bg-[#faf9f7] p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-xs font-medium text-[#777267]">当前默认语音识别模型</div>
+              <div className="mt-1 truncate text-sm font-semibold text-[#202020]">
+                {preset?.label || "尚未选择"}
+              </div>
+              <div className="mt-1 truncate text-xs text-[#6f6f73]">
+                {preset ? `${provider?.label || preset.provider} · ${preset.model}` : "请先选择支持语音识别的模型"}
+              </div>
+              {preset ? (
+                <div className={cn(
+                  "mt-2 inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium",
+                  realtimeCapable
+                    ? "bg-emerald-50 text-emerald-700"
+                    : "bg-[#f1efe9] text-[#777267]",
+                )}>
+                  {realtimeCapable ? "实时流式识别" : "录音完成后识别"}
+                </div>
+              ) : null}
+            </div>
+            <Button
+              variant="outline"
+              className="shrink-0 border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]"
+              onClick={onOpenModelSettings}
+            >
+              选择默认模型
+            </Button>
+          </div>
+        </div>
+
+        <div className="mb-4 flex items-center justify-between rounded-lg border border-[#e8e4dd] bg-white px-4 py-3">
+          <div>
+            <div className="text-sm font-medium text-[#202020]">启用语音输入</div>
+            <div className="mt-1 text-xs text-[#777267]">开启后，聊天输入框中的麦克风会调用默认 ASR 模型。</div>
+          </div>
+          <Toggle
+            checked={form.enabled}
+            disabled={!preset}
+            onChange={() => setForm({ ...form, enabled: !form.enabled })}
+          />
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field
+            label="API Key"
+            hint={
+              provider?.api_key_hint
+                ? `当前已保存：${provider.api_key_hint}；留空表示不修改。`
+                : "密钥只保存在本机 nanobot 配置中。"
+            }
+          >
+            <Input
+              type="password"
+              placeholder={providerReady ? "留空表示不修改" : "输入 ASR 服务 API Key"}
+              value={form.apiKey}
+              disabled={!preset}
+              onChange={(event) => setForm({ ...form, apiKey: event.target.value })}
+            />
+          </Field>
+          <Field label="API 地址" hint="通常保留服务默认地址；私有部署时可修改。">
+            <Input
+              value={form.apiBase}
+              disabled={!preset}
+              onChange={(event) => setForm({ ...form, apiBase: event.target.value })}
+            />
+          </Field>
+          <Field label="识别语言">
+            <Select
+              value={form.language}
+              onChange={(value) => setForm({ ...form, language: value })}
+              options={[
+                { value: "zh", label: "中文" },
+                { value: "en", label: "English" },
+                { value: "ja", label: "日本語" },
+                { value: "ko", label: "한국어" },
+              ]}
+            />
+          </Field>
+          <Field label="最长录音时长" hint="允许 1–600 秒。">
+            <Input
+              type="number"
+              min={1}
+              max={600}
+              value={form.maxDurationSec}
+              onChange={(event) =>
+                setForm({
+                  ...form,
+                  maxDurationSec: numberValue(event.target.value, form.maxDurationSec),
+                })
+              }
+            />
+          </Field>
+        </div>
+
+        {!preset ? (
+          <div className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            还没有默认 ASR 模型。请到“模型配置 → 使用 → 语音识别”中选择。
+          </div>
+        ) : isStepfunConversationModel ? (
+          <div className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            stepaudio-2.5-realtime 是双向语音通话模型，不适合作为输入框听写模型。
+            请选择 stepaudio-2.5-asr；桌面端会自动使用 stepaudio-2.5-asr-stream
+            进行实时识别。
+          </div>
+        ) : !realtimeCapable ? (
+          <div className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            当前模型使用录音后识别。若需要边说边出字，请选择 StepFun 的
+            stepaudio-2.5-asr、DashScope 的 qwen3-asr-flash-realtime，
+            或支持 Realtime Transcription 的 OpenAI 模型。
+          </div>
+        ) : null}
+
+        <Button
+          className="mt-5 bg-[#d97757] text-white hover:bg-[#c86647]"
+          onClick={onSave}
+          disabled={saving || !preset}
+        >
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          保存语音设置
+        </Button>
+      </SettingsCard>
+    </div>
+  );
+}
+
+function ImageSection({
+  settings,
+  form,
+  setForm,
   saveDir,
-  providerConfigured,
   saving,
   onSave,
 }: {
+  settings: SettingsPayload;
   form: ImageForm;
   setForm: (form: ImageForm) => void;
-  providerOptions: Array<{ value: string; label: string }>;
   saveDir: string;
-  providerConfigured: boolean;
   saving?: boolean;
   onSave: () => void;
 }) {
+  const provider = settings.image_generation.providers.find(
+    (item) => item.name === form.provider,
+  );
+  const providerReady = Boolean(provider?.configured);
+
   return (
     <SettingsCard
       title="图像生成"
-      description="图像生成仍由 nanobot 统一调度，GUI 只负责写入默认参数。"
-      actions={<StatusPill ok={providerConfigured}>{providerConfigured ? "服务可用" : "服务未配置"}</StatusPill>}
+      description="图片生成服务与模型在这里独立配置，不占用聊天模型用途分类。"
+      actions={<StatusPill ok={providerReady}>{providerReady ? "服务可用" : "服务未配置"}</StatusPill>}
     >
       <div className="mb-4 flex items-center justify-between rounded-lg border border-[#e8e4dd] bg-[#faf9f7] px-4 py-3">
         <div>
           <div className="text-sm font-medium">启用图像生成</div>
           <div className="mt-1 text-xs text-[#777267]">开启后，模型可以调用图片生成能力。</div>
         </div>
-        <Toggle checked={form.enabled} onChange={() => setForm({ ...form, enabled: !form.enabled })} />
+        <Toggle
+          checked={form.enabled}
+          disabled={!form.provider.trim() || !form.model.trim()}
+          onChange={() => setForm({ ...form, enabled: !form.enabled })}
+        />
       </div>
       <div className="grid gap-4 md:grid-cols-2">
-        <Field label="图像服务">
-          <Select value={form.provider} onChange={(value) => setForm({ ...form, provider: value })} options={providerOptions} />
+        <Field label="图片服务">
+          <Select
+            value={form.provider}
+            onChange={(value) => setForm({ ...form, provider: value })}
+            options={settings.image_generation.providers.map((item) => ({
+              value: item.name,
+              label: item.label,
+            }))}
+          />
         </Field>
-        <Field label="模型">
-          <Input value={form.model} onChange={(event) => setForm({ ...form, model: event.target.value })} />
+        <Field label="图片生成模型">
+          <Input
+            value={form.model}
+            placeholder="例如 openai/gpt-image-1"
+            onChange={(event) => setForm({ ...form, model: event.target.value })}
+          />
         </Field>
         <Field label="默认比例">
           <Select value={form.defaultAspectRatio} onChange={(value) => setForm({ ...form, defaultAspectRatio: value })} options={ratioOptions} />
@@ -1529,7 +1899,16 @@ function ImageSection({
           <Input value={saveDir} readOnly />
         </Field>
       </div>
-      <Button className="mt-5 bg-[#d97757] text-white hover:bg-[#c86647]" onClick={onSave} disabled={saving}>
+      {!form.provider.trim() || !form.model.trim() ? (
+        <div className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          请选择图片服务并填写图片生成模型。
+        </div>
+      ) : null}
+      <Button
+        className="mt-5 bg-[#d97757] text-white hover:bg-[#c86647]"
+        onClick={onSave}
+        disabled={saving || !form.provider.trim() || !form.model.trim()}
+      >
         {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
         保存图像设置
       </Button>

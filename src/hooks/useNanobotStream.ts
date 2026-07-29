@@ -616,6 +616,17 @@ function stampLastAssistantLatency(prev: UIMessage[], latencyMs: number): UIMess
   return prev;
 }
 
+function stampLastAssistantCompletedAt(prev: UIMessage[], completedAt: number): UIMessage[] {
+  for (let i = prev.length - 1; i >= 0; i -= 1) {
+    const m = prev[i];
+    if (m.role === "assistant" && m.kind !== "trace") {
+      const merged: UIMessage = { ...m, completedAt, isStreaming: false };
+      return [...prev.slice(0, i), merged, ...prev.slice(i + 1)];
+    }
+  }
+  return prev;
+}
+
 export function normalizeTurnUsage(
   usage: Extract<InboundEvent, { event: "turn_end" }>["usage"],
 ): UIMessage["usage"] | undefined {
@@ -630,6 +641,78 @@ export function normalizeTurnUsage(
   );
   if (inputTokens === 0 && outputTokens === 0) return undefined;
   return { inputTokens, outputTokens };
+}
+
+export interface CurrentTurnUsage {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cachedTokens: number;
+  newTokens: number;
+  estimated: boolean;
+}
+
+function normalizeCurrentTurnUsage(
+  usage: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    input_tokens?: number;
+    output_tokens?: number;
+    total_tokens?: number;
+    estimated_tokens?: number;
+    cached_tokens?: number;
+    cache_read_input_tokens?: number;
+    confirmed_new_tokens?: number;
+    new_tokens?: number;
+  } | undefined,
+  estimated: boolean,
+): CurrentTurnUsage | undefined {
+  if (!usage) return undefined;
+  const inputTokens = Math.max(
+    0,
+    Math.round(usage.prompt_tokens ?? usage.input_tokens ?? 0),
+  );
+  const outputTokens = Math.max(
+    0,
+    Math.round(usage.completion_tokens ?? usage.output_tokens ?? 0),
+  );
+  const totalTokens = Math.max(
+    inputTokens + outputTokens,
+    Math.round(usage.total_tokens ?? 0),
+  );
+  if (totalTokens === 0) return undefined;
+  const cachedTokens = Math.min(
+    totalTokens,
+    Math.max(
+      0,
+      Math.round(usage.cached_tokens ?? usage.cache_read_input_tokens ?? 0),
+    ),
+  );
+  const providerNewTokens = totalTokens - cachedTokens;
+  const liveNewTokens = Math.max(
+    0,
+    Math.round(
+      usage.new_tokens
+      ?? usage.confirmed_new_tokens
+      ?? providerNewTokens,
+    ),
+  );
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    cachedTokens,
+    newTokens: estimated ? liveNewTokens : providerNewTokens,
+    estimated: estimated || (usage.estimated_tokens ?? 0) > 0,
+  };
+}
+
+export function keepTurnUsageMonotonic(
+  previous: CurrentTurnUsage | undefined,
+  next: CurrentTurnUsage | undefined,
+): CurrentTurnUsage | undefined {
+  if (!next || !previous || next.newTokens >= previous.newTokens) return next;
+  return { ...next, newTokens: previous.newTokens };
 }
 
 function stampLastAssistantUsage(
@@ -999,6 +1082,8 @@ export function useNanobotStream(
   isStreaming: boolean;
   /** Unix epoch seconds when the current user turn started (WebSocket ``goal_status``). */
   runStartedAt: number | null;
+  /** Live usage for the active turn; estimates are replaced by provider usage. */
+  turnUsage: CurrentTurnUsage | undefined;
   /** Latest sustained goal for this ``chatId`` (``goal_state`` WS events). */
   goalState: GoalStateWsPayload | undefined;
   send: (content: string, images?: SendImage[], options?: SendOptions) => boolean;
@@ -1018,6 +1103,7 @@ export function useNanobotStream(
     client = null;
   }
   const [messages, setMessages] = useState<UIMessage[]>(initialMessages);
+  const [turnUsage, setTurnUsage] = useState<CurrentTurnUsage>();
   const [messageConversationId, setMessageConversationId] = useState<string | null>(chatId);
   const visibleMessages = messageConversationId === chatId ? messages : [];
   /** Runtime Snapshot is authoritative after reconnect. Historical trace rows
@@ -1303,6 +1389,7 @@ export function useNanobotStream(
   // history response after the optimistic first message has already rendered.
   useEffect(() => {
     setMessages(initialMessages);
+    setTurnUsage(undefined);
     setMessageConversationId(chatId);
     dispatchProtocol({
       type: 'reset',
@@ -1443,6 +1530,12 @@ export function useNanobotStream(
         return;
       }
 
+      if (ev.event === "turn_usage_updated") {
+        const nextUsage = normalizeCurrentTurnUsage(ev.usage, ev.estimated);
+        setTurnUsage((previous) => keepTurnUsageMonotonic(previous, nextUsage));
+        return;
+      }
+
       if (ev.event === "goal_status") {
         if (chatId && client?.getRuntimeSnapshot(chatId)) {
           return;
@@ -1459,6 +1552,7 @@ export function useNanobotStream(
 
       if (ev.event === "turn_started") {
         lifecycleTerminalHandledRef.current = false;
+        setTurnUsage(undefined);
         useTurnPlanStore.getState().activateTurn(ev.chat_id, ev.turn.id);
         if (ev.turn.plan) {
           useTurnPlanStore.getState().applyPlan(ev.chat_id, ev.turn.plan);
@@ -1657,6 +1751,15 @@ export function useNanobotStream(
           setGoalState(ev.goal_state);
         }
         setRunStartedAt(null);
+        const terminalUsage = ev.event === "turn_completed"
+          ? normalizeCurrentTurnUsage(
+              ev.turn.usage,
+              (ev.turn.usage?.estimated_tokens ?? 0) > 0,
+            )
+          : normalizeCurrentTurnUsage(ev.usage, false);
+        if (terminalUsage) {
+          setTurnUsage((previous) => keepTurnUsageMonotonic(previous, terminalUsage));
+        }
         // Definitive signal that the turn is fully complete.  Cancel any
         // pending debounce timer and stop the loading indicator immediately.
         if (streamEndTimerRef.current !== null) {
@@ -1697,6 +1800,28 @@ export function useNanobotStream(
             && ev.latency_ms >= 0
           ) {
             finalized = stampLastAssistantLatency(finalized, Math.round(ev.latency_ms));
+          }
+          if (ev.event === "turn_completed") {
+            if (
+              typeof ev.turn.duration_ms === "number"
+              && Number.isFinite(ev.turn.duration_ms)
+              && ev.turn.duration_ms >= 0
+            ) {
+              finalized = stampLastAssistantLatency(
+                finalized,
+                Math.round(ev.turn.duration_ms),
+              );
+            }
+            if (
+              typeof ev.turn.completed_at === "number"
+              && Number.isFinite(ev.turn.completed_at)
+              && ev.turn.completed_at >= 0
+            ) {
+              finalized = stampLastAssistantCompletedAt(
+                finalized,
+                ev.turn.completed_at,
+              );
+            }
           }
           if (ev.event === "turn_end") {
             const turnUsage = normalizeTurnUsage(ev.usage);
@@ -2027,6 +2152,7 @@ export function useNanobotStream(
       });
       // Mark streaming immediately so the UI shows the loading indicator
       // right away, before the first delta arrives from the server.
+      setTurnUsage(undefined);
       setIsStreaming(true);
       const wireMedia = hasImages ? images!.map((i) => i.media) : undefined;
       if (options) {
@@ -2063,6 +2189,7 @@ export function useNanobotStream(
       : null,
     isStreaming,
     runStartedAt,
+    turnUsage,
     goalState,
     send,
     stop,

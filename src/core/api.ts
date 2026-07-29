@@ -4,8 +4,10 @@ import type {
   ExpertTeamDetail,
   ExpertTeamsPayload,
   ImageGenerationSettingsUpdate,
+  TranscriptionSettingsUpdate,
   McpPresetsPayload,
   ModelConfigurationCreate,
+  ModelDefaultUpdate,
   ModelConfigurationUpdate,
   NetworkSafetySettingsUpdate,
   ProviderSettingsCreate,
@@ -568,6 +570,28 @@ export async function fetchSettings(
   );
 }
 
+export async function updateTranscriptionSettings(
+  token: string,
+  update: TranscriptionSettingsUpdate,
+  base: string = "",
+): Promise<SettingsPayload> {
+  const query = new URLSearchParams();
+  if (update.enabled !== undefined) query.set("enabled", String(update.enabled));
+  if (update.provider !== undefined) query.set("provider", update.provider);
+  if (update.model !== undefined) query.set("model", update.model);
+  if (update.language !== undefined) query.set("language", update.language);
+  if (update.maxDurationSec !== undefined) {
+    query.set("max_duration_sec", String(update.maxDurationSec));
+  }
+  if (update.maxUploadMb !== undefined) {
+    query.set("max_upload_mb", String(update.maxUploadMb));
+  }
+  return request<SettingsPayload>(
+    `${base}/api/settings/transcription/update?${query}`,
+    token,
+  );
+}
+
 export async function fetchWorkspaces(
   token: string,
   base: string = "",
@@ -1023,6 +1047,9 @@ export async function createModelConfiguration(
   query.set("label", configuration.label);
   query.set("provider", configuration.provider);
   query.set("model", configuration.model);
+  if (configuration.capabilities?.length) {
+    query.set("capabilities", configuration.capabilities.join(","));
+  }
   return request<SettingsPayload>(
     `${base}/api/settings/model-configurations/create?${query}`,
     token,
@@ -1042,8 +1069,25 @@ export async function updateModelConfiguration(
   if (configuration.contextWindowTokens !== undefined) {
     query.set("context_window_tokens", String(configuration.contextWindowTokens));
   }
+  if (configuration.capabilities !== undefined) {
+    query.set("capabilities", configuration.capabilities.join(","));
+  }
   return request<SettingsPayload>(
     `${base}/api/settings/model-configurations/update?${query}`,
+    token,
+  );
+}
+
+export async function updateModelDefault(
+  token: string,
+  update: ModelDefaultUpdate,
+  base: string = "",
+): Promise<SettingsPayload> {
+  const query = new URLSearchParams();
+  query.set("capability", update.capability);
+  query.set("name", update.name);
+  return request<SettingsPayload>(
+    `${base}/api/settings/model-defaults/update?${query}`,
     token,
   );
 }

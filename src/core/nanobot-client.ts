@@ -41,6 +41,13 @@ function wsInboundDebugEnabled(): boolean {
 
 function summarizeInboundWsPayload(ev: InboundEvent): unknown {
   const kind = (ev as { event?: string }).event;
+  if (kind === "browser_frame") {
+    const frame = ev as Extract<InboundEvent, { event: "browser_frame" }>;
+    return {
+      ...frame,
+      image_base64: `[base64 ${frame.image_base64.length} chars]`,
+    };
+  }
   if (kind !== "delta" && kind !== "reasoning_delta" && kind !== "narration_delta") return ev;
   const row = { ...(ev as object) } as Record<string, unknown>;
   const text = typeof row.text === "string" ? row.text : "";
@@ -558,6 +565,18 @@ export class NanobotClient {
       type: "set_workspace_scope",
       chat_id: chatId,
       workspace_scope: workspaceScope,
+    });
+  }
+
+  browserControl(
+    chatId: string,
+    action: "pause" | "resume" | "stop" | "capture",
+  ): void {
+    this.knownChats.add(chatId);
+    this.queueSend({
+      type: "browser_control",
+      chat_id: chatId,
+      action,
     });
   }
 

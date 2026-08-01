@@ -5,7 +5,6 @@ import {
   Bot,
   Check,
   Cpu,
-  Database,
   ExternalLink,
   FileText,
   HelpCircle,
@@ -17,9 +16,7 @@ import {
   Mic,
   RefreshCw,
   Save,
-  Shield,
   SlidersHorizontal,
-  Sparkles,
   UserRound,
   X,
 } from "lucide-react";
@@ -33,9 +30,7 @@ import {
   fetchProviderModels,
   fetchSettings,
   updateModelConfiguration,
-  updateImageGenerationSettings,
   updateModelDefault,
-  updateNetworkSafetySettings,
   updateProviderSettings,
   updateTranscriptionSettings,
 } from "@/core/api";
@@ -64,7 +59,7 @@ import { Select } from "@/components/ui/select";
 import { Toggle } from "@/components/ui/toggle";
 import { Textarea } from "@/components/ui/textarea";
 import { shellBridge } from "@/lib/ipc-factory";
-import type { FontSizeSetting } from "@/stores/settingsStore";
+import { DEFAULT_KEYBOARD_SHORTCUTS, type FontSizeSetting, type ThemeMode, type ShortcutId } from "@/stores/settingsStore";
 
 type TabKey =
   | "account"
@@ -72,10 +67,8 @@ type TabKey =
   | "models"
   | "voice"
   | "search"
-  | "image"
-  | "safety"
   | "general"
-  | "about"
+  | "shortcuts"
   | "help";
 
 type ProviderForm = {
@@ -93,15 +86,6 @@ function uniqueModelPresets<T extends { provider: string; model: string }>(prese
     return true;
   });
 }
-
-type ImageForm = {
-  enabled: boolean;
-  provider: string;
-  model: string;
-  defaultAspectRatio: string;
-  defaultImageSize: string;
-  maxImagesPerTurn: number;
-};
 
 type VoiceForm = {
   enabled: boolean;
@@ -122,17 +106,29 @@ const tabs: Array<{ key: TabKey; label: string; description: string; icon: typeo
   { key: "general", label: "系统设置", description: "语言、关闭行为、助手信息", icon: SlidersHorizontal },
   { key: "providers", label: "模型配置", description: "提供商 / API 密钥 / OAuth 授权", icon: Cpu },
   { key: "voice", label: "语音设置", description: "默认 ASR 模型和语音输入", icon: Mic },
-  { key: "image", label: "个性化", description: "图片模型和默认尺寸", icon: Sparkles },
-  { key: "safety", label: "安全中心", description: "工作区权限和本机服务访问", icon: Shield },
-  { key: "about", label: "数据管理", description: "网关状态和配置路径", icon: Database },
 ];
 
 const secondaryTabs: Array<{ key: TabKey | null; label: string; icon: typeof Cpu; disabled?: boolean }> = [
   { key: "account", label: "账户管理", icon: UserRound },
-  { key: null, label: "快捷键", icon: Keyboard, disabled: true },
+  { key: "shortcuts", label: "快捷键", icon: Keyboard },
   { key: null, label: "助理设置", icon: Bot, disabled: true },
   { key: "help", label: "帮助与反馈", icon: HelpCircle },
 ];
+
+const settingsEnglish = {
+  tabs: {
+    general: { label: "System", description: "Language, behavior, and assistant preferences" },
+    providers: { label: "Model Configuration", description: "Providers, API keys, and OAuth" },
+    voice: { label: "Voice", description: "Default ASR model and voice input" },
+    safety: { label: "Security", description: "Workspace permissions and local-service access" },
+  },
+  account: "Account",
+  shortcuts: "Keyboard Shortcuts",
+  assistant: "Assistant Settings",
+  help: "Help & Feedback",
+  settings: "Settings",
+  close: "Close settings",
+};
 
 const apiTypeOptions = [
   { value: "auto", label: "自动" },
@@ -140,10 +136,10 @@ const apiTypeOptions = [
   { value: "responses", label: "原始响应 (Responses)" },
 ];
 
-const languageOptions: Array<{ value: LanguageSetting; label: string }> = [
+const themeModeOptions: Array<{ value: ThemeMode; label: string }> = [
   { value: "system", label: "跟随系统" },
-  { value: "zh-CN", label: "中文(简体)" },
-  { value: "en-US", label: "English" },
+  { value: "light", label: "亮色" },
+  { value: "dark", label: "暗色" },
 ];
 
 const fontSizeOptions: Array<{ value: FontSizeSetting; label: string }> = [
@@ -155,22 +151,14 @@ const fontSizeOptions: Array<{ value: FontSizeSetting; label: string }> = [
   { value: "xxlarge", label: "大" },
 ];
 
-const ratioOptions = ["1:1", "16:9", "9:16", "4:3", "3:4"].map((value) => ({ value, label: value }));
-const sizeOptions = [
-  { value: "1024x1024", label: "1024x1024" },
-  { value: "1536x1024", label: "1536x1024" },
-  { value: "1024x1536", label: "1024x1536" },
-  { value: "auto", label: "自动 (auto)" },
-];
-
 const modelCapabilityOptions: Array<{
   value: ModelCapability;
   label: string;
   description: string;
 }> = [
-  { value: "text", label: "文字", description: "新会话与普通文字任务" },
-  { value: "speech_to_text", label: "语音识别", description: "麦克风录音转文字（ASR）" },
-];
+    { value: "text", label: "文字", description: "新会话与普通文字任务" },
+    { value: "speech_to_text", label: "语音识别", description: "麦克风录音转文字（ASR）" },
+  ];
 
 function gatewayBase(port: number): string {
   return `http://127.0.0.1:${port}`;
@@ -234,7 +222,7 @@ function SettingsCard({
   actions?: React.ReactNode;
 }) {
   return (
-    <section className="rounded-lg bg-[#f7f7f8] p-4">
+    <section data-settings-card className="rounded-lg bg-[#f7f7f8] p-4">
       <div className="mb-4 flex items-start justify-between gap-4">
         <div>
           <h2 className="text-[15px] font-semibold text-[#202020]">{title}</h2>
@@ -263,7 +251,7 @@ function SettingsRow({
   stacked?: boolean;
 }) {
   return (
-    <div className={cn("min-h-[64px] rounded-md bg-[#f7f7f8] px-4 py-3", stacked ? "space-y-3" : "flex items-center justify-between gap-6")}>
+    <div data-settings-card className={cn("min-h-[64px] rounded-md bg-[#f7f7f8] px-4 py-3", stacked ? "space-y-3" : "flex items-center justify-between gap-6")}>
       <div className="min-w-0">
         <div className="text-[15px] font-semibold text-[#202020]">{title}</div>
         {description ? <div className="mt-1 text-[13px] leading-5 text-[#6f6f73]">{description}</div> : null}
@@ -277,12 +265,26 @@ export function SettingsView({
   onBackToChat,
   onModelNameChange,
 }: {
-  theme?: "dark" | "light";
-  onToggleTheme?: () => void;
   onBackToChat?: () => void;
   onModelNameChange?: (modelName: string | null) => void;
 }) {
-  const { setting } = useI18n();
+  const { setting, locale } = useI18n();
+  const isEnglish = locale === "en-US";
+  const localizedTabs = useMemo(() => tabs.map((tab) => ({
+    ...tab,
+    ...(isEnglish ? settingsEnglish.tabs[tab.key as keyof typeof settingsEnglish.tabs] : undefined),
+  })), [isEnglish]);
+  const localizedSecondaryTabs = useMemo(() => secondaryTabs.map((tab) => {
+    if (!isEnglish) return tab;
+    const label = tab.key === "account"
+      ? settingsEnglish.account
+      : tab.key === "help"
+        ? settingsEnglish.help
+        : tab.key === "shortcuts"
+          ? settingsEnglish.shortcuts
+          : settingsEnglish.assistant;
+    return { ...tab, label };
+  }), [isEnglish]);
   const settingsStore = useSettingsStore();
   const promptHubUser = usePromptHubStore((state) => state.user);
   const promptHubBaseUrl = usePromptHubStore((state) => state.baseUrl);
@@ -294,8 +296,8 @@ export function SettingsView({
   const initialTab: TabKey =
     requestedSystemTab === "ai-services"
       ? "providers"
-      : requestedSystemTab === "sandbox"
-        ? "safety"
+      : requestedSystemTab === "sandbox" || requestedSystemTab === "about"
+        ? "general"
         : requestedSystemTab;
   const [activeTab, setActiveTab] = useState<TabKey>(initialTab);
   const [settings, setSettings] = useState<SettingsPayload | null>(null);
@@ -309,17 +311,8 @@ export function SettingsView({
   const [feedbackText, setFeedbackText] = useState("");
   const [feedbackImages, setFeedbackImages] = useState<string[]>([]);
   const [feedbackIncludeLogs, setFeedbackIncludeLogs] = useState(true);
-  const [modelManagerCapability, setModelManagerCapability] = useState<ModelCapability>("text");
 
   const [selectedProvider, setSelectedProvider] = useState("");
-  const [imageForm, setImageForm] = useState<ImageForm>({
-    enabled: false,
-    provider: "openai",
-    model: "",
-    defaultAspectRatio: "1:1",
-    defaultImageSize: "1024x1024",
-    maxImagesPerTurn: 1,
-  });
   const [voiceForm, setVoiceForm] = useState<VoiceForm>({
     enabled: false,
     language: "zh",
@@ -327,11 +320,6 @@ export function SettingsView({
     apiKey: "",
     apiBase: "",
   });
-  const [safetyForm, setSafetyForm] = useState<SafetyForm>({
-    webuiAllowLocalServiceAccess: false,
-    webuiDefaultAccessMode: "full",
-  });
-
   const withAction = useCallback(
     async (id: ActionKey, task: () => Promise<void>, success?: string) => {
       setSaving((prev) => ({ ...prev, [id]: true }));
@@ -355,14 +343,6 @@ export function SettingsView({
       setSelectedProvider(provider.name);
     }
 
-    setImageForm({
-      enabled: payload.image_generation.enabled,
-      provider: payload.image_generation.provider,
-      model: payload.image_generation.model,
-      defaultAspectRatio: payload.image_generation.default_aspect_ratio,
-      defaultImageSize: payload.image_generation.default_image_size,
-      maxImagesPerTurn: payload.image_generation.max_images_per_turn,
-    });
     const voiceProvider = payload.transcription.providers.find(
       (provider) => provider.name === payload.transcription.provider,
     );
@@ -373,18 +353,14 @@ export function SettingsView({
       apiKey: "",
       apiBase: voiceProvider?.api_base || voiceProvider?.default_api_base || "",
     });
-    setSafetyForm({
-      webuiAllowLocalServiceAccess: payload.advanced.webui_allow_local_service_access,
-      webuiDefaultAccessMode: "full",
-    });
   }, []);
 
   useEffect(() => {
     const nextTab: TabKey =
       requestedSystemTab === "ai-services"
         ? "providers"
-        : requestedSystemTab === "sandbox"
-          ? "safety"
+        : requestedSystemTab === "sandbox" || requestedSystemTab === "about"
+          ? "general"
           : requestedSystemTab;
     setActiveTab(nextTab);
   }, [requestedSystemTab]);
@@ -647,30 +623,6 @@ export function SettingsView({
     );
   };
 
-  const addModelCapability = (presetName: string, capability: ModelCapability) => {
-    const preset = settings?.model_presets.find((item) => item.name === presetName);
-    if (!preset || preset.is_default || preset.capabilities.includes(capability)) {
-      return Promise.resolve();
-    }
-    return withAction(
-      `model-capability:${presetName}:${capability}`,
-      async () => {
-        const payload = await withGatewayAuth((authToken, base) =>
-          updateModelConfiguration(
-            authToken,
-            {
-              name: presetName,
-              capabilities: [...preset.capabilities, capability],
-            },
-            base,
-          ),
-        );
-        await replaceSettings(payload);
-      },
-      "模型分类已更新",
-    );
-  };
-
   const saveVoice = () =>
     withAction(
       "voice",
@@ -713,38 +665,6 @@ export function SettingsView({
         await replaceSettings(payload);
       },
       "语音设置已保存",
-    );
-
-  const saveImage = () =>
-    withAction(
-      "image",
-      async () => {
-        if (!imageForm.provider.trim() || !imageForm.model.trim()) {
-          throw new Error("请先选择图片服务并填写图片生成模型。");
-        }
-        const payload = await withGatewayAuth((authToken, base) =>
-          updateImageGenerationSettings(
-            authToken,
-            imageForm,
-            base,
-          ),
-        );
-        await replaceSettings(payload);
-      },
-      "图像生成设置已保存",
-    );
-
-  const saveSafety = () =>
-    withAction(
-      "safety",
-      async () => {
-        const payload = await withGatewayAuth((authToken, base) =>
-          updateNetworkSafetySettings(authToken, { ...safetyForm, webuiDefaultAccessMode: "full" }, base),
-        );
-        await replaceSettings(payload);
-        window.dispatchEvent(new CustomEvent("nanobot-gui:workspace-settings-changed"));
-      },
-      "访问设置已保存",
     );
 
   const addFeedbackImages = async (files: FileList | null) => {
@@ -790,7 +710,7 @@ export function SettingsView({
 
   if (loading && !settings) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 text-[#777267]">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-[1px] animate-in fade-in duration-150 text-[#777267]">
         <div className="flex h-[720px] w-[1040px] items-center justify-center rounded-xl bg-white shadow-2xl">
           <Loader2 className="mr-2 h-5 w-5 animate-spin" />
           正在连接 nanobot 设置服务...
@@ -801,7 +721,7 @@ export function SettingsView({
 
   if (error && !settings) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-6">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 p-6 backdrop-blur-[1px] animate-in fade-in duration-150">
         <div className="max-w-xl rounded-xl border border-red-100 bg-white p-6 shadow-sm">
           <div className="flex items-center gap-3 text-red-700">
             <AlertCircle className="h-5 w-5" />
@@ -818,11 +738,31 @@ export function SettingsView({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-8 text-[#202020]">
-      <div className="flex h-[min(720px,calc(100vh-64px))] w-[min(1040px,calc(100vw-96px))] overflow-hidden rounded-xl bg-white shadow-2xl">
-        <aside className="w-[236px] shrink-0 bg-[#f2f2f3] px-3 py-9">
+    <div data-settings-surface className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 p-8 text-[#202020] backdrop-blur-[1px] animate-in fade-in duration-150">
+      <div data-settings-dialog className="flex h-[min(720px,calc(100vh-64px))] w-[min(1040px,calc(100vw-96px))] overflow-hidden rounded-xl bg-white shadow-2xl">
+        <aside data-settings-sidebar className="w-[236px] shrink-0 bg-[#f2f2f3] px-3 py-9">
           <nav className="space-y-1">
-            {secondaryTabs.map((tab) => {
+            {localizedTabs.map((tab) => {
+              const Icon = tab.icon;
+              const active = activeTab === tab.key;
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setActiveTab(tab.key)}
+                  data-settings-nav-item
+                  data-active={active ? "true" : "false"}
+                  className={cn(
+                    "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-[15px] transition-colors",
+                    active ? "bg-[#e7e7e8] text-[#161616]" : "text-[#222] hover:bg-[#e9e9ea]",
+                  )}
+                >
+                  <Icon className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+                  <span className="truncate">{tab.label}</span>
+                </button>
+              );
+            })}
+            {localizedSecondaryTabs.map((tab) => {
               const Icon = tab.icon;
               const active = !!tab.key && activeTab === tab.key;
               return (
@@ -831,6 +771,9 @@ export function SettingsView({
                   type="button"
                   onClick={() => tab.key && setActiveTab(tab.key)}
                   disabled={tab.disabled}
+                  data-settings-nav-item
+                  data-active={active ? "true" : "false"}
+                  data-disabled={tab.disabled ? "true" : "false"}
                   className={cn(
                     "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-[15px] transition-colors",
                     active && "bg-[#e7e7e8] text-[#161616]",
@@ -843,37 +786,19 @@ export function SettingsView({
                 </button>
               );
             })}
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              const active = activeTab === tab.key;
-              return (
-                <button
-                  key={tab.key}
-                  type="button"
-                  onClick={() => setActiveTab(tab.key)}
-                  className={cn(
-                    "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-[15px] transition-colors",
-                    active ? "bg-[#e7e7e8] text-[#161616]" : "text-[#222] hover:bg-[#e9e9ea]",
-                  )}
-                >
-                  <Icon className="h-4 w-4 shrink-0" strokeWidth={1.8} />
-                  <span className="truncate">{tab.label}</span>
-                </button>
-              );
-            })}
           </nav>
         </aside>
 
-        <main className="relative min-w-0 flex-1 bg-white">
+        <main data-settings-content className="relative min-w-0 flex-1 bg-white">
           <div className="flex h-full flex-col">
-            <div className="flex items-center justify-between border-b border-[#eeeeef] px-10 py-8">
+            <div data-settings-header className="flex items-center justify-between border-b border-[#eeeeef] px-10 py-8">
               <div>
                 <h2 className="text-[22px] font-semibold tracking-[-0.01em]">
                   {activeTab === "account"
-                    ? "账户管理"
+                    ? (isEnglish ? settingsEnglish.account : "账户管理")
                     : activeTab === "help"
-                      ? "帮助与反馈"
-                      : tabs.find((tab) => tab.key === activeTab)?.label || "设置"}
+                      ? (isEnglish ? settingsEnglish.help : "帮助与反馈")
+                      : localizedTabs.find((tab) => tab.key === activeTab)?.label || (isEnglish ? settingsEnglish.settings : "设置")}
                 </h2>
               </div>
               <div className="flex items-center gap-2">
@@ -882,8 +807,8 @@ export function SettingsView({
                     type="button"
                     onClick={onBackToChat}
                     className="grid h-8 w-8 place-items-center rounded-md text-[#202020] hover:bg-[#f1f1f1]"
-                    aria-label="关闭设置"
-                    title="关闭"
+                    aria-label={isEnglish ? settingsEnglish.close : "关闭设置"}
+                    title={isEnglish ? "Close" : "关闭"}
                   >
                     <X className="h-5 w-5" strokeWidth={1.8} />
                   </button>
@@ -897,7 +822,7 @@ export function SettingsView({
               ) : null}
 
               {activeTab === "account" && (
-                <AccountSection user={promptHubUser} onLogin={openPromptHubLogin} onLogout={logoutPromptHub} />
+                <AccountSection user={promptHubUser} onLogin={openPromptHubLogin} onLogout={logoutPromptHub} isEnglish={isEnglish} />
               )}
 
               {activeTab === "providers" && settings && (
@@ -909,9 +834,9 @@ export function SettingsView({
                   onCreateModelService={createModelService}
                   onUpdateModelService={updateModelService}
                   onProbeModelService={probeModelService}
-                  onSetModelDefault={setCapabilityDefault}
-                  onAddModelCapability={addModelCapability}
-                  initialCapability={modelManagerCapability}
+                  onSelectDefault={(capability, presetName) => void setCapabilityDefault(capability, presetName)}
+                  initialCapability="text"
+                  isEnglish={isEnglish}
                 />
               )}
 
@@ -922,32 +847,19 @@ export function SettingsView({
                   setForm={setVoiceForm}
                   saving={saving["voice"]}
                   onSave={saveVoice}
-                  onOpenModelSettings={() => {
-                    setModelManagerCapability("speech_to_text");
-                    setActiveTab("providers");
-                  }}
+                  speechPresets={settings.model_presets.filter((preset) => preset.capabilities.includes("speech_to_text"))}
+                  onSelectSpeechModel={(presetName) => void setCapabilityDefault("speech_to_text", presetName)}
+                  isEnglish={isEnglish}
                 />
-              )}
-
-              {activeTab === "image" && settings && (
-                <ImageSection
-                  settings={settings}
-                  form={imageForm}
-                  setForm={setImageForm}
-                  saveDir={settings.image_generation.save_dir}
-                  saving={saving["image"]}
-                  onSave={saveImage}
-                />
-              )}
-
-              {activeTab === "safety" && settings && (
-                <SafetySection form={safetyForm} setForm={setSafetyForm} settings={settings} saving={saving["safety"]} onSave={saveSafety} />
               )}
 
               {activeTab === "general" && settings && (
                 <GeneralSection
                   language={settingsStore.language ?? setting}
                   setLanguage={settingsStore.setLanguage}
+                  isEnglish={isEnglish}
+                  theme={settingsStore.theme}
+                  setTheme={settingsStore.setTheme}
                   fontSize={settingsStore.fontSize}
                   setFontSize={settingsStore.setFontSize}
                   skillsAutoUpdate={settingsStore.skillsAutoUpdate}
@@ -958,10 +870,12 @@ export function SettingsView({
                 />
               )}
 
-              {activeTab === "about" && settings && <AboutSection settings={settings} apiBase={apiBase} />}
+              {activeTab === "shortcuts" && <KeyboardShortcutsSection isEnglish={isEnglish} />}
+
               {activeTab === "help" && (
-                <HelpFeedbackSection onOpenFeedback={() => setFeedbackOpen(true)} />
+                <HelpFeedbackSection onOpenFeedback={() => setFeedbackOpen(true)} isEnglish={isEnglish} />
               )}
+
             </div>
           </div>
         </main>
@@ -978,8 +892,72 @@ export function SettingsView({
           onAddImages={addFeedbackImages}
           onClose={() => setFeedbackOpen(false)}
           onSubmit={submitFeedback}
+          isEnglish={isEnglish}
         />
       ) : null}
+    </div>
+  );
+}
+
+const shortcutRows: Array<{ id: ShortcutId; zh: string; en: string; zhDescription: string; enDescription: string }> = [
+  { id: "newChat", zh: "新聊天", en: "New Chat", zhDescription: "开始一个新聊天", enDescription: "Start a new chat" },
+  { id: "focusComposer", zh: "聚焦输入框", en: "Focus Composer", zhDescription: "将光标移到聊天输入框", enDescription: "Move focus to the chat composer" },
+  { id: "toggleSidebar", zh: "切换侧边栏", en: "Toggle Sidebar", zhDescription: "显示或隐藏左侧导航", enDescription: "Show or hide the left navigation" },
+  { id: "openToolbox", zh: "打开工具箱", en: "Open Toolbox", zhDescription: "打开技能和 MCP 工具箱", enDescription: "Open the skills and MCP toolbox" },
+  { id: "openSettings", zh: "打开设置", en: "Open Settings", zhDescription: "打开系统设置", enDescription: "Open system settings" },
+];
+
+function formatShortcut(shortcut: string) {
+  const mod = navigator.platform.toUpperCase().includes("MAC") ? "⌘" : "Ctrl";
+  return shortcut.replace("Mod", mod).replace("+", " ");
+}
+
+function KeyboardShortcutsSection({ isEnglish }: { isEnglish: boolean }) {
+  const shortcuts = useSettingsStore((state) => state.keyboardShortcuts);
+  const setShortcut = useSettingsStore((state) => state.setKeyboardShortcut);
+  const resetShortcuts = useSettingsStore((state) => state.resetKeyboardShortcuts);
+  const [editing, setEditing] = useState<ShortcutId | null>(null);
+  const [query, setQuery] = useState("");
+  const [error, setError] = useState("");
+  const filtered = shortcutRows.filter((row) => `${row.zh} ${row.en} ${row.zhDescription} ${row.enDescription}`.toLowerCase().includes(query.toLowerCase()));
+  const capture = (event: React.KeyboardEvent<HTMLButtonElement>, id: ShortcutId) => {
+    event.preventDefault();
+    if (["Meta", "Control", "Shift", "Alt"].includes(event.key)) return;
+    if (!event.metaKey && !event.ctrlKey) {
+      setError(isEnglish ? "Use Command/Ctrl with another key." : "请使用 Command/Ctrl 加其他按键。");
+      return;
+    }
+    const key = event.key.length === 1 ? event.key.toUpperCase() : event.key;
+    const next = `Mod+${key}`;
+    if (Object.entries(shortcuts).some(([shortcutId, value]) => shortcutId !== id && value === next)) {
+      setError(isEnglish ? "This shortcut is already in use." : "该快捷键已被使用。");
+      return;
+    }
+    setShortcut(id, next);
+    setError("");
+    setEditing(null);
+  };
+  return (
+    <div className="mx-auto w-full max-w-4xl space-y-6 py-1">
+      <div className="flex items-start justify-between gap-4">
+        <div><p className="text-sm text-[#6f6f73]">{isEnglish ? "Customize keyboard shortcuts for common workspace actions." : "为常用工作区操作自定义键盘快捷键。"}</p></div>
+        <Button variant="outline" className="border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]" onClick={() => { resetShortcuts(); setError(""); }}>
+          {isEnglish ? "Restore Defaults" : "恢复默认"}
+        </Button>
+      </div>
+      <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={isEnglish ? "Search shortcuts" : "搜索快捷键"} />
+      {error ? <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
+      <div className="overflow-hidden rounded-xl border border-[#e5e2db] bg-white">
+        {filtered.map((row) => {
+          const isEditing = editing === row.id;
+          return <div key={row.id} className="flex items-center gap-4 border-b border-[#eeeae3] px-5 py-4 last:border-b-0">
+            <div className="min-w-0 flex-1"><div className="font-semibold text-[#202020]">{isEnglish ? row.en : row.zh}</div><div className="mt-0.5 text-sm text-[#777267]">{isEnglish ? row.enDescription : row.zhDescription}</div></div>
+            <button type="button" onClick={() => { setEditing(row.id); setError(""); }} onKeyDown={(event) => isEditing && capture(event, row.id)} className={cn("min-w-24 rounded-lg border px-3 py-1.5 text-sm font-medium", isEditing ? "border-[#d97757] bg-[#fff7f1] text-[#a65034]" : "border-[#e5e2db] bg-[#f7f7f8] text-[#3d3929]")}>
+              {isEditing ? (isEnglish ? "Press keys…" : "按下按键…") : formatShortcut(shortcuts[row.id] || DEFAULT_KEYBOARD_SHORTCUTS[row.id])}
+            </button>
+          </div>;
+        })}
+      </div>
     </div>
   );
 }
@@ -988,12 +966,14 @@ function AccountSection({
   user,
   onLogin,
   onLogout,
+  isEnglish,
 }: {
   user: { username: string } | null;
   onLogin: () => void;
   onLogout: () => void;
+  isEnglish: boolean;
 }) {
-  const username = user?.username?.trim() || "未登录";
+  const username = user?.username?.trim() || (isEnglish ? "Not signed in" : "未登录");
   const initial = (username[0] || "U").toUpperCase();
 
   return (
@@ -1004,23 +984,23 @@ function AccountSection({
         </div>
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold text-[#202020]">{username}</div>
-          <div className="mt-0.5 truncate text-xs text-[#6f6f73]">{user ? username : "请先登录账号"}</div>
+          <div className="mt-0.5 truncate text-xs text-[#6f6f73]">{user ? username : (isEnglish ? "Sign in to your account" : "请先登录账号")}</div>
         </div>
       </div>
       {user ? (
         <Button variant="outline" className="border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]" onClick={onLogout}>
-          退出登录
+          {isEnglish ? "Sign Out" : "退出登录"}
         </Button>
       ) : (
         <Button variant="outline" className="border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]" onClick={onLogin}>
-          去登录
+          {isEnglish ? "Sign In" : "去登录"}
         </Button>
       )}
     </div>
   );
 }
 
-function HelpFeedbackSection({ onOpenFeedback }: { onOpenFeedback: () => void }) {
+function HelpFeedbackSection({ onOpenFeedback, isEnglish }: { onOpenFeedback: () => void; isEnglish: boolean }) {
   const openExternal = (url: string) => {
     void shellBridge.open(url);
   };
@@ -1028,17 +1008,17 @@ function HelpFeedbackSection({ onOpenFeedback }: { onOpenFeedback: () => void })
   return (
     <div className="space-y-6">
       <div className="space-y-3">
-        <HelpRow icon={FileText} label="帮助文档" trailing onClick={() => openExternal("https://tparuyi.com/docs")} />
-        <HelpRow icon={MessageSquare} label="意见反馈" onClick={onOpenFeedback} />
-        <HelpRow icon={Link} label="联系我们" trailing onClick={() => openExternal("https://tparuyi.com/contact")} />
+        <HelpRow icon={FileText} label={isEnglish ? "Documentation" : "帮助文档"} trailing onClick={() => openExternal("https://tparuyi.com/docs")} />
+        <HelpRow icon={MessageSquare} label={isEnglish ? "Send Feedback" : "意见反馈"} onClick={onOpenFeedback} />
+        <HelpRow icon={Link} label={isEnglish ? "Contact Us" : "联系我们"} trailing onClick={() => openExternal("https://tparuyi.com/contact")} />
       </div>
       <div className="pt-6 text-center text-sm text-[#8a8a8d]">
         <button type="button" className="hover:text-[#202020]" onClick={() => openExternal("https://tparuyi.com/privacy")}>
-          隐私政策
+          {isEnglish ? "Privacy Policy" : "隐私政策"}
         </button>
         <span className="px-3">|</span>
         <button type="button" className="hover:text-[#202020]" onClick={() => openExternal("https://tparuyi.com/terms")}>
-          服务协议
+          {isEnglish ? "Terms of Service" : "服务协议"}
         </button>
       </div>
     </div>
@@ -1082,6 +1062,7 @@ function FeedbackDialog({
   onAddImages,
   onClose,
   onSubmit,
+  isEnglish,
 }: {
   text: string;
   setText: (value: string) => void;
@@ -1093,14 +1074,15 @@ function FeedbackDialog({
   onAddImages: (files: FileList | null) => void | Promise<void>;
   onClose: () => void;
   onSubmit: () => Promise<void>;
+  isEnglish: boolean;
 }) {
   const disabled = saving || !text.trim() || text.length > 300;
 
   return (
-    <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/55">
+    <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/20 backdrop-blur-[1px] animate-in fade-in duration-150">
       <div className="w-[480px] overflow-hidden rounded-xl bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-[#eeeeef] px-5 py-4">
-          <h3 className="text-lg font-semibold text-[#202020]">意见反馈</h3>
+          <h3 className="text-lg font-semibold text-[#202020]">{isEnglish ? "Send Feedback" : "意见反馈"}</h3>
           <button type="button" className="grid h-8 w-8 place-items-center rounded-md text-[#777] hover:bg-[#f2f2f3]" onClick={onClose}>
             <X className="h-5 w-5" />
           </button>
@@ -1110,14 +1092,14 @@ function FeedbackDialog({
             <Textarea
               value={text}
               onChange={(event) => setText(event.target.value.slice(0, 300))}
-              placeholder="你可以描述你遇到的问题"
+              placeholder={isEnglish ? "Describe the issue you encountered" : "你可以描述你遇到的问题"}
               className="min-h-[210px] resize-none border-0 bg-white p-0 text-base shadow-none focus-visible:ring-0"
             />
             <div className="mt-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-[#e2e2e4] bg-[#fafafa] px-3 py-2 text-sm text-[#666] hover:bg-[#f4f4f5]">
                   <ImagePlus className="h-4 w-4" />
-                  上传图片 ({images.length}/4)
+                  {isEnglish ? `Upload images (${images.length}/4)` : `上传图片 (${images.length}/4)`}
                   <input
                     type="file"
                     accept="image/*"
@@ -1132,7 +1114,7 @@ function FeedbackDialog({
                 </label>
                 {images.length ? (
                   <button type="button" className="text-xs text-[#888] hover:text-[#202020]" onClick={() => setImages([])}>
-                    清空
+                    {isEnglish ? "Clear" : "清空"}
                   </button>
                 ) : null}
               </div>
@@ -1145,12 +1127,12 @@ function FeedbackDialog({
                 {includeLogs ? <Check className="h-4 w-4" /> : null}
               </span>
               <span className="text-sm leading-6 text-[#5f6368]">
-                上传日志，仅用于排查问题，可能包含对话记录、设备信息等数据。
+                {isEnglish ? "Include logs for troubleshooting. They may contain conversations and device information." : "上传日志，仅用于排查问题，可能包含对话记录、设备信息等数据。"}
               </span>
             </button>
             <Button className="h-12 shrink-0 rounded-full bg-[#202020] px-8 text-base font-semibold text-white hover:bg-[#333] disabled:bg-[#d8d8d8]" disabled={disabled} onClick={() => void onSubmit()}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              提交
+              {isEnglish ? "Submit" : "提交"}
             </Button>
           </div>
         </div>
@@ -1167,9 +1149,9 @@ function ModelManagerSection({
   onCreateModelService,
   onUpdateModelService,
   onProbeModelService,
-  onSetModelDefault,
-  onAddModelCapability,
+  onSelectDefault,
   initialCapability,
+  isEnglish,
 }: {
   settings: SettingsPayload;
   selectedProvider: string;
@@ -1195,10 +1177,21 @@ function ModelManagerSection({
     apiKey: string;
     apiType: ProviderForm["apiType"];
   }) => Promise<string[]>;
-  onSetModelDefault: (capability: ModelCapability, presetName: string) => Promise<void>;
-  onAddModelCapability: (presetName: string, capability: ModelCapability) => Promise<void>;
+  onSelectDefault: (capability: ModelCapability, presetName: string) => void;
   initialCapability: ModelCapability;
+  isEnglish: boolean;
 }) {
+  const copy = isEnglish ? {
+    use: "Use", connect: "Connect", add: "Add Model Service", back: "Back to List",
+    defaults: "Automatically Detected Model Purposes", defaultsHint: "TPACowork identifies text and speech-recognition models from provider and model metadata, then keeps an appropriate default automatically.",
+    notSet: "No automatically selected model", current: "Automatically selected", setDefault: "Set as Default", addToCategory: "Add to This Category",
+    empty: "No model configuration is available for this purpose. Add a model service from Connect first.",
+    addCustom: "Add Custom Model Service", editCustom: "Configure Custom Model Service", customHint: "Connect another model API provider using the OpenAI-compatible protocol.",
+    providerName: "Provider Name", protocol: "Connection Protocol", protocolHint: "OpenAI-compatible custom services are currently supported.",
+    apiAddress: "API Base URL", apiHint: "Enter base_url, for example https://api.example.com/v1.", key: "API Key", keyPlaceholder: "Enter API key (saved globally)",
+    models: "Models", modelsHint: "Separate models with commas or line breaks.", probe: "Test and Fetch Models", saveConnection: "Save Connection", save: "Save Configuration", cancel: "Cancel", leaveBlank: "Leave blank to keep unchanged",
+    customServices: "Custom Model Services", customServicesHint: "Connect third-party model APIs and set their models as defaults on the Use tab.", none: "No Model Services Connected", noneHint: "Add a provider such as OpenAI or DeepSeek to create and manage its model connections.", configured: "Configured", pending: "Pending", apiType: "API type:", notConfigured: "Not set", channels: "Model channels", configure: "Configure",
+  } : null;
   const [subTab, setSubTab] = useState<"use" | "access">("use");
   const [selectedCapability, setSelectedCapability] = useState<ModelCapability>(initialCapability);
   const [addOpen, setAddOpen] = useState(false);
@@ -1216,6 +1209,18 @@ function ModelManagerSection({
     apiType: "auto" as ProviderForm["apiType"],
     models: "",
   });
+  const localizedCapabilities = useMemo(() => modelCapabilityOptions.map((capability) => (
+    !isEnglish ? capability : capability.value === "text"
+      ? { ...capability, label: "Text", description: "New chats and ordinary text tasks" }
+      : { ...capability, label: "Speech Recognition", description: "Transcribe microphone recordings (ASR)" }
+  )), [isEnglish]);
+  const localizedApiTypeOptions = isEnglish
+    ? [
+      { value: "auto", label: "Automatic" },
+      { value: "chat_completions", label: "Chat Completions" },
+      { value: "responses", label: "Responses API" },
+    ]
+    : apiTypeOptions;
 
   const customProviders = useMemo(
     () => settings.providers.filter((provider) => provider.custom),
@@ -1325,8 +1330,8 @@ function ModelManagerSection({
       <div className="flex items-center justify-between gap-3">
         <div className="inline-flex rounded-lg bg-[#f2f2f3] p-1">
           {[
-            ["use", "使用"],
-            ["access", "接入"],
+            ["use", copy?.use ?? "使用"],
+            ["access", copy?.connect ?? "接入"],
           ].map(([key, label]) => (
             <button
               key={key}
@@ -1344,11 +1349,11 @@ function ModelManagerSection({
         {subTab === "access" ? (
           !addOpen && !selectedProviderInfo ? (
             <Button className="bg-[#202020] text-white hover:bg-[#333]" onClick={() => setAddOpen(true)}>
-              添加模型服务
+              {copy?.add ?? "添加模型服务"}
             </Button>
           ) : (
             <Button variant="outline" className="border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]" onClick={() => { setAddOpen(false); setSelectedProvider(""); }}>
-              返回列表
+              {copy?.back ?? "返回列表"}
             </Button>
           )
         ) : null}
@@ -1357,20 +1362,20 @@ function ModelManagerSection({
       {subTab === "use" ? (
         <div className="space-y-3">
           <div className="rounded-lg bg-[#f7f7f8] p-4">
-            <div className="text-[15px] font-semibold text-[#202020]">按能力选择默认模型</div>
+            <div className="text-[15px] font-semibold text-[#202020]">{copy?.defaults ?? "自动识别模型用途"}</div>
             <div className="mt-1 text-[13px] text-[#6f6f73]">
-              文字和语音识别分别拥有独立默认模型，修改语音默认不会影响文字模型。
+              {copy?.defaultsHint ?? "TPACowork 会根据供应商和模型名称自动识别文字与语音识别用途，并自动保留合适的默认模型。"}
             </div>
           </div>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {modelCapabilityOptions.map((capability) => {
+            {localizedCapabilities.map((capability) => {
               const active = selectedCapability === capability.value;
               const defaultName = settings.model_defaults[capability.value];
               const defaultPreset = settings.model_presets.find((preset) => preset.name === defaultName);
               return (
                 <button
-                  key={capability.value}
                   type="button"
+                  key={capability.value}
                   onClick={() => setSelectedCapability(capability.value)}
                   className={cn(
                     "rounded-lg border p-3 text-left transition-colors",
@@ -1381,7 +1386,7 @@ function ModelManagerSection({
                 >
                   <div className="text-sm font-semibold text-[#202020]">{capability.label}</div>
                   <div className="mt-1 truncate text-xs text-[#6f6f73]">
-                    {defaultPreset?.model || "尚未设置默认模型"}
+                    {defaultPreset?.model || copy?.notSet || "尚未设置默认模型"}
                   </div>
                 </button>
               );
@@ -1389,10 +1394,10 @@ function ModelManagerSection({
           </div>
           <div className="rounded-lg border border-[#ececee] bg-white px-4 py-3">
             <div className="text-sm font-semibold text-[#202020]">
-              {modelCapabilityOptions.find((item) => item.value === selectedCapability)?.label}
+              {localizedCapabilities.find((item) => item.value === selectedCapability)?.label}
             </div>
             <div className="mt-1 text-xs text-[#6f6f73]">
-              {modelCapabilityOptions.find((item) => item.value === selectedCapability)?.description}
+              {localizedCapabilities.find((item) => item.value === selectedCapability)?.description}
             </div>
           </div>
           {visiblePresets.length ? (
@@ -1401,9 +1406,6 @@ function ModelManagerSection({
                 const provider = settings.providers.find((item) => item.name === preset.provider);
                 const active = settings.model_defaults[selectedCapability] === preset.name;
                 const supportsCapability = preset.capabilities.includes(selectedCapability);
-                const busy =
-                  saving[`model-default:${selectedCapability}`] ||
-                  saving[`model-capability:${preset.name}:${selectedCapability}`];
                 return (
                   <div
                     key={preset.name}
@@ -1412,49 +1414,49 @@ function ModelManagerSection({
                       active ? "border-[#202020] shadow-sm" : "border-[#e6e6e8]",
                     )}
                   >
+                    {supportsCapability ? (
+                      <button
+                        type="button"
+                        onClick={() => onSelectDefault(selectedCapability, preset.name)}
+                        disabled={saving[`model-default:${selectedCapability}`]}
+                        className={cn(
+                          "mb-2 flex w-full items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors",
+                          active
+                            ? "border-[#202020] bg-[#202020] text-white hover:bg-[#333]"
+                            : "border-[#e6e6e8] bg-[#fafafa] text-[#202020] hover:border-[#cfcfd2] hover:bg-[#f5f5f5]",
+                          saving[`model-default:${selectedCapability}`] && "cursor-wait opacity-60",
+                        )}
+                      >
+                        {saving[`model-default:${selectedCapability}`] ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : active ? (
+                          <Check className="h-3.5 w-3.5" />
+                        ) : null}
+                        <span>{active ? (copy?.current ?? "当前默认") : (copy?.setDefault ?? "设为默认")}</span>
+                      </button>
+                    ) : null}
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="truncate text-sm font-semibold text-[#202020]">{preset.label}</div>
                         <div className="mt-1 truncate text-xs text-[#6f6f73]">{provider?.label || preset.provider}</div>
                       </div>
-                      {active ? <StatusPill ok>当前默认</StatusPill> : null}
+                      {active ? <StatusPill ok>{copy?.current ?? "当前默认"}</StatusPill> : null}
                     </div>
                     <div className="mt-3 truncate text-[13px] text-[#444]">{preset.model}</div>
                     <div className="mt-2 flex flex-wrap gap-1">
                       {preset.capabilities.map((capability) => (
                         <span key={capability} className="rounded-full bg-[#f3f3f4] px-2 py-0.5 text-[10px] text-[#666]">
-                          {modelCapabilityOptions.find((item) => item.value === capability)?.label || capability}
+                          {localizedCapabilities.find((item) => item.value === capability)?.label || capability}
                         </span>
                       ))}
                     </div>
-                    {!active && supportsCapability ? (
-                      <Button
-                        variant="outline"
-                        className="mt-4 border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]"
-                        onClick={() => void onSetModelDefault(selectedCapability, preset.name)}
-                        disabled={busy}
-                      >
-                        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                        设为默认
-                      </Button>
-                    ) : !supportsCapability && !preset.is_default ? (
-                      <Button
-                        variant="outline"
-                        className="mt-4 border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]"
-                        onClick={() => void onAddModelCapability(preset.name, selectedCapability)}
-                        disabled={busy}
-                      >
-                        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                        加入此分类
-                      </Button>
-                    ) : null}
                   </div>
                 );
               })}
             </div>
           ) : (
             <div className="rounded-lg border border-dashed border-[#dedede] bg-[#fafafa] p-8 text-center text-sm text-[#6f6f73]">
-              当前没有可分类的模型配置，请先在“接入”中添加模型服务。
+              {copy?.empty ?? "当前没有可分类的模型配置，请先在“接入”中添加模型服务。"}
             </div>
           )}
         </div>
@@ -1469,38 +1471,38 @@ function ModelManagerSection({
               <ArrowLeft className="h-4 w-4" />
             </button>
             <div>
-              <h3 className="text-lg font-semibold text-[#202020]">添加自定义模型服务</h3>
-              <p className="text-xs text-[#6f6f73]">通过 OpenAI-compatible 协议接入其他大模型 API 提供商。</p>
+              <h3 className="text-lg font-semibold text-[#202020]">{copy?.addCustom ?? "添加自定义模型服务"}</h3>
+              <p className="text-xs text-[#6f6f73]">{copy?.customHint ?? "通过 OpenAI-compatible 协议接入其他大模型 API 提供商。"}</p>
             </div>
           </div>
 
           <div className="rounded-xl border border-[#e6e6e8] bg-white p-6 space-y-4">
-            <Field label="自定义供应商名称">
+            <Field label={copy?.providerName ?? "自定义供应商名称"}>
               <Input value={addForm.providerName} onChange={(event) => setAddForm({ ...addForm, providerName: event.target.value })} />
             </Field>
-            <Field label="接入协议" hint="当前支持 OpenAI-compatible 自定义服务。">
-              <Select value={addForm.apiType} onChange={(value) => setAddForm({ ...addForm, apiType: value as ProviderForm["apiType"] })} options={apiTypeOptions} />
+            <Field label={copy?.protocol ?? "接入协议"} hint={copy?.protocolHint ?? "当前支持 OpenAI-compatible 自定义服务。"}>
+              <Select value={addForm.apiType} onChange={(value) => setAddForm({ ...addForm, apiType: value as ProviderForm["apiType"] })} options={localizedApiTypeOptions} />
             </Field>
-            <Field label="API 地址" hint="填写 base_url，例如 https://api.example.com/v1。">
+            <Field label={copy?.apiAddress ?? "API 地址"} hint={copy?.apiHint ?? "填写 base_url，例如 https://api.example.com/v1。"}>
               <Input placeholder="base_url (https://...)" value={addForm.apiBase} onChange={(event) => setAddForm({ ...addForm, apiBase: event.target.value })} />
             </Field>
-            <Field label="密钥">
-              <Input type="password" placeholder="输入 API Key（全局保存）" value={addForm.apiKey} onChange={(event) => setAddForm({ ...addForm, apiKey: event.target.value })} />
+            <Field label={copy?.key ?? "密钥"}>
+              <Input type="password" placeholder={copy?.keyPlaceholder ?? "输入 API Key（全局保存）"} value={addForm.apiKey} onChange={(event) => setAddForm({ ...addForm, apiKey: event.target.value })} />
             </Field>
-            <Field label="模型列表" hint="逗号或换行分隔。保存后会为每个模型创建可选择的模型通道。">
+            <Field label={copy?.models ?? "模型列表"} hint={copy?.modelsHint ?? "逗号或换行分隔。保存后会为每个模型创建可选择的模型通道。"}>
               <Textarea placeholder="gpt-4o, deepseek-chat" value={addForm.models} onChange={(event) => setAddForm({ ...addForm, models: event.target.value })} className="min-h-[80px]" />
             </Field>
             <div className="flex items-center gap-3 pt-2">
               <Button variant="outline" className="border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]" onClick={probeAddProviderModels} disabled={saving["provider-probe"] || !addForm.apiBase.trim()}>
                 {saving["provider-probe"] ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                测试并获取模型
+                {copy?.probe ?? "测试并获取模型"}
               </Button>
               <Button className="bg-[#202020] text-white hover:bg-[#333]" onClick={submitAddProvider} disabled={saving["provider-create"]}>
                 {saving["provider-create"] ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                保存接入
+                {copy?.saveConnection ?? "保存接入"}
               </Button>
               <Button variant="outline" className="border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]" onClick={() => setAddOpen(false)}>
-                取消
+                {copy?.cancel ?? "取消"}
               </Button>
             </div>
           </div>
@@ -1516,38 +1518,38 @@ function ModelManagerSection({
               <ArrowLeft className="h-4 w-4" />
             </button>
             <div>
-              <h3 className="text-lg font-semibold text-[#202020]">配置自定义模型服务</h3>
-              <p className="text-xs text-[#6f6f73]">修改供应商信息、API 地址、密钥和模型列表。</p>
+              <h3 className="text-lg font-semibold text-[#202020]">{copy?.editCustom ?? "配置自定义模型服务"}</h3>
+              <p className="text-xs text-[#6f6f73]">{isEnglish ? "Update provider details, API base URL, credentials, and models." : "修改供应商信息、API 地址、密钥和模型列表。"}</p>
             </div>
           </div>
 
           <div className="rounded-xl border border-[#e6e6e8] bg-white p-6 space-y-4">
-            <Field label="自定义供应商名称">
+            <Field label={copy?.providerName ?? "自定义供应商名称"}>
               <Input value={editForm.providerName} onChange={(event) => setEditForm({ ...editForm, providerName: event.target.value })} />
             </Field>
-            <Field label="接入协议" hint="当前支持 OpenAI-compatible 自定义服务。">
-              <Select value={editForm.apiType} onChange={(value) => setEditForm({ ...editForm, apiType: value as ProviderForm["apiType"] })} options={apiTypeOptions} />
+            <Field label={copy?.protocol ?? "接入协议"} hint={copy?.protocolHint ?? "当前支持 OpenAI-compatible 自定义服务。"}>
+              <Select value={editForm.apiType} onChange={(value) => setEditForm({ ...editForm, apiType: value as ProviderForm["apiType"] })} options={localizedApiTypeOptions} />
             </Field>
-            <Field label="API 地址" hint="填写 base_url，例如 https://api.example.com/v1。">
+            <Field label={copy?.apiAddress ?? "API 地址"} hint={copy?.apiHint ?? "填写 base_url，例如 https://api.example.com/v1。"}>
               <Input placeholder="base_url (https://...)" value={editForm.apiBase} onChange={(event) => setEditForm({ ...editForm, apiBase: event.target.value })} />
             </Field>
-            <Field label="密钥" hint={selectedProviderInfo.api_key_hint ? `当前：${selectedProviderInfo.api_key_hint}` : "留空表示不修改已有密钥。"}>
-              <Input type="password" placeholder="输入 API Key（全局保存）" value={editForm.apiKey} onChange={(event) => setEditForm({ ...editForm, apiKey: event.target.value })} />
+            <Field label={copy?.key ?? "密钥"} hint={selectedProviderInfo.api_key_hint ? `${isEnglish ? "Current" : "当前"}：${selectedProviderInfo.api_key_hint}` : (copy?.leaveBlank ?? "留空表示不修改已有密钥。")}>
+              <Input type="password" placeholder={copy?.keyPlaceholder ?? "输入 API Key（全局保存）"} value={editForm.apiKey} onChange={(event) => setEditForm({ ...editForm, apiKey: event.target.value })} />
             </Field>
-            <Field label="模型列表" hint="逗号或换行分隔。保存后会同步该服务下的模型通道。">
+            <Field label={copy?.models ?? "模型列表"} hint={copy?.modelsHint ?? "逗号或换行分隔。保存后会同步该服务下的模型通道。"}>
               <Textarea placeholder="gpt-4o, deepseek-chat" value={editForm.models} onChange={(event) => setEditForm({ ...editForm, models: event.target.value })} className="min-h-[80px]" />
             </Field>
             <div className="flex items-center gap-3 pt-2">
               <Button variant="outline" className="border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]" onClick={probeEditProviderModels} disabled={saving["provider-probe"] || !editForm.apiBase.trim()}>
                 {saving["provider-probe"] ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                测试并获取模型
+                {copy?.probe ?? "测试并获取模型"}
               </Button>
               <Button className="bg-[#202020] text-white hover:bg-[#333]" onClick={submitEditProvider} disabled={saving["provider-update"]}>
                 {saving["provider-update"] ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                保存配置
+                {copy?.save ?? "保存配置"}
               </Button>
               <Button variant="outline" className="border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]" onClick={() => setSelectedProvider("")}>
-                取消
+                {copy?.cancel ?? "取消"}
               </Button>
             </div>
           </div>
@@ -1555,9 +1557,9 @@ function ModelManagerSection({
       ) : (
         <div className="space-y-4">
           <div className="rounded-lg bg-[#f7f7f8] p-4">
-            <div className="text-[15px] font-semibold text-[#202020]">自定义模型服务</div>
+            <div className="text-[15px] font-semibold text-[#202020]">{copy?.customServices ?? "自定义模型服务"}</div>
             <div className="mt-1 text-[13px] text-[#6f6f73]">
-              接入并配置第三方大模型 API，保存后可在“使用”标签页中设为默认模型。
+              {copy?.customServicesHint ?? "接入并配置第三方大模型 API，保存后会自动识别模型用途并配置默认模型。"}
             </div>
           </div>
 
@@ -1566,13 +1568,13 @@ function ModelManagerSection({
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#fafafa] text-[#6f6f73]">
                 <Cpu className="h-6 w-6" />
               </div>
-              <h3 className="mt-4 text-sm font-semibold text-[#202020]">暂无接入的模型服务</h3>
+              <h3 className="mt-4 text-sm font-semibold text-[#202020]">{copy?.none ?? "暂无接入的模型服务"}</h3>
               <p className="mt-1 text-sm text-[#6f6f73] max-w-sm mx-auto">
-                添加自定义供应商（如 OpenAI、DeepSeek 等）后，可以为它们创建模型通道并在此管理。
+                {copy?.noneHint ?? "添加自定义供应商（如 OpenAI、DeepSeek 等）后，可以为它们创建模型通道并在此管理。"}
               </p>
               <div className="mt-6">
                 <Button className="bg-[#202020] text-white hover:bg-[#333]" onClick={() => setAddOpen(true)}>
-                  添加模型服务
+                  {copy?.add ?? "添加模型服务"}
                 </Button>
               </div>
             </div>
@@ -1595,31 +1597,31 @@ function ModelManagerSection({
                         {provider.configured ? (
                           <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
                             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                            已配置
+                            {copy?.configured ?? "已配置"}
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 rounded-full bg-[#f4f4f5] px-2 py-0.5 text-xs font-medium text-[#71717a]">
                             <span className="h-1.5 w-1.5 rounded-full bg-[#d4d4d8]" />
-                            待配置
+                            {copy?.pending ?? "待配置"}
                           </span>
                         )}
                       </div>
 
                       <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2 text-xs text-[#6f6f73]">
                         <div className="truncate">
-                          <span className="text-[#a1a1a9] mr-1.5">接口类型:</span>
-                          {provider.api_type || "自动检测"}
+                          <span className="text-[#a1a1a9] mr-1.5">{copy?.apiType ?? "接口类型:"}</span>
+                          {provider.api_type || (isEnglish ? "Auto detect" : "自动检测")}
                         </div>
                         <div className="truncate">
-                          <span className="text-[#a1a1a9] mr-1.5">API 地址:</span>
-                          {provider.api_base || provider.default_api_base || "未设置"}
+                          <span className="text-[#a1a1a9] mr-1.5">{copy?.apiAddress ?? "API 地址:"}</span>
+                          {provider.api_base || provider.default_api_base || copy?.notConfigured || "未设置"}
                         </div>
                       </div>
 
                       {presets.length > 0 && (
                         <div className="pt-1">
                           <div className="flex flex-wrap gap-1 items-center">
-                            <span className="text-[11px] font-semibold text-[#a1a1a9] mr-2">模型通道 ({presets.length}):</span>
+                            <span className="text-[11px] font-semibold text-[#a1a1a9] mr-2">{copy?.channels ?? "模型通道"} ({presets.length}):</span>
                             {presets.slice(0, 8).map((p) => (
                               <span key={p.name} className="inline-block rounded bg-[#f1f1f2] px-1.5 py-0.5 text-[11px] text-[#444] truncate max-w-[150px]">
                                 {p.model}
@@ -1644,7 +1646,7 @@ function ModelManagerSection({
                         className="flex items-center justify-center gap-1.5 rounded-lg border border-[#e6e6e8] bg-white px-4 py-2 text-xs font-semibold text-[#202020] transition-colors hover:bg-[#fafafa]"
                       >
                         <SlidersHorizontal className="h-3.5 w-3.5" />
-                        配置服务
+                        {copy?.configure ?? "配置服务"}
                       </button>
                     </div>
                   </div>
@@ -1664,15 +1666,25 @@ function VoiceSection({
   setForm,
   saving,
   onSave,
-  onOpenModelSettings,
+  speechPresets,
+  onSelectSpeechModel,
+  isEnglish,
 }: {
   settings: SettingsPayload;
   form: VoiceForm;
   setForm: (form: VoiceForm) => void;
   saving?: boolean;
   onSave: () => void;
-  onOpenModelSettings: () => void;
+  speechPresets: SettingsPayload["model_presets"];
+  onSelectSpeechModel: (presetName: string) => void;
+  isEnglish: boolean;
 }) {
+  const copy = isEnglish ? {
+    title: "Voice Input", description: "The default ASR model transcribes microphone recordings. Configure its credentials and recording preferences here.",
+    ready: "ASR service ready", notReady: "ASR service not configured", current: "Current default speech recognition model", notSelected: "Not selected", select: "Select Default Model",
+    enable: "Enable Voice Input", enableHint: "Use the default ASR model from the chat input microphone.", apiBase: "API Base URL", apiBaseHint: "Usually keep the provider default; change it for private deployments.", language: "Recognition Language", duration: "Maximum Recording Duration", durationHint: "Allowed range: 1–600 seconds.", save: "Save Voice Settings",
+    selectSpeechModel: "Select a model that supports speech recognition first.", realtime: "Realtime streaming transcription", afterRecording: "Transcribe after recording", keyHint: "Saved: {key}. Leave blank to keep the existing key.", keyLocalHint: "The key is stored only in the local nanobot configuration.", leaveBlank: "Leave blank to keep unchanged", enterKey: "Enter the ASR service API key", noDefaultWarning: "No default ASR model is configured. Select one in Model Configuration → Use → Speech Recognition.",
+  } : null;
   const defaultName = settings.model_defaults.speech_to_text;
   const preset = settings.model_presets.find((item) => item.name === defaultName);
   const provider = preset
@@ -1691,23 +1703,23 @@ function VoiceSection({
   return (
     <div className="space-y-4">
       <SettingsCard
-        title="语音输入"
-        description="麦克风录音由默认 ASR 模型转成文字；这里保存服务密钥和录音参数。"
+        title={copy?.title ?? "语音输入"}
+        description={copy?.description ?? "麦克风录音由默认 ASR 模型转成文字；这里保存服务密钥和录音参数。"}
         actions={
           <StatusPill ok={providerReady}>
-            {providerReady ? "ASR 服务可用" : "ASR 服务未配置"}
+            {providerReady ? (copy?.ready ?? "ASR 服务可用") : (copy?.notReady ?? "ASR 服务未配置")}
           </StatusPill>
         }
       >
         <div className="mb-4 rounded-lg border border-[#e8e4dd] bg-[#faf9f7] p-4">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <div className="text-xs font-medium text-[#777267]">当前默认语音识别模型</div>
+              <div className="text-xs font-medium text-[#777267]">{copy?.current ?? "当前默认语音识别模型"}</div>
               <div className="mt-1 truncate text-sm font-semibold text-[#202020]">
-                {preset?.label || "尚未选择"}
+                {preset?.label || copy?.notSelected || "尚未选择"}
               </div>
               <div className="mt-1 truncate text-xs text-[#6f6f73]">
-                {preset ? `${provider?.label || preset.provider} · ${preset.model}` : "请先选择支持语音识别的模型"}
+                {preset ? `${provider?.label || preset.provider} · ${preset.model}` : (copy?.selectSpeechModel ?? "请先选择支持语音识别的模型")}
               </div>
               {preset ? (
                 <div className={cn(
@@ -1716,24 +1728,24 @@ function VoiceSection({
                     ? "bg-emerald-50 text-emerald-700"
                     : "bg-[#f1efe9] text-[#777267]",
                 )}>
-                  {realtimeCapable ? "实时流式识别" : "录音完成后识别"}
+                  {realtimeCapable ? (copy?.realtime ?? "实时流式识别") : (copy?.afterRecording ?? "录音完成后识别")}
                 </div>
               ) : null}
             </div>
-            <Button
-              variant="outline"
-              className="shrink-0 border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]"
-              onClick={onOpenModelSettings}
-            >
-              选择默认模型
-            </Button>
+            <div className="w-56 shrink-0">
+              <Select
+                value={defaultName || ""}
+                onChange={onSelectSpeechModel}
+                options={speechPresets.map((item) => ({ value: item.name, label: item.model }))}
+              />
+            </div>
           </div>
         </div>
 
         <div className="mb-4 flex items-center justify-between rounded-lg border border-[#e8e4dd] bg-white px-4 py-3">
           <div>
-            <div className="text-sm font-medium text-[#202020]">启用语音输入</div>
-            <div className="mt-1 text-xs text-[#777267]">开启后，聊天输入框中的麦克风会调用默认 ASR 模型。</div>
+            <div className="text-sm font-medium text-[#202020]">{copy?.enable ?? "启用语音输入"}</div>
+            <div className="mt-1 text-xs text-[#777267]">{copy?.enableHint ?? "开启后，聊天输入框中的麦克风会调用默认 ASR 模型。"}</div>
           </div>
           <Toggle
             checked={form.enabled}
@@ -1747,26 +1759,26 @@ function VoiceSection({
             label="API Key"
             hint={
               provider?.api_key_hint
-                ? `当前已保存：${provider.api_key_hint}；留空表示不修改。`
-                : "密钥只保存在本机 nanobot 配置中。"
+                ? (copy?.keyHint ?? "当前已保存：{key}；留空表示不修改。").replace("{key}", provider.api_key_hint)
+                : (copy?.keyLocalHint ?? "密钥只保存在本机 nanobot 配置中。")
             }
           >
             <Input
               type="password"
-              placeholder={providerReady ? "留空表示不修改" : "输入 ASR 服务 API Key"}
+              placeholder={providerReady ? (copy?.leaveBlank ?? "留空表示不修改") : (copy?.enterKey ?? "输入 ASR 服务 API Key")}
               value={form.apiKey}
               disabled={!preset}
               onChange={(event) => setForm({ ...form, apiKey: event.target.value })}
             />
           </Field>
-          <Field label="API 地址" hint="通常保留服务默认地址；私有部署时可修改。">
+          <Field label={copy?.apiBase ?? "API 地址"} hint={copy?.apiBaseHint ?? "通常保留服务默认地址；私有部署时可修改。"}>
             <Input
               value={form.apiBase}
               disabled={!preset}
               onChange={(event) => setForm({ ...form, apiBase: event.target.value })}
             />
           </Field>
-          <Field label="识别语言">
+          <Field label={copy?.language ?? "识别语言"}>
             <Select
               value={form.language}
               onChange={(value) => setForm({ ...form, language: value })}
@@ -1778,7 +1790,7 @@ function VoiceSection({
               ]}
             />
           </Field>
-          <Field label="最长录音时长" hint="允许 1–600 秒。">
+          <Field label={copy?.duration ?? "最长录音时长"} hint={copy?.durationHint ?? "允许 1–600 秒。"}>
             <Input
               type="number"
               min={1}
@@ -1796,7 +1808,7 @@ function VoiceSection({
 
         {!preset ? (
           <div className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            还没有默认 ASR 模型。请到“模型配置 → 使用 → 语音识别”中选择。
+            {copy?.noDefaultWarning ?? "还没有默认 ASR 模型。请到“模型配置 → 使用 → 语音识别”中选择。"}
           </div>
         ) : isStepfunConversationModel ? (
           <div className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -1818,105 +1830,14 @@ function VoiceSection({
           disabled={saving || !preset}
         >
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          保存语音设置
+          {copy?.save ?? "保存语音设置"}
         </Button>
       </SettingsCard>
     </div>
   );
 }
 
-function ImageSection({
-  settings,
-  form,
-  setForm,
-  saveDir,
-  saving,
-  onSave,
-}: {
-  settings: SettingsPayload;
-  form: ImageForm;
-  setForm: (form: ImageForm) => void;
-  saveDir: string;
-  saving?: boolean;
-  onSave: () => void;
-}) {
-  const provider = settings.image_generation.providers.find(
-    (item) => item.name === form.provider,
-  );
-  const providerReady = Boolean(provider?.configured);
-
-  return (
-    <SettingsCard
-      title="图像生成"
-      description="图片生成服务与模型在这里独立配置，不占用聊天模型用途分类。"
-      actions={<StatusPill ok={providerReady}>{providerReady ? "服务可用" : "服务未配置"}</StatusPill>}
-    >
-      <div className="mb-4 flex items-center justify-between rounded-lg border border-[#e8e4dd] bg-[#faf9f7] px-4 py-3">
-        <div>
-          <div className="text-sm font-medium">启用图像生成</div>
-          <div className="mt-1 text-xs text-[#777267]">开启后，模型可以调用图片生成能力。</div>
-        </div>
-        <Toggle
-          checked={form.enabled}
-          disabled={!form.provider.trim() || !form.model.trim()}
-          onChange={() => setForm({ ...form, enabled: !form.enabled })}
-        />
-      </div>
-      <div className="grid gap-4 md:grid-cols-2">
-        <Field label="图片服务">
-          <Select
-            value={form.provider}
-            onChange={(value) => setForm({ ...form, provider: value })}
-            options={settings.image_generation.providers.map((item) => ({
-              value: item.name,
-              label: item.label,
-            }))}
-          />
-        </Field>
-        <Field label="图片生成模型">
-          <Input
-            value={form.model}
-            placeholder="例如 openai/gpt-image-1"
-            onChange={(event) => setForm({ ...form, model: event.target.value })}
-          />
-        </Field>
-        <Field label="默认比例">
-          <Select value={form.defaultAspectRatio} onChange={(value) => setForm({ ...form, defaultAspectRatio: value })} options={ratioOptions} />
-        </Field>
-        <Field label="默认尺寸">
-          <Select value={form.defaultImageSize} onChange={(value) => setForm({ ...form, defaultImageSize: value })} options={sizeOptions} />
-        </Field>
-        <Field label="每轮最多图片数">
-          <Input
-            type="number"
-            min={1}
-            max={8}
-            value={form.maxImagesPerTurn}
-            onChange={(event) => setForm({ ...form, maxImagesPerTurn: numberValue(event.target.value, form.maxImagesPerTurn) })}
-          />
-        </Field>
-        <Field label="保存目录">
-          <Input value={saveDir} readOnly />
-        </Field>
-      </div>
-      {!form.provider.trim() || !form.model.trim() ? (
-        <div className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          请选择图片服务并填写图片生成模型。
-        </div>
-      ) : null}
-      <Button
-        className="mt-5 bg-[#d97757] text-white hover:bg-[#c86647]"
-        onClick={onSave}
-        disabled={saving || !form.provider.trim() || !form.model.trim()}
-      >
-        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-        保存图像设置
-      </Button>
-    </SettingsCard>
-  );
-}
-
-function SafetySection({
+export function SafetySection({
   form,
   setForm,
   settings,
@@ -1978,17 +1899,32 @@ function SafetySection({
 function FontSizeControl({
   value,
   onChange,
+  isEnglish,
 }: {
   value: FontSizeSetting;
   onChange: (value: FontSizeSetting) => void;
+  isEnglish: boolean;
 }) {
-  const index = Math.max(0, fontSizeOptions.findIndex((option) => option.value === value));
-  const percentFor = (optionIndex: number) => (optionIndex / (fontSizeOptions.length - 1)) * 100;
+  const labels = isEnglish
+    ? { aria: "Font size", small: "Small", default: "Default", large: "Large" }
+    : { aria: "字体大小", small: "小", default: "默认", large: "大" };
+  const localizedFontSizeOptions = fontSizeOptions.map((option) => ({
+    ...option,
+    label: option.value === "small"
+      ? labels.small
+      : option.value === "default"
+        ? labels.default
+        : option.value === "xxlarge"
+          ? labels.large
+          : option.label,
+  }));
+  const index = Math.max(0, localizedFontSizeOptions.findIndex((option) => option.value === value));
+  const percentFor = (optionIndex: number) => (optionIndex / (localizedFontSizeOptions.length - 1)) * 100;
   const percent = percentFor(index);
   const selectNearestTick = (clientX: number, rect: DOMRect) => {
     const ratio = rect.width > 0 ? (clientX - rect.left) / rect.width : 0;
-    const nextIndex = Math.max(0, Math.min(fontSizeOptions.length - 1, Math.round(ratio * (fontSizeOptions.length - 1))));
-    onChange(fontSizeOptions[nextIndex]?.value ?? "default");
+    const nextIndex = Math.max(0, Math.min(localizedFontSizeOptions.length - 1, Math.round(ratio * (localizedFontSizeOptions.length - 1))));
+    onChange(localizedFontSizeOptions[nextIndex]?.value ?? "default");
   };
 
   return (
@@ -1997,12 +1933,12 @@ function FontSizeControl({
         className="relative h-6 cursor-pointer"
         onClick={(event) => selectNearestTick(event.clientX, event.currentTarget.getBoundingClientRect())}
       >
-        <div className="absolute left-0 right-0 top-1/2 h-px -translate-y-1/2 bg-[#d8d8d8]" />
-        {fontSizeOptions.map((option, optionIndex) => (
+        <div data-font-size-track className="absolute left-0 right-0 top-1/2 h-px -translate-y-1/2 bg-[#d8d8d8]" />
+        {localizedFontSizeOptions.map((option, optionIndex) => (
           <button
             key={option.value}
             type="button"
-            aria-label={option.label || `字体大小 ${optionIndex + 1}`}
+            aria-label={option.label || `${labels.aria} ${optionIndex + 1}`}
             className="absolute top-1/2 h-6 w-10 -translate-x-1/2 -translate-y-1/2"
             style={{ left: `${percentFor(optionIndex)}%` }}
             onClick={(event) => {
@@ -2010,27 +1946,28 @@ function FontSizeControl({
               onChange(option.value);
             }}
           >
-            <span className="absolute left-1/2 top-1/2 h-3 w-px -translate-x-1/2 -translate-y-1/2 bg-[#bdbdbd]" />
+            <span data-font-size-tick className="absolute left-1/2 top-1/2 h-3 w-px -translate-x-1/2 -translate-y-1/2 bg-[#bdbdbd]" />
           </button>
         ))}
         <span
           aria-hidden="true"
+          data-font-size-thumb
           className="pointer-events-none absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[#202020] shadow"
           style={{ left: `${percent}%` }}
         />
       </div>
       <input
-        aria-label="字体大小"
+        aria-label={labels.aria}
         className="sr-only"
         type="range"
         min={0}
-        max={fontSizeOptions.length - 1}
+        max={localizedFontSizeOptions.length - 1}
         step={1}
         value={index}
-        onChange={(event) => onChange(fontSizeOptions[Number(event.target.value)]?.value ?? "default")}
+        onChange={(event) => onChange(localizedFontSizeOptions[Number(event.target.value)]?.value ?? "default")}
       />
       <div className="relative mt-1 h-5 text-xs text-[#6f6f73]">
-        {fontSizeOptions.map((option, optionIndex) => (
+        {localizedFontSizeOptions.map((option, optionIndex) => (
           <span
             key={option.value}
             className="absolute min-w-8 -translate-x-1/2 text-center"
@@ -2047,6 +1984,9 @@ function FontSizeControl({
 function GeneralSection({
   language,
   setLanguage,
+  isEnglish,
+  theme,
+  setTheme,
   fontSize,
   setFontSize,
   skillsAutoUpdate,
@@ -2057,6 +1997,9 @@ function GeneralSection({
 }: {
   language: LanguageSetting;
   setLanguage: (language: LanguageSetting) => void;
+  isEnglish: boolean;
+  theme: ThemeMode;
+  setTheme: (theme: ThemeMode) => void;
   fontSize: FontSizeSetting;
   setFontSize: (size: FontSizeSetting) => void;
   skillsAutoUpdate: boolean;
@@ -2065,6 +2008,27 @@ function GeneralSection({
   desktopNotificationsEnabled: boolean;
   setDesktopNotificationsEnabled: (enabled: boolean) => void;
 }) {
+  const languageOptions = isEnglish
+    ? [{ value: "system" as const, label: "System" }, { value: "zh-CN" as const, label: "中文" }, { value: "en-US" as const, label: "English" }]
+    : [{ value: "system" as const, label: "跟随系统" }, { value: "zh-CN" as const, label: "中文" }, { value: "en-US" as const, label: "English" }];
+  const themeOptions = isEnglish
+    ? [{ value: "system" as const, label: "System" }, { value: "light" as const, label: "Light" }, { value: "dark" as const, label: "Dark" }]
+    : themeModeOptions;
+  const labels = isEnglish
+    ? {
+      displayLanguage: "Display Language", languageDescription: "Choose the language used by the application interface.",
+      appearance: "Appearance", appearanceDescription: "Choose automatic, light, or dark appearance.",
+      fontSize: "Font Size", skillsAutoUpdate: "Automatically Update Skills", skillsDescription: "Automatically update installed skills. Skills edited in TPACowork are not updated.",
+      workspace: "Default Workspace Location", workspaceDescription: "New tasks and workspaces are stored in this location.", notSet: "Not set", view: "View",
+      notifications: "Notifications", desktopNotifications: "Desktop Notifications", desktopNotificationsDescription: "Show a system notification when a task completes or a new message arrives.",
+    }
+    : {
+      displayLanguage: "显示语言", languageDescription: "设置应用程序界面的显示语言。",
+      appearance: "外观主题", appearanceDescription: "选择外观模式：自动、亮色或暗色。",
+      fontSize: "字体大小", skillsAutoUpdate: "技能自动更新", skillsDescription: "开启后将自动更新已安装的技能为最新版本，不会更新你在 TPACowork 中编辑过的技能。",
+      workspace: "默认工作空间存储路径", workspaceDescription: "新建任务、工作空间时将自动存放在该路径下。", notSet: "未设置", view: "查看",
+      notifications: "通知", desktopNotifications: "桌面通知", desktopNotificationsDescription: "允许发送系统桌面通知，任务完成或有新消息时即时提醒。",
+    };
   const revealWorkspacePath = async () => {
     if (!workspacePath) return;
     try {
@@ -2076,32 +2040,35 @@ function GeneralSection({
 
   return (
     <SettingsGroup>
-      <SettingsRow title="显示语言" description="设置应用程序界面的显示语言。">
+      <SettingsRow title={labels.displayLanguage} description={labels.languageDescription}>
         <Select className="w-[150px]" value={language} onChange={(value) => setLanguage(value as LanguageSetting)} options={languageOptions} />
       </SettingsRow>
-      <SettingsRow title="字体大小">
-        <FontSizeControl value={fontSize} onChange={setFontSize} />
+      <SettingsRow title={labels.appearance} description={labels.appearanceDescription}>
+        <Select className="w-[150px]" value={theme} onChange={(value) => setTheme(value as ThemeMode)} options={themeOptions} />
       </SettingsRow>
-      <SettingsRow title="技能自动更新" description="开启后将自动更新已安装的技能为最新版本，不会更新你在 TpaRuyi 中编辑过的技能。">
+      <SettingsRow title={labels.fontSize}>
+        <FontSizeControl value={fontSize} onChange={setFontSize} isEnglish={isEnglish} />
+      </SettingsRow>
+      <SettingsRow title={labels.skillsAutoUpdate} description={labels.skillsDescription}>
         <Toggle checked={skillsAutoUpdate} onChange={() => setSkillsAutoUpdate(!skillsAutoUpdate)} />
       </SettingsRow>
-      <SettingsRow title="默认工作空间存储路径" description="新建任务、工作空间时将自动存放在该路径下。" stacked>
+      <SettingsRow title={labels.workspace} description={labels.workspaceDescription} stacked>
         <div className="flex w-full items-center gap-2 border-t border-[#e4e4e6] pt-3">
-          <Input className="min-w-0 flex-1" value={workspacePath || "未设置"} readOnly />
+          <Input className="min-w-0 flex-1" value={workspacePath || labels.notSet} readOnly />
           <Button variant="outline" className="shrink-0 border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]" onClick={revealWorkspacePath} disabled={!workspacePath}>
-            查看
+            {labels.view}
           </Button>
         </div>
       </SettingsRow>
-      <div className="px-1 pt-4 text-[15px] font-semibold text-[#202020]">通知</div>
-      <SettingsRow title="桌面通知" description="允许发送系统桌面通知，任务完成或有新消息时即时提醒。">
+      <div className="px-1 pt-4 text-[15px] font-semibold text-[#202020]">{labels.notifications}</div>
+      <SettingsRow title={labels.desktopNotifications} description={labels.desktopNotificationsDescription}>
         <Toggle checked={desktopNotificationsEnabled} onChange={() => setDesktopNotificationsEnabled(!desktopNotificationsEnabled)} />
       </SettingsRow>
     </SettingsGroup>
   );
 }
 
-function AboutSection({ settings, apiBase }: { settings: SettingsPayload; apiBase: string }) {
+export function AboutSection({ settings, apiBase }: { settings: SettingsPayload; apiBase: string }) {
   return (
     <SettingsCard title="运行信息" description="用于确认 GUI 当前连接的是嵌入式 nanobot 网关，而不是 WebUI 页面。">
       <div className="grid gap-3 md:grid-cols-2">

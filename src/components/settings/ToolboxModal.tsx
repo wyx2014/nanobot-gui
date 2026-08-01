@@ -36,7 +36,8 @@ export default function ToolboxView() {
   const setPendingInput = useChatStore((s) => s.setPendingInput);
   const startNewConversation = useChatStore((s) => s.startNewConversation);
   const refresh = useDiscoveryStore((s) => s.refresh);
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const isEnglish = locale === 'en-US';
 
   const [showCreateMenu, setShowCreateMenu] = useState(false);
   const [mcpAddFormOpen, setMcpAddFormOpen] = useState(false);
@@ -148,7 +149,7 @@ export default function ToolboxView() {
     { id: 'expert-teams', label: t.toolbox.expertTeams, icon: Users },
     { id: 'skills', label: t.toolbox.skills, icon: Sparkles },
     { id: 'mcp', label: t.toolbox.mcp, icon: Server },
-    { id: 'skill-store', label: '技能商店', icon: Store },
+    { id: 'skill-store', label: isEnglish ? 'Skill Store' : '技能商店', icon: Store },
   ];
 
   const renderContent = () => {
@@ -171,9 +172,9 @@ export default function ToolboxView() {
   const isExpertTeamsTab = activeToolboxTab === 'expert-teams';
 
   return (
-    <div className="h-full bg-[#faf8f5] flex flex-col">
+    <div data-toolbox-surface className="h-full bg-[#faf8f5] flex flex-col">
       {/* Header */}
-      <div className="shrink-0 flex items-center px-6 py-4 border-b border-[#e8e4dd]">
+      <div data-toolbox-header className="shrink-0 flex items-center px-6 py-4 border-b border-[#e8e4dd]">
         <div className="flex items-center gap-3">
           <div className="h-8 w-8 rounded-lg bg-[#d97757]/10 flex items-center justify-center">
             <Wrench className="h-4 w-4 text-[#d97757]" />
@@ -185,7 +186,7 @@ export default function ToolboxView() {
       {/* Body - Left/Right Layout */}
       <div className="flex-1 flex min-h-0">
         {/* Left Navigation */}
-        <nav className="w-[180px] shrink-0 border-r border-[#e8e4dd] py-4 px-3">
+        <nav data-toolbox-sidebar className="w-[180px] shrink-0 border-r border-[#e8e4dd] py-4 px-3">
           <div className="space-y-1">
             {navItems.map((item) => {
               const Icon = item.icon;
@@ -194,6 +195,8 @@ export default function ToolboxView() {
                 <button
                   key={item.id}
                   onClick={() => setActiveToolboxTab(item.id)}
+                  data-toolbox-nav-item
+                  data-active={isActive ? "true" : "false"}
                   className={cn(
                     'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-left',
                     isActive
@@ -215,7 +218,7 @@ export default function ToolboxView() {
         {/* Right Content */}
         <div className="flex-1 flex flex-col min-w-0">
           {/* Search bar */}
-          <div className="shrink-0 px-5 py-3 border-b border-[#e8e4dd]">
+          <div data-toolbox-search className="shrink-0 px-5 py-3 border-b border-[#e8e4dd]">
             <div className="flex items-center gap-2">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#656358]" />

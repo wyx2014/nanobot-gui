@@ -9,6 +9,7 @@ import {
   FileSpreadsheet,
   FileText,
   FolderOpen,
+  Globe2,
   Loader2,
   Minus,
   RefreshCw,
@@ -24,6 +25,7 @@ import {
 } from '@/stores/conversationWorkbenchStore';
 import { useTurnPlanStore } from '@/stores/turnPlanStore';
 import { usePreviewStore } from '@/stores/previewStore';
+import { useBrowserStore } from '@/stores/browserStore';
 import { getGatewayBaseUrl, getNanobotToken } from '@/core/nanobotClient';
 import { conversationIdToSessionKey } from '@/core/sessionKey';
 import { fetchSessionArtifacts, type SessionArtifact } from '@/core/sessionArtifacts';
@@ -72,6 +74,12 @@ function formatModifiedAt(value: string | number | undefined, locale: string): s
 export default function ConversationWorkbench() {
   const { locale, t } = useI18n();
   const activeConversationId = useChatStore((state) => state.activeConversationId);
+  const browserFrameAvailable = useBrowserStore((state) => (
+    activeConversationId
+      ? Boolean(state.sessions[activeConversationId]?.frame)
+      : false
+  ));
+  const openBrowserPanel = useBrowserStore((state) => state.openPanel);
   const conversationStatus = useChatStore((state) => (
     state.activeConversationId
       ? state.conversations[state.activeConversationId]?.status ?? 'idle'
@@ -243,12 +251,26 @@ export default function ConversationWorkbench() {
   }, [locale]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[#f7f5f0]">
-      <div className="shrink-0 border-b border-[#e5e2db] px-4 pb-3 pt-10">
-        <div className="text-[13px] font-semibold text-[#29261b]">{t.panel.workbench}</div>
+    <div className="flex h-full min-h-0 flex-col bg-[#f7f5f0] dark:bg-[#202020]">
+      <div className="shrink-0 border-b border-[#e5e2db] dark:border-[#3d3d3d] px-4 pb-3 pt-10">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-[13px] font-semibold text-[#29261b] dark:text-[#f3f0e8]">{t.panel.workbench}</div>
+          {activeConversationId && browserFrameAvailable ? (
+            <button
+              type="button"
+              onClick={() => openBrowserPanel(activeConversationId)}
+              className="flex h-7 items-center gap-1.5 rounded-md border border-[#dedacf] bg-white px-2 text-[11px] text-[#656158] shadow-sm transition-colors hover:bg-[#f3f0e9] dark:border-[#454545] dark:bg-[#2a2a2a] dark:text-[#c4c0b6] dark:hover:bg-[#333]"
+              title={t.panel.browserShow}
+              aria-label={t.panel.browserShow}
+            >
+              <Globe2 className="h-3.5 w-3.5" />
+              {t.panel.browserTitle}
+            </button>
+          ) : null}
+        </div>
       </div>
 
-      <section className="shrink-0 border-b border-[#e5e2db] px-4 py-4" aria-label={t.panel.progress}>
+      <section className="shrink-0 border-b border-[#e5e2db] dark:border-[#3d3d3d] px-4 py-4" aria-label={t.panel.progress}>
         <button
           type="button"
           className={cn(

@@ -2,7 +2,7 @@
   "name": "tparuyi",
   "private": false,
   "version": "0.5.9",
-  "description": "TpaRuyi - AI Desktop Office Assistant",
+  "description": "TPACowork - AI Desktop Office Assistant",
   "main": "./out/main/index.cjs",
   "type": "module",
   "scripts": {
@@ -26,7 +26,7 @@
   },
   "build": {
     "appId": "com.tparuyi.app",
-    "productName": "太资如意",
+    "productName": "TPACowork",
     "directories": {
       "output": "dist/installers"
     },
@@ -75,7 +75,7 @@
       ],
       "icon": "public/icon.icns",
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "太资如意需要使用麦克风，将录音通过默认语音识别模型转换为输入文字。"
+        "NSMicrophoneUsageDescription": "TPACowork需要使用麦克风，将录音通过默认语音识别模型转换为输入文字。"
       }
     },
     "win": {
@@ -115,6 +115,7 @@
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.5.0",
     "turndown": "^7.2.2",
+    "ws": "^8.21.1",
     "xlsx": "^0.18.5",
     "yaml": "^2.8.2",
     "zod": "^4.3.6",
@@ -133,6 +134,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@types/turndown": "^5.0.6",
+    "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^5.1.1",
     "@vitest/coverage-v8": "^4.1.10",
     "autoprefixer": "^10.4.27",

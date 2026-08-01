@@ -432,7 +432,7 @@ function CollapsibleCodeBlock({ codeString, language }: { codeString: string; la
 const remarkPluginsStable = [remarkGfm, remarkBreaks, remarkRelaxedStrong];
 const SAFE_URL_PATTERN = /^(https?:\/\/|mailto:|tel:|#)/i;
 
-type MarkdownVariant = 'assistant' | 'user';
+type MarkdownVariant = 'assistant' | 'user' | 'activity';
 
 /** Build markdown component overrides, optionally citation-aware */
 function buildMarkdownComponents(
@@ -442,6 +442,7 @@ function buildMarkdownComponents(
 ) {
   const sr = searchResults && searchResults.length > 0 ? searchResults : null;
   const isUser = variant === 'user';
+  const isActivity = variant === 'activity';
   return {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     code({ className, children, ...props }: any) {
@@ -451,6 +452,16 @@ function buildMarkdownComponents(
       const language = match?.[1]?.toLowerCase() || null;
 
       if (isInline) {
+        if (isActivity) {
+          return (
+            <code
+              className="rounded bg-muted/60 px-1 py-0.5 font-mono text-[0.92em] font-normal text-muted-foreground/75"
+              {...props}
+            >
+              {children}
+            </code>
+          );
+        }
         if (!isUser && isAbsolutePath(codeString)) {
           return <FilePathChip filePath={codeString.trim()} />;
         }
@@ -463,6 +474,17 @@ function buildMarkdownComponents(
             {...props}
           >
             {children}
+          </code>
+        );
+      }
+
+      if (isActivity) {
+        return (
+          <code
+            className="my-1.5 block max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border/50 bg-muted/50 p-2 font-mono text-[11px] font-normal leading-[1.55] text-muted-foreground/75"
+            {...props}
+          >
+            {codeString}
           </code>
         );
       }
@@ -483,7 +505,7 @@ function buildMarkdownComponents(
       return null;
     },
     p({ children }: { children?: ReactNode }) {
-      const htmlPath = !isUser ? savedHtmlArtifactPath(children ?? '') : null;
+      const htmlPath = variant === 'assistant' ? savedHtmlArtifactPath(children ?? '') : null;
       if (htmlPath) {
         return (
           <div className="my-3">
@@ -491,27 +513,71 @@ function buildMarkdownComponents(
           </div>
         );
       }
-      return <p className={isUser ? 'my-1 leading-relaxed text-[14.5px]' : 'my-3 leading-8 text-[18px] text-[#191814]'}>{processChildren(children, sr, onCitationClick)}</p>;
+      return (
+        <p className={
+          isActivity
+            ? 'my-1 text-[12px] font-normal leading-[1.65] text-muted-foreground/70'
+            : isUser
+              ? 'my-1 leading-relaxed text-[14.5px]'
+              : 'my-3 leading-8 text-[18px] text-[#191814]'
+        }>
+          {processChildren(children, sr, onCitationClick)}
+        </p>
+      );
     },
     h1({ children }: { children?: ReactNode }) {
+      if (isActivity) {
+        return <h1 className="mb-1 mt-2 text-[12px] font-medium leading-[1.65] text-muted-foreground/85">{children}</h1>;
+      }
       return <h1 className={cn('text-[30px] leading-tight font-semibold mt-7 mb-4 tracking-[-0.02em]', isUser ? 'text-[#191814]' : 'text-[#191814]')}>{children}</h1>;
     },
     h2({ children }: { children?: ReactNode }) {
+      if (isActivity) {
+        return <h2 className="mb-1 mt-2 text-[12px] font-medium leading-[1.65] text-muted-foreground/85">{children}</h2>;
+      }
       return <h2 className={cn('text-[25px] leading-tight font-semibold mt-8 mb-3 tracking-[-0.015em]', isUser ? 'text-[#191814]' : 'text-[#191814]')}>{children}</h2>;
     },
     h3({ children }: { children?: ReactNode }) {
+      if (isActivity) {
+        return <h3 className="mb-1 mt-2 text-[12px] font-medium leading-[1.65] text-muted-foreground/85">{children}</h3>;
+      }
       return <h3 className={cn('text-[21px] leading-snug font-semibold mt-6 mb-2', isUser ? 'text-[#191814]' : 'text-[#191814]')}>{children}</h3>;
     },
     ul({ children }: { children?: ReactNode }) {
-      return <ul className="my-3 ml-6 list-disc space-y-2">{children}</ul>;
+      return (
+        <ul className={isActivity ? 'my-1 ml-4 list-disc space-y-0.5' : 'my-3 ml-6 list-disc space-y-2'}>
+          {children}
+        </ul>
+      );
     },
     ol({ children }: { children?: ReactNode }) {
-      return <ol className="my-3 ml-6 list-decimal space-y-2">{children}</ol>;
+      return (
+        <ol className={isActivity ? 'my-1 ml-4 list-decimal space-y-0.5' : 'my-3 ml-6 list-decimal space-y-2'}>
+          {children}
+        </ol>
+      );
     },
     li({ children }: { children?: ReactNode }) {
-      return <li className={isUser ? 'leading-relaxed text-[14.5px]' : 'leading-8 text-[18px] text-[#191814]'}>{processChildren(children, sr, onCitationClick)}</li>;
+      return (
+        <li className={
+          isActivity
+            ? 'text-[12px] font-normal leading-[1.65] text-muted-foreground/70'
+            : isUser
+              ? 'leading-relaxed text-[14.5px]'
+              : 'leading-8 text-[18px] text-[#191814]'
+        }>
+          {processChildren(children, sr, onCitationClick)}
+        </li>
+      );
     },
     blockquote({ children }: { children?: ReactNode }) {
+      if (isActivity) {
+        return (
+          <blockquote className="my-1 border-l-2 border-border/60 pl-2 text-muted-foreground/80">
+            {children}
+          </blockquote>
+        );
+      }
       return (
         <blockquote className={cn('my-4 pl-6 border-l-4', isUser ? 'border-[#d4d0c7] text-[#3d3929]' : 'border-[#e5e2db] text-[#3d3929]')}>
           {children}
@@ -520,7 +586,9 @@ function buildMarkdownComponents(
     },
     a({ href, children }: { href?: string; children?: ReactNode }) {
       const safeHref = SAFE_URL_PATTERN.test(href ?? '') || href?.startsWith('/api/') ? href : undefined;
-      const className = isUser ? 'text-[#191814] underline' : 'text-[#b85f3f] hover:underline';
+      const className = isActivity
+        ? 'text-[#b85f3f] underline decoration-[#b85f3f]/35 underline-offset-2'
+        : isUser ? 'text-[#191814] underline' : 'text-[#b85f3f] hover:underline';
       if (safeHref && looksLikeArtifactUrl(safeHref)) {
         return <ArtifactLink href={safeHref} className={className}>{children}</ArtifactLink>;
       }
@@ -531,25 +599,56 @@ function buildMarkdownComponents(
       );
     },
     strong({ children }: { children?: ReactNode }) {
-      return <strong className={cn('font-bold', isUser ? 'text-[#191814]' : 'text-[#191814]')}>{children}</strong>;
+      return (
+        <strong className={
+          isActivity
+            ? 'font-medium text-muted-foreground/85'
+            : cn('font-bold', isUser ? 'text-[#191814]' : 'text-[#191814]')
+        }>
+          {children}
+        </strong>
+      );
     },
     table({ children }: { children?: ReactNode }) {
       return (
-        <div className="my-4 overflow-x-auto rounded-lg border border-[#e5e2db] bg-[#fffdf8]">
-          <table className="w-full border-collapse text-[14px] leading-6">{children}</table>
+        <div className={
+          isActivity
+            ? 'my-1.5 overflow-x-auto rounded-md border border-border/50 bg-muted/30'
+            : 'my-4 overflow-x-auto rounded-lg border border-[#e5e2db] bg-[#fffdf8] dark:border-[#454545] dark:bg-[#202020]'
+        }>
+          <table className={isActivity ? 'w-full border-collapse text-[11px] leading-5' : 'w-full border-collapse text-[14px] leading-6'}>
+            {children}
+          </table>
         </div>
       );
     },
     thead({ children }: { children?: ReactNode }) {
-      return <thead className="bg-[#f4f1e8]">{children}</thead>;
+      return <thead className="bg-[#f4f1e8] dark:bg-[#303030]">{children}</thead>;
     },
     th({ children }: { children?: ReactNode }) {
-      return <th className="border-b border-[#e5e2db] px-3.5 py-2.5 text-left font-semibold text-[#29261b]">{children}</th>;
+      return (
+        <th className={
+          isActivity
+            ? 'border-b border-border/50 px-2 py-1 text-left font-medium text-muted-foreground/85'
+            : 'border-b border-[#e5e2db] px-3.5 py-2.5 text-left font-semibold text-[#29261b] dark:border-[#454545] dark:text-[#f3f0e8]'
+        }>
+          {children}
+        </th>
+      );
     },
     td({ children }: { children?: ReactNode }) {
-      return <td className="border-t border-[#eeeae1] px-3.5 py-2.5 text-[#3d3929]">{children}</td>;
+      return (
+        <td className={
+          isActivity
+            ? 'border-t border-border/40 px-2 py-1 font-normal text-muted-foreground/70'
+            : 'border-t border-[#eeeae1] px-3.5 py-2.5 text-[#3d3929] dark:border-[#3d3d3d] dark:text-[#dedad2]'
+        }>
+          {children}
+        </td>
+      );
     },
     hr() {
+      if (isActivity) return <hr className="my-2 border-border/50" />;
       return <hr className={cn('my-7', isUser ? 'border-[#d4d0c7]' : 'border-[#dedbd3]')} />;
     },
   };
@@ -558,6 +657,7 @@ function buildMarkdownComponents(
 // Stable references for the default (no citations) cases
 const defaultAssistantComponents = buildMarkdownComponents(null, undefined, 'assistant');
 const defaultUserComponents = buildMarkdownComponents(null, undefined, 'user');
+const defaultActivityComponents = buildMarkdownComponents(null, undefined, 'activity');
 
 interface MarkdownRendererProps {
   content: string;
@@ -569,19 +669,29 @@ interface MarkdownRendererProps {
 export default memo(function MarkdownRenderer({ content, searchResults, onCitationClick, variant = 'assistant' }: MarkdownRendererProps) {
   const normalizedContent = useMemo(
     () => normalizeMarkdownEmphasis(
-      variant === 'assistant' ? stripArtifactTransportBlocks(content) : content,
+      variant !== 'user' ? stripArtifactTransportBlocks(content) : content,
     ),
     [content, variant],
   );
   const components = useMemo(
     () => searchResults && searchResults.length > 0
       ? buildMarkdownComponents(searchResults, onCitationClick, variant)
-      : variant === 'user' ? defaultUserComponents : defaultAssistantComponents,
+      : variant === 'user'
+        ? defaultUserComponents
+        : variant === 'activity'
+          ? defaultActivityComponents
+          : defaultAssistantComponents,
     [searchResults, onCitationClick, variant]
   );
 
   return (
-    <div className={variant === 'assistant' ? 'claude-markdown' : undefined}>
+    <div
+      className={
+        variant === 'assistant'
+          ? 'claude-markdown'
+          : variant === 'activity' ? 'activity-markdown' : undefined
+      }
+    >
       <ReactMarkdown
         remarkPlugins={remarkPluginsStable}
         components={components}

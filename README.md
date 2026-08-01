@@ -1,10 +1,10 @@
 <div align="center">
 
-# TpaRuyi (太资如意)
+# TPACowork (TPACowork)
 
 **本地运行的 AI 桌面办公助手**
 
-TpaRuyi 是一个 Electron 桌面客户端，负责对话界面、设置、工具箱、文件预览和本地状态管理；真正的 Agent 循环、模型调用、记忆、工具执行、MCP、会话持久化由内置的 Python `nanobot` gateway 承接。
+TPACowork 是一个 Electron 桌面客户端，负责对话界面、设置、工具箱、文件预览和本地状态管理；真正的 Agent 循环、模型调用、记忆、工具执行、MCP、会话持久化由内置的 Python `nanobot` gateway 承接。
 
 </div>
 

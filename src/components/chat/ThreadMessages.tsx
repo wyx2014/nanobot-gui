@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
 import type { Message } from '@/types';
 import MessageBubble from './MessageBubble';
 import TaskNarrativeTimeline from './TaskNarrativeTimeline';
@@ -13,7 +12,6 @@ interface ThreadMessagesProps {
   messages: Message[];
   isStreaming?: boolean;
   activeTurnElapsedMs?: number;
-  scrollElement?: HTMLDivElement | null;
   onEditUserMessage?: (message: Message, newContent: string) => void;
   onRegenerateAssistant?: (message: Message) => void;
 }
@@ -38,7 +36,6 @@ export default function ThreadMessages({
   messages,
   isStreaming = false,
   activeTurnElapsedMs,
-  scrollElement = null,
   onEditUserMessage,
   onRegenerateAssistant,
 }: ThreadMessagesProps) {
@@ -49,25 +46,13 @@ export default function ThreadMessages({
     () => isStreaming ? currentActivityTimelineIndices(units) : new Set<number>(),
     [isStreaming, units],
   );
-  // TanStack Virtual intentionally exposes imperative measurement functions.
-  // It is safe here because they are consumed within this component only.
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const virtualizer = useVirtualizer({
-    count: units.length,
-    getScrollElement: () => scrollElement,
-    estimateSize: () => 180,
-    overscan: 6,
-  });
-  const virtualItems = virtualizer.getVirtualItems();
 
+  // Chat rows have highly variable, late-settling heights (Markdown, tool steps,
+  // tables, media). Keep them in document flow: transform-based virtualization
+  // makes measured rows and the scroll anchor move on the same frames.
   return (
-    <div
-      className="relative w-full"
-      style={{ height: `${virtualizer.getTotalSize()}px` }}
-    >
-      {virtualItems.map((virtualItem) => {
-        const index = virtualItem.index;
-        const unit = units[index];
+    <div className="flex w-full flex-col" data-thread-messages>
+      {units.map((unit, index) => {
         const prev = units[index - 1];
         const next = units[index + 1];
         const marginTop = index > 0 ? marginAfterPrevUnit(prev) : '';
@@ -81,9 +66,8 @@ export default function ThreadMessages({
           <div
             key={unitKey(unit, index)}
             data-index={index}
-            ref={virtualizer.measureElement}
-            className={`absolute left-0 w-full ${marginTop}`}
-            style={{ transform: `translateY(${virtualItem.start}px)` }}
+            data-thread-unit
+            className={`w-full ${marginTop}`}
           >
             {unit.type === 'activity' ? (
               <TaskNarrativeTimeline
@@ -136,7 +120,7 @@ function unitKey(unit: DisplayUnit, index: number): string {
 }
 
 function marginAfterPrevUnit(prev: DisplayUnit): string {
-  if (prev.type === 'activity') return 'mt-4';
+  if (prev.type === 'activity') return 'mt-3';
   const p = prev.message;
   const denseP =
     p.kind === 'trace'

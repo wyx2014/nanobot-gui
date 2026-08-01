@@ -29,7 +29,7 @@ import ThreadMessages from './ThreadMessages';
 import InteractivePromptCard, { type InteractivePromptSubmitPayload } from './InteractivePromptCard';
 import ChatInput, { type ChatInputSendOptions } from './ChatInput';
 import ActiveSkillsBar from './ActiveSkillsBar';
-import { ArrowLeft, ChevronDown, Settings } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Loader2, Settings } from 'lucide-react';
 import { osBridge } from '@/lib/ipc-factory';
 import { extractUsername } from '@/utils/pathUtils';
 import ThinkingIndicator from './ThinkingIndicator';
@@ -151,6 +151,8 @@ export default function ChatView({
   const activeHistoryMessages = historyConversationId === activeConvId
     ? historyMessages
     : [];
+  const isConversationLoading = !!activeConvId
+    && (historyLoading || historyConversationId !== activeConvId);
 
   const [greeting, setGreeting] = useState('');
   const [userName, setUserName] = useState('');
@@ -456,7 +458,7 @@ export default function ChatView({
       preserveScrollOnHistoryVersionRef.current = false;
       return;
     }
-    scrollToBottom({ force: true, settle: true });
+    scrollToBottom({ force: true });
   }, [activeConvId, historyLoading, historyVersion, scrollToBottom]);
 
   useLayoutEffect(() => {
@@ -710,12 +712,12 @@ export default function ChatView({
   if (!activeConv) {
     return (
       <div className="flex flex-col h-full bg-[#fbfaf7]">
-        <div className="flex-1 flex flex-col items-center justify-center px-8 py-12">
-          <div className="w-full max-w-3xl">
+        <div className="flex flex-1 flex-col items-center justify-center px-8 py-10">
+          <div className="w-full max-w-[720px] -translate-y-[2vh]">
             {/* Title */}
-            <div className="text-center mb-8">
+            <div className="mb-6 text-center">
               {/* Slogan */}
-              <h1 className="text-[28px] text-[#29261b] leading-tight mb-3 flex items-center justify-center gap-3.5 font-claude-response font-medium select-none">
+              <h1 className="flex items-center justify-center gap-3.5 font-claude-response text-[27px] font-medium leading-[1.25] text-[#29261b] select-none">
                 {welcomeProjectName ? (
                   <span>
                     {useSettingsStore.getState().language === 'en-US'
@@ -785,37 +787,56 @@ export default function ChatView({
           key={activeConvId}
           className="h-full overflow-y-auto"
           ref={containerRef}
+          aria-busy={isConversationLoading}
         >
           <div className="w-full max-w-4xl mx-auto px-6 md:px-10 py-8 overflow-hidden">
             <div>
-              {historyPage.hasMoreBefore ? (
-                <div className="mb-5 flex justify-center">
-                  <button
-                    type="button"
-                    onClick={() => void loadOlderHistory()}
-                    disabled={historyLoadingOlder}
-                    className="rounded-full border border-[#d8d5ce] bg-white/80 px-3 py-1.5 text-[12px] text-[#656358] transition-colors hover:bg-white hover:text-[#29261b] disabled:opacity-50"
-                  >
-                    {historyLoadingOlder
-                      ? (useSettingsStore.getState().language === 'en-US' ? 'Loading…' : '正在加载…')
-                      : (useSettingsStore.getState().language === 'en-US' ? 'Load earlier messages' : '加载更早消息')}
-                  </button>
+              {isConversationLoading ? (
+                <div
+                  data-testid="conversation-loading"
+                  className="flex min-h-[45vh] items-center justify-center"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <div className="inline-flex items-center gap-2 text-[12.5px] text-[#88857b] dark:text-[#aaa69e]">
+                    <Loader2
+                      className="h-3.5 w-3.5 animate-spin text-[#d97757]"
+                      aria-hidden="true"
+                    />
+                    <span>{t.chat.loadingConversation}</span>
+                  </div>
                 </div>
-              ) : null}
-              <ThreadMessages
-                messages={timelineMessages}
-                isStreaming={stream.isStreaming}
-                activeTurnElapsedMs={activeTurnElapsedMs}
-                scrollElement={scrollElement}
-                onEditUserMessage={handleEditUserMessage}
-                onRegenerateAssistant={handleRegenerateAssistant}
-              />
+              ) : (
+                <>
+                  {historyPage.hasMoreBefore ? (
+                    <div className="mb-5 flex justify-center">
+                      <button
+                        type="button"
+                        onClick={() => void loadOlderHistory()}
+                        disabled={historyLoadingOlder}
+                        className="rounded-full border border-[#d8d5ce] bg-white/80 px-3 py-1.5 text-[12px] text-[#656358] transition-colors hover:bg-white hover:text-[#29261b] disabled:opacity-50"
+                      >
+                        {historyLoadingOlder
+                          ? (useSettingsStore.getState().language === 'en-US' ? 'Loading…' : '正在加载…')
+                          : (useSettingsStore.getState().language === 'en-US' ? 'Load earlier messages' : '加载更早消息')}
+                      </button>
+                    </div>
+                  ) : null}
+                  <ThreadMessages
+                    messages={timelineMessages}
+                    isStreaming={stream.isStreaming}
+                    activeTurnElapsedMs={activeTurnElapsedMs}
+                    onEditUserMessage={handleEditUserMessage}
+                    onRegenerateAssistant={handleRegenerateAssistant}
+                  />
 
-              {/* Thinking indicator - shown after user message but before assistant message appears */}
-              {stream.isStreaming && timelineMessages.length > 0 && timelineMessages.every((m) => m.role === 'user') && (
-                <div className="pl-9">
-                  <ThinkingIndicator />
-                </div>
+                  {/* Thinking indicator - shown after user message but before assistant message appears */}
+                  {stream.isStreaming && timelineMessages.length > 0 && timelineMessages.every((m) => m.role === 'user') && (
+                    <div className="pl-9">
+                      <ThinkingIndicator />
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
@@ -823,12 +844,12 @@ export default function ChatView({
         </div>
 
         {/* Scroll-to-bottom button */}
-        {!isAtBottom && (
+        {!isConversationLoading && !isAtBottom && (
           <button
             onClick={() => scrollToBottom({ force: true })}
             title={t.chat.scrollToBottom}
             aria-label={t.chat.scrollToBottom}
-            className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center justify-center h-8 w-8 rounded-full bg-white/90 border border-[#706b5730] shadow-md text-[#656358] hover:text-[#29261b] hover:bg-white transition-all backdrop-blur-sm"
+            className="absolute bottom-3 left-1/2 z-10 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border border-[#706b5730] bg-white/90 text-[#656358] shadow-md backdrop-blur-sm transition-all hover:bg-white hover:text-[#29261b] dark:border-white/15 dark:bg-[#2b2b2b]/95 dark:text-[#d9d5cd] dark:shadow-[0_4px_16px_rgba(0,0,0,0.45)] dark:hover:bg-[#3a3a3a] dark:hover:text-white"
           >
             <ChevronDown className="h-4 w-4" />
           </button>
@@ -836,7 +857,10 @@ export default function ChatView({
       </div>
 
       {/* Bottom Input */}
-      <div className="shrink-0 bg-gradient-to-t from-[#fbfaf7] via-[#fbfaf7]/95 to-transparent px-6 pb-4 pt-2 md:px-10">
+      <div
+        data-chat-composer-dock
+        className="shrink-0 bg-gradient-to-t from-[#fbfaf7] via-[#fbfaf7]/95 to-transparent px-6 pb-4 pt-2 md:px-10"
+      >
         <div className="max-w-4xl mx-auto">
           <ActiveSkillsBar />
           {scheduleReturnTarget && (
@@ -845,7 +869,7 @@ export default function ChatView({
               className="mb-2 inline-flex items-center gap-1.5 rounded-lg border border-[#e5e2db] bg-white/85 px-3 py-1.5 text-[12.5px] font-medium text-[#656358] shadow-sm hover:bg-white hover:text-[#29261b]"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
-              返回定时任务
+              返回自动化
             </button>
           )}
           {generationPhase ? (
@@ -899,9 +923,6 @@ export default function ChatView({
               {runtimeNotice}
             </p>
           ) : null}
-          <p className="text-center text-[13px] text-[#8a867c] mt-3">
-            {t.chat.disclaimer}
-          </p>
         </div>
       </div>
     </div>

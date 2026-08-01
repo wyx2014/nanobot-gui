@@ -76,13 +76,22 @@ export function normalizeActivityTimeline(messages: Message[]): ChatDisplayUnit[
     if (turnMessages.length === 0) return;
 
     const visibleMessages: Message[] = [];
-    const activityMessages: Message[] = [];
+    const turnUnits: ChatDisplayUnit[] = [];
+    let activityMessages: Message[] = [];
+    const orderedTurnMessages = placeTrailingTerminalProgressBeforeFinalReply(turnMessages);
 
-    for (const message of turnMessages) {
-      if (isEmptyAssistantPlaceholder(message)) {
-        continue;
-      }
+    const flushActivity = () => {
+      if (activityMessages.length === 0) return;
+      turnUnits.push({
+        type: 'activity',
+        messages: activityMessages,
+        items: activityMessages.flatMap(activityItemsForMessage),
+      });
+      activityMessages = [];
+    };
 
+    for (const message of orderedTurnMessages) {
+      if (isEmptyAssistantPlaceholder(message)) continue;
       if (isAgentActivityMember(message)) {
         activityMessages.push(message);
         continue;
@@ -90,23 +99,38 @@ export function normalizeActivityTimeline(messages: Message[]): ChatDisplayUnit[
 
       if (assistantHasInlineReasoning(message)) {
         activityMessages.push(reasoningOnlyMessageFromAnswer(message));
-        visibleMessages.push(stripInlineReasoning(message));
+        flushActivity();
+        const visibleMessage = stripInlineReasoning(message);
+        visibleMessages.push(visibleMessage);
+        turnUnits.push({ type: 'message', message: visibleMessage });
         continue;
       }
 
+      flushActivity();
       visibleMessages.push(message);
+      turnUnits.push({ type: 'message', message });
+    }
+    flushActivity();
+
+    const lastActivityIndex = findLastActivityIndex(turnUnits);
+    if (lastActivityIndex >= 0) {
+      const activityUnit = turnUnits[lastActivityIndex];
+      if (activityUnit.type === 'activity') {
+        turnUnits[lastActivityIndex] = {
+          ...activityUnit,
+          turnLatencyMs: activityTurnLatencyMs(
+            turnUnits.flatMap((unit) => unit.type === 'activity' ? unit.messages : []),
+            visibleMessages,
+          ),
+          turnCompletedAt: activityTurnCompletedAt(
+            turnUnits.flatMap((unit) => unit.type === 'activity' ? unit.messages : []),
+            visibleMessages,
+          ),
+        };
+      }
     }
 
-    if (activityMessages.length) {
-      units.push({
-        type: 'activity',
-        messages: activityMessages,
-        items: activityMessages.flatMap(activityItemsForMessage),
-        turnLatencyMs: activityTurnLatencyMs(activityMessages, visibleMessages),
-        turnCompletedAt: activityTurnCompletedAt(activityMessages, visibleMessages),
-      });
-    }
-    visibleMessages.forEach((message) => units.push({ type: 'message', message }));
+    units.push(...turnUnits);
     turnMessages = [];
   };
 
@@ -122,6 +146,62 @@ export function normalizeActivityTimeline(messages: Message[]): ChatDisplayUnit[
 
   flushTurn();
   return units;
+}
+
+/**
+ * Runtime terminalization is deliberately journal-first. That means the
+ * canonical terminal plan snapshot can be persisted a few milliseconds after
+ * the final assistant payload. It still belongs to the turn's ToolStep, not
+ * below the answer body.
+ *
+ * Only move a trailing activity-only suffix when it contains an explicitly
+ * terminal plan. Intermediate answer -> tool -> answer sequences retain their
+ * original order.
+ */
+/**
+ * Runtime terminalization is deliberately journal-first: the canonical
+ * terminal plan snapshot — and any late tool finish frames — can be persisted
+ * a few milliseconds after the final assistant payload. They still belong to
+ * the turn's ToolStep, not below the answer body.
+ *
+ * Any trailing activity-only suffix after the last real answer is therefore
+ * lifted above that answer. Intermediate answer -> tool -> answer sequences
+ * keep their original order (their activity is not a trailing suffix).
+ */
+function placeTrailingTerminalProgressBeforeFinalReply(messages: Message[]): Message[] {
+  let finalReplyIndex = -1;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (
+      message.role === 'assistant'
+      && message.kind !== 'trace'
+      && !isEmptyAssistantPlaceholder(message)
+      && !isReasoningOnlyAssistant(message)
+    ) {
+      finalReplyIndex = index;
+      break;
+    }
+  }
+  if (finalReplyIndex < 0 || finalReplyIndex === messages.length - 1) return messages;
+
+  const suffix = messages.slice(finalReplyIndex + 1);
+  const activityOnly = suffix.every((message) => (
+    isAgentActivityMember(message) || isEmptyAssistantPlaceholder(message)
+  ));
+  if (!activityOnly) return messages;
+
+  return [
+    ...messages.slice(0, finalReplyIndex),
+    ...suffix,
+    messages[finalReplyIndex],
+  ];
+}
+
+function findLastActivityIndex(units: ChatDisplayUnit[]): number {
+  for (let index = units.length - 1; index >= 0; index -= 1) {
+    if (units[index].type === 'activity') return index;
+  }
+  return -1;
 }
 
 /**
@@ -159,7 +239,7 @@ function sameMessageReferences(left: Message[], right: Message[]): boolean {
   return left.length === right.length && left.every((message, index) => message === right[index]);
 }
 
-  /** Empty assistant placeholder rows are created by the stream hook for tool events
+/** Empty assistant placeholder rows are created by the stream hook for tool events
  * that arrive before the first delta. Skip them in the timeline — the tool events
  * themselves are captured by the activity group. */
 function isEmptyAssistantPlaceholder(message: Message): boolean {
@@ -208,6 +288,7 @@ function reasoningOnlyMessageFromAnswer(message: Message): Message {
     isStreaming: !!(message.reasoningStreaming || message.isStreaming),
     activitySegmentId: message.activitySegmentId,
     thinkingDuration: message.thinkingDuration,
+    turnDurationMs: message.turnDurationMs,
     completedAt: message.completedAt,
   };
 }
@@ -267,13 +348,13 @@ function textContent(message: Message): string {
 }
 
 function activityTurnLatencyMs(activityMessages: Message[], visibleMessages: Message[]): number | undefined {
-  for (let i = activityMessages.length - 1; i >= 0; i -= 1) {
-    const latency = activityMessages[i].thinkingDuration;
-    if (isValidLatency(latency)) return Math.round(latency * 1000);
-  }
   for (let i = visibleMessages.length - 1; i >= 0; i -= 1) {
-    const latency = visibleMessages[i].thinkingDuration;
-    if (isValidLatency(latency)) return Math.round(latency * 1000);
+    const duration = visibleMessages[i].turnDurationMs;
+    if (isValidLatency(duration)) return Math.round(duration);
+  }
+  for (let i = activityMessages.length - 1; i >= 0; i -= 1) {
+    const duration = activityMessages[i].turnDurationMs;
+    if (isValidLatency(duration)) return Math.round(duration);
   }
   return undefined;
 }

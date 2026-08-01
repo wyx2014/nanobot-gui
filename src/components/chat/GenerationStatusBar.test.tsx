@@ -42,6 +42,7 @@ describe('GenerationStatusBar', () => {
     expect(container.textContent).toContain('328 tokens');
     expect(container.querySelector('svg.lucide-sparkles')).not.toBeNull();
     expect(container.querySelector('.generation-status-breathe')).not.toBeNull();
+    expect(container.querySelector('[data-generation-status]')).not.toBeNull();
     expect(container.querySelector('[role="status"]')?.classList.contains('bg-gradient-to-t')).toBe(true);
     expect(container.querySelector('[role="status"]')?.classList.contains('to-transparent')).toBe(true);
   });

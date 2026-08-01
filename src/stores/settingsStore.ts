@@ -6,6 +6,17 @@ import { setLanguage, initLanguage, type LanguageSetting } from '@/i18n';
 import type { UpdateInfo } from '@/core/updates/checker';
 
 export type FontSizeSetting = 'small' | 'default' | 'medium' | 'large' | 'xlarge' | 'xxlarge';
+export type ThemeMode = 'system' | 'light' | 'dark';
+export type ShortcutId = 'newChat' | 'focusComposer' | 'toggleSidebar' | 'openToolbox' | 'openSettings';
+export type KeyboardShortcuts = Record<ShortcutId, string>;
+
+export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcuts = {
+  newChat: 'Mod+N',
+  focusComposer: 'Mod+K',
+  toggleSidebar: 'Mod+B',
+  openToolbox: 'Mod+T',
+  openSettings: 'Mod+,',
+};
 
 const fontSizePx: Record<FontSizeSetting, string> = {
   small: '13.5px',
@@ -207,7 +218,7 @@ interface SettingsState {
   customModel: string;
   apiKey: string;
   baseUrl: string;
-  theme: 'dark' | 'light';
+  theme: ThemeMode;
   showSettings: boolean;
   sidebarCollapsed: boolean;
   rightPanelCollapsed: boolean;
@@ -251,6 +262,7 @@ interface SettingsState {
   skillsAutoUpdate: boolean;
   defaultWorkspacePath: string;
   desktopNotificationsEnabled: boolean;
+  keyboardShortcuts: KeyboardShortcuts;
   // Update checker state
   updateInfo: UpdateInfo | null;
   updateChecking: boolean;
@@ -281,7 +293,7 @@ interface SettingsActions {
   setCustomModel: (model: string) => void;
   setApiKey: (key: string) => void;
   setBaseUrl: (url: string) => void;
-  setTheme: (theme: 'dark' | 'light') => void;
+  setTheme: (theme: ThemeMode) => void;
   toggleSettings: () => void;
   toggleSidebar: () => void;
   toggleRightPanel: () => void;
@@ -330,6 +342,8 @@ interface SettingsActions {
   setSkillsAutoUpdate: (enabled: boolean) => void;
   setDefaultWorkspacePath: (path: string) => void;
   setDesktopNotificationsEnabled: (enabled: boolean) => void;
+  setKeyboardShortcut: (id: ShortcutId, shortcut: string) => void;
+  resetKeyboardShortcuts: () => void;
   // Update checker actions
   setUpdateInfo: (info: UpdateInfo | null) => void;
   setUpdateChecking: (checking: boolean) => void;
@@ -395,7 +409,7 @@ export const useSettingsStore = create<SettingsStore>()(
       customModel: '',
       apiKey: '',
       baseUrl: 'https://api.qnaigc.com',
-      theme: 'dark',
+      theme: 'system',
       showSettings: false,
       sidebarCollapsed: false,
       rightPanelCollapsed: false,
@@ -433,6 +447,7 @@ export const useSettingsStore = create<SettingsStore>()(
       skillsAutoUpdate: true,
       defaultWorkspacePath: '',
       desktopNotificationsEnabled: true,
+      keyboardShortcuts: DEFAULT_KEYBOARD_SHORTCUTS,
       // Update checker defaults (updateInfo and updateChecking are ephemeral)
       updateInfo: null,
       updateChecking: false,
@@ -521,6 +536,8 @@ export const useSettingsStore = create<SettingsStore>()(
       setSkillsAutoUpdate: (skillsAutoUpdate) => set({ skillsAutoUpdate }),
       setDefaultWorkspacePath: (defaultWorkspacePath) => set({ defaultWorkspacePath }),
       setDesktopNotificationsEnabled: (desktopNotificationsEnabled) => set({ desktopNotificationsEnabled }),
+      setKeyboardShortcut: (id, shortcut) => set((state) => ({ keyboardShortcuts: { ...state.keyboardShortcuts, [id]: shortcut } })),
+      resetKeyboardShortcuts: () => set({ keyboardShortcuts: DEFAULT_KEYBOARD_SHORTCUTS }),
       // Update checker actions
       setUpdateInfo: (updateInfo) => set({ updateInfo }),
       setUpdateChecking: (updateChecking) => set({ updateChecking }),
@@ -553,9 +570,12 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: 'ruyi-settings',
-      version: 6,
+      version: 7,
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
+        if (version < 7 && state.theme !== 'light' && state.theme !== 'dark' && state.theme !== 'system') {
+          state.theme = 'system';
+        }
         if (version < 5) {
           if (state.computerUseEnabled === undefined) state.computerUseEnabled = false;
         }
@@ -623,6 +643,7 @@ export const useSettingsStore = create<SettingsStore>()(
         skillsAutoUpdate: state.skillsAutoUpdate,
         defaultWorkspacePath: state.defaultWorkspacePath,
         desktopNotificationsEnabled: state.desktopNotificationsEnabled,
+        keyboardShortcuts: state.keyboardShortcuts,
         lastUpdateCheck: state.lastUpdateCheck,
         userNickname: state.userNickname,
         userAvatar: state.userAvatar,

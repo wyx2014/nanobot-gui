@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { MAIN_WINDOW_BOUNDS } from './mainWindowConfig';
+import {
+  getMainWindowChrome,
+  MACOS_TITLE_BAR_HEIGHT,
+  MAIN_WINDOW_BACKGROUND,
+  MAIN_WINDOW_BOUNDS,
+} from './mainWindowConfig';
 
 describe('main window bounds', () => {
   it('matches the OpenWorker desktop window contract', () => {
@@ -13,5 +18,22 @@ describe('main window bounds', () => {
 
   it('is immutable so runtime setup cannot drift from the tested contract', () => {
     expect(Object.isFrozen(MAIN_WINDOW_BOUNDS)).toBe(true);
+  });
+});
+
+describe('main window chrome', () => {
+  it('uses a full-size hidden title bar aligned with macOS traffic lights', () => {
+    expect(MACOS_TITLE_BAR_HEIGHT).toBe(36);
+    expect(MAIN_WINDOW_BACKGROUND).toBe('#fbfaf7');
+    expect(getMainWindowChrome('darwin')).toEqual({
+      titleBarStyle: 'hidden',
+      titleBarOverlay: { height: 36 },
+      trafficLightPosition: { x: 16, y: 12 },
+    });
+  });
+
+  it('keeps native window chrome on Windows and Linux', () => {
+    expect(getMainWindowChrome('win32')).toEqual({});
+    expect(getMainWindowChrome('linux')).toEqual({});
   });
 });

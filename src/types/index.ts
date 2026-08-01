@@ -89,8 +89,12 @@ export interface Message {
   // Extended thinking content
   thinking?: string;
   reasoningStreaming?: boolean;
+  thinkingStartedAt?: number;
+  thinkingCompletedAt?: number;
   // Thinking duration in seconds
   thinkingDuration?: number;
+  // Authoritative end-to-end duration for the whole turn, in milliseconds.
+  turnDurationMs?: number;
   // Authoritative wall-clock time when the assistant turn completed.
   completedAt?: number;
   interactivePrompt?: UIInteractivePrompt;
@@ -355,5 +359,5 @@ export interface AppSettings {
   provider: LLMProvider;
   model: string;
   apiKey: string;
-  theme: 'dark' | 'light';
+  theme: 'system' | 'dark' | 'light';
 }

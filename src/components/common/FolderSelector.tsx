@@ -321,7 +321,7 @@ export default function FolderSelector({
       )}
 
       {isNameDialogOpen && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/10 px-4">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/20 px-4 backdrop-blur-[1px] animate-in fade-in duration-150">
           <div className="w-full max-w-[500px] rounded-[20px] bg-white shadow-[0_16px_48px_rgba(0,0,0,0.16)] border border-[#e6e1d8] overflow-hidden">
             <div className="flex items-start justify-between px-7 pt-6 pb-4">
               <div>

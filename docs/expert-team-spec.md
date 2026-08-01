@@ -108,7 +108,7 @@ nanobot-gui/
               architecture.svg
 ```
 
-`source/ai-berkshire/` 内的文件必须从上游原样复制。`team.yaml`、`adapter.md` 和 `upstream.json` 属于太资如意适配层，不属于上游源码。
+`source/ai-berkshire/` 内的文件必须从上游原样复制。`team.yaml`、`adapter.md` 和 `upstream.json` 属于TPACowork适配层，不属于上游源码。
 
 第一版只复制 19 个 canonical `skills/*.md`，不复制由其生成的 `codex-skills/` 和 `codex-prompts/`，避免保存三份相同来源。
 
@@ -155,7 +155,7 @@ nanobot 不得依赖 GUI 工程的相对目录层级，也不得依赖上游开�
 
 ## 4. 团队清单
 
-`team.yaml` 是太资如意自己的适配清单，不改写原始 Skill。
+`team.yaml` 是TPACowork自己的适配清单，不改写原始 Skill。
 
 建议结构：
 
@@ -591,7 +591,7 @@ API 不返回原始文件绝对路径。封面通过 gateway 的受控资源接�
 ## 11. 报告与文件产物
 
 - 最终报告默认生成 Markdown。
-- 后续 PDF/HTML 转换继续走太资如意统一文件生成和预览链路。
+- 后续 PDF/HTML 转换继续走TPACowork统一文件生成和预览链路。
 - WebSocket `file_edit` 和 `team_run_completed.report_files` 都应指向同一 canonical 文件。
 - 点击文件统一在右侧预览，不直接打开裸文件路径。
 - 报告文件名需要清理非法字符，并兼容 Windows。

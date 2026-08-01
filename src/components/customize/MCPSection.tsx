@@ -5,6 +5,7 @@ import {
   Database,
   Loader2,
   PlayCircle,
+  Pencil,
   Plus,
   Server,
   SlidersHorizontal,
@@ -27,9 +28,10 @@ import type { McpPresetInfo, McpPresetsPayload } from '@/core/types';
 import { notifyMcpPresetsChanged } from '@/lib/mcp-preset-events';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { useI18n } from '@/i18n';
 
 type MCPSubTab = 'enabled' | 'all' | 'custom';
-type McpAction = 'enable' | 'remove' | 'test';
+type McpAction = 'enable' | 'update' | 'remove' | 'test';
 type CustomMcpTransport = 'stdio' | 'streamableHttp' | 'sse';
 
 interface MCPSectionProps {
@@ -58,7 +60,14 @@ async function nanobotAuth(): Promise<{ token: string; base: string }> {
   return { token: refreshed.token, base: refreshed.baseUrl };
 }
 
-function statusLabel(status: string): string {
+function statusLabel(status: string, isEnglish: boolean): string {
+  if (isEnglish) {
+    if (status === 'configured') return 'Configured';
+    if (status === 'missing_credentials') return 'Credentials required';
+    if (status === 'missing_dependency') return 'Dependency required';
+    if (status === 'coming_soon') return 'Coming soon';
+    return 'Disabled';
+  }
   if (status === 'configured') return '已配置';
   if (status === 'missing_credentials') return '缺少密钥';
   if (status === 'missing_dependency') return '缺少依赖';
@@ -95,6 +104,8 @@ function parseMaybeJson(value: string, fallback: unknown): unknown {
 }
 
 export default function MCPSection({ showAddForm: externalShowAddForm, onAddFormChange }: MCPSectionProps = {}) {
+  const { locale } = useI18n();
+  const isEnglish = locale === 'en-US';
   const toolboxSearchQuery = useSettingsStore((s) => s.toolboxSearchQuery);
   const [payload, setPayload] = useState<McpPresetsPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -158,16 +169,16 @@ export default function MCPSection({ showAddForm: externalShowAddForm, onAddForm
 
   const enabledCount = presets.filter(presetReady).length;
   const subTabs = [
-    { id: 'enabled' as const, label: '已启用', count: enabledCount },
-    { id: 'all' as const, label: '全部', count: presets.length },
-    { id: 'custom' as const, label: '自定义', count: 0 },
+    { id: 'enabled' as const, label: isEnglish ? 'Enabled' : '已启用', count: enabledCount },
+    { id: 'all' as const, label: isEnglish ? 'All' : '全部', count: presets.length },
+    { id: 'custom' as const, label: isEnglish ? 'Custom' : '自定义', count: 0 },
   ];
 
   const updatePayload = (next: McpPresetsPayload) => {
     setPayload(next);
     notifyMcpPresetsChanged(next);
     if (next.requires_restart) {
-      setMessage('MCP 配置已更新，需要重启 nanobot 后连接新工具。');
+      setMessage(isEnglish ? 'MCP configuration updated. Restart nanobot to connect the new tools.' : 'MCP 配置已更新，需要重启 nanobot 后连接新工具。');
     } else if (next.hot_reload?.message) {
       setMessage(next.hot_reload.message);
     }
@@ -308,14 +319,15 @@ export default function MCPSection({ showAddForm: externalShowAddForm, onAddForm
             busy={actionKey === 'custom' || actionKey === 'import'}
             onSave={saveCustom}
             onImport={importConfig}
+            isEnglish={isEnglish}
           />
         ) : loading ? (
           <div className="flex h-40 items-center justify-center text-sm text-[#656358]">
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            正在加载 MCP presets...
+            {isEnglish ? 'Loading MCP presets...' : '正在加载 MCP presets...'}
           </div>
         ) : filteredPresets.length === 0 ? (
-          <div className="py-10 text-center text-sm text-[#888579]">没有匹配的 MCP 服务</div>
+          <div className="py-10 text-center text-sm text-[#888579]">{isEnglish ? 'No matching MCP services' : '没有匹配的 MCP 服务'}</div>
         ) : (
           <div className="space-y-2">
             {filteredPresets.map((preset) => (
@@ -336,6 +348,7 @@ export default function MCPSection({ showAddForm: externalShowAddForm, onAddForm
                 actionKey={actionKey}
                 onAction={runAction}
                 onToolsChange={(tools) => updateTools(preset, tools)}
+                isEnglish={isEnglish}
               />
             ))}
           </div>
@@ -356,6 +369,7 @@ function McpPresetRow({
   actionKey,
   onAction,
   onToolsChange,
+  isEnglish,
 }: {
   preset: McpPresetInfo;
   values: Record<string, string>;
@@ -367,6 +381,7 @@ function McpPresetRow({
   actionKey: string | null;
   onAction: (action: McpAction, preset: McpPresetInfo) => void;
   onToolsChange: (tools: string[]) => void;
+  isEnglish: boolean;
 }) {
   const ready = presetReady(preset);
   const missingFields = preset.required_fields.filter((field) => field.required && !field.configured);
@@ -381,7 +396,15 @@ function McpPresetRow({
   const removeBusy = actionKey === `remove:${preset.name}`;
   const testBusy = actionKey === `test:${preset.name}`;
   const toolsBusy = actionKey === `tools:${preset.name}`;
-  const canEnable = preset.install_supported && (!needsSetup || missingFields.every((field) => Boolean(values[field.name]?.trim())));
+  const connection = preset.connection;
+  const settingValue = (key: string, fallback = '') => values[key] ?? fallback;
+  const visibleFields = preset.required_fields.filter((field) => field.name !== 'juyuan_token');
+  const urlIncludesJuyuanToken = /[?&]token=[^&]+/i.test(settingValue('url', connection?.url));
+  const canEnable = preset.install_supported && (!needsSetup || missingFields.every((field) => (
+    field.name === 'juyuan_token'
+      ? urlIncludesJuyuanToken
+      : Boolean(values[field.name]?.trim())
+  )));
   const description = preset.description || preset.note || preset.requires || preset.connection_summary;
 
   const enable = () => {
@@ -416,7 +439,7 @@ function McpPresetRow({
             <span className="rounded-full bg-[#f3f2ee] px-2 py-0.5 text-[10px] font-semibold uppercase text-[#656358]">
               {transportLabel(preset.transport)}
             </span>
-            <span className="text-[10px] text-[#888579]">{statusLabel(preset.status)}</span>
+            <span className="text-[10px] text-[#888579]">{statusLabel(preset.status, isEnglish)}</span>
           </div>
           <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#656358]">{description}</p>
           {preset.error ? <p className="mt-1 text-xs text-red-600">{preset.error}</p> : null}
@@ -424,59 +447,92 @@ function McpPresetRow({
         <div className="flex shrink-0 items-center gap-1">
           {ready ? (
             <>
-              <IconButton busy={testBusy} disabled={busy && !testBusy} title="测试" onClick={() => onAction('test', preset)}>
+              {preset.installed ? (
+                <IconButton busy={false} disabled={busy} title={isEnglish ? 'Edit connection settings' : '编辑连接配置'} onClick={() => setSetupOpen(!setupOpen)}>
+                  <Pencil className="h-4 w-4" />
+                </IconButton>
+              ) : null}
+              <IconButton busy={testBusy} disabled={busy && !testBusy} title={isEnglish ? 'Test' : '测试'} onClick={() => onAction('test', preset)}>
                 <PlayCircle className="h-4 w-4" />
               </IconButton>
               {toolNames.length ? (
-                <IconButton busy={toolsBusy} disabled={busy && !toolsBusy} title="工具范围" onClick={() => setToolsOpen(!toolsOpen)}>
+                <IconButton busy={toolsBusy} disabled={busy && !toolsBusy} title={isEnglish ? 'Tool scope' : '工具范围'} onClick={() => setToolsOpen(!toolsOpen)}>
                   <SlidersHorizontal className="h-4 w-4" />
                 </IconButton>
               ) : null}
-              <IconButton busy={removeBusy} disabled={busy && !removeBusy} danger title="移除" onClick={() => onAction('remove', preset)}>
+              <IconButton busy={removeBusy} disabled={busy && !removeBusy} danger title={isEnglish ? 'Remove' : '移除'} onClick={() => onAction('remove', preset)}>
                 <Trash2 className="h-4 w-4" />
               </IconButton>
             </>
           ) : preset.install_supported ? (
-            <IconButton busy={enableBusy} disabled={busy} title={needsSetup ? '配置并启用' : '启用'} onClick={enable}>
+            <IconButton busy={enableBusy} disabled={busy} title={needsSetup ? (isEnglish ? 'Configure and enable' : '配置并启用') : (isEnglish ? 'Enable' : '启用')} onClick={enable}>
               <Plus className="h-4 w-4" />
             </IconButton>
           ) : (
-            <IconButton disabled title="暂不可用">
+            <IconButton disabled title={isEnglish ? 'Coming soon' : '暂不可用'}>
               <AlertCircle className="h-4 w-4" />
             </IconButton>
           )}
         </div>
       </div>
 
-      {setupOpen && hasFields ? (
+      {setupOpen && (hasFields || preset.installed) ? (
         <div className="mt-3 rounded-xl border border-[#e8e4dd] bg-[#fbfaf7] p-3">
           <div className="mb-2 flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold text-[#29261b]">连接 {preset.display_name}</span>
+            <span className="text-xs font-semibold text-[#29261b]">{isEnglish ? 'Connect ' : '连接 '}{preset.display_name}</span>
             <button type="button" onClick={() => setSetupOpen(false)} className="rounded p-1 text-[#888579] hover:bg-[#eeeae2]">
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
           <div className="grid gap-2">
-            {preset.required_fields.map((field) => (
+            {visibleFields.map((field) => (
               <label key={field.name}>
                 <span className="mb-1 block text-[11px] font-medium text-[#656358]">
                   {field.label}
-                  {field.configured ? <span className="ml-1 text-green-600">已配置</span> : null}
+                  {field.configured ? <span className="ml-1 text-green-600">{isEnglish ? 'Configured' : '已配置'}</span> : null}
                 </span>
                 <Input
                   type={field.secret ? 'password' : 'text'}
                   value={values[field.name] ?? ''}
                   onChange={(event) => onValueChange(field.name, event.target.value)}
-                  placeholder={field.configured ? '留空表示保持现有值' : field.placeholder}
+                  placeholder={field.configured ? (isEnglish ? 'Leave blank to keep the current value' : '留空表示保持现有值') : field.placeholder}
                   className="h-9 rounded-lg bg-white text-[12px]"
                 />
               </label>
             ))}
           </div>
+          {preset.installed && (
+            <div className="mt-3 grid gap-2 border-t border-[#e8e4dd] pt-3">
+              <span className="text-[11px] font-semibold text-[#656358]">{isEnglish ? 'Connection settings' : '连接设置'}</span>
+              <Select
+                value={settingValue('transport', connection?.transport ?? preset.transport)}
+                onChange={(value) => onValueChange('transport', value)}
+                options={[
+                  { value: 'stdio', label: 'stdio' },
+                  { value: 'streamableHttp', label: 'HTTP' },
+                  { value: 'sse', label: 'SSE' },
+                ]}
+              />
+              {settingValue('transport', connection?.transport ?? preset.transport) === 'stdio' ? (
+                <>
+                  <Input value={settingValue('command', connection?.command)} onChange={(event) => onValueChange('command', event.target.value)} placeholder={isEnglish ? 'Command, e.g. npx' : '命令，例如 npx'} className="h-9 rounded-lg bg-white text-[12px]" />
+                  <Textarea value={settingValue('args', JSON.stringify(connection?.args ?? []))} onChange={(event) => onValueChange('args', event.target.value)} placeholder={isEnglish ? 'Arguments JSON, e.g. ["-y", "server"]' : '参数 JSON，例如 ["-y", "server"]'} className="min-h-[64px] font-mono text-xs" />
+                  <Input value={settingValue('cwd', connection?.cwd)} onChange={(event) => onValueChange('cwd', event.target.value)} placeholder={isEnglish ? 'Working directory (optional)' : '工作目录（可选）'} className="h-9 rounded-lg bg-white text-[12px]" />
+                </>
+              ) : (
+                <Input value={settingValue('url', connection?.url)} onChange={(event) => onValueChange('url', event.target.value)} placeholder={isEnglish ? 'MCP endpoint URL' : 'MCP 服务地址'} className="h-9 rounded-lg bg-white text-[12px]" />
+              )}
+              <div className="grid gap-2 md:grid-cols-2">
+                <Textarea value={settingValue('env')} onChange={(event) => onValueChange('env', event.target.value)} placeholder={connection?.has_env ? (isEnglish ? 'Environment JSON (leave blank to keep current values)' : '环境变量 JSON（留空保留原值）') : (isEnglish ? 'Environment JSON (optional)' : '环境变量 JSON（可选）')} className="min-h-[64px] font-mono text-xs" />
+                <Textarea value={settingValue('headers')} onChange={(event) => onValueChange('headers', event.target.value)} placeholder={connection?.has_headers ? (isEnglish ? 'Headers JSON (leave blank to keep current values)' : '请求头 JSON（留空保留原值）') : (isEnglish ? 'Headers JSON (optional)' : '请求头 JSON（可选）')} className="min-h-[64px] font-mono text-xs" />
+              </div>
+              <Input value={settingValue('tool_timeout', String(connection?.tool_timeout ?? ''))} onChange={(event) => onValueChange('tool_timeout', event.target.value)} placeholder={isEnglish ? 'Tool timeout (seconds)' : '工具超时（秒）'} inputMode="numeric" className="h-9 rounded-lg bg-white text-[12px]" />
+            </div>
+          )}
           <div className="mt-3 flex justify-end">
-            <Button size="sm" disabled={!canEnable || enableBusy} onClick={() => onAction('enable', preset)} className="h-8 rounded-lg text-xs">
+            <Button size="sm" disabled={ready ? busy : (!canEnable || enableBusy)} onClick={() => onAction(ready ? 'update' : 'enable', preset)} className="h-8 rounded-lg text-xs">
               {enableBusy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Check className="mr-1.5 h-3.5 w-3.5" />}
-              保存并启用
+              {ready ? (isEnglish ? 'Save changes' : '保存修改') : (isEnglish ? 'Save and enable' : '保存并启用')}
             </Button>
           </div>
         </div>
@@ -485,10 +541,10 @@ function McpPresetRow({
       {toolsOpen && ready && toolNames.length ? (
         <div className="mt-3 rounded-xl border border-[#e8e4dd] bg-[#fbfaf7] p-3">
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-semibold text-[#29261b]">工具范围</span>
+            <span className="text-xs font-semibold text-[#29261b]">{isEnglish ? 'Tool scope' : '工具范围'}</span>
             <div className="flex gap-1">
-              <Button size="sm" variant={allowAll ? 'default' : 'outline'} disabled={toolsBusy} onClick={() => onToolsChange(['*'])} className="h-7 rounded-lg px-2 text-[11px]">全部</Button>
-              <Button size="sm" variant={!allowAll && enabledSet.size === 0 ? 'default' : 'outline'} disabled={toolsBusy} onClick={() => onToolsChange([])} className="h-7 rounded-lg px-2 text-[11px]">无</Button>
+              <Button size="sm" variant={allowAll ? 'default' : 'outline'} disabled={toolsBusy} onClick={() => onToolsChange(['*'])} className="h-7 rounded-lg px-2 text-[11px]">{isEnglish ? 'All' : '全部'}</Button>
+              <Button size="sm" variant={!allowAll && enabledSet.size === 0 ? 'default' : 'outline'} disabled={toolsBusy} onClick={() => onToolsChange([])} className="h-7 rounded-lg px-2 text-[11px]">{isEnglish ? 'None' : '无'}</Button>
             </div>
           </div>
           <div className="flex flex-wrap gap-1.5">
@@ -526,6 +582,7 @@ function CustomMcpPanel({
   busy,
   onSave,
   onImport,
+  isEnglish,
 }: {
   mode: 'custom' | 'import';
   setMode: (mode: 'custom' | 'import') => void;
@@ -536,6 +593,7 @@ function CustomMcpPanel({
   busy: boolean;
   onSave: () => void;
   onImport: () => void;
+  isEnglish: boolean;
 }) {
   const remote = form.transport !== 'stdio';
   const canSave = Boolean(form.name.trim()) && (remote ? Boolean(form.url.trim()) : Boolean(form.command.trim()));
@@ -549,18 +607,18 @@ function CustomMcpPanel({
         <div className="flex min-w-0 items-center gap-2">
           <Server className="h-4 w-4 text-[#656358]" />
           <div>
-            <h3 className="text-sm font-semibold text-[#29261b]">更多 MCP 选项</h3>
-            <p className="text-xs text-[#888579]">添加自定义服务，或导入 mcp.json。</p>
+            <h3 className="text-sm font-semibold text-[#29261b]">{isEnglish ? 'More MCP options' : '更多 MCP 选项'}</h3>
+            <p className="text-xs text-[#888579]">{isEnglish ? 'Add a custom service or import mcp.json.' : '添加自定义服务，或导入 mcp.json。'}</p>
           </div>
         </div>
         <div className="flex gap-1">
           <Button size="sm" variant={mode === 'custom' ? 'default' : 'outline'} onClick={() => setMode('custom')} className="h-8 rounded-lg text-xs">
             <Server className="mr-1.5 h-3.5 w-3.5" />
-            自定义
+            {isEnglish ? 'Custom' : '自定义'}
           </Button>
           <Button size="sm" variant={mode === 'import' ? 'default' : 'outline'} onClick={() => setMode('import')} className="h-8 rounded-lg text-xs">
             <Database className="mr-1.5 h-3.5 w-3.5" />
-            导入
+            {isEnglish ? 'Import' : '导入'}
           </Button>
         </div>
       </div>
@@ -568,7 +626,7 @@ function CustomMcpPanel({
       {mode === 'custom' ? (
         <div className="space-y-3">
           <div className="grid gap-2 md:grid-cols-[1fr_160px]">
-            <Input value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="服务名，例如 docs" className="h-9 rounded-lg" />
+            <Input value={form.name} onChange={(event) => update('name', event.target.value)} placeholder={isEnglish ? 'Service name, e.g. docs' : '服务名，例如 docs'} className="h-9 rounded-lg" />
             <Select
               value={form.transport}
               onChange={(value) => update('transport', value as CustomMcpTransport)}
@@ -585,18 +643,18 @@ function CustomMcpPanel({
             <Input value={form.command} onChange={(event) => update('command', event.target.value)} placeholder="npx" className="h-9 rounded-lg" />
           )}
           {!remote ? (
-            <Textarea value={form.args} onChange={(event) => update('args', event.target.value)} placeholder={'Args JSON，例如 ["-y", "docs-mcp"]'} className="min-h-[72px] font-mono text-xs" />
+            <Textarea value={form.args} onChange={(event) => update('args', event.target.value)} placeholder={isEnglish ? 'Args JSON, e.g. ["-y", "docs-mcp"]' : 'Args JSON，例如 ["-y", "docs-mcp"]'} className="min-h-[72px] font-mono text-xs" />
           ) : (
-            <Textarea value={form.headers} onChange={(event) => update('headers', event.target.value)} placeholder={'Headers JSON，例如 {"Authorization":"Bearer ..."}'} className="min-h-[72px] font-mono text-xs" />
+            <Textarea value={form.headers} onChange={(event) => update('headers', event.target.value)} placeholder={isEnglish ? 'Headers JSON, e.g. {"Authorization":"Bearer ..."}' : 'Headers JSON，例如 {"Authorization":"Bearer ..."}'} className="min-h-[72px] font-mono text-xs" />
           )}
           <div className="grid gap-2 md:grid-cols-[1fr_160px]">
-            <Textarea value={form.env} onChange={(event) => update('env', event.target.value)} placeholder={'Env JSON，例如 {"API_KEY":"..."}'} className="min-h-[72px] font-mono text-xs" />
-            <Input value={form.toolTimeout} onChange={(event) => update('toolTimeout', event.target.value)} placeholder="超时 ms" inputMode="numeric" className="h-9 rounded-lg" />
+            <Textarea value={form.env} onChange={(event) => update('env', event.target.value)} placeholder={isEnglish ? 'Env JSON, e.g. {"API_KEY":"..."}' : 'Env JSON，例如 {"API_KEY":"..."}'} className="min-h-[72px] font-mono text-xs" />
+            <Input value={form.toolTimeout} onChange={(event) => update('toolTimeout', event.target.value)} placeholder={isEnglish ? 'Timeout (ms)' : '超时 ms'} inputMode="numeric" className="h-9 rounded-lg" />
           </div>
           <div className="flex justify-end">
             <Button size="sm" disabled={!canSave || busy} onClick={onSave} className="h-8 rounded-lg text-xs">
               {busy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Check className="mr-1.5 h-3.5 w-3.5" />}
-              保存 MCP
+              {isEnglish ? 'Save MCP' : '保存 MCP'}
             </Button>
           </div>
         </div>
@@ -611,7 +669,7 @@ function CustomMcpPanel({
           <div className="flex justify-end">
             <Button size="sm" disabled={!importText.trim() || busy} onClick={onImport} className="h-8 rounded-lg text-xs">
               {busy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Database className="mr-1.5 h-3.5 w-3.5" />}
-              导入
+              {isEnglish ? 'Import' : '导入'}
             </Button>
           </div>
         </div>

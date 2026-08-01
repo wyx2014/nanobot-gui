@@ -181,7 +181,7 @@ export default function ProjectMemoryDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/20 px-4">
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/20 px-4 backdrop-blur-[1px] animate-in fade-in duration-150">
       <div className="flex max-h-[82vh] w-full max-w-[760px] flex-col overflow-hidden rounded-[20px] border border-[#e6e1d8] bg-[#fbfaf7] shadow-[0_22px_70px_rgba(0,0,0,0.22)]">
         <div className="flex items-start justify-between border-b border-[#e8e4dc] px-7 py-5">
           <div className="min-w-0">

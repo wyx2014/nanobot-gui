@@ -87,7 +87,7 @@ export default function ScheduledSection() {
     if (!conversations[sessionKey]) {
       await syncSessionFromGateway(sessionKey, {
         scheduledTaskId: taskId,
-        title: `${formatRunDate(run.startedAt)} - ${tasks[taskId]?.name ?? '定时任务'}`,
+        title: `${formatRunDate(run.startedAt)} - ${tasks[taskId]?.name ?? '自动化'}`,
       });
     }
     const conv = useChatStore.getState().conversations[sessionKey];

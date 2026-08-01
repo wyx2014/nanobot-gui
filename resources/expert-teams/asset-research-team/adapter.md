@@ -5,6 +5,7 @@
 ## nanobot 适配规则
 
 - 原工作流中的 `$ARGUMENTS` 指当前用户请求。
+- 每一轮必须以最新 `$ARGUMENTS` 建立唯一“本轮研究标的卡”，至少包含证券名称、代码和市场；最新用户请求的标的优先级高于同会话旧消息、旧工具结果、项目记忆和缓存。建立基础数据包前，逐项核对计划、结构化查询和四个 `spawn` 任务中的主标的是否与该卡一致；若本轮是工商银行而待执行内容仍以中科曙光等旧标的为主，禁止执行，必须丢弃旧参数并按本轮标的重新规划。同行公司只能作为明确标注的对比标的，不能替换主标的。
 - 用户已经在工具箱中主动启动本团队；其发送具体研究任务即表示确认团队框架。除非缺少会显著改变研究结果的必要信息，不要再次要求确认团队成员或是否启动。
 - 当前运行环境是 nanobot，不是 Claude Code。原工作流中所有 `.claude/settings*.json`、`permissions.allow`、`/permissions` 和 `claude --dangerously-skip-permissions` 检查均不适用，必须跳过，禁止读取这些文件或要求用户配置它们。
 - 本团队已通过 Skill 注册表绑定 `ifind-finance-data`（同花顺 iFinD），并声明绑定 `juyuan`（聚源金融数据）MCP。运行时会注入 Skill 内容、来源和准确目录，并在聚源已于工具箱配置时自动启用其 `mcp_juyuan_...` 工具；直接使用这些已绑定能力，禁止通过 `find_files`、`grep`、`list_dir`、Home 扫描或项目外搜索寻找另一份 Skill、MCP 配置或凭证。
@@ -21,8 +22,8 @@
 - 单个网页打不开、站点反爬、链接失效或一次工具调用报错属于可恢复的证据缺口，不得直接判定成员失败。应更换来源或查询词继续；同一个外部查询最多尝试两次，禁止原样重复搜索。
 - 每位成员应优先选择少量权威来源，在关键结论已有支撑后及时汇总，避免为寻找“完美来源”无限检索。缺失数据必须明确标记，不得编造。
 - 原工作流中的 TeamCreate 表示开始本次团队运行；运行上下文已由系统创建，无需调用同名工具。
-- TaskCreate 和 TaskUpdate 使用 `update_task_progress` 维护一个统一计划。第一次调用必须一次性创建完整计划，之后只改变状态，不得增删、改名或重排步骤。如果把研究前的结构化基础取数纳入计划，该步骤必须使用 `data-package`，不得使用 `team-lead`。
-- 统一计划必须使用稳定步骤 ID：`data-package`（可选的研究前取数）、`business-analyst`、`financial-analyst`、`industry-researcher`、`risk-assessor`、`team-lead`、`report-audit`。`team-lead` 仅表示四位成员结束后的交叉质证与汇总，在四位成员尚未进入终态前必须保持 `pending`；不得另建 `team-lead-summary`、`data-audit` 或第二套并行计划。进入交叉质证时把 `team-lead` 设为 `running`；进入数据抽检和报告生成时把 `team-lead` 设为 `completed`、`report-audit` 设为 `running`。
+- TaskCreate 和 TaskUpdate 使用 `update_task_progress` 维护一个统一计划。第一次调用必须一次性创建完整计划，之后只改变状态，不得增删、改名或重排步骤。研究前的结构化基础取数是固定首节点，必须使用 `data-package`，标题固定为“建立基础数据包”，不得使用 `team-lead`。
+- 统一计划必须依次使用稳定步骤 ID：`data-package`、`business-analyst`、`financial-analyst`、`industry-researcher`、`risk-assessor`、`team-lead`、`report-audit`。`data-package` 完成前四位成员必须保持 `pending`；完成后将其设为 `completed` 并在同一轮启动四位成员。`team-lead` 仅表示四位成员结束后的交叉质证与汇总，在四位成员尚未进入终态前必须保持 `pending`；不得另建 `team-lead-summary`、`data-audit` 或第二套并行计划。进入交叉质证时把 `team-lead` 设为 `running`；进入数据抽检和报告生成时把 `team-lead` 设为 `completed`、`report-audit` 设为 `running`。
 - 需要团队并行时，在同一轮中调用四次 `spawn`，标签必须分别使用 `business-analyst`、`financial-analyst`、`industry-researcher`、`risk-assessor`。四个任务必须可以独立完成，并完整包含该角色需要遵循的框架、数据要求和输出要求。
 - 原工作流中的 SendMessage 表示子代理完成后向 Team Lead 返回结果；nanobot 会自动把子代理结果注入当前会话。
 - Team Lead 只根据 nanobot 注入的成员最终响应更新成员状态；成员仍在 `running` 时不得因等待时间较长、某次查询告警或尚未出现文件而擅自标记为 `error`。

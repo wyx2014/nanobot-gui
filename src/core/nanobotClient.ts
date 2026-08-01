@@ -484,7 +484,7 @@ export function mapWebuiThreadToGuiMessages(webuiMessages: UIMessage[]): Message
       const visibleContent = stripRedundantMcpMentionPrefix(msg.content, msg.mcpPresets);
       let content: string | MessageContent[] = visibleContent;
       if (msg.images && msg.images.length > 0) {
-        content = msg.images.map(img => ({
+        const imageContent: MessageContent[] = msg.images.map(img => ({
           type: 'image' as const,
           source: {
             type: 'base64' as const,
@@ -493,8 +493,9 @@ export function mapWebuiThreadToGuiMessages(webuiMessages: UIMessage[]): Message
           }
         }));
         if (visibleContent) {
-          (content as any).push({ type: 'text' as const, text: visibleContent });
+          imageContent.push({ type: 'text', text: visibleContent });
         }
+        content = imageContent;
       }
 
       guiMessages.push({
@@ -510,15 +511,48 @@ export function mapWebuiThreadToGuiMessages(webuiMessages: UIMessage[]): Message
     } 
     
     else if (msg.role === 'assistant' && msg.kind !== 'trace') {
+      // Provider text remains provisional until stream_end / turn_end tells us
+      // whether it is a final answer or pre-tool public narration. Project it
+      // into Steps while the segment is open so it never flashes in the answer
+      // body first.
+      const provisionalNarration = (
+        msg.isStreaming
+        && typeof msg.content === 'string'
+        && msg.content.trim()
+      )
+        ? msg.content
+        : undefined;
       const guiMsg: Message = {
         id: msg.id,
         role: 'assistant',
-        content: msg.content || '',
+        content: provisionalNarration ? '' : msg.content || '',
         timestamp,
         interactivePrompt: msg.interactivePrompt,
         thinking: msg.reasoning,
-        thinkingDuration: typeof msg.latencyMs === 'number' && Number.isFinite(msg.latencyMs)
-          ? Math.max(0, msg.latencyMs / 1000)
+        thinkingDuration: (
+          typeof msg.reasoningDurationMs === 'number'
+          && Number.isFinite(msg.reasoningDurationMs)
+        )
+          ? Math.max(0, msg.reasoningDurationMs / 1000)
+          : undefined,
+        thinkingStartedAt: (
+          typeof msg.reasoningStartedAt === 'number'
+          && Number.isFinite(msg.reasoningStartedAt)
+        )
+          ? msg.reasoningStartedAt
+          : undefined,
+        thinkingCompletedAt: (
+          typeof msg.reasoningCompletedAt === 'number'
+          && Number.isFinite(msg.reasoningCompletedAt)
+        )
+          ? msg.reasoningCompletedAt
+          : undefined,
+        turnDurationMs: (
+          typeof msg.latencyMs === 'number'
+          && Number.isFinite(msg.latencyMs)
+          && msg.latencyMs >= 0
+        )
+          ? msg.latencyMs
           : undefined,
         completedAt: typeof msg.completedAt === 'number' && Number.isFinite(msg.completedAt)
           ? msg.completedAt
@@ -529,8 +563,8 @@ export function mapWebuiThreadToGuiMessages(webuiMessages: UIMessage[]): Message
         toolCalls: [],
         mediaAttachments: mediaAttachmentsFromUiMessage(msg),
         activitySegmentId: msg.activitySegmentId,
-        narration: msg.narration,
-        narrationStreaming: msg.narrationStreaming,
+        narration: msg.narration ?? provisionalNarration,
+        narrationStreaming: msg.narrationStreaming ?? !!provisionalNarration,
         loopId: currentLoopId,
       };
       guiMessages.push(guiMsg);

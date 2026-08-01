@@ -151,7 +151,13 @@ export const clipboardBridge = {
 export const windowBridge = {
   setTitle: async (title: string): Promise<void> => {
     return window.ipc.invoke('window:setTitle', title);
-  }
+  },
+  isFullScreen: async (): Promise<boolean> => {
+    return window.ipc.invoke('window:isFullScreen');
+  },
+  onFullScreenChanged: (callback: (isFullScreen: boolean) => void): (() => void) => {
+    return window.ipc.on('event:window-full-screen-changed', callback);
+  },
 };
 
 // Event bridge for listening to system-wide events.

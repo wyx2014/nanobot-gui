@@ -74,7 +74,7 @@ function researchPrintPreamble(markdown: string, title: string): string {
     ? outline.map((item) => `<li class="toc-level-${item.level}">${escapeHtml(item.title)}</li>`).join('')
     : '<li class="toc-empty">正文未包含可列入目录的二、三级标题。</li>';
   return `<section class="research-cover">
-  <div class="research-cover-kicker">TPARUYI · EXPERT RESEARCH</div>
+  <div class="research-cover-kicker">TPACOWORK · EXPERT RESEARCH</div>
   <h1>${escapeHtml(title)}</h1>
   <p>多角色研究、交叉质证与数据审计</p>
   <div class="research-cover-meta">${meta.date ? `数据截止：${escapeHtml(meta.date)}` : '以报告正文披露的数据截止日期为准'}</div>
@@ -408,7 +408,7 @@ figure.mermaid img { width: auto; max-width: 100%; height: auto; max-height: 600
 <body>
 <header class="report-hero">
   <div class="hero-inner">
-    <div class="eyebrow">TPARUYI · EXPERT RESEARCH</div>
+    <div class="eyebrow">TPACOWORK · EXPERT RESEARCH</div>
     <h1>${escapeHtml(title)}</h1>
     <p class="hero-subtitle">专家团队 · 多角色研究、交叉质证与数据审计</p>
     <div class="hero-meta">${metaItems}</div>
@@ -418,7 +418,7 @@ figure.mermaid img { width: auto; max-width: 100%; height: auto; max-height: 600
   <nav class="report-toc" aria-label="报告目录"><span class="toc-label">报告目录</span><div class="toc-links"></div></nav>
   <div id="dashboard"></div>
   <article id="report-content">${body}</article>
-  <footer class="report-footer">本报告由太资如意专家团队基于可用资料生成，仅作研究辅助，不构成投资建议。</footer>
+  <footer class="report-footer">本报告由TPACowork专家团队基于可用资料生成，仅作研究辅助，不构成投资建议。</footer>
 </main>
 <script>
 (function () {
@@ -757,7 +757,7 @@ export async function renderMarkdownHtml(
   sourcePath?: string,
 ): Promise<string> {
   const prepared = await prepareMermaid(markdown, mermaidRenderer);
-  return `<!-- Generated from Markdown by TpaRuyi -->\n${renderRichMarkdownHtml(
+  return `<!-- Generated from Markdown by TPACowork -->\n${renderRichMarkdownHtml(
     prepared.markdown,
     title,
     prepared.figures,

@@ -4,7 +4,9 @@ export function normalizeTaskTimestamp(value?: number | null): number | undefine
 }
 
 export function formatTaskDuration(durationMs: number): string {
-  const totalSeconds = Math.max(0, Math.round(durationMs / 1000));
+  const totalSeconds = durationMs > 0
+    ? Math.max(1, Math.round(durationMs / 1000))
+    : 0;
   if (totalSeconds < 60) return `${totalSeconds}s`;
   const seconds = totalSeconds % 60;
   const totalMinutes = Math.floor(totalSeconds / 60);

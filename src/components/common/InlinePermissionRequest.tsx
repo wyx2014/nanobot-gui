@@ -54,11 +54,11 @@ export default function InlinePermissionRequest({
   const getDescription = () => {
     switch (type) {
       case 'workspace':
-        return '太资如意需要访问这个文件夹';
+        return 'TPACowork需要访问这个文件夹';
       case 'shell':
-        return '太资如意需要执行命令';
+        return 'TPACowork需要执行命令';
       case 'file-write':
-        return '太资如意需要修改文件';
+        return 'TPACowork需要修改文件';
     }
   };
 

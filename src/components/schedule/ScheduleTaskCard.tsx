@@ -105,7 +105,7 @@ export default function ScheduleTaskCard({ task }: Props) {
 
   return (
     <>
-      <div className="bg-white rounded-xl border border-[#e8e4dd] hover:border-[#d4d0c8] hover:shadow-sm transition-all group">
+      <div data-schedule-card className="bg-white rounded-xl border border-[#e8e4dd] hover:border-[#d4d0c8] hover:shadow-sm transition-all group">
         <div className="px-4 py-3">
           <div className="flex items-center gap-3">
             <button
@@ -182,6 +182,8 @@ export default function ScheduleTaskCard({ task }: Props) {
 
             <button
               onClick={handleToggle}
+              data-schedule-toggle
+              data-active={isPaused ? "false" : "true"}
               className={cn(
                 'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
                 isPaused ? 'bg-neutral-200' : 'bg-green-500'
@@ -189,6 +191,7 @@ export default function ScheduleTaskCard({ task }: Props) {
               title={isPaused ? t.schedule.resume : t.schedule.pause}
             >
               <span
+                data-schedule-toggle-thumb
                 className={cn(
                   'inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform',
                   isPaused ? 'translate-x-[3px]' : 'translate-x-[19px]'

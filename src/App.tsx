@@ -26,8 +26,8 @@ initPlatform().then(() => {
   console.warn('[App] Platform detection init error:', err);
 });
 import { useSettingsStore, getEffectiveModel } from '@/stores/settingsStore';
-import { TooltipProvider } from '@/components/ui/tooltip';
-import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { ArrowLeft, ArrowRight, PanelLeft } from 'lucide-react';
 import { isMacOS } from '@/utils/platform';
 import { cn } from '@/lib/utils';
 import { initNotifications } from '@/utils/notifications';
@@ -40,6 +40,9 @@ import { syncNanobotSettings, bootstrapNanobotGateway, syncProjectsFromGateway, 
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { usePreviewStore } from '@/stores/previewStore';
 import { renderMermaidPng } from '@/core/mermaid';
+import { usePromptHubStore } from '@/stores/promptHubStore';
+import FirstRunWelcome from '@/components/onboarding/FirstRunWelcome';
+import { useAppNavigationHistory } from '@/hooks/useAppNavigationHistory';
 
 // These views are only needed after explicit navigation. Keeping them out of
 // the initial chat bundle reduces startup work on the common path.
@@ -70,6 +73,129 @@ function App() {
   const { t } = useI18n();
   const [showCloseDialog, setShowCloseDialog] = useState(false);
   const artifactPreviewOpen = previewArtifact !== null;
+  const promptHubBaseUrl = usePromptHubStore((s) => s.baseUrl);
+  const promptHubToken = usePromptHubStore((s) => s.token);
+  const guideShown = useSettingsStore((s) => s.guideShown);
+  const setGuideShown = useSettingsStore((s) => s.setGuideShown);
+  const theme = useSettingsStore((s) => s.theme);
+  const keyboardShortcuts = useSettingsStore((s) => s.keyboardShortcuts);
+  const [settingsHydrated, setSettingsHydrated] = useState(() => useSettingsStore.persist.hasHydrated());
+  const [windowFullScreen, setWindowFullScreen] = useState(false);
+  const {
+    canGoBack,
+    canGoForward,
+    goBack,
+    goForward,
+  } = useAppNavigationHistory(settingsHydrated);
+
+  useEffect(() => {
+    if (useSettingsStore.persist.hasHydrated()) {
+      setSettingsHydrated(true);
+      return;
+    }
+    return useSettingsStore.persist.onFinishHydration(() => setSettingsHydrated(true));
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void windowBridge.isFullScreen()
+      .then((isFullScreen) => {
+        if (active) setWindowFullScreen(isFullScreen);
+      })
+      .catch(() => {
+        if (active) setWindowFullScreen(false);
+      });
+    const unsubscribe = windowBridge.onFullScreenChanged((isFullScreen) => {
+      if (active) setWindowFullScreen(isFullScreen);
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!settingsHydrated) return;
+
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const applyTheme = () => {
+      const isDark = theme === 'dark' || (theme === 'system' && mediaQuery.matches);
+      document.documentElement.classList.toggle('dark', isDark);
+      document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
+    };
+
+    applyTheme();
+    if (theme !== 'system') return;
+
+    mediaQuery.addEventListener('change', applyTheme);
+    return () => mediaQuery.removeEventListener('change', applyTheme);
+  }, [settingsHydrated, theme]);
+
+  useEffect(() => {
+    const matches = (event: KeyboardEvent, shortcut: string) => {
+      const parts = shortcut.toLowerCase().split('+');
+      const key = parts.at(-1);
+      const isMac = navigator.platform.toUpperCase().includes('MAC');
+      const modifierPressed = isMac ? event.metaKey : event.ctrlKey;
+      return Boolean(key)
+        && event.key.toLowerCase() === key
+        && modifierPressed === parts.includes('mod')
+        && (isMac || !event.metaKey)
+        && !event.altKey
+        && !event.shiftKey;
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('input, textarea, [contenteditable="true"]')) return;
+      const isMac = navigator.platform.toUpperCase().includes('MAC');
+      const navigationBack = isMac
+        ? event.metaKey && event.key === '['
+        : event.altKey && event.key === 'ArrowLeft';
+      const navigationForward = isMac
+        ? event.metaKey && event.key === ']'
+        : event.altKey && event.key === 'ArrowRight';
+      if (navigationBack) {
+        event.preventDefault();
+        goBack();
+        return;
+      }
+      if (navigationForward) {
+        event.preventDefault();
+        goForward();
+        return;
+      }
+      const shortcut = keyboardShortcuts;
+      if (matches(event, shortcut.newChat)) {
+        event.preventDefault();
+        useChatStore.getState().startNewConversation();
+        useSettingsStore.getState().setViewMode('chat');
+        window.dispatchEvent(new CustomEvent('nanobot-gui:new-chat'));
+      } else if (matches(event, shortcut.focusComposer)) {
+        event.preventDefault();
+        document.querySelector<HTMLTextAreaElement>('textarea')?.focus();
+      } else if (matches(event, shortcut.toggleSidebar)) {
+        event.preventDefault();
+        useSettingsStore.getState().toggleSidebar();
+      } else if (matches(event, shortcut.openToolbox)) {
+        event.preventDefault();
+        useSettingsStore.getState().openToolbox();
+      } else if (matches(event, shortcut.openSettings)) {
+        event.preventDefault();
+        useSettingsStore.getState().openSystemSettings('general');
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [goBack, goForward, keyboardShortcuts]);
+
+  useEffect(() => {
+    void ipc.invoke('device-link:configure', {
+      baseUrl: promptHubBaseUrl,
+      token: promptHubToken ?? '',
+    }).catch((error) => {
+      console.warn('[App] PromptHub device link configure failed:', error);
+    });
+  }, [promptHubBaseUrl, promptHubToken]);
 
   useEffect(() => ipc.on('mermaid:render', async ({ id, code }: { id: string; code: string }) => {
     try {
@@ -412,38 +538,107 @@ function App() {
     refreshWorkspaces,
   ]);
 
-  // macOS uses overlay title bar (content behind traffic lights); Windows uses native title bar
+  // macOS uses a full-size hidden title bar so renderer controls can sit beside
+  // the native traffic lights. Windows and Linux keep their native title bars.
   const mac = isMacOS();
+
+  if (!settingsHydrated) {
+    return <div className="h-full w-full bg-[#fbfaf7]" />;
+  }
 
   return (
     <ErrorBoundary>
       <TooltipProvider delayDuration={200}>
-        {/* Title bar drag region — only needed on macOS where we use overlay title bar */}
+        {!guideShown && <FirstRunWelcome onContinue={() => setGuideShown(true)} />}
         {mac && (
           <div
-            className="fixed top-0 left-0 right-0 h-7 z-40 [app-region:drag]"
+            data-window-titlebar
+            className="window-titlebar-drag fixed left-0 right-0 top-0 z-40 h-9"
           />
         )}
 
-        {/* Sidebar & panel toggle buttons — positioned in title bar area on macOS, top bar on Windows */}
         <div
           className={cn(
-            'fixed left-0 right-0 z-40 pointer-events-none transition-opacity duration-150',
-            (artifactPreviewOpen || previewExpanded) && 'opacity-0 [&_button]:pointer-events-none',
-            mac ? 'top-0 h-7' : 'top-0 h-8',
+            'pointer-events-none fixed left-0 right-0 top-0 z-50 transition-opacity duration-150',
+            previewExpanded && 'opacity-0 [&_button]:pointer-events-none',
+            mac ? 'h-9' : 'h-8',
           )}
-          style={{ transitionDelay: artifactPreviewOpen || previewExpanded ? '0ms' : '180ms' }}
+          style={{ transitionDelay: previewExpanded ? '0ms' : '180ms' }}
         >
-          <button
-            onClick={toggleSidebar}
-            className="absolute btn-ghost p-1 text-[#656358] hover:text-[#29261b] hover:bg-[#e8e5de]/80 rounded-md transition-[left] duration-200 pointer-events-auto"
-            style={{ top: mac ? 6 : 4, left: sidebarCollapsed ? 70 : 232 }}
-            title={sidebarCollapsed ? t.sidebar.showSidebar : t.sidebar.hideSidebar}
+          <div
+            className="window-titlebar-no-drag pointer-events-auto absolute flex items-center gap-1 transition-[left] duration-200"
+            style={{
+              top: 4,
+              left: windowFullScreen
+                ? 12
+                : mac ? 92 : sidebarCollapsed ? 70 : 232,
+            }}
           >
-            {sidebarCollapsed
-              ? <PanelLeftOpen className="h-3.5 w-3.5" />
-              : <PanelLeftClose className="h-3.5 w-3.5" />}
-          </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={toggleSidebar}
+                  data-sidebar-titlebar-toggle
+                  className="flex h-7 w-7 items-center justify-center rounded-lg text-[#656358] transition-colors hover:bg-[#ded9cf] hover:text-[#29261b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d97757]/40 dark:text-[#d8d5ce] dark:hover:bg-[#57534d] dark:hover:text-white"
+                  aria-label={sidebarCollapsed ? t.sidebar.showSidebar : t.sidebar.hideSidebar}
+                >
+                  <PanelLeft className="h-[17px] w-[17px]" strokeWidth={1.8} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent
+                side="bottom"
+                sideOffset={8}
+                className="border border-white/10 bg-[#292824] px-2.5 py-1 text-[12px] font-medium text-white shadow-lg [&>svg]:hidden"
+              >
+                {sidebarCollapsed ? t.sidebar.showSidebar : t.sidebar.hideSidebar}
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={goBack}
+                  disabled={!canGoBack}
+                  data-titlebar-back
+                  className="flex h-7 w-7 items-center justify-center rounded-lg text-[#656358] transition-colors hover:bg-[#ded9cf] hover:text-[#29261b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d97757]/40 disabled:cursor-default disabled:text-[#b8b5ae] disabled:hover:bg-transparent dark:text-[#d8d5ce] dark:hover:bg-[#57534d] dark:hover:text-white dark:disabled:text-[#67645f]"
+                  aria-label={t.sidebar.goBack}
+                >
+                  <ArrowLeft className="h-[17px] w-[17px]" strokeWidth={1.8} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent
+                side="bottom"
+                sideOffset={8}
+                className="border border-white/10 bg-[#292824] px-2.5 py-1 text-[12px] font-medium text-white shadow-lg [&>svg]:hidden"
+              >
+                {t.sidebar.goBack}
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={goForward}
+                  disabled={!canGoForward}
+                  data-titlebar-forward
+                  className="flex h-7 w-7 items-center justify-center rounded-lg text-[#656358] transition-colors hover:bg-[#ded9cf] hover:text-[#29261b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d97757]/40 disabled:cursor-default disabled:text-[#b8b5ae] disabled:hover:bg-transparent dark:text-[#d8d5ce] dark:hover:bg-[#57534d] dark:hover:text-white dark:disabled:text-[#67645f]"
+                  aria-label={t.sidebar.goForward}
+                >
+                  <ArrowRight className="h-[17px] w-[17px]" strokeWidth={1.8} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent
+                side="bottom"
+                sideOffset={8}
+                className="border border-white/10 bg-[#292824] px-2.5 py-1 text-[12px] font-medium text-white shadow-lg [&>svg]:hidden"
+              >
+                {t.sidebar.goForward}
+              </TooltipContent>
+            </Tooltip>
+          </div>
         </div>
 
         <div className="flex h-full w-full">
@@ -462,12 +657,12 @@ function App() {
             <Sidebar />
           </div>
 
-          {/* Main — pt-7 on macOS to clear overlay title bar; no padding on Windows (native title bar) */}
+          {/* Main clears the custom macOS title bar; native title bars consume their own space. */}
           <main
             className={cn(
               'flex-1 min-w-0 bg-[#fbfaf7] transition-opacity duration-150',
               previewExpanded && 'pointer-events-none overflow-hidden opacity-0',
-              mac && 'pt-7',
+              mac && 'pt-9',
             )}
             style={{ transitionDelay: previewExpanded ? '0ms' : '180ms' }}
           >

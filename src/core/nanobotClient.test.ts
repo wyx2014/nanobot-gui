@@ -177,7 +177,7 @@ describe('mapWebuiThreadToGuiMessages artifacts', () => {
     });
   });
 
-  it('preserves server turn latency for task duration summaries', () => {
+  it('keeps reasoning duration separate from whole-turn latency', () => {
     const completedAt = 1_785_222_083_788;
     const messages = mapWebuiThreadToGuiMessages([{
       id: 'assistant-latency',
@@ -185,11 +185,42 @@ describe('mapWebuiThreadToGuiMessages artifacts', () => {
       content: '完成',
       createdAt: 1,
       latencyMs: 548_000,
+      reasoningStartedAt: 100,
+      reasoningCompletedAt: 12_100,
+      reasoningDurationMs: 12_000,
       completedAt,
     }]);
 
-    expect(messages[0].thinkingDuration).toBe(548);
+    expect(messages[0].thinkingDuration).toBe(12);
+    expect(messages[0].turnDurationMs).toBe(548_000);
+    expect(messages[0].thinkingStartedAt).toBe(100);
+    expect(messages[0].thinkingCompletedAt).toBe(12_100);
     expect(messages[0].completedAt).toBe(completedAt);
+  });
+
+  it('projects unclassified streamed text into Steps until it is final', () => {
+    const [streaming] = mapWebuiThreadToGuiMessages([{
+      id: 'provisional',
+      role: 'assistant',
+      content: '好的，我来启动工商银行投研团队。',
+      isStreaming: true,
+      streamId: 'stream-1',
+      createdAt: 1,
+    }]);
+
+    expect(streaming.content).toBe('');
+    expect(streaming.narration).toBe('好的，我来启动工商银行投研团队。');
+    expect(streaming.narrationStreaming).toBe(true);
+
+    const [completed] = mapWebuiThreadToGuiMessages([{
+      id: 'final',
+      role: 'assistant',
+      content: '工商银行分析完成。',
+      isStreaming: false,
+      createdAt: 2,
+    }]);
+    expect(completed.content).toBe('工商银行分析完成。');
+    expect(completed.narration).toBeUndefined();
   });
 
   it('preserves signed PDF preview and download metadata from gateway history', () => {

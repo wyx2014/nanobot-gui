@@ -165,6 +165,51 @@ async function openExpertTeamSubmenu(view: HTMLDivElement): Promise<HTMLElement>
   return expertTeamItem as HTMLElement;
 }
 
+describe('ChatInput welcome layout', () => {
+  it('keeps the existing compact layout while exposing scoped dark-theme hooks', async () => {
+    const view = await renderChatInput('welcome');
+    const shell = view.querySelector<HTMLElement>('[data-welcome-composer-shell]');
+    const projectSelector = shell?.querySelector<HTMLElement>('[data-welcome-project-selector]');
+    const composer = shell?.querySelector<HTMLElement>('[data-welcome-composer-card]');
+    const textarea = composer?.querySelector<HTMLTextAreaElement>('[data-welcome-composer-input]');
+    const shortcuts = [...view.querySelectorAll<HTMLButtonElement>('[data-welcome-shortcut]')];
+
+    expect(shell).not.toBeNull();
+    expect(projectSelector).not.toBeNull();
+    expect(composer).not.toBeNull();
+    expect(Number(textarea?.rows)).toBe(2);
+    expect(textarea?.className).toContain('min-h-[52px]');
+    expect(shortcuts.map((button) => button.dataset.welcomeShortcut)).toEqual([
+      'write',
+      'learn',
+      'code',
+      'life',
+      'ruyi',
+    ]);
+
+    await act(async () => shortcuts[0]?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect(shortcuts[0]?.dataset.active).toBe('true');
+    expect(view.querySelector('[data-welcome-shortcut-panel]')).not.toBeNull();
+  });
+
+  it('shares the dark composer surface with conversations without changing chat sizing', async () => {
+    const view = await renderChatInput('chat');
+    const shell = view.querySelector<HTMLElement>('[data-codex-composer-shell]');
+    const composer = shell?.querySelector<HTMLElement>('[data-codex-composer-card]');
+    const textarea = composer?.querySelector<HTMLTextAreaElement>('[data-codex-composer-input]');
+
+    expect(shell?.dataset.composerVariant).toBe('chat');
+    expect(shell?.hasAttribute('data-welcome-composer-shell')).toBe(false);
+    expect(composer).not.toBeNull();
+    expect(Number(textarea?.rows)).toBe(1);
+    expect(textarea?.className).toContain('min-h-[28px]');
+    expect(textarea?.style.overflowY).toBe('hidden');
+    expect(view.querySelector('[data-codex-composer-toolbar]')).not.toBeNull();
+    expect(view.querySelector('[data-codex-model-picker]')).not.toBeNull();
+    expect(view.querySelector('[data-codex-submit]')).not.toBeNull();
+  });
+});
+
 describe('ChatInput expert-team menu', () => {
   it('opens a right-side team list and binds the selection to the current conversation', async () => {
     const conversationId = useChatStore.getState().createConversation(null, { title: '当前会话' });

@@ -29,6 +29,7 @@ import type {
   WorkspaceScopePayload,
 } from "@/core/types";
 import { useTurnPlanStore } from '@/stores/turnPlanStore';
+import { useBrowserStore } from '@/stores/browserStore';
 import { normalizeTurnPlan, planFromAgentUI } from '@/core/nanobot/planViewModel';
 import {
   initialStreamProtocolState,
@@ -142,6 +143,7 @@ function attachReasoningChunk(
     ensure: () => string;
   },
 ): UIMessage[] {
+  const receivedAt = Date.now();
   for (let i = prev.length - 1; i >= 0; i -= 1) {
     const candidate = prev[i];
     // A user turn is a hard boundary: reasoning after it belongs to the new
@@ -164,6 +166,9 @@ function attachReasoningChunk(
         ...candidate,
         reasoning: (candidate.reasoning ?? "") + chunk,
         reasoningStreaming: true,
+        reasoningStartedAt: candidate.reasoningStartedAt ?? receivedAt,
+        reasoningCompletedAt: undefined,
+        reasoningDurationMs: undefined,
         ...(activitySegmentId ? { activitySegmentId } : {}),
       };
       return [...prev.slice(0, i), merged, ...prev.slice(i + 1)];
@@ -180,6 +185,7 @@ function attachReasoningChunk(
       isStreaming: true,
       reasoning: chunk,
       reasoningStreaming: true,
+      reasoningStartedAt: receivedAt,
       ...(activitySegmentId ? { activitySegmentId } : {}),
       createdAt: Date.now(),
     },
@@ -213,13 +219,20 @@ function replaceMessageAt(prev: UIMessage[], index: number, message: UIMessage):
  * Close the active reasoning stream segment, if any. Idempotent: a
  * ``reasoning_end`` with no preceding deltas is a harmless no-op.
  */
-export function closeReasoningStream(prev: UIMessage[]): UIMessage[] {
+export function closeReasoningStream(
+  prev: UIMessage[],
+  completedAt: number = Date.now(),
+): UIMessage[] {
   for (let i = prev.length - 1; i >= 0; i -= 1) {
     const candidate = prev[i];
     if (!candidate.reasoningStreaming) continue;
+    const startedAt = candidate.reasoningStartedAt ?? candidate.createdAt;
     const merged: UIMessage = {
       ...candidate,
       reasoningStreaming: false,
+      reasoningStartedAt: startedAt,
+      reasoningCompletedAt: completedAt,
+      reasoningDurationMs: Math.max(0, completedAt - startedAt),
     };
     return [...prev.slice(0, i), merged, ...prev.slice(i + 1)];
   }
@@ -994,6 +1007,75 @@ function teamProgressMessageId(
   return undefined;
 }
 
+type TeamMemberUpdatedEvent = Extract<InboundEvent, { event: "team_member_updated" }>;
+
+function workflowPlanMatchesMemberEvent(
+  plan: TurnPlanResource,
+  event: TeamMemberUpdatedEvent,
+): boolean {
+  if (plan.kind !== "workflow") return false;
+  if (plan.team_run_id && plan.team_run_id !== event.run_id) return false;
+  if (plan.team_id && plan.team_id !== event.team_id) return false;
+  return true;
+}
+
+function teamMemberStepStatus(
+  status: TeamMemberUpdatedEvent["member"]["status"],
+): TaskProgressStep["status"] {
+  if (status === "running") return "running";
+  if (status === "pending") return "pending";
+  // A failed or cancelled member is terminal for orchestration purposes. The
+  // visible title/warning keeps the degraded outcome explicit while allowing
+  // the Team Lead to continue with the remaining members.
+  return "completed";
+}
+
+function teamMemberStepTitle(
+  title: string,
+  status: TeamMemberUpdatedEvent["member"]["status"],
+): string {
+  const base = title.replace(/（已降级）$|（已停止）$/, "");
+  if (status === "failed") return `${base}（已降级）`;
+  if (status === "cancelled") return `${base}（已停止）`;
+  return base;
+}
+
+function overlayTeamMemberUpdateOnPlan(
+  plan: TurnPlanResource,
+  event: TeamMemberUpdatedEvent,
+): TurnPlanResource {
+  const nextStatus = teamMemberStepStatus(event.member.status);
+  const steps = plan.steps.map((step) => (
+    step.id === event.member.id
+      ? {
+          ...step,
+          title: teamMemberStepTitle(step.title, event.member.status),
+          detail: event.member.activity || step.detail,
+          status: nextStatus,
+          ...(
+            event.member.status === "failed" || event.member.status === "cancelled"
+              ? { warning: event.member.activity || step.warning }
+              : {}
+          ),
+        }
+      : step
+  ));
+  const activeStepIds = steps
+    .filter((step) => step.status === "running" || step.status === "inProgress")
+    .map((step) => step.id);
+  return {
+    ...plan,
+    steps,
+    active_step_ids: activeStepIds,
+    current_step_id: activeStepIds.length === 1 ? activeStepIds[0] : null,
+    note: event.member.status === "failed"
+      ? "部分维度已降级，团队将继续完成报告"
+      : event.member.status === "cancelled"
+        ? "主任务已停止，后台专家和并发槽位已释放"
+        : plan.note,
+  };
+}
+
 function planAgentUI(plan: TurnPlanResource) {
   return {
     kind: 'task_progress' as const,
@@ -1429,6 +1511,15 @@ export function useNanobotStream(
     if (!chatId || !client) return;
 
     const handle = (ev: InboundEvent) => {
+      if (
+        ev.event === "browser_frame"
+        || ev.event === "browser_status"
+        || ev.event === "browser_action"
+      ) {
+        useBrowserStore.getState().handleEvent(ev);
+        return;
+      }
+
       // Any incoming event while the debounce timer is alive means the model
       // is still working (e.g. tool result arrived, more text to stream).
       // Cancel the pending "stream ended" timer so we don't hide the spinner.
@@ -1478,6 +1569,18 @@ export function useNanobotStream(
       }
 
       if (ev.event === "stream_end") {
+        // The gateway can durably complete a turn before the outbound channel
+        // delivers its final stream terminator:
+        //
+        //   delta... -> turn_completed -> stream_end
+        //
+        // ``turn_completed`` has already drained the pending delta queue and
+        // queued the atomic message finalization. Letting this late terminator
+        // close the cursor in between those queued state updates can detach the
+        // last animation-frame worth of text into a second assistant message.
+        // Treat it as an acknowledgement only; the terminal lifecycle event is
+        // authoritative.
+        if (lifecycleTerminalHandledRef.current) return;
         const messageId = buffer.current?.messageId ?? activeAssistantRef.current?.id;
         const streamId = ev.stream_id ?? buffer.current?.streamId;
         const isNarration = isNarrationStreamEnd(ev);
@@ -1605,12 +1708,19 @@ export function useNanobotStream(
 
       if (ev.event === "team_run_started") {
         const id = `team-run-${ev.run_id}`;
+        const hasDataPackage = ev.team_id === "asset-research-team";
         const stagedMembers = ev.members.filter((member) => member.phase);
         const firstPhase = stagedMembers[0]?.phase;
         const firstPhaseCount = firstPhase
           ? stagedMembers.filter((member) => member.phase === firstPhase).length
           : ev.members.length;
         const steps = [
+          ...(hasDataPackage ? [{
+            id: "data-package",
+            title: "建立基础数据包",
+            detail: "正在统一公司摘要、财务指标、公告新闻和行业数据",
+            status: "running" as const,
+          }] : []),
           ...ev.members.map((member) => ({
             id: member.id,
             title: `${member.name}${member.framework ? ` · ${member.framework}` : ""}`,
@@ -1618,7 +1728,13 @@ export function useNanobotStream(
             // The gateway emits this frame immediately before dispatching the
             // members. Showing an active state here keeps the UI truthful to
             // the running team even if a follow-up member frame is delayed.
-            status: (!firstPhase || member.phase === firstPhase ? "running" : "pending") as TaskProgressStep["status"],
+            status: (
+              hasDataPackage
+                ? "pending"
+                : !firstPhase || member.phase === firstPhase
+                  ? "running"
+                  : "pending"
+            ) as TaskProgressStep["status"],
           })),
           {
             id: "team-lead",
@@ -1644,7 +1760,9 @@ export function useNanobotStream(
             agentUI: {
               kind: "task_progress",
               steps,
-              note: firstPhase && firstPhaseCount < ev.members.length
+              note: hasDataPackage
+                ? "Team Lead 正在建立公司基础数据包，完成后启动四位专家"
+                : firstPhase && firstPhaseCount < ev.members.length
                 ? `${ev.members.length} 位专家将分阶段协作，首阶段 ${firstPhaseCount} 位并行研究`
                 : `${ev.members.length} 位专家正在并行研究`,
               team_name: ev.team_name,
@@ -1659,8 +1777,12 @@ export function useNanobotStream(
 
       if (ev.event === "team_member_updated") {
         const canonicalTeamPlan = useTurnPlanStore.getState().planByConversation[ev.chat_id];
-        if (canonicalTeamPlan?.kind === 'workflow') {
-          setMessages((prev) => applyPlanToMessages(prev, canonicalTeamPlan));
+        if (
+          canonicalTeamPlan
+          && workflowPlanMatchesMemberEvent(canonicalTeamPlan, ev)
+        ) {
+          const livePlan = overlayTeamMemberUpdateOnPlan(canonicalTeamPlan, ev);
+          setMessages((prev) => applyPlanToMessages(prev, livePlan));
           return;
         }
         setMessages((prev) => prev.map((message) => {

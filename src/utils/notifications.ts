@@ -45,7 +45,7 @@ export async function notifyTaskCompleted(conversationTitle: string): Promise<vo
   try {
     console.log('[Notification] Sending notification for:', conversationTitle);
     await notificationBridge.sendNotification({
-      title: '太资如意完成啦！',
+      title: 'TPACowork完成啦！',
       body: `「${conversationTitle}」已完成 ✨`,
     });
     console.log('[Notification] Notification sent successfully');

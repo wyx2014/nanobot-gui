@@ -80,22 +80,22 @@ const SHORTCUT_CATEGORIES: ShortcutCategory[] = [
         key: 'improve_style',
         labelZh: '改进写作风格',
         labelEn: 'Improve writing style',
-        promptZh: '嗨，如意！你能帮我改进一下写作风格吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或上传任何资料来帮助你更好地完成工作，也请告诉我。如果对你有帮助，可以使用任何你能访问的工具，比如网络搜索等等。',
-        promptEn: 'Hi Ruyi! Can you help me improve my writing style? If you need more information, please ask one or two key questions right away. If you think I should provide more context or upload any files to help you do a better job, please let me know. If it helps, you can use any tools you have access to, such as web search.',
+        promptZh: '嗨，TPACowork！你能帮我改进一下写作风格吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或上传任何资料来帮助你更好地完成工作，也请告诉我。如果对你有帮助，可以使用任何你能访问的工具，比如网络搜索等等。',
+        promptEn: 'Hi TPACowork! Can you help me improve my writing style? If you need more information, please ask one or two key questions right away. If you think I should provide more context or upload any files to help you do a better job, please let me know. If it helps, you can use any tools you have access to, such as web search.',
       },
       {
         key: 'write_speech',
         labelZh: '写演讲稿',
         labelEn: 'Write speech script',
-        promptZh: '嗨，如意！你能帮我写一下演讲稿吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或者上传一些资料来帮助你更好地完成演讲，也请告诉我。你可以使用任何你能访问的工具，比如网络搜索等等，只要它们对你有帮助。',
-        promptEn: 'Hi Ruyi! Can you help me write a speech? If you need more information, please ask one or two key questions right away. If you think I should provide more context or upload some files to help you do a better job, please let me know. You can use any tools you have access to, such as web search, as long as they help.',
+        promptZh: '嗨，TPACowork！你能帮我写一下演讲稿吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或者上传一些资料来帮助你更好地完成演讲，也请告诉我。你可以使用任何你能访问的工具，比如网络搜索等等，只要它们对你有帮助。',
+        promptEn: 'Hi TPACowork! Can you help me write a speech? If you need more information, please ask one or two key questions right away. If you think I should provide more context or upload some files to help you do a better job, please let me know. You can use any tools you have access to, such as web search, as long as they help.',
       },
       {
         key: 'project_proposal',
         labelZh: '撰写项目申请书',
         labelEn: 'Draft project proposal',
-        promptZh: '嗨，如意！你能帮我写项目申请书吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或上传任何资料来帮助你更好地完成申请，请告诉我。如果对你有帮助，你可以使用任何你能访问的工具，比如网络搜索等等。',
-        promptEn: 'Hi Ruyi! Can you help me write a project proposal? If you need more information, please ask one or two key questions right away. If you think I should provide more context or upload any files to help you do a better job, please let me know. If it helps, you can use any tools you have access to, such as web search.',
+        promptZh: '嗨，TPACowork！你能帮我写项目申请书吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或上传任何资料来帮助你更好地完成申请，请告诉我。如果对你有帮助，你可以使用任何你能访问的工具，比如网络搜索等等。',
+        promptEn: 'Hi TPACowork! Can you help me write a project proposal? If you need more information, please ask one or two key questions right away. If you think I should provide more context or upload any files to help you do a better job, please let me know. If it helps, you can use any tools you have access to, such as web search.',
       },
     ],
   },
@@ -108,8 +108,8 @@ const SHORTCUT_CATEGORIES: ShortcutCategory[] = [
         key: 'study_schedule',
         labelZh: '规划学习时间表',
         labelEn: 'Plan study schedule',
-        promptZh: '嗨，如意！你能帮我制作学习时间表吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或上传任何资料来帮助你更好地完成工作，请告诉我。你可以使用任何你能访问的工具，例如网络搜索等等，只要它们对你有帮助。',
-        promptEn: 'Hi Ruyi! Can you help me create a study schedule? If you need more information from me, please ask one or two key questions right away. If you think I should provide more context or upload any files to help you do a better job, please let me know. You can use any tools you have access to, such as web search, as long as they help.',
+        promptZh: '嗨，TPACowork！你能帮我制作学习时间表吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或上传任何资料来帮助你更好地完成工作，请告诉我。你可以使用任何你能访问的工具，例如网络搜索等等，只要它们对你有帮助。',
+        promptEn: 'Hi TPACowork! Can you help me create a study schedule? If you need more information from me, please ask one or two key questions right away. If you think I should provide more context or upload any files to help you do a better job, please let me know. You can use any tools you have access to, such as web search, as long as they help.',
       },
     ],
   },
@@ -122,22 +122,22 @@ const SHORTCUT_CATEGORIES: ShortcutCategory[] = [
         key: 'write_code',
         labelZh: '编写算法/代码',
         labelEn: 'Write code / algorithm',
-        promptZh: '嗨，如意！你能帮我编写一段代码吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或上传任何资料来帮助你更好地完成，请告诉我。如果对你有帮助，可以使用任何你能访问的工具，比如网络搜索等等。',
-        promptEn: 'Hi Ruyi! Can you help me write some code? If you need more information, please ask one or two key questions right away. If you think I should provide more context or upload any files, please let me know. If it helps, you can use any tools you have access to, such as web search.',
+        promptZh: '嗨，TPACowork！你能帮我编写一段代码吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或上传任何资料来帮助你更好地完成，请告诉我。如果对你有帮助，可以使用任何你能访问的工具，比如网络搜索等等。',
+        promptEn: 'Hi TPACowork! Can you help me write some code? If you need more information, please ask one or two key questions right away. If you think I should provide more context or upload any files, please let me know. If it helps, you can use any tools you have access to, such as web search.',
       },
       {
         key: 'refactor_code',
         labelZh: '解释/重构代码',
         labelEn: 'Explain or refactor code',
-        promptZh: '嗨，如意！你能帮我解释或重构一段代码吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或上传任何资料来帮助你，请告诉我。可以使用任何你能访问的工具，比如网络搜索等等。',
-        promptEn: 'Hi Ruyi! Can you help me explain or refactor some code? If you need more information, please ask one or two key questions right away. If you think I should provide more context or upload any files, please let me know. If it helps, you can use any tools you have access to, such as web search.',
+        promptZh: '嗨，TPACowork！你能帮我解释或重构一段代码吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或上传任何资料来帮助你，请告诉我。可以使用任何你能访问的工具，比如网络搜索等等。',
+        promptEn: 'Hi TPACowork! Can you help me explain or refactor some code? If you need more information, please ask one or two key questions right away. If you think I should provide more context or upload any files, please let me know. If it helps, you can use any tools you have access to, such as web search.',
       },
       {
         key: 'debug_code',
         labelZh: '排查 Bug',
         labelEn: 'Debug and fix bugs',
-        promptZh: '嗨，如意！你能帮我排查代码中的 Bug 吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或上传任何资料来帮助你更好地完成，请告诉我。如果对你有帮助，可以使用网络搜索等工具。',
-        promptEn: 'Hi Ruyi! Can you help me find and fix a bug in my code? If you need more information, please ask one or two key questions right away. If you think I should provide more context or upload any files, please let me know. If it helps, you can use any tools you have access to, such as web search.',
+        promptZh: '嗨，TPACowork！你能帮我排查代码中的 Bug 吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或上传任何资料来帮助你更好地完成，请告诉我。如果对你有帮助，可以使用网络搜索等工具。',
+        promptEn: 'Hi TPACowork! Can you help me find and fix a bug in my code? If you need more information, please ask one or two key questions right away. If you think I should provide more context or upload any files, please let me know. If it helps, you can use any tools you have access to, such as web search.',
       },
     ],
   },
@@ -150,8 +150,8 @@ const SHORTCUT_CATEGORIES: ShortcutCategory[] = [
         key: 'improve_habits',
         labelZh: '改进习惯',
         labelEn: 'Improve habits',
-        promptZh: '嗨，如意！你能帮我改进一下习惯吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或上传任何资料来帮助你更好地完成工作，请告诉我。如果有什么工具能帮到你，比如网络搜索等等，都可以用。',
-        promptEn: 'Hi Ruyi! Can you help me improve my habits? If you need more information, please ask one or two key questions right away. If you think I should provide more context or upload any files to help you do a better job, please let me know. If any tools can help, such as web search, feel free to use them.',
+        promptZh: '嗨，TPACowork！你能帮我改进一下习惯吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或上传任何资料来帮助你更好地完成工作，请告诉我。如果有什么工具能帮到你，比如网络搜索等等，都可以用。',
+        promptEn: 'Hi TPACowork! Can you help me improve my habits? If you need more information, please ask one or two key questions right away. If you think I should provide more context or upload any files to help you do a better job, please let me know. If any tools can help, such as web search, feel free to use them.',
       },
     ],
   },
@@ -164,15 +164,15 @@ const SHORTCUT_CATEGORIES: ShortcutCategory[] = [
         key: 'casual_chat',
         labelZh: '日常闲聊/咨询',
         labelEn: 'Casual chat / consultation',
-        promptZh: '嗨，如意！我想找你随便聊聊，或者问你一些问题。如果你需要我提供更多背景信息，请告诉我。',
-        promptEn: 'Hi Ruyi! I want to have a casual chat with you or ask you some questions. If you need more context, please let me know.',
+        promptZh: '嗨，TPACowork！我想找你随便聊聊，或者问你一些问题。如果你需要我提供更多背景信息，请告诉我。',
+        promptEn: 'Hi TPACowork! I want to have a casual chat with you or ask you some questions. If you need more context, please let me know.',
       },
       {
         key: 'brainstorming',
-        labelZh: '如意推荐的创意启发',
+        labelZh: 'TPACowork推荐的创意启发',
         labelEn: 'Creative brainstorming',
-        promptZh: '嗨，如意！你能帮我提供一些有创意的想法或灵感吗？如果你需要我提供更多背景，请告诉我。如果有什么工具能帮到你，都可以使用。',
-        promptEn: 'Hi Ruyi! Can you help me brainstorm some creative ideas or inspiration? If you need more context, please let me know. Feel free to use any tools, such as web search.',
+        promptZh: '嗨，TPACowork！你能帮我提供一些有创意的想法或灵感吗？如果你需要我提供更多背景，请告诉我。如果有什么工具能帮到你，都可以使用。',
+        promptEn: 'Hi TPACowork! Can you help me brainstorm some creative ideas or inspiration? If you need more context, please let me know. Feel free to use any tools, such as web search.',
       },
     ],
   },
@@ -845,12 +845,14 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   const showSuggestions = !suggestionsDismissed && suggestionType !== null && suggestions.length > 0;
 
   // Auto-resize textarea
-  const maxHeight = isWelcome ? 180 : 160;
+  const maxHeight = 160;
   useEffect(() => {
     const el = textareaRef.current;
     if (el) {
       el.style.height = 'auto';
-      el.style.height = Math.min(el.scrollHeight, maxHeight) + 'px';
+      const contentHeight = el.scrollHeight;
+      el.style.height = Math.min(contentHeight, maxHeight) + 'px';
+      el.style.overflowY = contentHeight > maxHeight ? 'auto' : 'hidden';
     }
   }, [text, maxHeight]);
 
@@ -894,7 +896,10 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     setSelectedCliApps([]);
     setSelectedMcpPresets([]);
     setSuggestionsDismissed(false);
-    if (textareaRef.current) textareaRef.current.style.height = 'auto';
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.overflowY = 'hidden';
+    }
   };
 
   const submitDraft = (draft: ComposerDraft, workspacePath?: string | null): boolean => {
@@ -1437,7 +1442,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
         type: 'error',
         title: isEn ? 'Microphone unavailable' : '无法使用麦克风',
         message: denied
-          ? (isEn ? 'Allow microphone access in system settings and try again.' : '请在系统设置中允许太资如意访问麦克风后重试。')
+          ? (isEn ? 'Allow microphone access in system settings and try again.' : '请在系统设置中允许TPACowork访问麦克风后重试。')
           : error instanceof Error ? error.message : String(error),
         duration: 5000,
       });
@@ -1898,6 +1903,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   const renderSelectedExpertTeam = () => selectedExpertTeam ? (
     <button
       type="button"
+      data-composer-action
       data-selected-expert-team={selectedExpertTeam.id}
       onClick={clearSelectedExpertTeam}
       disabled={expertTeamUpdating}
@@ -1924,6 +1930,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       <div className="relative flex items-center">
         <Button
           type="button"
+          data-composer-action
           variant="ghost"
           size="icon"
           onClick={() => void toggleVoiceRecording()}
@@ -1992,7 +1999,10 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
         />
       )}
 
-      <div className="relative">
+      <div
+        className="relative"
+        data-welcome-input-root={isWelcome ? 'true' : undefined}
+      >
         {queuedPrompts.length > 0 && (
           <div className="mb-2 rounded-2xl border border-[#dedbd3] bg-white/90 p-1.5 shadow-sm">
             <div className="max-h-48 overflow-y-auto">
@@ -2079,11 +2089,26 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
         )}
 
         {/* Unified Input Widget Container */}
-        <div className="relative rounded-[24px] bg-[#faf9f6] border border-[#e8e4dd] shadow-[0_6px_24px_rgba(0,0,0,0.06)] flex flex-col">
+        <div
+          data-codex-composer-shell
+          data-composer-variant={isWelcome ? 'welcome' : 'chat'}
+          data-welcome-composer-shell={isWelcome ? 'true' : undefined}
+          className={cn(
+            'relative flex flex-col border border-[#e8e4dd] bg-[#faf9f6]',
+            isWelcome
+              ? 'rounded-[20px] shadow-[0_4px_18px_rgba(41,38,27,0.055)]'
+              : 'rounded-[24px] shadow-[0_6px_24px_rgba(0,0,0,0.06)]',
+          )}
+        >
           {/* Input Card */}
           <div
+            data-codex-composer-card
+            data-welcome-composer-card={isWelcome ? 'true' : undefined}
             className={cn(
-              'relative bg-white border border-[#e8e5de]/60 rounded-[24px] shadow-[0_4px_12px_rgba(0,0,0,0.03)] transition-all',
+              'relative border border-[#e8e5de]/60 bg-white transition-all',
+              isWelcome
+                ? 'rounded-[20px] shadow-[0_2px_8px_rgba(41,38,27,0.025)]'
+                : 'rounded-[24px] shadow-[0_4px_12px_rgba(0,0,0,0.03)]',
               !isWelcome && isDragging
                 ? 'border-[#d97757] ring-2 ring-[#d97757]/20'
                 : ''
@@ -2137,7 +2162,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
           <div className={cn(
             'flex items-start gap-0',
             isWelcome
-              ? hasAttachments ? 'px-5 pt-1 pb-1' : 'px-5 pt-5 pb-1'
+              ? hasAttachments ? 'px-4 pt-1 pb-1' : 'px-4 pt-4 pb-0.5'
               : hasAttachments ? 'px-4 pt-1 pb-1' : 'px-4 pt-3.5 pb-1'
           )}>
             {/* Inline command prefix (unified for both variants) */}
@@ -2186,12 +2211,14 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
               disabled={disabled}
               readOnly={voiceState !== 'idle'}
               data-voice-input-state={voiceState}
+              data-codex-composer-input
+              data-welcome-composer-input={isWelcome ? 'true' : undefined}
               rows={isWelcome ? 2 : 1}
               className={cn(
-                'flex-1 bg-transparent resize-none outline-none text-[#29261b] leading-relaxed placeholder:text-[#8f8b82] font-user-message',
+                'flex-1 resize-none bg-transparent font-user-message text-[#29261b] outline-none placeholder:text-[#969289]',
                 isWelcome
-                  ? 'min-h-[64px] max-h-[180px] text-[18px]'
-                  : 'min-h-[28px] max-h-[160px] py-0.5 text-[15px] disabled:opacity-40'
+                  ? 'min-h-[52px] max-h-[160px] text-[16px] leading-6'
+                  : 'min-h-[28px] max-h-[160px] py-0.5 text-[15px] leading-relaxed disabled:opacity-40'
               )}
             />
           </div>
@@ -2199,16 +2226,19 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
           {/* Bottom Toolbar */}
           {isWelcome ? (
             /* Welcome variant: [+] + --- + Start button */
-            <div className="flex items-center gap-2 px-5 pb-4">
+            <div data-codex-composer-toolbar data-welcome-composer-toolbar className="flex items-center gap-2 px-4 pb-3">
               <div className="relative">
                 <Button
+                  data-composer-action
                   variant="ghost"
                   size="icon"
                   onClick={() => setShowPlusMenu(!showPlusMenu)}
                   aria-label={t.chat.addAttachment}
                   className={cn(
-                    "btn-ghost h-8 w-8 text-[#29261b] hover:text-[#29261b] rounded-xl transition-colors",
-                    showPlusMenu ? "bg-[#eeeeea]" : "hover:bg-[#eeeeea]"
+                    "btn-ghost h-8 w-8 rounded-xl text-[#29261b] transition-colors hover:text-[#29261b] dark:text-[#d6d2ca] dark:hover:text-white",
+                    showPlusMenu
+                      ? "bg-[#eeeeea] dark:bg-[#3a3835] dark:text-white"
+                      : "hover:bg-[#eeeeea] dark:hover:bg-[#2d2d2c]"
                   )}
                 >
                   <Plus className={cn("h-4 w-4 transition-transform duration-200", showPlusMenu && "rotate-45")} />
@@ -2220,10 +2250,12 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
               <div className="flex-1" />
 
               <button
+                data-codex-submit
+                data-welcome-submit
                 onClick={handleSend}
                 disabled={!hasContent || disabled || sendDisabled}
                 className={cn(
-                  'btn-claude-primary flex items-center gap-1.5 px-4 py-2 rounded-xl text-[13px] font-medium',
+                  'btn-claude-primary flex h-9 items-center gap-1.5 rounded-xl px-4 text-[13px] font-medium',
                   hasContent && !disabled && !sendDisabled
                     ? 'bg-[#29261b] text-[#faf9f5] shadow-sm'
                     : 'bg-[#e8e5de] text-[#656358]/50 cursor-not-allowed'
@@ -2235,18 +2267,21 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
             </div>
           ) : (
             /* Chat variant: [+] + --- + Model label + Stop/Send */
-            <div className="flex items-center justify-between px-4 pb-3 pt-1">
+            <div data-codex-composer-toolbar className="flex items-center justify-between px-4 pb-3 pt-1">
               {/* Left Actions */}
               <div className="flex items-center gap-0.5">
                 <div className="relative">
                   <Button
+                    data-composer-action
                     variant="ghost"
                     size="icon"
                     onClick={() => setShowPlusMenu(!showPlusMenu)}
                     aria-label={t.chat.addAttachment}
                     className={cn(
-                      "btn-ghost h-8 w-8 text-[#29261b] hover:text-[#29261b] rounded-xl transition-colors",
-                      showPlusMenu ? "bg-[#eeeeea]" : "hover:bg-[#eeeeea]"
+                      "btn-ghost h-8 w-8 rounded-xl text-[#29261b] transition-colors hover:text-[#29261b] dark:text-[#d6d2ca] dark:hover:text-white",
+                      showPlusMenu
+                        ? "bg-[#eeeeea] dark:bg-[#3a3835] dark:text-white"
+                        : "hover:bg-[#eeeeea] dark:hover:bg-[#2d2d2c]"
                     )}
                   >
                     <Plus className={cn("h-4 w-4 transition-transform duration-200", showPlusMenu && "rotate-45")} />
@@ -2261,6 +2296,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                 {/* Model picker dropdown */}
                 <div className="relative" ref={modelPickerRef}>
                   <button
+                    data-codex-model-picker
                     onClick={() => setShowModelPicker(!showModelPicker)}
                     className="btn-ghost flex items-center gap-1 px-2.5 py-1.5 text-[14px] text-[#3d3929] font-medium hover:text-[#29261b] hover:bg-[#eeeeea] rounded-lg transition-colors"
                   >
@@ -2268,7 +2304,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                     <ChevronDown className={cn('h-3 w-3 transition-transform', showModelPicker && 'rotate-180')} />
                   </button>
                   {showModelPicker && availableModels.length > 0 && (
-                    <div className="absolute bottom-full right-0 mb-1.5 w-56 bg-white rounded-xl border border-[#dedbd3] shadow-lg py-1 z-50">
+                    <div data-codex-model-menu className="absolute bottom-full right-0 mb-1.5 w-56 bg-white rounded-xl border border-[#dedbd3] shadow-lg py-1 z-50">
                       {availableModels.map((m) => (
                         <button
                           key={m.id}
@@ -2295,6 +2331,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                 {isStreaming ? (
                   <>
                     <Button
+                      data-codex-submit
                       size="icon"
                       onClick={handleSend}
                       disabled={!hasContent || disabled || sendDisabled}
@@ -2310,6 +2347,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                       <CornerDownRight className="h-3.5 w-3.5" />
                     </Button>
                     <Button
+                      data-codex-stop
                       size="icon"
                       onClick={handleStop}
                       aria-label={t.chat.stop}
@@ -2321,6 +2359,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                   </>
                 ) : (
                   <Button
+                    data-codex-submit
                     size="icon"
                     onClick={handleSend}
                     disabled={!hasContent || disabled || sendDisabled}
@@ -2340,7 +2379,14 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
         </div>
 
         {showProjectSelector && (
-          <div className="flex items-center gap-4 px-5 py-1 text-[#656358] text-[12.5px] select-none z-10 rounded-b-[24px]">
+          <div
+            data-codex-project-selector
+            data-welcome-project-selector={isWelcome ? 'true' : undefined}
+            className={cn(
+              'z-10 flex items-center gap-4 px-4 py-1.5 text-[12.5px] text-[#656358] select-none',
+              isWelcome ? 'rounded-b-[20px]' : 'rounded-b-[24px]',
+            )}
+          >
             <FolderSelector
               variant="pill"
               currentPath={workspaceScope?.project_path ?? localWorkspace}
@@ -2357,7 +2403,8 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
         {isWelcome && activeCategory && (
           <div
             ref={categoryPanelRef}
-            className="absolute bottom-full left-0 right-0 mb-2.5 bg-[#fffefa] rounded-[24px] border border-[#dedbd3] shadow-lg overflow-hidden z-30 animate-in fade-in slide-in-from-bottom-2 duration-200"
+            data-welcome-shortcut-panel
+            className="absolute bottom-full left-0 right-0 z-30 mb-2.5 overflow-hidden rounded-[20px] border border-[#dedbd3] bg-[#fffefa] shadow-lg animate-in fade-in slide-in-from-bottom-2 duration-200"
           >
             {/* Header */}
             {(() => {
@@ -2365,14 +2412,14 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
               if (!category) return null;
               const Icon = category.icon;
               return (
-                <div className="flex items-center justify-between px-5 pt-4 pb-3 text-[#656358] text-[13px] font-medium border-b border-[#f0ede6]">
+                <div className="flex items-center justify-between border-b border-[#f0ede6] px-5 pb-3 pt-4 text-[13px] font-medium text-[#656358]">
                   <div className="flex items-center gap-2">
                     <Icon className="h-4 w-4 text-[#656358]" />
                     <span>{t.chat[category.labelKey]}</span>
                   </div>
                   <button
                     onClick={() => setActiveCategory(null)}
-                    className="p-1 hover:bg-[#f5f3ee] rounded-lg transition-colors text-[#656358] hover:text-[#29261b]"
+                    className="rounded-lg p-1 text-[#656358] transition-colors hover:bg-[#f5f3ee] hover:text-[#29261b]"
                     title={t.common.close}
                   >
                     <X className="h-3.5 w-3.5" />
@@ -2394,7 +2441,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                     onMouseEnter={() => setHoverPrompt(isEn ? opt.promptEn : opt.promptZh)}
                     onMouseLeave={() => setHoverPrompt(null)}
                     className={cn(
-                      "w-full text-left py-3.5 px-5 hover:bg-[#f5f3ee] text-[14px] text-[#29261b] transition-colors flex items-center justify-between group",
+                      "group flex w-full items-center justify-between px-5 py-3.5 text-left text-[14px] text-[#29261b] transition-colors hover:bg-[#f5f3ee]",
                       idx > 0 && "border-t border-[#f0ede6]"
                     )}
                   >
@@ -2410,38 +2457,48 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
         )}
 
         {isWelcome && (
-          <div className="flex flex-wrap items-center justify-center gap-2.5 mt-4">
+          <div data-welcome-shortcuts className="mt-3 flex flex-wrap items-center justify-center gap-2">
             <button
+              data-welcome-shortcut="write"
+              data-active={activeCategory === 'write' ? 'true' : 'false'}
               onClick={() => handleShortcut('write')}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#dedbd3] bg-white hover:bg-[#f5f3ee] text-[#29261b] text-[13px] font-medium shadow-sm transition-colors"
+              className="flex h-9 items-center gap-1.5 rounded-lg border border-[#dedbd3]/80 bg-[#fffefa] px-3 text-[13px] font-medium text-[#29261b] shadow-[0_1px_2px_rgba(41,38,27,0.08)] transition-colors hover:bg-[#f5f3ee]"
             >
               <Pencil className="h-3.5 w-3.5 text-[#656358]" />
               <span>{t.chat.shortcutWrite}</span>
             </button>
             <button
+              data-welcome-shortcut="learn"
+              data-active={activeCategory === 'learn' ? 'true' : 'false'}
               onClick={() => handleShortcut('learn')}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#dedbd3] bg-white hover:bg-[#f5f3ee] text-[#29261b] text-[13px] font-medium shadow-sm transition-colors"
+              className="flex h-9 items-center gap-1.5 rounded-lg border border-[#dedbd3]/80 bg-[#fffefa] px-3 text-[13px] font-medium text-[#29261b] shadow-[0_1px_2px_rgba(41,38,27,0.08)] transition-colors hover:bg-[#f5f3ee]"
             >
               <GraduationCap className="h-3.5 w-3.5 text-[#656358]" />
               <span>{t.chat.shortcutLearn}</span>
             </button>
             <button
+              data-welcome-shortcut="code"
+              data-active={activeCategory === 'code' ? 'true' : 'false'}
               onClick={() => handleShortcut('code')}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#dedbd3] bg-white hover:bg-[#f5f3ee] text-[#29261b] text-[13px] font-medium shadow-sm transition-colors"
+              className="flex h-9 items-center gap-1.5 rounded-lg border border-[#dedbd3]/80 bg-[#fffefa] px-3 text-[13px] font-medium text-[#29261b] shadow-[0_1px_2px_rgba(41,38,27,0.08)] transition-colors hover:bg-[#f5f3ee]"
             >
               <Code className="h-3.5 w-3.5 text-[#656358]" />
               <span>{t.chat.shortcutCode}</span>
             </button>
             <button
+              data-welcome-shortcut="life"
+              data-active={activeCategory === 'life' ? 'true' : 'false'}
               onClick={() => handleShortcut('life')}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#dedbd3] bg-white hover:bg-[#f5f3ee] text-[#29261b] text-[13px] font-medium shadow-sm transition-colors"
+              className="flex h-9 items-center gap-1.5 rounded-lg border border-[#dedbd3]/80 bg-[#fffefa] px-3 text-[13px] font-medium text-[#29261b] shadow-[0_1px_2px_rgba(41,38,27,0.08)] transition-colors hover:bg-[#f5f3ee]"
             >
               <Coffee className="h-3.5 w-3.5 text-[#656358]" />
               <span>{t.chat.shortcutLife}</span>
             </button>
             <button
+              data-welcome-shortcut="ruyi"
+              data-active={activeCategory === 'ruyi' ? 'true' : 'false'}
               onClick={() => handleShortcut('ruyi')}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#dedbd3] bg-white hover:bg-[#f5f3ee] text-[#29261b] text-[13px] font-medium shadow-sm transition-colors"
+              className="flex h-9 items-center gap-1.5 rounded-lg border border-[#dedbd3]/80 bg-[#fffefa] px-3 text-[13px] font-medium text-[#29261b] shadow-[0_1px_2px_rgba(41,38,27,0.08)] transition-colors hover:bg-[#f5f3ee]"
             >
               <Lightbulb className="h-3.5 w-3.5 text-[#656358]" />
               <span>{t.chat.shortcutRuyi}</span>

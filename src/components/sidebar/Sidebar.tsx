@@ -1,4 +1,5 @@
 import { useEffect, useCallback, useMemo, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useScheduleStore } from '@/stores/scheduleStore';
@@ -6,9 +7,9 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { usePromptHubStore } from '@/stores/promptHubStore';
 import { useI18n } from '@/i18n';
-import { Plus, Clock, Wrench, Trash2, Settings, Download, Pencil, HelpCircle, ChevronRight, MoreHorizontal, SquarePen, FolderOpen, FolderClosed, X, Search, LogOut, UserRound } from 'lucide-react';
-import GuideModal from '@/components/common/GuideModal';
+import { Clock, Wrench, Trash2, Settings, Download, Pencil, HelpCircle, ChevronRight, MoreHorizontal, SquarePen, FolderOpen, FolderClosed, X, Search, LogOut, UserRound } from 'lucide-react';
 import ProjectMemoryDialog from '@/components/sidebar/ProjectMemoryDialog';
+import { matchesConversationSearch, matchesProjectSearch } from '@/components/sidebar/conversationSearch';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
@@ -19,9 +20,7 @@ import { normalizeProjectPath, projectNameFromPath, visibleProjectPath } from '@
 import type { Conversation } from '@/types';
 import {
   archiveProject,
-  exportProjectArchive,
   fetchProjectSkills,
-  relocateProject,
   saveProjectSkills as saveProjectSkillsApi,
 } from '@/core/api';
 import {
@@ -82,6 +81,7 @@ export default function Sidebar() {
   const { conversations, activeConversationId, startNewConversation, switchConversation, deleteConversation, renameConversation, clearCompletedStatus, exportConversation } = useChatStore();
   const openToolbox = useSettingsStore((s) => s.openToolbox);
   const openSystemSettings = useSettingsStore((s) => s.openSystemSettings);
+  const setGuideShown = useSettingsStore((s) => s.setGuideShown);
   const viewMode = useSettingsStore((s) => s.viewMode);
   const setViewMode = useSettingsStore((s) => s.setViewMode);
   const updateInfo = useSettingsStore((s) => s.updateInfo);
@@ -98,6 +98,8 @@ export default function Sidebar() {
   const promptHubIsLoggingIn = usePromptHubStore((s) => s.isLoggingIn);
   const promptHubOpen = usePromptHubStore((s) => s.loginOpen);
   const promptHubError = usePromptHubStore((s) => s.error);
+  const promptHubBaseUrl = usePromptHubStore((s) => s.baseUrl);
+  const setPromptHubBaseUrl = usePromptHubStore((s) => s.setBaseUrl);
   const loginPromptHub = usePromptHubStore((s) => s.login);
   const logoutPromptHub = usePromptHubStore((s) => s.logout);
   const openPromptHubLogin = usePromptHubStore((s) => s.openLogin);
@@ -111,45 +113,60 @@ export default function Sidebar() {
   const [memoryProject, setMemoryProject] = useState<{ id: string; name: string } | null>(null);
   const [skillProject, setSkillProject] = useState<{ path: string; name: string } | null>(null);
   const [skillSearch, setSkillSearch] = useState('');
+  const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
+  const [conversationSearch, setConversationSearch] = useState('');
+  const [selectedSearchIndex, setSelectedSearchIndex] = useState(0);
   const [draftSkillBindings, setDraftSkillBindings] = useState<string[]>([]);
   const [promptHubUsername, setPromptHubUsername] = useState('');
   const [promptHubPassword, setPromptHubPassword] = useState('');
+  const [promptHubServerUrl, setPromptHubServerUrl] = useState('');
   const contextMenuRef = useRef<HTMLDivElement>(null);
+  const conversationSearchRef = useRef<HTMLInputElement>(null);
 
   const [showDeleteToast, setShowDeleteToast] = useState(false);
   const deleteToastTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => () => clearTimeout(deleteToastTimerRef.current), []);
 
+  const closeConversationSearch = useCallback(() => {
+    setConversationSearch('');
+    setSelectedSearchIndex(0);
+    setConversationSearchOpen(false);
+  }, []);
+
+  const openConversationSearch = useCallback(() => {
+    setSelectedSearchIndex(0);
+    setConversationSearchOpen(true);
+  }, []);
+
+  useEffect(() => {
+    if (!conversationSearchOpen) return;
+    const frame = requestAnimationFrame(() => conversationSearchRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [conversationSearchOpen]);
+
+  useEffect(() => {
+    const handleSearchShortcut = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && conversationSearchOpen) {
+        event.preventDefault();
+        closeConversationSearch();
+        return;
+      }
+
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        openConversationSearch();
+      }
+    };
+
+    window.addEventListener('keydown', handleSearchShortcut);
+    return () => window.removeEventListener('keydown', handleSearchShortcut);
+  }, [closeConversationSearch, conversationSearchOpen, openConversationSearch]);
+
   // Inline rename state
   const [editingId, setEditingId] = useState<string | null>(null);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(() => new Set());
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(() => new Set());
-
-  // Guide modal state — auto-open on first launch only
-  const setGuideShown = useSettingsStore((s) => s.setGuideShown);
-  const [guideOpen, setGuideOpen] = useState(false);
-  const guideCheckedRef = useRef(false);
-
-  useEffect(() => {
-    if (guideCheckedRef.current) return;
-    // Wait for persist rehydration — guideShown stays false (default) until rehydrated
-    const unsub = useSettingsStore.persist.onFinishHydration(() => {
-      guideCheckedRef.current = true;
-      if (!useSettingsStore.getState().guideShown) {
-        setGuideOpen(true);
-      }
-    });
-    // If already hydrated (e.g. hot reload), check immediately
-    if (useSettingsStore.persist.hasHydrated()) {
-      guideCheckedRef.current = true;
-      if (!useSettingsStore.getState().guideShown) {
-        setGuideOpen(true);
-      }
-    }
-    return unsub;
-  }, []);
-
 
   // Close context menu when clicking outside
   useEffect(() => {
@@ -175,10 +192,13 @@ export default function Sidebar() {
     return ids;
   }, [scheduledTasks]);
 
-  const sortedConvs = Object.values(conversations)
-    .filter((c) => !c.scheduledTaskId && !scheduledConversationIds.has(c.id) && !c.id.startsWith('cron:'))
-    .filter((c) => c.hasHistory || !!c.sessionId || c.messages.length > 0 || c.status === 'running' || c.id === activeConversationId)
-    .sort((a, b) => b.createdAt - a.createdAt);
+  const sortedConvs = useMemo(
+    () => Object.values(conversations)
+      .filter((c) => !c.scheduledTaskId && !scheduledConversationIds.has(c.id) && !c.id.startsWith('cron:'))
+      .filter((c) => c.hasHistory || !!c.sessionId || c.messages.length > 0 || c.status === 'running' || c.id === activeConversationId)
+      .sort((a, b) => b.createdAt - a.createdAt),
+    [activeConversationId, conversations, scheduledConversationIds],
+  );
 
   const conversationGroups = useMemo(() => {
     const recentOrder = new Map<string, number>();
@@ -282,6 +302,43 @@ export default function Sidebar() {
     };
   }, [gatewayProjects, projectNames, recentWorkspacePaths, sortedConvs]);
 
+  const searchConversationEntries = useMemo(() => {
+    const entries = conversationGroups.projects.flatMap((project) => (
+      project.conversations.map((conversation) => ({
+        conversation,
+        projectName: project.name,
+        projectPath: project.path,
+      }))
+    ));
+
+    entries.push(...conversationGroups.unprojected.map((conversation) => ({
+      conversation,
+      projectName: '',
+      projectPath: '',
+    })));
+
+    return entries.sort((a, b) => b.conversation.updatedAt - a.conversation.updatedAt);
+  }, [conversationGroups]);
+
+  const searchResults = useMemo(() => {
+    const query = conversationSearch.trim();
+    const matchingEntries = query
+      ? searchConversationEntries.filter((entry) => (
+        matchesProjectSearch(query, entry.projectName, entry.projectPath)
+        || matchesConversationSearch(
+          entry.conversation,
+          query,
+          [entry.projectName, entry.projectPath],
+        )
+      ))
+      : searchConversationEntries;
+
+    return matchingEntries.slice(0, 9);
+  }, [conversationSearch, searchConversationEntries]);
+
+  const hasVisibleConversations = conversationGroups.projects.length > 0
+    || conversationGroups.unprojected.length > 0;
+
   const workspaceSkills = useMemo(
     () => skills.filter((skill) => skill.tags?.[0] === 'workspace'),
     [skills],
@@ -365,39 +422,6 @@ export default function Sidebar() {
     setPendingRemoveProject({ path, name: projectName, id: project?.id });
   };
 
-  const exportProject = async (project: { id?: string; name: string }) => {
-    if (!project.id) return;
-    try {
-      const auth = await getProjectSkillsAuth();
-      const bytes = await exportProjectArchive(auth.token, project.id, auth.baseUrl);
-      const filePath = await dialogBridge.save({
-        defaultPath: `${project.name || project.id}-export.zip`,
-        filters: [{ name: 'ZIP', extensions: ['zip'] }],
-      });
-      if (filePath) await fsBridge.writeFile(filePath, bytes);
-    } catch (error) {
-      console.error('Project export failed:', error);
-    } finally {
-      setProjectMenu(null);
-    }
-  };
-
-  const relocateRegisteredProject = async (project: { id?: string }) => {
-    if (!project.id) return;
-    try {
-      const selected = await dialogBridge.open({ multiple: false, directory: true });
-      const path = Array.isArray(selected) ? selected[0] : selected;
-      if (typeof path !== 'string' || !path.trim()) return;
-      const auth = await getProjectSkillsAuth();
-      await relocateProject(auth.token, project.id, path, auth.baseUrl);
-      await syncProjectsFromGateway();
-    } catch (error) {
-      console.error('Project relocation failed:', error);
-    } finally {
-      setProjectMenu(null);
-    }
-  };
-
   const openProjectSkills = async (path: string) => {
     const project = conversationGroups.projects.find((item) => item.path === path);
     const projectName = project?.name ?? projectNames[path] ?? projectNameFromPath(path);
@@ -460,16 +484,74 @@ export default function Sidebar() {
   const accountInitial = (promptHubUser?.username?.trim()[0] || '').toUpperCase();
 
   useEffect(() => {
-    if (promptHubOpen) setPromptHubUsername(promptHubUser?.username ?? '');
-  }, [promptHubOpen, promptHubUser?.username]);
+    if (!promptHubOpen) return;
+    setPromptHubUsername(promptHubUser?.username ?? '');
+    setPromptHubServerUrl(promptHubBaseUrl);
+  }, [promptHubBaseUrl, promptHubOpen, promptHubUser?.username]);
 
   const submitPromptHubLogin = async () => {
-    if (!promptHubUsername.trim() || !promptHubPassword) return;
+    const serverUrl = promptHubServerUrl.trim().replace(/\/+$/, '');
+    if (!promptHubUsername.trim() || !promptHubPassword || !/^https?:\/\//i.test(serverUrl)) return;
     try {
+      setPromptHubBaseUrl(serverUrl);
       await loginPromptHub(promptHubUsername, promptHubPassword);
       setPromptHubPassword('');
     } catch {
       // Error is stored in promptHubStore for display.
+    }
+  };
+
+  const startNewChat = () => {
+    startNewConversation();
+    window.dispatchEvent(new CustomEvent('nanobot-gui:new-chat'));
+    setViewMode('chat');
+  };
+
+  const openSearchResult = (conversationId: string) => {
+    switchConversation(conversationId);
+    setViewMode('chat');
+    closeConversationSearch();
+  };
+
+  const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    const selectableCount = searchResults.length + 1;
+    const currentIndex = Math.min(selectedSearchIndex, selectableCount - 1);
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setSelectedSearchIndex((currentIndex + 1) % selectableCount);
+      return;
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setSelectedSearchIndex((currentIndex - 1 + selectableCount) % selectableCount);
+      return;
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      const result = searchResults[currentIndex];
+      if (result) openSearchResult(result.conversation.id);
+      else {
+        closeConversationSearch();
+        startNewChat();
+      }
+      return;
+    }
+
+    const modifierPressed = event.metaKey || event.ctrlKey;
+    if (modifierPressed && /^[1-9]$/.test(event.key)) {
+      const shortcutIndex = Number(event.key) - 1;
+      const result = searchResults[shortcutIndex];
+      if (result) {
+        event.preventDefault();
+        openSearchResult(result.conversation.id);
+      }
+      return;
+    }
+    if (modifierPressed && event.key.toLowerCase() === 'n') {
+      event.preventDefault();
+      closeConversationSearch();
+      startNewChat();
     }
   };
 
@@ -480,11 +562,11 @@ export default function Sidebar() {
       onContextMenu={(e) => handleContextMenu(e, conv.id)}
       aria-current={conv.id === activeConversationId && viewMode === 'chat' ? 'true' : undefined}
       className={cn(
-        'group flex items-center gap-2 rounded-xl cursor-pointer transition-colors w-full text-left',
-        nested ? 'px-3 py-2 ml-7 w-[calc(100%-1.75rem)]' : 'px-3.5 py-2.5',
+        'group flex h-8 items-center gap-2 rounded-lg cursor-pointer transition-colors w-full text-left',
+        nested ? 'ml-6 w-[calc(100%-1.5rem)] px-3' : 'px-3',
         conv.id === activeConversationId && viewMode === 'chat'
-          ? 'bg-[#ecebe7] text-[#29261b]'
-          : 'text-[#34322d] hover:bg-[#eeeeea]'
+          ? 'bg-[#ecebe7] text-[#29261b] dark:bg-[#383838] dark:text-[#f3f0e8]'
+          : 'text-[#4b4943] hover:bg-[#eeeeea] dark:text-[#d8d4cc] dark:hover:bg-[#333]'
       )}
     >
       <StatusIndicator
@@ -508,7 +590,14 @@ export default function Sidebar() {
           }}
         />
       ) : (
-        <span className="flex-1 truncate text-[14px] font-medium tracking-[-0.01em]">{conv.title}</span>
+        <span
+          className={cn(
+            'flex-1 truncate text-[14px] leading-5 tracking-[-0.01em]',
+            conv.id === activeConversationId && viewMode === 'chat' ? 'font-medium' : 'font-normal',
+          )}
+        >
+          {conv.title}
+        </span>
       )}
       <Button
         variant="ghost"
@@ -522,38 +611,54 @@ export default function Sidebar() {
   );
 
   return (
-    <div className="flex flex-col h-full w-[260px] bg-[#f7f6f2] border-r border-[#e5e2db]">
-      {/* Drag region — covers the title bar area above sidebar content (macOS overlay only) */}
+    <div className="flex flex-col h-full w-[260px] bg-[#f7f6f2] border-r border-[#e5e2db] dark:bg-[#242424] dark:border-[#3d3d3d]">
+      {/* Layout spacer for the macOS title-bar overlay. The shared App drag
+          region starts after the traffic lights and sidebar toggle. */}
       {isMacOS() && (
-        <div
-          className="h-7 shrink-0 [app-region:drag]"
-        />
+        <div className="h-9 shrink-0" />
       )}
+      <header className="shrink-0 px-3 pb-2.5 pt-2.5">
+        <div className="flex h-9 items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center px-1.5 text-[20px] font-semibold leading-6 tracking-[-0.025em] text-[#34322d] dark:text-[#f3f0e8]">
+            <span className="truncate">{t.common.appName}</span>
+          </div>
+          <button
+            onClick={openConversationSearch}
+            className={cn(
+              'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#656358] transition-colors hover:bg-[#e8e5de] hover:text-[#29261b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d97757]/35 dark:text-[#c4c0b6] dark:hover:bg-[#383838] dark:hover:text-white',
+              conversationSearchOpen && 'bg-[#e8e5de] text-[#29261b] dark:bg-[#383838] dark:text-white',
+            )}
+            aria-label={t.sidebar.searchConversations}
+            aria-keyshortcuts="Meta+K Control+K"
+            aria-pressed={conversationSearchOpen}
+            title={`${t.sidebar.searchConversations} (${isMacOS() ? '⌘K' : 'Ctrl+K'})`}
+          >
+            <Search className="h-[18px] w-[18px]" strokeWidth={1.8} />
+          </button>
+        </div>
+      </header>
+
       {/* Top Navigation */}
-      <nav className="px-4 pb-5 space-y-1" aria-label="Main navigation">
+      <nav className="space-y-0.5 px-3 pb-4" aria-label="Main navigation">
         <button
-          onClick={() => {
-            startNewConversation();
-            window.dispatchEvent(new CustomEvent('nanobot-gui:new-chat'));
-            setViewMode('chat');
-          }}
+          onClick={startNewChat}
           className={cn(
-            'btn-ghost flex items-center gap-3 w-full px-3 py-2.5 text-[15px] font-medium tracking-[-0.01em] rounded-xl',
+            'btn-ghost flex h-10 w-full items-center gap-3 rounded-lg px-3 text-[15px] font-medium leading-5 tracking-[-0.01em]',
             activeConversationId === null && viewMode === 'chat'
-              ? 'bg-[#ecebe7] text-[#29261b]'
-              : 'text-[#34322d] hover:bg-[#eeeeea]'
+              ? 'bg-[#ecebe7] text-[#29261b] dark:bg-[#383838] dark:text-[#f3f0e8]'
+              : 'text-[#34322d] hover:bg-[#eeeeea] dark:text-[#e3dfd7] dark:hover:bg-[#333]'
           )}
         >
-          <Plus className="h-[18px] w-[18px] text-[#3d3929]" strokeWidth={2} />
+          <SquarePen className="h-[18px] w-[18px] text-[#3d3929] dark:text-[#dedad2]" strokeWidth={1.8} />
           <span>{t.sidebar.newTask}</span>
         </button>
         <button
           onClick={() => setViewMode('schedule')}
           className={cn(
-            'btn-ghost flex items-center gap-3 w-full px-3 py-2.5 text-[15px] font-medium tracking-[-0.01em] rounded-xl',
+            'btn-ghost flex h-10 w-full items-center gap-3 rounded-lg px-3 text-[15px] font-medium leading-5 tracking-[-0.01em]',
             viewMode === 'schedule'
-              ? 'bg-[#ecebe7] text-[#29261b] font-medium'
-              : 'text-[#34322d] hover:bg-[#eeeeea]'
+              ? 'bg-[#ecebe7] text-[#29261b] font-medium dark:bg-[#383838] dark:text-[#f3f0e8]'
+              : 'text-[#34322d] hover:bg-[#eeeeea] dark:text-[#e3dfd7] dark:hover:bg-[#333]'
           )}
         >
           <Clock className="h-[18px] w-[18px] text-[#656358]" strokeWidth={1.75} />
@@ -567,10 +672,10 @@ export default function Sidebar() {
         <button
           onClick={() => openToolbox()}
           className={cn(
-            'btn-ghost flex items-center gap-3 w-full px-3 py-2.5 text-[15px] font-medium tracking-[-0.01em] rounded-xl',
+            'btn-ghost flex h-10 w-full items-center gap-3 rounded-lg px-3 text-[15px] font-medium leading-5 tracking-[-0.01em]',
             viewMode === 'toolbox'
-              ? 'bg-[#ecebe7] text-[#29261b] font-medium'
-              : 'text-[#34322d] hover:bg-[#eeeeea]'
+              ? 'bg-[#ecebe7] text-[#29261b] font-medium dark:bg-[#383838] dark:text-[#f3f0e8]'
+              : 'text-[#34322d] hover:bg-[#eeeeea] dark:text-[#e3dfd7] dark:hover:bg-[#333]'
           )}
         >
           <Wrench className="h-[18px] w-[18px] text-[#656358]" strokeWidth={1.75} />
@@ -580,25 +685,27 @@ export default function Sidebar() {
 
       {/* Conversation List */}
       <ScrollArea className="flex-1 min-h-0 px-2">
-        {conversationGroups.projects.length === 0 && conversationGroups.unprojected.length === 0 ? (
+        {!hasVisibleConversations ? (
           <div className="px-4 py-3">
-            <p className="text-[14px] text-[#8a867c]">{t.sidebar.noSessionsYet}</p>
+            <p className="text-[14px] text-[#8a867c] dark:text-[#aaa69d]">
+              {t.sidebar.noSessionsYet}
+            </p>
           </div>
         ) : (
-          <div className="space-y-5 py-2">
+          <div className="space-y-4 py-1">
             {conversationGroups.projects.length > 0 && (
               <section>
-                <div className="px-3 pb-2 text-[14px] font-semibold tracking-[-0.01em] text-[#8a867c]">{t.sidebar.projects}</div>
-                <div className="space-y-1">
+                <div className="px-3 pb-1.5 text-[13px] font-semibold leading-5 tracking-[-0.01em] text-[#8a867c]">{t.sidebar.projects}</div>
+                <div className="space-y-0.5">
                   {conversationGroups.projects.map((project) => {
                     const collapsed = collapsedProjects.has(project.key);
                     const showAll = expandedProjects.has(project.key);
                     const visible = showAll ? project.conversations : project.conversations.slice(0, PROJECT_VISIBLE_LIMIT);
                     const hiddenCount = project.conversations.length - PROJECT_VISIBLE_LIMIT;
                     return (
-                      <div key={project.key} className="space-y-0.5">
+                      <div key={project.key} className="space-y-px">
                         <div
-                          className="group/project flex items-center gap-2 px-3.5 py-2 text-[15px] font-semibold tracking-[-0.01em] text-[#34322d] hover:bg-[#eeeeea] rounded-xl transition-colors w-full text-left"
+                          className="group/project flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-[14px] font-semibold leading-5 tracking-[-0.01em] text-[#34322d] transition-colors hover:bg-[#eeeeea] dark:text-[#e3dfd7] dark:hover:bg-[#333]"
                         >
                           <button
                             onClick={() => toggleProject(project.key)}
@@ -633,7 +740,7 @@ export default function Sidebar() {
                           </button>
                         </div>
                         {!collapsed && project.conversations.length === 0 && (
-                          <div className="ml-7 px-3 py-1.5 text-[14px] text-[#8a867c]">{t.sidebar.noSessionsYet}</div>
+                          <div className="ml-6 h-8 px-3 text-[13px] leading-8 text-[#8a867c]">{t.sidebar.noSessionsYet}</div>
                         )}
                         {!collapsed && visible.map((conv) => renderConversationButton(conv, true))}
                         {!collapsed && hiddenCount > 0 && (
@@ -646,7 +753,7 @@ export default function Sidebar() {
                                 return next;
                               });
                             }}
-                            className="ml-7 px-3 py-1.5 text-[14px] font-medium text-[#8a867c] hover:text-[#34322d] transition-colors"
+                            className="ml-6 h-8 px-3 text-[13px] font-medium leading-8 text-[#8a867c] transition-colors hover:text-[#34322d]"
                           >
                             {showAll ? t.sidebar.collapseProject : t.sidebar.expandProjectConversations}
                           </button>
@@ -660,8 +767,8 @@ export default function Sidebar() {
 
             {conversationGroups.unprojected.length > 0 && (
               <section>
-                <div className="px-3 pb-2 text-[14px] font-semibold tracking-[-0.01em] text-[#8a867c]">{t.sidebar.conversations}</div>
-                <div className="space-y-0.5">
+                <div className="px-3 pb-1.5 text-[13px] font-semibold leading-5 tracking-[-0.01em] text-[#8a867c]">{t.sidebar.recents}</div>
+                <div className="space-y-px">
                   {conversationGroups.unprojected.map((conv) => renderConversationButton(conv))}
                 </div>
               </section>
@@ -671,52 +778,165 @@ export default function Sidebar() {
       </ScrollArea>
 
       {/* User Section */}
-      <div className="px-3 py-2.5 shrink-0 border-t border-[#e5e2db]">
+      <div className="shrink-0 border-t border-[#e5e2db] px-3 py-1.5">
         <div className="flex items-center gap-1.5">
           <button
             onClick={openPromptHubLogin}
-            className="group flex min-w-0 flex-1 items-center gap-2.5 rounded-2xl px-1.5 py-1.5 text-left transition-colors hover:bg-[#ebe9e4]"
+            className="group flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-0.5 text-left transition-colors hover:bg-[#ebe9e4]"
             title={promptHubUser ? `已登录：${promptHubUser.username}` : '连接使用'}
           >
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#d8d5ce] bg-[#f7f6f3] text-[#29261b] shadow-sm">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#d8d5ce] bg-[#f7f6f3] text-[#29261b]">
               {promptHubUser ? (
-                <span className="text-[18px] font-medium">{accountInitial}</span>
+                <span className="text-[13px] font-medium">{accountInitial}</span>
               ) : (
-                <UserRound className="h-5 w-5" />
+                <UserRound className="h-4 w-4" />
               )}
             </div>
-            <div className="flex min-w-0 flex-1 items-center gap-1.5">
-              <div className="truncate text-[15px] font-semibold text-[#29261b] leading-none">
+            <div className="flex min-w-0 flex-1 items-center">
+              <div className="truncate text-[14px] font-semibold leading-5 text-[#29261b]">
                 {promptHubUser?.username || '连接使用'}
-              </div>
-              <div className="shrink-0 rounded border border-[#d97757]/30 bg-[#d97757]/8 px-1 py-[2px] text-[9.5px] font-semibold leading-none tracking-wide text-[#d97757]">
-                beta
               </div>
             </div>
           </button>
           <button
-            onClick={() => openSystemSettings(updateInfo ? 'about' : undefined)}
+            onClick={() => openSystemSettings('general')}
             className={cn(
-              'btn-ghost p-1.5 rounded-md relative',
+              'btn-ghost relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md',
               viewMode === 'settings'
                 ? 'text-[#d97757] bg-[#d97757]/10'
                 : 'text-[#656358] hover:text-[#29261b] hover:bg-[#e8e5de]'
             )}
           >
-            <Settings className="h-3.5 w-3.5" />
+            <Settings className="h-4 w-4" />
             {updateInfo && (
               <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-red-500" />
             )}
           </button>
           <button
-            onClick={() => setGuideOpen(true)}
-            className="btn-ghost p-1.5 text-[#656358] hover:text-[#29261b] hover:bg-[#e8e5de] rounded-md"
+            onClick={() => setGuideShown(false)}
+            className="btn-ghost flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[#656358] hover:bg-[#e8e5de] hover:text-[#29261b]"
             title={t.sidebar.help}
           >
-            <HelpCircle className="h-3.5 w-3.5" />
+            <HelpCircle className="h-4 w-4" />
           </button>
         </div>
       </div>
+
+      {conversationSearchOpen && createPortal(
+        <div
+          className="fixed inset-0 z-[10000] flex items-start justify-center bg-black/20 px-6 pt-[9vh] backdrop-blur-[1px] animate-in fade-in duration-150"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeConversationSearch();
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={t.sidebar.searchConversations}
+            data-testid="conversation-search-dialog"
+            className="flex max-h-[min(720px,82vh)] w-full max-w-[760px] flex-col overflow-hidden rounded-[28px] border border-black/5 bg-[#fbfbfa] shadow-[0_24px_70px_rgba(0,0,0,0.22)] dark:border-white/10 dark:bg-[#272727]"
+          >
+            <div className="shrink-0 px-7 pb-4 pt-5">
+              <input
+                ref={conversationSearchRef}
+                value={conversationSearch}
+                onChange={(event) => {
+                  setConversationSearch(event.target.value);
+                  setSelectedSearchIndex(0);
+                }}
+                onKeyDown={handleSearchKeyDown}
+                placeholder={t.sidebar.searchPlaceholder}
+                className="h-10 w-full bg-transparent text-[22px] font-medium tracking-[-0.02em] text-[#34322d] outline-none placeholder:text-[#9d9a94] dark:text-[#f3f0e8] dark:placeholder:text-[#8b8b8b]"
+                aria-label={t.sidebar.searchConversations}
+                aria-controls="conversation-search-results"
+                aria-activedescendant={`conversation-search-option-${Math.min(selectedSearchIndex, searchResults.length)}`}
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </div>
+
+            <div className="min-h-0 overflow-y-auto px-2 pb-4">
+              <section aria-labelledby="conversation-search-heading">
+                <div
+                  id="conversation-search-heading"
+                  className="px-5 pb-2 pt-1 text-[14px] font-semibold text-[#8a867c] dark:text-[#aaa69d]"
+                >
+                  {t.sidebar.searchChats}
+                </div>
+                <div id="conversation-search-results" role="listbox" className="space-y-0.5">
+                  {searchResults.length > 0 ? searchResults.map((entry, index) => {
+                    const selected = selectedSearchIndex === index;
+                    return (
+                      <button
+                        id={`conversation-search-option-${index}`}
+                        key={entry.conversation.id}
+                        role="option"
+                        aria-selected={selected}
+                        onMouseEnter={() => setSelectedSearchIndex(index)}
+                        onClick={() => openSearchResult(entry.conversation.id)}
+                        className={cn(
+                          'flex h-12 w-full items-center gap-3 rounded-2xl px-5 text-left transition-colors',
+                          selected
+                            ? 'bg-[#ececeb] text-[#29261b] dark:bg-[#3a3a3a] dark:text-[#f3f0e8]'
+                            : 'text-[#4b4944] hover:bg-[#f1f1ef] dark:text-[#dedad2] dark:hover:bg-[#333]',
+                        )}
+                      >
+                        <span className="min-w-0 flex-1 truncate text-[15px] font-medium">
+                          {entry.conversation.title}
+                        </span>
+                        {entry.projectName && (
+                          <span className="max-w-[150px] shrink-0 truncate text-[14px] text-[#9b9891] dark:text-[#989898]">
+                            {entry.projectName}
+                          </span>
+                        )}
+                        <kbd className="shrink-0 rounded-lg bg-[#e4e4e2] px-2 py-1 text-[12px] font-medium leading-none text-[#85827c] dark:bg-[#454545] dark:text-[#b8b8b8]">
+                          {isMacOS() ? `⌘${index + 1}` : `Ctrl+${index + 1}`}
+                        </kbd>
+                      </button>
+                    );
+                  }) : (
+                    <div className="px-5 py-4 text-[14px] text-[#8a867c] dark:text-[#aaa69d]">
+                      {conversationSearch.trim() ? t.sidebar.noSearchResults : t.sidebar.noSessionsYet}
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              <section className="mt-3" aria-labelledby="conversation-search-recommended">
+                <div
+                  id="conversation-search-recommended"
+                  className="px-5 pb-2 pt-1 text-[14px] font-semibold text-[#8a867c] dark:text-[#aaa69d]"
+                >
+                  {t.sidebar.recommended}
+                </div>
+                <button
+                  id={`conversation-search-option-${searchResults.length}`}
+                  role="option"
+                  aria-selected={selectedSearchIndex === searchResults.length}
+                  onMouseEnter={() => setSelectedSearchIndex(searchResults.length)}
+                  onClick={() => {
+                    closeConversationSearch();
+                    startNewChat();
+                  }}
+                  className={cn(
+                    'flex h-12 w-full items-center gap-3 rounded-2xl px-5 text-left transition-colors',
+                    selectedSearchIndex === searchResults.length
+                      ? 'bg-[#ececeb] text-[#29261b] dark:bg-[#3a3a3a] dark:text-[#f3f0e8]'
+                      : 'text-[#4b4944] hover:bg-[#f1f1ef] dark:text-[#dedad2] dark:hover:bg-[#333]',
+                  )}
+                >
+                  <SquarePen className="h-[18px] w-[18px] shrink-0" strokeWidth={1.8} />
+                  <span className="min-w-0 flex-1 truncate text-[15px] font-medium">{t.sidebar.newTask}</span>
+                  <kbd className="shrink-0 rounded-lg bg-[#e4e4e2] px-2 py-1 text-[12px] font-medium leading-none text-[#85827c] dark:bg-[#454545] dark:text-[#b8b8b8]">
+                    {isMacOS() ? '⌘N' : 'Ctrl+N'}
+                  </kbd>
+                </button>
+              </section>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
 
       {/* Context menu */}
       {contextMenu && (
@@ -792,20 +1012,6 @@ export default function Sidebar() {
                 <span className="flex h-3.5 w-3.5 items-center justify-center text-[13px]">◌</span>
                 {t.projectMemory.menu}
               </button>
-              <button
-                onClick={() => void exportProject(projectMenu)}
-                className="flex items-center gap-2 w-full px-3 py-1.5 text-[13px] text-[#3d3929] hover:bg-[#f0ede6]"
-              >
-                <Download className="h-3.5 w-3.5" />
-                导出项目
-              </button>
-              <button
-                onClick={() => void relocateRegisteredProject(projectMenu)}
-                className="flex items-center gap-2 w-full px-3 py-1.5 text-[13px] text-[#3d3929] hover:bg-[#f0ede6]"
-              >
-                <FolderClosed className="h-3.5 w-3.5" />
-                迁移项目路径
-              </button>
             </>
           ) : null}
           <button
@@ -829,7 +1035,7 @@ export default function Sidebar() {
       )}
 
       {skillProject && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/10 px-4">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/20 px-4 backdrop-blur-[1px] animate-in fade-in duration-150">
           <div className="w-full max-w-[500px] rounded-[20px] border border-[#e6e1d8] bg-white shadow-[0_16px_48px_rgba(0,0,0,0.16)] overflow-hidden">
             <div className="flex items-start justify-between px-7 pt-6 pb-4">
               <div className="min-w-0">
@@ -916,7 +1122,7 @@ export default function Sidebar() {
       )}
 
       {pendingRemoveProject && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/10 px-4">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/20 px-4 backdrop-blur-[1px] animate-in fade-in duration-150">
           <div className="w-full max-w-[500px] rounded-[20px] border border-[#e6e1d8] bg-white shadow-[0_16px_48px_rgba(0,0,0,0.16)] overflow-hidden">
             <div className="flex items-start justify-between px-7 pt-6 pb-4">
               <div>
@@ -924,7 +1130,7 @@ export default function Sidebar() {
                   移除 {pendingRemoveProject.name}?
                 </h2>
                 <p className="mt-2.5 text-[15px] font-medium leading-snug text-[#8d8d8d] whitespace-nowrap">
-                  这将从 太资如意 中移除该项目。磁盘上的文件不会被删除。
+                  这将从 TPACowork 中移除该项目。磁盘上的文件不会被删除。
                 </p>
               </div>
               <button
@@ -953,12 +1159,9 @@ export default function Sidebar() {
         </div>
       )}
 
-      {/* Guide modal */}
-      <GuideModal open={guideOpen} onClose={() => { setGuideOpen(false); setGuideShown(true); }} />
-
       {promptHubOpen && (
         <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30"
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/20 backdrop-blur-[1px] animate-in fade-in duration-150"
           onClick={(event) => {
             if (event.target === event.currentTarget && !promptHubIsLoggingIn) closePromptHubLogin();
           }}
@@ -990,6 +1193,19 @@ export default function Sidebar() {
               </div>
             ) : (
               <div className="space-y-3">
+                <label className="block">
+                  <span className="mb-1 block text-[12px] font-medium text-[#656358]">服务器地址</span>
+                  <input
+                    type="url"
+                    value={promptHubServerUrl}
+                    onChange={(event) => setPromptHubServerUrl(event.target.value)}
+                    placeholder="https://hub.example.com"
+                    className="h-9 w-full rounded-lg border border-[#e8e4dd] bg-[#faf9f7] px-3 text-sm text-[#29261b] outline-none focus:border-[#d97757] focus:ring-2 focus:ring-[#d97757]/30"
+                  />
+                  <span className="mt-1 block text-[11px] text-[#9a958b]">
+                    手机端和桌面端必须使用同一个 PromptHub 地址。
+                  </span>
+                </label>
                 <label className="block">
                   <span className="mb-1 block text-[12px] font-medium text-[#656358]">用户名</span>
                   <input
@@ -1044,7 +1260,12 @@ export default function Sidebar() {
                 {!promptHubUser && (
                   <button
                     onClick={() => void submitPromptHubLogin()}
-                    disabled={promptHubIsLoggingIn || !promptHubUsername.trim() || !promptHubPassword}
+                    disabled={
+                      promptHubIsLoggingIn
+                      || !promptHubUsername.trim()
+                      || !promptHubPassword
+                      || !/^https?:\/\//i.test(promptHubServerUrl.trim())
+                    }
                     className="rounded-lg bg-[#29261b] px-4 py-2 text-[13px] font-medium text-white hover:bg-[#3a3628] disabled:opacity-60"
                   >
                     {promptHubIsLoggingIn ? '登录中...' : '登录'}

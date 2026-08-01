@@ -115,12 +115,16 @@ describe("absorbCompleteAssistantMessage", () => {
       reasoning: "正在整理思路",
       reasoningStreaming: true,
       isStreaming: true,
-      createdAt: Date.now() - 48 * 60 * 60 * 1000,
-    }]);
+      createdAt: 1_000,
+      reasoningStartedAt: 2_000,
+    }], 14_000);
 
     expect(result[0]).toMatchObject({
       reasoningStreaming: false,
       isStreaming: true,
+      reasoningStartedAt: 2_000,
+      reasoningCompletedAt: 14_000,
+      reasoningDurationMs: 12_000,
     });
     expect(result[0].latencyMs).toBeUndefined();
   });

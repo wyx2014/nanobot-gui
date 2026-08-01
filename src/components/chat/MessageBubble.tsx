@@ -175,7 +175,7 @@ function TraceGroup({ message }: { message: Message }) {
   const [open, setOpen] = useState(false);
   if (!lines.length) return null;
   return (
-    <div className="w-full animate-in fade-in-0 slide-in-from-bottom-1 duration-300">
+    <div className="w-full">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
@@ -280,7 +280,14 @@ export default function MessageBubble({
 
   if (isUser) {
     return (
-      <div className={cn('group ml-auto flex max-w-[min(85%,36rem)] flex-col items-end gap-1.5 animate-in fade-in-0 slide-in-from-bottom-1 duration-300', isEditing && 'max-w-full')}>
+      <div
+        data-message-bubble
+        data-message-role="user"
+        className={cn(
+          'group ml-auto flex max-w-[min(85%,36rem)] flex-col items-end gap-1.5',
+          isEditing && 'max-w-full',
+        )}
+      >
         {imageBlocks.length > 0 && !isEditing ? <UserImageGrid images={imageBlocks} /> : null}
         {mediaAttachments.length > 0 ? <MessageMedia media={mediaAttachments} align="right" /> : null}
 
@@ -363,7 +370,16 @@ export default function MessageBubble({
   const showFooter = showAssistantCopyAction && showAssistantActions;
 
   return (
-    <div className="group/assistant w-full animate-in fade-in-0 slide-in-from-bottom-1 duration-300 text-[15px] leading-[1.78]">
+    <div
+      data-message-bubble
+      data-message-role="assistant"
+      data-streaming={message.isStreaming ? 'true' : 'false'}
+      className={cn(
+        'group/assistant w-full text-[15px] leading-[1.78]',
+        message.isStreaming
+          && 'motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 motion-safe:duration-200',
+      )}
+    >
       {empty && message.isStreaming ? (
         <TypingDots />
       ) : (

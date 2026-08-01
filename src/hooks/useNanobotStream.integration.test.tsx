@@ -2,7 +2,8 @@ import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { InboundEvent, UIMessage } from "@/core/types";
+import type { InboundEvent, TaskProgressStep, UIMessage } from "@/core/types";
+import { mapWebuiThreadToGuiMessages } from "@/core/nanobotClient";
 
 const mocks = vi.hoisted(() => ({
   getNanobotClient: vi.fn(),
@@ -86,6 +87,54 @@ afterEach(() => {
 });
 
 describe("useNanobotStream media progress lifecycle", () => {
+  it("never exposes provisional pre-tool narration in the answer body", () => {
+    const narration = "好的，我来为您启动中科曙光四角色并行投研分析。";
+    emit({
+      event: "delta",
+      chat_id: "chat-media-progress",
+      text: narration,
+      stream_id: "provisional-narration",
+    });
+    // Flush the animation-frame batch without classifying the delta.
+    emit({
+      event: "reasoning_end",
+      chat_id: "chat-media-progress",
+    });
+
+    let projected = mapWebuiThreadToGuiMessages(latest?.messages ?? []);
+    expect(projected.some((message) => (
+      message.role === "assistant" && message.content === narration
+    ))).toBe(false);
+    expect(projected.some((message) => message.narration === narration)).toBe(true);
+
+    emit({
+      event: "stream_end",
+      chat_id: "chat-media-progress",
+      stream_id: "provisional-narration",
+      resuming: true,
+      stream_kind: "narration",
+    });
+    emit({
+      event: "narration_delta",
+      chat_id: "chat-media-progress",
+      text: narration,
+      stream_id: "narration-1",
+      replaces_stream_id: "provisional-narration",
+    });
+    emit({
+      event: "narration_end",
+      chat_id: "chat-media-progress",
+      stream_id: "narration-1",
+      replaces_stream_id: "provisional-narration",
+    });
+
+    projected = mapWebuiThreadToGuiMessages(latest?.messages ?? []);
+    expect(projected.some((message) => (
+      message.role === "assistant" && message.content === narration
+    ))).toBe(false);
+    expect(projected.filter((message) => message.narration === narration)).toHaveLength(1);
+  });
+
   it("exposes live estimated usage and replaces it with provider usage", () => {
     emit({
       event: "turn_usage_updated",
@@ -166,6 +215,118 @@ describe("useNanobotStream media progress lifecycle", () => {
       cachedTokens: 75_050,
       newTokens: 25_120,
       estimated: false,
+    });
+  });
+
+  it("starts asset research with a required data-package step", () => {
+    emit({
+      event: "team_run_started",
+      chat_id: "chat-media-progress",
+      run_id: "asset-run",
+      team_id: "asset-research-team",
+      team_name: "资产投研团队",
+      members: [
+        {
+          id: "business-analyst",
+          name: "商业分析师",
+          framework: "段永平视角",
+          description: "分析商业模式",
+        },
+        {
+          id: "financial-analyst",
+          name: "财务分析师",
+          framework: "巴菲特视角",
+          description: "分析财务与估值",
+        },
+      ],
+    });
+
+    const progress = latest?.messages.find(
+      (message) => message.agentUI?.team_run_id === "asset-run",
+    )?.agentUI;
+    expect(progress?.kind).toBe("task_progress");
+    const steps = Array.isArray(progress?.steps)
+      ? progress.steps as TaskProgressStep[]
+      : [];
+    expect(steps.map((step) => [step.id, step.status])).toEqual([
+      ["data-package", "running"],
+      ["business-analyst", "pending"],
+      ["financial-analyst", "pending"],
+      ["team-lead", "pending"],
+      ["report-audit", "pending"],
+    ]);
+    expect(progress?.note).toContain("基础数据包");
+  });
+
+  it("merges live member activity into an existing canonical workflow plan", () => {
+    emit({
+      event: "team_run_started",
+      chat_id: "chat-media-progress",
+      run_id: "live-team-run",
+      team_id: "asset-research-team",
+      team_name: "资产投研团队",
+      members: [{
+        id: "financial-analyst",
+        name: "财务分析师",
+        description: "分析财务与估值",
+      }],
+    });
+    emit({
+      event: "turn_plan_created",
+      chat_id: "chat-media-progress",
+      turn_id: "turn-live-team",
+      plan: {
+        id: "plan:turn-live-team",
+        turn_id: "turn-live-team",
+        kind: "workflow",
+        owner: "expert_team:asset-research-team",
+        policy: "required",
+        execution: "staged",
+        status: "running",
+        revision: 1,
+        active_step_ids: ["financial-analyst"],
+        team_id: "asset-research-team",
+        team_run_id: "live-team-run",
+        steps: [
+          {
+            id: "financial-analyst",
+            title: "财务分析师",
+            detail: "团队已启动，正在分配研究任务",
+            status: "running",
+          },
+          {
+            id: "team-lead",
+            title: "主笔交叉质证与汇总",
+            status: "pending",
+          },
+        ],
+      },
+    });
+
+    emit({
+      event: "team_member_updated",
+      chat_id: "chat-media-progress",
+      run_id: "live-team-run",
+      team_id: "asset-research-team",
+      member: {
+        id: "financial-analyst",
+        name: "财务分析师",
+        status: "running",
+        task_id: "subagent-finance",
+        activity: "正在查询聚源利润表、现金流和估值指标",
+      },
+    });
+
+    const progress = latest?.messages.find(
+      (message) => message.agentUI?.team_run_id === "live-team-run",
+    )?.agentUI;
+    expect(progress?.kind).toBe("task_progress");
+    const steps = Array.isArray(progress?.steps)
+      ? progress.steps as TaskProgressStep[]
+      : [];
+    expect(steps.find((step) => step.id === "financial-analyst")).toMatchObject({
+      status: "running",
+      detail: "正在查询聚源利润表、现金流和估值指标",
     });
   });
 
@@ -400,6 +561,112 @@ describe("useNanobotStream media progress lifecycle", () => {
     expect(assistant?.latencyMs).toBe(23_945);
     expect(assistant?.completedAt).toBe(completedAt);
     expect(assistant?.isStreaming).toBe(false);
+  });
+
+  it("replaces a streamed answer when its authoritative message arrives after completion", () => {
+    const finalText = "中科曙光四视角并行投研报告已完成，数据抽检全部通过。";
+    emit({
+      event: "delta",
+      chat_id: "chat-media-progress",
+      text: finalText,
+      stream_id: "report-stream",
+    });
+    emit({
+      event: "turn_completed",
+      chat_id: "chat-media-progress",
+      snapshot_revision: 2,
+      turn: {
+        id: "turn-report",
+        status: "completed",
+        started_at: 1,
+      },
+    });
+    emit({
+      event: "stream_end",
+      chat_id: "chat-media-progress",
+      stream_id: "report-stream",
+    });
+    emit({
+      event: "message",
+      chat_id: "chat-media-progress",
+      text: finalText,
+      replace_stream: true,
+      media_urls: [{
+        url: "/api/media/report",
+        name: "中科曙光四视角并行投研报告.html",
+        kind: "file",
+      }],
+    });
+
+    const assistant = (latest?.messages ?? []).filter(
+      (message) => message.role === "assistant" && message.kind !== "trace",
+    );
+    expect(assistant).toHaveLength(1);
+    expect(assistant[0]).toMatchObject({
+      content: finalText,
+      isStreaming: false,
+      media: [{
+        name: "中科曙光四视角并行投研报告.html",
+      }],
+    });
+  });
+
+  it("keeps a buffered answer tail in one message when completion precedes stream_end", () => {
+    emit({
+      event: "delta",
+      chat_id: "chat-media-progress",
+      text: "完整报告正文。",
+      stream_id: "late-terminator-stream",
+    });
+    // Force the first frame into React state while leaving the answer cursor
+    // open, matching a long response whose earlier chunks have rendered.
+    emit({
+      event: "reasoning_end",
+      chat_id: "chat-media-progress",
+    });
+    expect((latest?.messages ?? []).filter(
+      (message) => message.role === "assistant" && message.kind !== "trace",
+    )).toHaveLength(1);
+
+    // Production ordering observed in the affected turn: the final delta and
+    // lifecycle event arrive in one render batch, while stream_end is queued
+    // just after the durable terminal event.
+    act(() => {
+      eventHandler?.({
+        event: "delta",
+        chat_id: "chat-media-progress",
+        text: "注意板块轮动风险。",
+        stream_id: "late-terminator-stream",
+      });
+      eventHandler?.({
+        event: "turn_completed",
+        chat_id: "chat-media-progress",
+        snapshot_revision: 2,
+        turn: {
+          id: "turn-late-terminator",
+          status: "completed",
+          started_at: 1,
+          completed_at: 48_096,
+          duration_ms: 48_095,
+        },
+      });
+      eventHandler?.({
+        event: "stream_end",
+        chat_id: "chat-media-progress",
+        stream_id: "late-terminator-stream",
+      });
+    });
+
+    const assistant = (latest?.messages ?? []).filter(
+      (message) => message.role === "assistant" && message.kind !== "trace",
+    );
+    expect(assistant).toHaveLength(1);
+    expect(assistant[0]).toMatchObject({
+      content: "完整报告正文。注意板块轮动风险。",
+      isStreaming: false,
+      latencyMs: 48_095,
+      completedAt: 48_096,
+    });
   });
 
   it("does not misreport a lost final progress snapshot as completed", () => {

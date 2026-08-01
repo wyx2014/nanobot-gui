@@ -6,7 +6,12 @@ import os from 'os'
 import { pythonBridge } from './pythonBridge'
 import { syncNanobotConfig, type NanobotConfigInput } from './nanobotConfig'
 import { MermaidBridge } from './mermaidBridge'
-import { MAIN_WINDOW_BOUNDS } from './mainWindowConfig'
+import {
+  getMainWindowChrome,
+  MAIN_WINDOW_BACKGROUND,
+  MAIN_WINDOW_BOUNDS,
+} from './mainWindowConfig'
+import { deviceLinkBridge } from './deviceLinkBridge'
 
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 
@@ -28,8 +33,10 @@ let isQuitting = false;
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
     ...MAIN_WINDOW_BOUNDS,
+    ...getMainWindowChrome(process.platform),
     show: false,
     autoHideMenuBar: true,
+    backgroundColor: MAIN_WINDOW_BACKGROUND,
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
       sandbox: false,
@@ -47,6 +54,13 @@ function createWindow(): void {
       mainWindow.webContents.send('event:close-requested');
     }
   });
+
+  const publishFullScreenState = () => {
+    if (mainWindow.isDestroyed()) return;
+    mainWindow.webContents.send('event:window-full-screen-changed', mainWindow.isFullScreen());
+  };
+  mainWindow.on('enter-full-screen', publishFullScreenState);
+  mainWindow.on('leave-full-screen', publishFullScreenState);
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
@@ -68,6 +82,7 @@ app.whenReady().then(async () => {
       isQuitting = true;
       e.preventDefault();
       console.log('[Main] Gracefully stopping nanobot before quit...');
+      deviceLinkBridge.stop();
       await pythonBridge.stop();
       app.quit();
     }
@@ -220,6 +235,12 @@ app.whenReady().then(async () => {
     if (!path) throw new Error('fs:readFile failed: path is missing');
     const buffer = await fs.readFile(path);
     return new Uint8Array(buffer);
+  });
+
+  safeInvoke('device-link:configure', async (data) => {
+    const baseUrl = typeof data?.baseUrl === 'string' ? data.baseUrl : '';
+    const token = typeof data?.token === 'string' ? data.token : '';
+    return deviceLinkBridge.configure(baseUrl && token ? { baseUrl, token } : null);
   });
 
   safeInvoke('skills:readPackage', async (data) => {
@@ -400,6 +421,10 @@ app.whenReady().then(async () => {
   ipcMain.handle('window:setTitle', (event, title: string) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (win) win.setTitle(title)
+  })
+
+  ipcMain.handle('window:isFullScreen', (event) => {
+    return BrowserWindow.fromWebContents(event.sender)?.isFullScreen() ?? false
   })
 
   ipcMain.handle('app_exit', () => app.quit())

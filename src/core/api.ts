@@ -910,7 +910,7 @@ export async function fetchProviderModels(
 
 export async function runMcpPresetAction(
   token: string,
-  action: "enable" | "remove" | "test",
+  action: "enable" | "update" | "remove" | "test",
   name: string,
   values: Record<string, string> = {},
   base: string = "",

@@ -102,6 +102,32 @@ describe("NanobotClient readiness", () => {
     );
   });
 
+  it("sends browser takeover controls through the authenticated socket", () => {
+    const socket = new FakeSocket();
+    const client = new NanobotClient({
+      url: "ws://127.0.0.1:8900/",
+      reconnect: false,
+      socketFactory: () => socket as unknown as WebSocket,
+    });
+    client.connect();
+    socket.open();
+    socket.receive({
+      event: "ready",
+      chat_id: "default-chat",
+      client_id: "desktop",
+      agent_ready: true,
+      mcp_status: "ready",
+    });
+
+    client.browserControl("chat-browser", "pause");
+
+    expect(socket.send).toHaveBeenLastCalledWith(JSON.stringify({
+      type: "browser_control",
+      chat_id: "chat-browser",
+      action: "pause",
+    }));
+  });
+
   it("rejects an expert-team update when the gateway refuses it", async () => {
     const socket = new FakeSocket();
     const client = new NanobotClient({

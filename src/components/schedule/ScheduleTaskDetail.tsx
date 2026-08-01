@@ -101,7 +101,7 @@ export default function ScheduleTaskDetail() {
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div data-schedule-detail className="flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center gap-3 px-6 py-4 border-b border-[#e8e4dd] bg-white">
         <button

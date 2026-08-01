@@ -16,11 +16,14 @@ afterEach(() => {
   root = undefined;
 });
 
-function render(content: string): HTMLDivElement {
+function render(
+  content: string,
+  variant: 'assistant' | 'activity' = 'assistant',
+): HTMLDivElement {
   container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
-  act(() => root?.render(<MarkdownRenderer content={content} />));
+  act(() => root?.render(<MarkdownRenderer content={content} variant={variant} />));
   return container;
 }
 
@@ -80,5 +83,32 @@ describe('MarkdownRenderer emphasis', () => {
     expect(view.textContent).not.toContain('fileName');
     expect(view.textContent).not.toContain('/Users/test/reports/report.pdf');
     expect(view.querySelector('pre')).toBeNull();
+  });
+
+  it('uses compact, low-emphasis system typography for activity thinking', () => {
+    const view = render([
+      '# 核验思路',
+      '',
+      '先检查 **数据口径**。',
+      '',
+      '- 对比公告',
+      '- 检查单位',
+    ].join('\n'), 'activity');
+
+    const activity = view.querySelector('.activity-markdown');
+    const heading = view.querySelector('h1');
+    const paragraph = view.querySelector('p');
+    const listItem = view.querySelector('li');
+    const strong = view.querySelector('strong');
+
+    expect(activity).not.toBeNull();
+    expect(view.querySelector('.claude-markdown')).toBeNull();
+    expect(heading?.className).toContain('text-[12px]');
+    expect(heading?.className).toContain('font-medium');
+    expect(heading?.className).not.toContain('font-semibold');
+    expect(paragraph?.className).toContain('font-normal');
+    expect(paragraph?.className).toContain('text-muted-foreground/70');
+    expect(listItem?.className).toContain('text-[12px]');
+    expect(strong?.className).toContain('font-medium');
   });
 });

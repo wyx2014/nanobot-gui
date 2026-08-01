@@ -49,7 +49,7 @@ export default function CustomizePanel() {
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/20 z-40 backdrop-blur-sm"
+        className="fixed inset-0 bg-black/20 z-40 backdrop-blur-[1px] animate-in fade-in duration-150"
         onClick={closeCustomize}
       />
 

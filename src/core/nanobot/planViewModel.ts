@@ -26,7 +26,7 @@ function normalizeStepStatus(
 }
 
 export function normalizeTurnPlan(plan: TurnPlanResource): TurnPlanResource {
-  const steps = Array.isArray(plan.steps)
+  const normalizedSteps = Array.isArray(plan.steps)
     ? plan.steps
       .filter((step) => !!step?.id && !!step?.title?.trim())
       .map((step, ordinal) => ({
@@ -36,7 +36,14 @@ export function normalizeTurnPlan(plan: TurnPlanResource): TurnPlanResource {
         status: normalizeStepStatus(step.status),
       }))
     : [];
-  const activeStepIds = Array.isArray(plan.active_step_ids)
+  const terminalStatus = terminalPlanStatus(plan.status);
+  const terminal = terminalStatus !== undefined;
+  const steps = terminalStatus
+    ? terminalizePlanSteps(normalizedSteps, terminalStatus)
+    : normalizedSteps;
+  const activeStepIds = terminal
+    ? []
+    : Array.isArray(plan.active_step_ids)
     ? plan.active_step_ids.filter((id): id is string => typeof id === 'string' && !!id.trim())
     : steps.filter((step) => step.status === 'running').map((step) => step.id);
   return {
@@ -52,8 +59,39 @@ export function normalizeTurnPlan(plan: TurnPlanResource): TurnPlanResource {
     ),
     revision: Math.max(1, Number(plan.revision) || 1),
     active_step_ids: activeStepIds,
+    ...(terminal ? { current_step_id: null } : {}),
     steps,
   };
+}
+
+function terminalPlanStatus(
+  status: TurnPlanResource['status'],
+): 'completed' | 'failed' | 'interrupted' | undefined {
+  return status === 'completed' || status === 'failed' || status === 'interrupted'
+    ? status
+    : undefined;
+}
+
+function terminalizePlanSteps(
+  steps: TurnPlanStepResource[],
+  status: 'completed' | 'failed' | 'interrupted',
+): TurnPlanStepResource[] {
+  return steps.map((step) => {
+    if (step.status === 'running') {
+      return {
+        ...step,
+        status: status === 'completed'
+          ? 'completed'
+          : status === 'failed'
+            ? 'error'
+            : 'interrupted',
+      };
+    }
+    if (step.status === 'pending') {
+      return { ...step, status: 'skipped' };
+    }
+    return step;
+  });
 }
 
 export function planFromAgentUI(

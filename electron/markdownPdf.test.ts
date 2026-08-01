@@ -88,7 +88,7 @@ describe('Markdown PDF document', () => {
       async () => ({ png: 'aGVsbG8=', width: 320, height: 160 }),
     );
 
-    expect(html).toContain('Generated from Markdown by TpaRuyi');
+    expect(html).toContain('Generated from Markdown by TPACowork');
     expect(html).toContain('data:image/png;base64,aGVsbG8=');
     expect(html).not.toContain('graph TD');
   });
@@ -126,7 +126,7 @@ describe('Markdown PDF document', () => {
     expect(html).toContain('id="dashboard"');
     expect(html).toContain('多维评分概览');
     expect(html).toContain('trend-figure');
-    expect(html).toContain('TPARUYI · EXPERT RESEARCH');
+    expect(html).toContain('TPACOWORK · EXPERT RESEARCH');
     expect(html).not.toContain('cdn.jsdelivr.net');
 
     document.open();

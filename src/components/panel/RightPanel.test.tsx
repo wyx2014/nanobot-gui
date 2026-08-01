@@ -5,6 +5,7 @@ import { artifactFromPath } from '@/core/artifacts';
 import { useChatStore } from '@/stores/chatStore';
 import { usePreviewStore } from '@/stores/previewStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { useBrowserStore } from '@/stores/browserStore';
 import RightPanel from './RightPanel';
 
 vi.mock('./ConversationWorkbench', () => ({
@@ -13,6 +14,10 @@ vi.mock('./ConversationWorkbench', () => ({
 
 vi.mock('./PreviewPanel', () => ({
   default: () => <div data-testid="preview-panel">Preview</div>,
+}));
+
+vi.mock('./BrowserPanel', () => ({
+  default: () => <div data-testid="browser-panel">Browser</div>,
 }));
 
 let container: HTMLDivElement | undefined;
@@ -44,6 +49,7 @@ beforeEach(() => {
     },
   });
   usePreviewStore.getState().closePreview();
+  useBrowserStore.setState({ sessions: {} });
 });
 
 afterEach(() => {
@@ -74,6 +80,27 @@ describe('RightPanel conversation workbench', () => {
 
     act(() => usePreviewStore.getState().toggleExpanded());
     expect(panel.style.getPropertyValue('--conversation-panel-width')).toBe('100vw');
+  });
+
+  it('opens the session browser rail while keeping artifact preview higher priority', () => {
+    const view = render();
+    act(() => useBrowserStore.getState().handleEvent({
+      event: 'browser_frame',
+      chat_id: 'chat-1',
+      browser_session_id: 'chat-1',
+      backend: 'playwright_mcp',
+      image_base64: 'frame',
+      mime_type: 'image/jpeg',
+      captured_at: 1,
+    }));
+
+    const panel = view.firstElementChild as HTMLDivElement;
+    expect(view.querySelector('[data-testid="browser-panel"]')).not.toBeNull();
+    expect(panel.style.getPropertyValue('--conversation-panel-width')).toBe('min(42vw, 560px)');
+
+    act(() => usePreviewStore.getState().openArtifact(artifactFromPath('/workspace/report.pdf')));
+    expect(view.querySelector('[data-testid="preview-panel"]')).not.toBeNull();
+    expect(view.querySelector('[data-testid="browser-panel"]')).toBeNull();
   });
 
   it('stays hidden on the new-chat welcome screen', () => {

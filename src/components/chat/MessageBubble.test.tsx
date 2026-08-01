@@ -66,4 +66,25 @@ describe('MessageBubble assistant reply actions', () => {
     expect(actions?.querySelector('[aria-label="Copy reply"]')).not.toBeNull();
     expect(actions?.querySelector('[aria-label="Regenerate"]')).not.toBeNull();
   });
+
+  it('keeps restored conversation text static while only a live reply may animate', () => {
+    const completedAt = new Date(2026, 6, 29, 10, 32).getTime();
+    act(() => root.render(
+      <MessageBubble message={assistantMessage(completedAt)} />,
+    ));
+
+    const restored = container.querySelector<HTMLElement>('[data-message-bubble]');
+    expect(restored?.className).not.toContain('animate-in');
+    expect(restored?.getAttribute('data-streaming')).toBe('false');
+
+    act(() => root.render(
+      <MessageBubble
+        message={{ ...assistantMessage(completedAt), isStreaming: true }}
+      />,
+    ));
+
+    const live = container.querySelector<HTMLElement>('[data-message-bubble]');
+    expect(live?.className).toContain('motion-safe:animate-in');
+    expect(live?.getAttribute('data-streaming')).toBe('true');
+  });
 });

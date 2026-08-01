@@ -14,6 +14,7 @@ import {
 } from '@/core/prompthubApi';
 import type { NanobotSkillInfo } from '@/core/types';
 import { ipc } from '@/lib/ipc-factory';
+import { useI18n } from '@/i18n';
 
 async function getSkillsAuth(): Promise<{ token: string; baseUrl: string }> {
   const status = await getNanobotStatus();
@@ -33,8 +34,8 @@ function skillTitle(skill: PromptHubSkill): string {
   return skill.displayName || skill.name || skill.slug || skill.id;
 }
 
-function skillDescription(skill: PromptHubSkill): string {
-  return skill.description || skill.summary || '暂无描述';
+function skillDescription(skill: PromptHubSkill, isEnglish = false): string {
+  return skill.description || skill.summary || (isEnglish ? 'No description available' : '暂无描述');
 }
 
 function tagList(skill: PromptHubSkill): string[] {
@@ -42,9 +43,9 @@ function tagList(skill: PromptHubSkill): string[] {
   return (skill.tags ?? '').split(',').map((tag) => tag.trim()).filter(Boolean);
 }
 
-function reviewLabel(status?: string): string | null {
-  if (status === 'pending') return '审核中';
-  if (status === 'rejected') return '已拒绝';
+function reviewLabel(status: string | undefined, isEnglish = false): string | null {
+  if (status === 'pending') return isEnglish ? 'Under review' : '审核中';
+  if (status === 'rejected') return isEnglish ? 'Rejected' : '已拒绝';
   return null;
 }
 
@@ -55,6 +56,8 @@ function firstSkillFile(files: { path: string }[]): string | null {
 type StoreSkillFile = { path: string; content: string };
 
 export default function SkillStoreSection() {
+  const { locale } = useI18n();
+  const isEnglish = locale === 'en-US';
   const { toolboxSearchQuery } = useSettingsStore();
   const refreshDiscovery = useDiscoveryStore((s) => s.refresh);
   const {
@@ -115,7 +118,7 @@ export default function SkillStoreSection() {
     try {
       const detail = await fetchPromptHubSkillDetail(baseUrl, token!, skill.id);
       const filePath = detail.latestVersion?.id ? firstSkillFile(detail.files) : null;
-      if (!detail.latestVersion?.id || !filePath) throw new Error('该技能没有可下载的 SKILL.md');
+      if (!detail.latestVersion?.id || !filePath) throw new Error(isEnglish ? 'This skill has no downloadable SKILL.md file.' : '该技能没有可下载的 SKILL.md');
       const files = await Promise.all(
         detail.files.map((file) => fetchPromptHubFile(baseUrl, token!, detail.latestVersion!.id, file.path)),
       );
@@ -127,7 +130,7 @@ export default function SkillStoreSection() {
       });
       await runSkillAction(auth.token, 'enable', name, auth.baseUrl);
       await refreshDiscovery();
-      setMessage(`已下载 /${name} 到我的技能`);
+      setMessage(isEnglish ? `Downloaded /${name} to My Skills` : `已下载 /${name} 到我的技能`);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -158,17 +161,18 @@ export default function SkillStoreSection() {
 
   if (!token) {
     return (
-      <div className="flex h-full items-center justify-center p-5">
-        <div className="max-w-[420px] rounded-lg border border-[#e8e4dd] bg-white p-5 text-center">
-          <h3 className="text-sm font-semibold text-[#29261b]">请先登录账号</h3>
-          <p className="mt-2 text-xs leading-5 text-[#656358]">
-            登录后即可查看技能商店并下载已审核发布的技能。
+      <div data-skill-store-surface className="flex h-full items-center justify-center p-5">
+        <div data-skill-store-login className="max-w-[420px] rounded-lg border border-[#e8e4dd] bg-white p-5 text-center">
+          <h3 data-skill-store-login-title className="text-sm font-semibold text-[#29261b]">{isEnglish ? 'Sign in first' : '请先登录账号'}</h3>
+          <p data-skill-store-login-description className="mt-2 text-xs leading-5 text-[#656358]">
+            {isEnglish ? 'Sign in to browse the Skill Store and download approved skills.' : '登录后即可查看技能商店并下载已审核发布的技能。'}
           </p>
           <button
+            data-skill-store-action="login"
             onClick={openLogin}
             className="mt-4 rounded-lg bg-[#29261b] px-4 py-2 text-[13px] font-medium text-white hover:bg-[#3a3628]"
           >
-            去登录
+            {isEnglish ? 'Sign in' : '去登录'}
           </button>
         </div>
       </div>
@@ -176,7 +180,7 @@ export default function SkillStoreSection() {
   }
 
   return (
-    <div className="relative flex h-full flex-col overflow-hidden">
+    <div data-skill-store-surface className="relative flex h-full flex-col overflow-hidden">
       <div className="flex-1 overflow-y-auto px-4 py-4">
         {(error || message) && (
           <div className={`mb-4 flex items-start gap-2 rounded-lg border p-3 ${
@@ -190,32 +194,33 @@ export default function SkillStoreSection() {
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-12 text-sm text-neutral-400">
             <Loader2 className="h-4 w-4 animate-spin" />
-            正在读取技能商店
+            {isEnglish ? 'Loading Skill Store...' : '正在读取技能商店'}
           </div>
         ) : (
           <div className="space-y-2">
             {filteredHubSkills.length === 0 ? (
-              <div className="py-8 text-center text-sm text-neutral-400">没有找到商店技能</div>
+              <div className="py-8 text-center text-sm text-neutral-400">{isEnglish ? 'No skills found in the store' : '没有找到商店技能'}</div>
             ) : filteredHubSkills.map((skill) => {
               const key = skillKey(skill);
               const approved = skill.visibility === 'public' && skill.approvalStatus === 'approved';
               const installed = approved && localSkills.some((item) => item.name.toLowerCase() === key.toLowerCase());
               const busy = acting === `download:${skill.id}`;
-              const review = reviewLabel(skill.approvalStatus);
+              const review = reviewLabel(skill.approvalStatus, isEnglish);
               return (
                 <div
                   key={skill.id}
                   onClick={() => void openDetail(skill)}
+                  data-skill-store-card
                   className="group flex cursor-pointer items-center gap-3 rounded-lg border border-neutral-200/70 bg-white p-3 transition-colors hover:border-neutral-300"
                 >
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-500">
+                  <div data-skill-store-icon className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-500">
                     <FileText className="h-4 w-4" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-medium text-neutral-900">/{key}</span>
-                      <span className="rounded border border-orange-100 bg-orange-50 px-1.5 py-0.5 text-[10px] text-orange-700">
-                        商店
+                      <span data-skill-store-name className="truncate text-sm font-medium text-neutral-900">/{key}</span>
+                      <span data-skill-store-badge className="rounded border border-orange-100 bg-orange-50 px-1.5 py-0.5 text-[10px] text-orange-700">
+                        {isEnglish ? 'Store' : '商店'}
                       </span>
                       {review && (
                         <span className={`rounded border px-1.5 py-0.5 text-[10px] ${
@@ -228,24 +233,25 @@ export default function SkillStoreSection() {
                       )}
                       {installed && (
                         <span className="rounded border border-emerald-100 bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">
-                          已安装
+                          {isEnglish ? 'Installed' : '已安装'}
                         </span>
                       )}
                     </div>
-                    <p className="mt-1 truncate text-xs text-neutral-500">{skillDescription(skill)}</p>
+                    <p data-skill-store-description className="mt-1 truncate text-xs text-neutral-500">{skillDescription(skill, isEnglish)}</p>
                     {tagList(skill).length > 0 && (
                       <p className="mt-1 truncate text-[11px] text-[#8a867c]">{tagList(skill).join(' · ')}</p>
                     )}
                   </div>
                   {approved && (
                     <button
+                      data-skill-store-action="download"
                       onClick={(event) => {
                         event.stopPropagation();
                         void handleDownload(skill);
                       }}
                       disabled={busy}
                       className="shrink-0 rounded p-1.5 text-neutral-400 opacity-0 transition-colors hover:bg-orange-50 hover:text-orange-600 group-hover:opacity-100 disabled:opacity-40"
-                      title={installed ? '更新技能' : '下载到我的技能'}
+                      title={installed ? (isEnglish ? 'Update skill' : '更新技能') : (isEnglish ? 'Download to My Skills' : '下载到我的技能')}
                     >
                       {busy ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -264,36 +270,37 @@ export default function SkillStoreSection() {
       </div>
 
       {detail && (
-        <div className="absolute inset-0 z-20 flex flex-col bg-[#faf9f5]">
-          <div className="flex shrink-0 items-center justify-between border-b border-neutral-200 px-5 py-4">
+        <div data-skill-store-detail className="absolute inset-0 z-20 flex flex-col bg-[#faf9f5]">
+          <div data-skill-detail-header className="flex shrink-0 items-center justify-between border-b border-neutral-200 px-5 py-4">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <FileText className="h-4 w-4 text-neutral-500" />
                 <h3 className="truncate text-base font-semibold text-neutral-900">/{skillKey(detail.skill)}</h3>
-                <span className="rounded border border-orange-100 bg-orange-50 px-1.5 py-0.5 text-[10px] text-orange-700">
-                  商店
+                <span data-skill-store-badge className="rounded border border-orange-100 bg-orange-50 px-1.5 py-0.5 text-[10px] text-orange-700">
+                  {isEnglish ? 'Store' : '商店'}
                 </span>
-                {reviewLabel(detail.skill.approvalStatus) && (
+                {reviewLabel(detail.skill.approvalStatus, isEnglish) && (
                   <span className={`rounded border px-1.5 py-0.5 text-[10px] ${
                     detail.skill.approvalStatus === 'rejected'
                       ? 'border-red-100 bg-red-50 text-red-700'
                       : 'border-amber-100 bg-amber-50 text-amber-700'
                   }`}>
-                    {reviewLabel(detail.skill.approvalStatus)}
+                    {reviewLabel(detail.skill.approvalStatus, isEnglish)}
                   </span>
                 )}
               </div>
               <p className="mt-1 truncate text-xs text-neutral-500">
-                {detail.latestVersion?.version ? `版本 ${detail.latestVersion.version}` : '暂无版本信息'}
+                {detail.latestVersion?.version ? `${isEnglish ? 'Version' : '版本'} ${detail.latestVersion.version}` : (isEnglish ? 'No version information' : '暂无版本信息')}
               </p>
             </div>
             <div className="flex items-center gap-2">
               {detail.skill.visibility === 'public' && detail.skill.approvalStatus === 'approved' && (
                 <button
+                  data-skill-store-action="download"
                   onClick={() => void handleDownload(detail.skill)}
                   disabled={acting === `download:${detail.skill.id}`}
                   className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 disabled:opacity-40"
-                  title="下载到我的技能"
+                  title={isEnglish ? 'Download to My Skills' : '下载到我的技能'}
                 >
                   {acting === `download:${detail.skill.id}` ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -303,16 +310,17 @@ export default function SkillStoreSection() {
                 </button>
               )}
               <button
+                data-skill-store-action="close"
                 onClick={() => setDetail(null)}
                 className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
-                title="关闭"
+                title={isEnglish ? 'Close' : '关闭'}
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
           </div>
           <div className="flex-1 overflow-y-auto p-5">
-            <p className="mb-4 text-sm leading-6 text-neutral-700">{skillDescription(detail.skill)}</p>
+            <p className="mb-4 text-sm leading-6 text-neutral-700">{skillDescription(detail.skill, isEnglish)}</p>
             {tagList(detail.skill).length > 0 && (
               <div className="mb-4 flex flex-wrap gap-1.5">
                 {tagList(detail.skill).map((tag) => (
@@ -325,11 +333,11 @@ export default function SkillStoreSection() {
             {detailLoading ? (
               <div className="flex items-center gap-2 py-8 text-sm text-neutral-400">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                正在读取技能详情
+                {isEnglish ? 'Loading skill details...' : '正在读取技能详情'}
               </div>
             ) : (
               <pre className="whitespace-pre-wrap rounded-lg border border-neutral-200 bg-white p-4 text-xs leading-5 text-neutral-700">
-                {detailContent || '未读取到技能内容'}
+                {detailContent || (isEnglish ? 'Skill content could not be loaded.' : '未读取到技能内容')}
               </pre>
             )}
           </div>

@@ -30,6 +30,11 @@ export interface TranslationDict {
   // Sidebar
   sidebar: {
     newTask: string;
+    searchConversations: string;
+    searchPlaceholder: string;
+    noSearchResults: string;
+    searchChats: string;
+    recommended: string;
     scheduledTasks: string;
     toolbox: string;
     recents: string;
@@ -45,6 +50,8 @@ export interface TranslationDict {
     noSessionsYet: string;
     hideSidebar: string;
     showSidebar: string;
+    goBack: string;
+    goForward: string;
     scheduled: string;
     noScheduledRuns: string;
     exportConversation: string;
@@ -123,7 +130,6 @@ export interface TranslationDict {
     stop: string;
     welcomeTitle: string;
     welcomeSubtitle: string;
-    disclaimer: string;
     thinking: string;
     dropFilesHere: string;
     pasteOrDropImages: string;
@@ -135,6 +141,7 @@ export interface TranslationDict {
     showAllSources: string;
     collapseSources: string;
     scrollToBottom: string;
+    loadingConversation: string;
     codeBlockExpand: string;
     codeBlockCollapse: string;
     codeBlockSaveAs: string;
@@ -632,6 +639,17 @@ export interface TranslationDict {
     artifactsLoadFailed: string;
     artifactsRetry: string;
     artifactsRefresh: string;
+    browserTitle: string;
+    browserShow: string;
+    browserClose: string;
+    browserPause: string;
+    browserResume: string;
+    browserStop: string;
+    browserRefresh: string;
+    browserOpenExternal: string;
+    browserWaiting: string;
+    browserUserControlHint: string;
+    browserActions: string;
     // ContextSection
     context: string;
     contextEmptyHint: string;
@@ -783,6 +801,23 @@ export interface TranslationDict {
     step3Title: string;
     step3Desc: string;
     dismiss: string;
+  };
+
+  onboarding: {
+    stepIndicator: string;
+    title: string;
+    subtitle: string;
+    languageLabel: string;
+    languageSystem: string;
+    languageHint: string;
+    appearanceLabel: string;
+    themeSystem: string;
+    themeSystemDescription: string;
+    themeLight: string;
+    themeLightDescription: string;
+    themeDark: string;
+    themeDarkDescription: string;
+    start: string;
   };
 
   // Command Confirmation Dialog

@@ -11,6 +11,29 @@ function msg(partial: Partial<Message> & Pick<Message, 'id' | 'role'>): Message 
 }
 
 describe('buildTaskNarrativeEntries', () => {
+  it('freezes completed reasoning even while the enclosing turn keeps streaming', () => {
+    const [entry] = buildTaskNarrativeEntries([
+      msg({
+        id: 'reasoning-finished',
+        role: 'assistant',
+        thinking: '已完成这一段分析',
+        reasoningStreaming: false,
+        isStreaming: true,
+        thinkingStartedAt: 1_000,
+        thinkingCompletedAt: 13_000,
+        thinkingDuration: 12,
+      }),
+    ]);
+
+    expect(entry).toMatchObject({
+      kind: 'analysis',
+      status: 'done',
+      startedAt: 1_000,
+      completedAt: 13_000,
+      durationMs: 12_000,
+    });
+  });
+
   it('keeps analysis, plan, and tools while omitting file changes', () => {
     const entries = buildTaskNarrativeEntries([
       msg({ id: 'reasoning', role: 'assistant', thinking: 'private reasoning summary' }),
@@ -205,12 +228,12 @@ describe('buildTaskNarrativeEntries', () => {
     });
   });
 
-  it('does not expose reasoning content in the public timeline entry', () => {
+  it('keeps provider thinking content in the collapsible timeline entry', () => {
     const entries = buildTaskNarrativeEntries([
       msg({
         id: 'reasoning',
         role: 'assistant',
-        thinking: 'hidden chain of thought must not be rendered',
+        thinking: 'Inspect the filings, then compare the reported figures.',
         reasoningStreaming: true,
       }),
     ]);
@@ -219,18 +242,59 @@ describe('buildTaskNarrativeEntries', () => {
       id: 'reasoning:analysis',
       kind: 'analysis',
       title: '整理思路',
+      content: 'Inspect the filings, then compare the reported figures.',
       detail: '正在分析任务',
       status: 'running',
       source: 'reasoning',
+      occurredAt: 1,
     }]);
   });
 
-  it('renders public narration verbatim beside a generic private-reasoning summary', () => {
+  it('keeps each reasoning round in its original position', () => {
+    const entries = buildTaskNarrativeEntries([
+      msg({ id: 'reasoning-1', role: 'assistant', thinking: 'first thought' }),
+      msg({
+        id: 'tool-1',
+        role: 'tool',
+        kind: 'trace',
+        toolEvents: [{
+          phase: 'end',
+          call_id: 'search-1',
+          name: 'web_search',
+          result: 'ok',
+        }],
+      }),
+      msg({ id: 'reasoning-2', role: 'assistant', thinking: 'second thought' }),
+      msg({
+        id: 'tool-2',
+        role: 'tool',
+        kind: 'trace',
+        toolEvents: [{
+          phase: 'end',
+          call_id: 'fetch-1',
+          name: 'web_fetch',
+          result: 'ok',
+        }],
+      }),
+    ]);
+
+    expect(entries.map((entry) => entry.kind)).toEqual([
+      'analysis',
+      'tool',
+      'analysis',
+      'tool',
+    ]);
+    expect(entries.filter((entry) => entry.kind === 'analysis')).toHaveLength(2);
+    expect(entries.filter((entry) => entry.kind === 'analysis').map((entry) => entry.content))
+      .toEqual(['first thought', 'second thought']);
+  });
+
+  it('renders provider thinking and public narration as ordered entries', () => {
     const entries = buildTaskNarrativeEntries([
       msg({
         id: 'reasoning',
         role: 'assistant',
-        thinking: 'hidden chain of thought must not be rendered',
+        thinking: 'Check the detailed market data first.',
         reasoningStreaming: false,
       }),
       msg({
@@ -245,13 +309,80 @@ describe('buildTaskNarrativeEntries', () => {
     expect(entries.map((entry) => entry.kind)).toEqual(['analysis', 'narration']);
     expect(entries[0]).toMatchObject({
       title: '整理思路',
+      content: 'Check the detailed market data first.',
       detail: '已完成任务分析',
     });
     expect(entries[1]).toMatchObject({
       title: 'Let me fetch more detailed market data from specific articles.',
+      content: 'Let me fetch more detailed market data from specific articles.',
       status: 'done',
     });
-    expect(JSON.stringify(entries)).not.toContain('hidden chain of thought');
+  });
+
+  it('retains both thinking and narration when they share a message', () => {
+    const entries = buildTaskNarrativeEntries([
+      msg({
+        id: 'combined-thinking',
+        role: 'assistant',
+        thinking: 'Compare the source tables before the next tool call.',
+        reasoningStreaming: true,
+        narration: 'I will inspect the source next.',
+        narrationStreaming: true,
+      }),
+    ]);
+
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toMatchObject({
+      id: 'combined-thinking:analysis',
+      kind: 'analysis',
+      content: 'Compare the source tables before the next tool call.',
+      status: 'running',
+    });
+    expect(entries[1]).toMatchObject({
+      id: 'combined-thinking:narration',
+      kind: 'narration',
+      title: 'I will inspect the source next.',
+      content: 'I will inspect the source next.',
+      status: 'running',
+    });
+  });
+
+  it('preserves tool start and completion timestamps while updating in place', () => {
+    const entries = buildTaskNarrativeEntries([
+      msg({
+        id: 'start',
+        role: 'tool',
+        timestamp: 1_785_000_000_000,
+        kind: 'trace',
+        toolEvents: [{
+          phase: 'start',
+          call_id: 'call-timed',
+          name: 'web_search',
+          occurred_at: 1_785_000_000_100,
+        }],
+      }),
+      msg({
+        id: 'end',
+        role: 'tool',
+        timestamp: 1_785_000_001_000,
+        kind: 'trace',
+        toolEvents: [{
+          phase: 'end',
+          call_id: 'call-timed',
+          name: 'web_search',
+          occurred_at: 1_785_000_000_900,
+          result: 'ok',
+        }],
+      }),
+    ]);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      id: 'tool:call-timed',
+      status: 'done',
+      startedAt: 1_785_000_000_100,
+      completedAt: 1_785_000_000_900,
+    });
   });
 
   it('groups structured parallel tool calls and keeps gateway sequence order', () => {
@@ -462,6 +593,75 @@ describe('buildTaskNarrativeEntries', () => {
     expect(entries).toHaveLength(1);
   });
 
+  it('uses spawn as a member-status fallback and keeps the active team plan after thinking', () => {
+    const entries = buildTaskNarrativeEntries([
+      msg({
+        id: 'team-run-fallback',
+        role: 'tool',
+        kind: 'trace',
+        agentUI: {
+          kind: 'task_progress',
+          plan_kind: 'workflow',
+          team_id: 'asset-research-team',
+          team_run_id: 'run-fallback',
+          note: '正在启动四位专家',
+          steps: [
+            {
+              id: 'business-analyst',
+              title: '商业模式分析',
+              detail: '分析主营业务、生意属性与护城河',
+              status: 'pending',
+            },
+            {
+              id: 'team-lead',
+              title: '主笔交叉质证与汇总',
+              status: 'pending',
+            },
+          ],
+        },
+      }),
+      msg({
+        id: 'spawn-reasoning',
+        role: 'assistant',
+        thinking: '准备四位研究员的任务描述，然后同时启动他们。',
+        reasoningStreaming: true,
+        isStreaming: true,
+      }),
+      msg({
+        id: 'spawn-fallback',
+        role: 'tool',
+        kind: 'trace',
+        toolEvents: [{
+          phase: 'end',
+          call_id: 'spawn-business',
+          name: 'spawn',
+          arguments: {
+            label: 'business-analyst',
+            task: '分析商业模式',
+          },
+          result: 'Subagent [business-analyst] started',
+        }],
+      }),
+    ]);
+
+    expect(entries.map((entry) => entry.kind)).toEqual(['analysis', 'plan']);
+    expect(entries.at(-1)).toMatchObject({
+      title: '专家团队研究',
+      status: 'running',
+      planSteps: [
+        {
+          id: 'business-analyst',
+          status: 'running',
+          detail: '研究员已启动，正在等待首个研究进展',
+        },
+        {
+          id: 'team-lead',
+          status: 'pending',
+        },
+      ],
+    });
+  });
+
   it('does not show pre-research data packaging as Team Lead synthesis', () => {
     const entries = buildTaskNarrativeEntries([
       msg({
@@ -576,6 +776,56 @@ describe('buildTaskNarrativeEntries', () => {
           status: 'completed',
           detail: '最终报告已完成审校并交付',
         },
+      ],
+    });
+  });
+
+  it('terminalizes stale active steps when a failed expert plan arrives', () => {
+    const entries = buildTaskNarrativeEntries([
+      msg({
+        id: 'team-run-failed',
+        role: 'tool',
+        kind: 'trace',
+        agentUI: {
+          kind: 'task_progress',
+          plan_kind: 'workflow',
+          team_id: 'asset-research-team',
+          team_run_id: 'run-failed',
+          status: 'failed',
+          revision: 9,
+          note: '专家团队执行失败',
+          active_step_ids: ['team-lead'],
+          current_step_id: 'team-lead',
+          steps: [
+            {
+              id: 'data-package',
+              title: '建立基础数据包',
+              status: 'completed',
+            },
+            {
+              id: 'team-lead',
+              title: '主笔交叉质证与汇总',
+              status: 'running',
+            },
+            {
+              id: 'report-audit',
+              title: '报告审校与交付',
+              status: 'pending',
+            },
+          ],
+        },
+      }),
+    ]);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      title: '专家团队研究',
+      detail: '专家团队执行失败',
+      status: 'error',
+      planSteps: [
+        { id: 'data-package', status: 'completed' },
+        { id: 'team-lead', status: 'error' },
+        { id: 'report-audit', status: 'skipped' },
       ],
     });
   });

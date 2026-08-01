@@ -65,6 +65,23 @@
   transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/*
+ * Electron only treats the prefixed property as a native window drag region.
+ * Keep title-bar controls explicitly outside that region so their clicks reach
+ * React instead of being consumed as window dragging.
+ */
+.window-titlebar-drag {
+  -webkit-app-region: drag;
+  app-region: drag;
+  user-select: none;
+}
+
+.window-titlebar-no-drag,
+.window-titlebar-no-drag * {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
@@ -212,6 +229,15 @@
 }
 
 .dark {
+  --claude-bg: #171717;
+  --claude-surface: #222222;
+  --claude-elevated: #2a2a2a;
+  --claude-text-100: #f3f0e8;
+  --claude-text-200: #dedad2;
+  --claude-text-400: #c4c0b6;
+  --claude-text-500: #aaa69d;
+  --claude-border: rgba(255, 255, 255, 0.12);
+  --claude-border-strong: rgba(255, 255, 255, 0.22);
   --placeholder-foreground: #666666;
 
   --background: 0 0% 7%;
@@ -377,6 +403,37 @@
   line-height: 1.8;
 }
 
+/* A reply already receives spacing from the thread layout. Do not stack the
+ * first Markdown block's own top margin on top of it, especially when reports
+ * begin with a horizontal rule. */
+.claude-markdown > :first-child {
+  margin-top: 0;
+}
+
+.claude-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.claude-markdown > hr:first-child {
+  margin-bottom: 1.25rem;
+}
+
+/* ToolStep Markdown is a compact system-UI surface, not assistant prose. */
+.hope-thinking-markdown .activity-markdown {
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.hope-thinking-markdown .activity-markdown > :first-child {
+  margin-top: 0;
+}
+
+.hope-thinking-markdown .activity-markdown > :last-child {
+  margin-bottom: 0;
+}
+
 /* App font size preference: scale typography without scaling rem-based layout. */
 #root [class~="text-xs"] { font-size: calc(0.75rem * var(--app-font-scale, 1)); }
 #root [class~="text-sm"] { font-size: calc(0.875rem * var(--app-font-scale, 1)); }
@@ -460,4 +517,922 @@ input[type="range"].slider-filled::-moz-range-thumb {
 }
 .animate-slide-in-right {
   animation: slide-in-right 0.2s ease-out;
+}
+
+/*
+ * Application dark-theme remediation
+ *
+ * Much of the desktop UI predates the semantic Tailwind color tokens and uses
+ * the warm light-palette utilities directly.  Keep those views theme-aware by
+ * mapping the shared palette here.  Attribute selectors deliberately target
+ * only those utility classes, so status and primary-action colours remain
+ * intact.
+ */
+.dark body,
+.dark #root {
+  background: #171717;
+  color: #f3f0e8;
+}
+
+.dark :is(
+  [class~="bg-[#fbfaf7]"], [class~="bg-[#faf9f7]"], [class~="bg-[#faf9f6]"],
+  [class~="bg-[#faf9f5]"], [class~="bg-[#fafafa]"], [class~="bg-[#fffefa]"],
+  [class~="bg-[#fffdf8]"], [class~="bg-[#fffaf0]"], [class~="bg-white"]
+) { background-color: #1d1d1d; }
+
+.dark :is(
+  [class~="bg-[#f8f6f2]"], [class~="bg-[#f7f7f8]"], [class~="bg-[#f7f6f3]"],
+  [class~="bg-[#f7f6f2]"], [class~="bg-[#f7f5f0]"], [class~="bg-[#f5f5f7]"], [class~="bg-[#f5f5f5]"],
+  [class~="bg-[#f5f3ee]"], [class~="bg-[#f5f2ed]"], [class~="bg-[#f5f2ec]"],
+  [class~="bg-[#f4f4f5]"], [class~="bg-[#f3f3f4]"], [class~="bg-[#f3f2ee]"],
+  [class~="bg-[#f3f1ed]"], [class~="bg-[#f2f2f3]"], [class~="bg-[#f1f1f2]"],
+  [class~="bg-[#f1f1f1]"], [class~="bg-[#f0efec]"], [class~="bg-[#f0ede8]"],
+  [class~="bg-[#f0ede7]"], [class~="bg-[#f0ede6]"], [class~="bg-[#efefef]"],
+  [class~="bg-[#eeece8]"], [class~="bg-[#eeece6]"], [class~="bg-[#ecebe7]"],
+  [class~="bg-[#ece8df]"], [class~="bg-[#ebe9e4]"], [class~="bg-[#e9e9ea]"],
+  [class~="bg-[#e9e9e9]"], [class~="bg-[#e8e6e1]"], [class~="bg-[#e8e5de]"],
+  [class~="bg-[#e8e4dd]"], [class~="bg-[#edeae4]"], [class~="bg-[#eee9df]"]
+) { background-color: #282828; }
+
+.dark :is([class~="bg-[#f4f1e8]"], [class~="bg-white/50"]) { background-color: #2a2a2a; }
+
+.dark :is(
+  [class~="bg-[#f4f3f1]"], [class~="bg-[#f3f0e9]"], [class~="bg-[#f1efe9]"],
+  [class~="bg-[#f0eee8]"], [class~="bg-[#f0ece4]"], [class~="bg-[#efede8]"],
+  [class~="bg-[#efede7]"], [class~="bg-[#eeeae3]"], [class~="bg-[#eeeae2]"],
+  [class~="bg-[#ececee]"], [class~="bg-[#e7e7e8]"], [class~="bg-[#e5e2db]"]
+) { background-color: #242424; }
+
+.dark :is(
+  [class~="text-[#191814]"], [class~="text-[#202020]"], [class~="text-[#222]"],
+  [class~="text-[#242424]"], [class~="text-[#28251d]"], [class~="text-[#29261b]"],
+  [class~="text-[#34322d]"], [class~="text-[#38342c]"], [class~="text-[#3d3929]"],
+  [class~="text-[#403b2f]"], [class~="text-[#4b4b4b]"]
+) { color: #f3f0e8; }
+
+.dark :is(
+  [class~="text-[#4f4c43]"], [class~="text-[#514d43]"], [class~="text-[#5f5a50]"],
+  [class~="text-[#625f55]"], [class~="text-[#656158]"], [class~="text-[#656358]"],
+  [class~="text-[#6d695f]"], [class~="text-[#6f6f73]"], [class~="text-[#706d63]"],
+  [class~="text-[#777267]"], [class~="text-[#777368]"], [class~="text-[#77746b]"]
+) { color: #c4c0b6; }
+
+.dark :is(
+  [class~="text-[#7a7568]"], [class~="text-[#817b70]"], [class~="text-[#8a867c]"],
+  [class~="text-[#8b877d]"], [class~="text-[#8b887c]"], [class~="text-[#8c877d]"],
+  [class~="text-[#8d8d8d]"], [class~="text-[#928d83]"], [class~="text-[#969187]"],
+  [class~="text-[#969188]"], [class~="text-[#9a968c]"], [class~="text-[#9a968d]"],
+  [class~="text-[#aaa69b]"], [class~="text-[#aaa69c]"], [class~="text-[#b0ac9f]"],
+  [class~="text-[#b4b0a6]"], [class~="text-[#b8b5ab]"]
+) { color: #aaa69d; }
+
+.dark :is(
+  [class~="border-[#f0ede6]"], [class~="border-[#eeeeef]"], [class~="border-[#e8e5df]"],
+  [class~="border-[#e8e5de]"], [class~="border-[#e8e4dd]"], [class~="border-[#e8e4dc]"],
+  [class~="border-[#e6e6e8]"], [class~="border-[#e5e5e5]"], [class~="border-[#e5e2db]"],
+  [class~="border-[#e5e2dc]"], [class~="border-[#e5e1d8]"], [class~="border-[#e4e4e6]"],
+  [class~="border-[#e3dfd7]"], [class~="border-[#e2e2e4]"], [class~="border-[#e2ded6]"],
+  [class~="border-[#dedbd3]"], [class~="border-[#dedad1]"], [class~="border-[#ded9ce]"]
+) { border-color: #404040; }
+
+.dark :is(
+  [class~="from-[#fbfaf7]"], [class~="via-[#fbfaf7]"], [class~="via-[#faf8f3]"],
+  [class~="to-[#f1ede4]"]
+) { --tw-gradient-from: #1a1a1a; --tw-gradient-via: #202020; --tw-gradient-to: #282828; }
+
+/* Hover states need their own mapping: `hover:bg-*` is a distinct class from
+ * `bg-*`, so the surface rules above intentionally do not affect it. */
+.dark :is(
+  [class~="hover:bg-[#fafafa]"], [class~="hover:bg-[#f8f6f2]"],
+  [class~="hover:bg-[#f5f5f7]"], [class~="hover:bg-[#f5f5f5]"],
+  [class~="hover:bg-[#f5f3ee]"], [class~="hover:bg-[#f5f2ec]"],
+  [class~="hover:bg-[#f4f4f5]"], [class~="hover:bg-[#f3f2ee]"],
+  [class~="hover:bg-[#f3f1ed]"], [class~="hover:bg-[#f3f0ea]"],
+  [class~="hover:bg-[#f3f0e9]"], [class~="hover:bg-[#f2f2f3]"],
+  [class~="hover:bg-[#f2eee6]"], [class~="hover:bg-[#f1f1f2]"],
+  [class~="hover:bg-[#f1f1f1]"], [class~="hover:bg-[#f0ede7]"],
+  [class~="hover:bg-[#f0ede6]"], [class~="hover:bg-[#efede7]"],
+  [class~="hover:bg-[#eeece8]"], [class~="hover:bg-[#eeeae2]"],
+  [class~="hover:bg-[#eeeeea]"], [class~="hover:bg-[#edeae4]"],
+  [class~="hover:bg-[#ebe9e4]"], [class~="hover:bg-[#ebe8e1]"],
+  [class~="hover:bg-[#e9e9ea]"], [class~="hover:bg-[#e9e9e9]"],
+  [class~="hover:bg-[#e8e6e1]"], [class~="hover:bg-[#e8e5de]"],
+  [class~="hover:bg-[#e8e4dd]"], [class~="hover:bg-[#e5e2db]"],
+  [class~="hover:bg-[#dedbd3]"], [class~="hover:bg-white"],
+  [class~="hover:bg-white/80"], [class~="hover:bg-white/50"]
+):hover { background-color: #363636; }
+
+.dark :is(
+  [class~="hover:text-[#202020]"], [class~="hover:text-[#29261b]"],
+  [class~="hover:text-[#34322d]"], [class~="hover:text-[#3d3929]"],
+  [class~="hover:text-[#4f4c43]"], [class~="hover:text-[#656358]"],
+  [class~="hover:text-[#77746b]"]
+):hover { color: #ffffff; }
+
+.dark :is(
+  [class~="hover:border-[#e3dfd7]"], [class~="hover:border-[#d0cdc6]"],
+  [class~="hover:border-[#cfcfd2]"]
+):hover { border-color: #5a5a5a; }
+
+/*
+ * Settings has its own elevation hierarchy. Keep this scoped so stronger
+ * contrast for settings navigation and form cards doesn't leak into chat.
+ */
+.dark [data-settings-dialog] {
+  background: #1b1b1b;
+  color: #f2eee6;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.58);
+}
+
+.dark [data-settings-sidebar] {
+  background: #252525;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.dark [data-settings-content] {
+  background: #1b1b1b;
+}
+
+.dark [data-settings-header] {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.dark [data-settings-nav-item] {
+  color: #c9c4bb;
+}
+
+.dark [data-settings-nav-item]:not([data-active="true"]):not([data-disabled="true"]):hover {
+  color: #f6f2ea;
+  background: #323232;
+}
+
+.dark [data-settings-nav-item][data-active="true"] {
+  color: #fffaf2;
+  background: #3a3937;
+}
+
+.dark [data-settings-nav-item][data-disabled="true"] {
+  color: #77746e;
+  background: transparent;
+  opacity: 1;
+}
+
+.dark [data-settings-card] {
+  background: #262626;
+  border: 1px solid rgba(255, 255, 255, 0.065);
+}
+
+.dark [data-settings-surface] :is(input, textarea) {
+  color: #f1ede5;
+  background: #1e1e1e;
+  border-color: #484642;
+}
+
+.dark [data-settings-surface] :is(input, textarea)::placeholder {
+  color: #77736b;
+}
+
+.dark [data-settings-surface] :is(input, textarea):focus {
+  border-color: #d97757;
+}
+
+.dark [data-settings-surface] [role="switch"][aria-checked="false"] {
+  background: #57534d;
+}
+
+.dark [data-settings-surface] [role="switch"] > span {
+  background: #f0ece4;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+
+.dark [data-settings-surface] button:disabled:not([data-settings-nav-item]) {
+  color: #85817a;
+}
+
+.dark [data-font-size-track] {
+  background: #77736d;
+}
+
+.dark [data-font-size-tick] {
+  background: #8d8982;
+}
+
+.dark [data-font-size-thumb] {
+  background: #d97757;
+  border-color: #f4efe7;
+  box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.14);
+}
+
+/* Toolbox dark surface */
+.dark [data-toolbox-surface] {
+  color: #eeeae2;
+  background: #191919;
+}
+
+.dark [data-toolbox-header],
+.dark [data-toolbox-search] {
+  background: #1b1b1b;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.dark [data-toolbox-sidebar] {
+  background: #202020;
+  border-color: rgba(255, 255, 255, 0.09);
+}
+
+.dark [data-toolbox-nav-item] {
+  color: #aaa69d;
+}
+
+.dark [data-toolbox-nav-item]:not([data-active="true"]):hover {
+  color: #f4f0e8;
+  background: #2c2c2c;
+}
+
+.dark [data-toolbox-nav-item][data-active="true"] {
+  color: #fffaf2;
+  background: #343331;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+}
+
+.dark [data-toolbox-surface] :is(input, textarea) {
+  color: #f1ede5;
+  background: #202020;
+  border-color: #494640;
+}
+
+.dark [data-toolbox-surface] :is(input, textarea)::placeholder {
+  color: #7f7b74;
+}
+
+.dark [data-toolbox-surface] :is(input, textarea):focus {
+  border-color: #d97757;
+}
+
+.dark [data-toolbox-surface] [class~="bg-white"] {
+  background: #242424;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.dark [data-toolbox-surface] [class~="bg-white/50"],
+.dark [data-toolbox-surface] [class~="bg-white/75"],
+.dark [data-toolbox-surface] [class~="bg-white/80"] {
+  background: rgba(48, 48, 48, 0.82);
+}
+
+.dark [data-toolbox-surface] [class~="bg-[#f7fbf8]"] {
+  background: #1d2821;
+  border-color: rgba(92, 160, 111, 0.28);
+}
+
+.dark [data-toolbox-surface] [class~="bg-[#fff1e8]"] {
+  background: rgba(217, 119, 87, 0.16);
+}
+
+.dark [data-toolbox-surface] [class~="bg-emerald-50"] {
+  background: rgba(52, 168, 103, 0.16);
+}
+
+.dark [data-toolbox-surface] [class~="text-emerald-700"] {
+  color: #78d49d;
+}
+
+.dark [data-expert-workflow]:hover {
+  background: #302f2c;
+}
+
+.dark [data-expert-data-source-group],
+.dark [data-expert-quality] {
+  background: #1d2921;
+  border-color: rgba(91, 166, 113, 0.3);
+}
+
+.dark [data-expert-data-source] {
+  background: #252d28;
+}
+
+.dark [data-expert-data-source] [class~="text-[#294f35]"],
+.dark [data-expert-quality] [class~="text-[#345c40]"] {
+  color: #91ceaa;
+}
+
+.dark [data-expert-data-source] [class~="text-[#5f7565]"],
+.dark [data-expert-quality] [class~="text-[#5f7565]"] {
+  color: #a9b9ae;
+}
+
+.dark [data-expert-mcp-group] {
+  background: #24222c;
+  border-color: rgba(141, 132, 188, 0.3);
+}
+
+.dark [data-expert-mcp] {
+  background: #2b2933;
+}
+
+.dark [data-expert-mcp] [class~="text-[#454064]"] {
+  color: #c7c1e7;
+}
+
+.dark [data-expert-mcp] [class~="text-[#6b6780]"] {
+  color: #aaa6c0;
+}
+
+.dark [data-expert-mcp] [class~="text-[#6f67a8]"] {
+  color: #9d96d2;
+}
+
+.dark [data-expert-dependency] {
+  background: #252525;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.dark [data-skill-tabs] {
+  background: #292929;
+}
+
+.dark [data-skill-tab] {
+  color: #aaa69d;
+}
+
+.dark [data-skill-tab]:not([data-active="true"]):hover {
+  color: #fffaf2;
+  background: #373634;
+  box-shadow: inset 0 0 0 1px #474541;
+}
+
+.dark [data-skill-tab][data-active="true"] {
+  color: #fffaf2;
+  background: #3a3937;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+}
+
+.dark [data-skill-tab][data-active="true"]:hover {
+  background: #403e3b;
+}
+
+.dark [data-skill-tab-count] {
+  color: #cbc6bc;
+  background: #3a3937;
+  border-color: #4b4945;
+}
+
+.dark [data-skill-tab-count][data-active="true"] {
+  color: #f3a487;
+  background: rgba(217, 119, 87, 0.18);
+  border-color: rgba(217, 119, 87, 0.32);
+}
+
+.dark [data-skill-action] {
+  color: #918d85;
+}
+
+.dark [data-skill-action="upload"]:hover {
+  color: #91d9ae;
+  background: rgba(63, 158, 101, 0.18);
+}
+
+.dark [data-skill-action="delete"]:hover {
+  color: #f09a9a;
+  background: rgba(205, 73, 73, 0.18);
+}
+
+.dark [data-skills-surface] [role="switch"]:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.1);
+}
+
+/* Hope Agent message-process blocks. Keep the animation on the one active
+ * block only; completed rows remain completely static. */
+@keyframes hope-text-shimmer {
+  from { background-position: 120% center; }
+  to { background-position: -20% center; }
+}
+
+.hope-text-shimmer {
+  background: linear-gradient(
+    90deg,
+    currentColor 40%,
+    hsl(270 60% 82%) 50%,
+    currentColor 60%
+  );
+  background-size: 250% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent !important;
+  animation: hope-text-shimmer 2.5s ease-in-out infinite;
+}
+
+.dark [data-hope-toolstep] {
+  color: #c4c0b6;
+}
+
+.dark [data-hope-toolstep] [data-hope-timeline-line] {
+  background-color: rgba(125, 211, 252, 0.12);
+}
+
+.dark [data-hope-toolstep] [data-hope-thinking-content] {
+  color: #aaa69d;
+}
+
+.dark [data-hope-toolstep] :is(pre, [class~="bg-secondary/40"], [class~="bg-muted/50"]) {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-hope-ripple] {
+    display: none;
+  }
+
+  .hope-text-shimmer {
+    animation: none;
+    background: none;
+    -webkit-text-fill-color: currentColor !important;
+  }
+}
+
+.dark [data-skill-card] {
+  color: #eeeae2;
+  background: #242424;
+  border-color: rgba(255, 255, 255, 0.11);
+}
+
+.dark [data-skill-card]:hover {
+  background: #292929;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.dark [data-skill-card][data-enabled="false"] {
+  opacity: 1;
+  background: #202020;
+}
+
+.dark [data-skill-card][data-enabled="false"] :is([data-skill-name], [data-skill-description], [data-skill-icon]) {
+  opacity: 0.58;
+}
+
+.dark [data-skill-icon] {
+  color: #bdb8af;
+  background: #333230;
+}
+
+.dark [data-skill-name] {
+  color: #f1ede5;
+}
+
+.dark [data-skill-description] {
+  color: #aaa69d;
+}
+
+.dark [data-skill-source="builtin"] {
+  color: #9dbcf7;
+  background: rgba(72, 113, 196, 0.16);
+  border-color: rgba(105, 145, 225, 0.28);
+}
+
+.dark [data-skill-source="workspace"] {
+  color: #81d1a4;
+  background: rgba(57, 151, 96, 0.16);
+  border-color: rgba(85, 178, 124, 0.28);
+}
+
+.dark [data-skills-surface] [role="switch"][aria-checked="false"] {
+  background: #55514b;
+}
+
+.dark [data-skills-surface] [role="switch"] > span {
+  background: #f0ece4;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+
+.dark [data-skill-detail] {
+  color: #eeeae2;
+  background: #1d1d1d;
+}
+
+.dark [data-skill-detail] pre {
+  color: #d7d2c9;
+  background: #242424;
+  border-color: rgba(255, 255, 255, 0.11);
+}
+
+.dark [data-skill-create-dialog] {
+  color: #eeeae2;
+  background: #242424;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+}
+
+.dark [data-skill-store-surface] {
+  color: #eeeae2;
+  background: #191919;
+}
+
+.dark [data-skill-store-login] {
+  background: #242424;
+  border-color: rgba(255, 255, 255, 0.11);
+}
+
+.dark [data-skill-store-login-title] {
+  color: #f3efe7;
+}
+
+.dark [data-skill-store-login-description] {
+  color: #aaa69d;
+}
+
+.dark [data-skill-store-card] {
+  color: #eeeae2;
+  background: #242424;
+  border-color: rgba(255, 255, 255, 0.11);
+}
+
+.dark [data-skill-store-card]:hover {
+  background: #2b2a29;
+  border-color: rgba(217, 119, 87, 0.34);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.2);
+}
+
+.dark [data-skill-store-icon] {
+  color: #bdb8af;
+  background: #333230;
+}
+
+.dark [data-skill-store-name] {
+  color: #f1ede5;
+}
+
+.dark [data-skill-store-description] {
+  color: #aaa69d;
+}
+
+.dark [data-skill-store-card] [class~="text-[#8a867c]"] {
+  color: #918d85;
+}
+
+.dark [data-skill-store-badge] {
+  color: #e7a384;
+  background: rgba(217, 119, 87, 0.15);
+  border-color: rgba(217, 119, 87, 0.28);
+}
+
+.dark [data-skill-store-surface] [class~="bg-emerald-50"] {
+  background: rgba(52, 168, 103, 0.16);
+}
+
+.dark [data-skill-store-surface] [class~="text-emerald-700"] {
+  color: #78d49d;
+}
+
+.dark [data-skill-store-surface] [class~="border-emerald-100"] {
+  border-color: rgba(52, 168, 103, 0.3);
+}
+
+.dark [data-skill-store-surface] [class~="bg-amber-50"] {
+  background: rgba(217, 158, 57, 0.15);
+}
+
+.dark [data-skill-store-surface] [class~="text-amber-700"] {
+  color: #e3b76e;
+}
+
+.dark [data-skill-store-surface] [class~="border-amber-100"] {
+  border-color: rgba(217, 158, 57, 0.3);
+}
+
+.dark [data-skill-store-surface] [class~="bg-red-50"] {
+  background: rgba(205, 73, 73, 0.14);
+}
+
+.dark [data-skill-store-surface] [class~="text-red-700"] {
+  color: #ef9999;
+}
+
+.dark [data-skill-store-surface] [class~="border-red-100"] {
+  border-color: rgba(205, 73, 73, 0.3);
+}
+
+.dark [data-skill-store-action] {
+  color: #aaa69d;
+}
+
+.dark [data-skill-store-action="download"]:hover {
+  color: #f0a184;
+  background: rgba(217, 119, 87, 0.18);
+}
+
+.dark [data-skill-store-action="close"]:hover {
+  color: #fffaf2;
+  background: #343331;
+}
+
+.dark [data-skill-store-action="login"] {
+  color: #fffaf2;
+  background: #d97757;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.24);
+}
+
+.dark [data-skill-store-action="login"]:hover {
+  background: #e18364;
+}
+
+.dark [data-skill-store-action]:focus-visible {
+  outline: 2px solid rgba(217, 119, 87, 0.65);
+  outline-offset: 2px;
+}
+
+.dark [data-skill-store-detail] {
+  color: #eeeae2;
+  background: #1d1d1d;
+}
+
+.dark [data-skill-store-detail] pre {
+  color: #d7d2c9;
+  background: #242424;
+  border-color: rgba(255, 255, 255, 0.11);
+}
+
+.dark [data-skill-store-detail] [class~="bg-white"] {
+  color: #aaa69d;
+  background: #292929;
+  border-color: rgba(255, 255, 255, 0.11);
+}
+
+.dark :is([data-skill-detail], [data-skill-store-detail]) [data-skill-detail-header] {
+  background: #202020;
+  border-color: rgba(255, 255, 255, 0.11);
+}
+
+.dark :is([data-skill-detail], [data-skill-store-detail]) [class~="text-neutral-900"] {
+  color: #f3efe7;
+}
+
+.dark :is([data-skill-detail], [data-skill-store-detail]) [class~="text-neutral-700"] {
+  color: #cbc6bd;
+}
+
+.dark :is([data-skill-detail], [data-skill-store-detail]) [class~="text-neutral-500"] {
+  color: #aaa69d;
+}
+
+.dark :is([data-skill-detail], [data-skill-store-detail]) [class~="text-neutral-400"] {
+  color: #8d8982;
+}
+
+.dark :is([data-skill-detail], [data-skill-store-detail]) [class~="border-neutral-200"] {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.dark :is([data-skill-detail], [data-skill-store-detail]) [class~="hover:bg-neutral-100"]:hover {
+  color: #fffaf2;
+  background: #30302f;
+}
+
+.dark :is([data-skill-detail], [data-skill-store-detail]) [class~="bg-amber-50"] {
+  color: #e7bd78;
+  background: rgba(217, 158, 57, 0.15);
+  border-color: rgba(217, 158, 57, 0.28);
+}
+
+.dark :is([data-skill-detail], [data-skill-store-detail]) pre {
+  color: #d9d4cb;
+  background: #181818;
+  border-color: rgba(255, 255, 255, 0.13);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+/* Schedule dark surface */
+.dark [data-schedule-surface],
+.dark [data-schedule-detail] {
+  color: #eeeae2;
+  background: #191919;
+}
+
+.dark [data-schedule-header] {
+  background: #1b1b1b;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.dark [data-schedule-banner] {
+  color: #bbb6ad;
+  background: #25231f;
+  border-color: rgba(217, 119, 87, 0.18);
+}
+
+.dark [data-schedule-card],
+.dark [data-schedule-detail] [class~="bg-white"] {
+  background: #242424;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.dark [data-schedule-card]:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+.dark [data-schedule-card] [class~="bg-[#fbfaf7]"],
+.dark [data-schedule-detail] [class~="bg-[#faf8f5]"] {
+  background: #1d1d1d;
+}
+
+.dark [data-schedule-toggle][data-active="false"] {
+  background: #4d4a45;
+}
+
+.dark [data-schedule-toggle][data-active="true"] {
+  background: #35a76c;
+}
+
+.dark [data-schedule-toggle] [data-schedule-toggle-thumb] {
+  background: #f0ece4;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+
+.dark [data-schedule-editor] {
+  color: #eeeae2;
+  background: #242424;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.62);
+}
+
+.dark [data-schedule-editor] :is(input, textarea) {
+  color: #f1ede5;
+  background: #1c1c1c;
+  border-color: #4b4843;
+}
+
+.dark [data-schedule-editor] :is(input, textarea)::placeholder {
+  color: #7f7b74;
+}
+
+.dark [data-schedule-editor] :is(input, textarea):focus {
+  border-color: #d97757;
+}
+
+.dark [data-schedule-editor] [class~="border-neutral-100"] {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.dark [data-schedule-editor] button:disabled {
+  color: #8c8880;
+  background: #3a3835;
+}
+
+/* Codex-inspired dark composer shared by the welcome screen and conversations.
+   These rules only change colour and elevation; each variant keeps its own
+   existing dimensions, spacing and border radius. */
+.dark [data-codex-composer-shell] {
+  background: #1e1e1e;
+  border-color: rgba(255, 255, 255, 0.075);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.26);
+}
+
+/* A conversation already sits on the page surface. Avoid the extra rectangular
+   backing layer visible behind its rounded composer. */
+.dark [data-codex-composer-shell][data-composer-variant="chat"] {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+/* The bottom dock and live status should merge into the conversation canvas,
+   like Codex: only the rounded composer remains an opaque surface. */
+.dark [data-chat-composer-dock],
+.dark [data-generation-status] {
+  background-color: transparent;
+  background-image: none;
+}
+
+.dark [data-codex-project-selector] {
+  color: #929292;
+  background: #1e1e1e;
+}
+
+.dark [data-codex-project-selector] button {
+  color: #999995;
+}
+
+.dark [data-codex-project-selector] button:hover {
+  color: #eeeeeb;
+}
+
+.dark [data-codex-project-selector] svg {
+  color: #898985;
+}
+
+.dark [data-codex-composer-card] {
+  background: #2a2a2a;
+  border-color: rgba(255, 255, 255, 0.105);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.018),
+    0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+.dark [data-codex-composer-input] {
+  color: #f4f4f2;
+}
+
+.dark [data-codex-composer-input]::placeholder {
+  color: #777773;
+}
+
+/* Composer text remains scrollable after it reaches its maximum height, but
+   the native overlay scrollbar shouldn't sit inside the rounded input. */
+[data-codex-composer-input] {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+[data-codex-composer-input]::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.dark [data-codex-composer-toolbar] [data-composer-action] {
+  color: #d4d4d0;
+}
+
+.dark [data-codex-composer-toolbar] [data-composer-action]:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.075);
+}
+
+.dark [data-codex-model-picker] {
+  color: #d7d7d3;
+}
+
+.dark [data-codex-model-picker]:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.075);
+}
+
+.dark [data-codex-model-menu] {
+  background: #222222;
+  border-color: rgba(255, 255, 255, 0.13);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.42);
+}
+
+.dark [data-codex-model-menu] button:hover {
+  background: #2d2d2d;
+}
+
+.dark [data-codex-submit]:not(:disabled) {
+  color: #1d1d1d;
+  background: #f3f3f1;
+}
+
+.dark [data-codex-submit]:not(:disabled):hover {
+  background: #ffffff;
+}
+
+.dark [data-codex-submit]:disabled {
+  color: #777773;
+  background: #383838;
+}
+
+.dark [data-welcome-shortcut] {
+  color: #f0f0ed;
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: none;
+}
+
+.dark [data-welcome-shortcut]:hover {
+  background: rgba(255, 255, 255, 0.035);
+  border-color: rgba(255, 255, 255, 0.24);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+}
+
+.dark [data-welcome-shortcut][data-active="true"] {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.28);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.dark [data-welcome-shortcut="write"] svg { color: #3b9eff; }
+.dark [data-welcome-shortcut="learn"] svg { color: #a970ff; }
+.dark [data-welcome-shortcut="code"] svg { color: #35c77a; }
+.dark [data-welcome-shortcut="life"] svg { color: #ff7a3d; }
+.dark [data-welcome-shortcut="ruyi"] svg { color: #e5ad45; }
+
+.dark [data-welcome-shortcut-panel] {
+  color: #ecece8;
+  background: #222222;
+  border-color: rgba(255, 255, 255, 0.13);
+  box-shadow: 0 22px 64px rgba(0, 0, 0, 0.46);
+}
+
+.dark [data-welcome-shortcut-panel] > div {
+  border-color: rgba(255, 255, 255, 0.09);
+}
+
+.dark [data-welcome-shortcut-panel] button {
+  color: #d8d8d4;
+  border-color: rgba(255, 255, 255, 0.09);
+}
+
+.dark [data-welcome-shortcut-panel] button:hover {
+  color: #ffffff;
+  background: #2d2d2d;
 }

@@ -73,7 +73,7 @@ describe('normalizeActivityTimeline', () => {
     expect(units[2].type === 'message' ? units[2].message.thinking : undefined).toBeUndefined();
   });
 
-  it('merges late activity into the turn activity block before visible answers', () => {
+  it('keeps late activity after the assistant text that preceded it', () => {
     const units = normalizeActivityTimeline([
       msg({ id: 'u1', role: 'user', content: 'question' }),
       msg({ id: 'a1', role: 'assistant', content: 'partial answer' }),
@@ -81,8 +81,104 @@ describe('normalizeActivityTimeline', () => {
       msg({ id: 'a2', role: 'assistant', content: 'final answer' }),
     ]);
 
-    expect(units.map((unit) => unit.type)).toEqual(['message', 'activity', 'message', 'message']);
-    expect(units[1].type === 'activity' ? units[1].messages.map((message) => message.id) : []).toEqual(['t1']);
+    expect(units.map((unit) => unit.type)).toEqual(['message', 'message', 'activity', 'message']);
+    expect(units[1].type === 'message' ? units[1].message.id : '').toBe('a1');
+    expect(units[2].type === 'activity' ? units[2].messages.map((message) => message.id) : []).toEqual(['t1']);
+  });
+
+  it('keeps a late terminal plan inside ToolStep before the final answer', () => {
+    const units = normalizeActivityTimeline([
+      msg({ id: 'u1', role: 'user', content: 'research' }),
+      msg({
+        id: 't1',
+        role: 'tool',
+        kind: 'trace',
+        toolEvents: [{ phase: 'end', call_id: 'search-1', name: 'web_search', result: 'ok' }],
+      }),
+      msg({ id: 'a1', role: 'assistant', content: 'final report' }),
+      msg({
+        id: 'terminal-plan',
+        role: 'tool',
+        kind: 'trace',
+        agentUI: {
+          kind: 'task_progress',
+          status: 'failed',
+          active_step_ids: ['team-lead'],
+          current_step_id: 'team-lead',
+          steps: [
+            { id: 'team-lead', title: '主笔交叉质证与汇总', status: 'running' },
+            { id: 'report-audit', title: '报告审校与交付', status: 'error' },
+          ],
+        },
+      }),
+    ]);
+
+    expect(units.map((unit) => unit.type)).toEqual(['message', 'activity', 'message']);
+    expect(units[1].type === 'activity' ? units[1].messages.map((message) => message.id) : [])
+      .toEqual(['t1', 'terminal-plan']);
+    expect(units[2].type === 'message' ? units[2].message.id : '').toBe('a1');
+  });
+
+  it('lifts a trailing completed tool batch above the final answer', () => {
+    // Tool finish frames journaled after the answer text (turn-end flush) still
+    // belong to the turn's ToolStep, never below the answer body.
+    const units = normalizeActivityTimeline([
+      msg({ id: 'u1', role: 'user', content: 'boeing' }),
+      msg({ id: 'r1', role: 'assistant', content: '', thinking: 'plan' }),
+      msg({ id: 'a1', role: 'assistant', content: '你好，我无法给到相关内容。' }),
+      msg({
+        id: 't1',
+        role: 'tool',
+        kind: 'trace',
+        toolEvents: [
+          { phase: 'start', call_id: 'search-1', name: 'web_search', batch_id: 'batch-1' },
+          { phase: 'start', call_id: 'search-2', name: 'web_search', batch_id: 'batch-1' },
+          { phase: 'end', call_id: 'search-1', name: 'web_search', result: 'ok', batch_id: 'batch-1' },
+          { phase: 'end', call_id: 'search-2', name: 'web_search', result: 'ok', batch_id: 'batch-1' },
+        ],
+      }),
+    ]);
+
+    expect(units.map((unit) => unit.type)).toEqual(['message', 'activity', 'message']);
+    expect(units[1].type === 'activity' ? units[1].messages.map((message) => message.id) : [])
+      .toEqual(['r1', 't1']);
+    expect(units[2].type === 'message' ? units[2].message.id : '').toBe('a1');
+  });
+
+  it('preserves thought-tool-text-thought-tool-text ordering within one turn', () => {
+    const units = normalizeActivityTimeline([
+      msg({ id: 'u1', role: 'user', content: 'question' }),
+      msg({ id: 'r1', role: 'assistant', content: '', thinking: 'first thought' }),
+      msg({
+        id: 't1',
+        role: 'tool',
+        kind: 'trace',
+        toolEvents: [{ phase: 'end', call_id: 'tool-1', name: 'web_search', result: 'ok' }],
+      }),
+      msg({ id: 'a1', role: 'assistant', content: 'intermediate explanation' }),
+      msg({ id: 'r2', role: 'assistant', content: '', thinking: 'second thought' }),
+      msg({
+        id: 't2',
+        role: 'tool',
+        kind: 'trace',
+        toolEvents: [{ phase: 'end', call_id: 'tool-2', name: 'web_fetch', result: 'ok' }],
+      }),
+      msg({ id: 'a2', role: 'assistant', content: 'final answer' }),
+    ]);
+
+    expect(units.map((unit) => unit.type)).toEqual([
+      'message',
+      'activity',
+      'message',
+      'activity',
+      'message',
+    ]);
+    expect(units[1].type === 'activity' ? units[1].messages.map((message) => message.id) : [])
+      .toEqual(['r1', 't1']);
+    expect(units[2].type === 'message' ? units[2].message.id : '').toBe('a1');
+    expect(units[3].type === 'activity' ? units[3].messages.map((message) => message.id) : [])
+      .toEqual(['r2', 't2']);
+    expect(units[4].type === 'message' ? units[4].message.id : '').toBe('a2');
   });
 
   it('ignores empty assistant placeholders between activity rows', () => {
@@ -133,7 +229,8 @@ describe('normalizeActivityTimeline', () => {
         id: 'a1',
         role: 'assistant',
         content: 'done',
-        thinkingDuration: 110,
+        thinkingDuration: 0.2,
+        turnDurationMs: 110_000,
         completedAt,
       }),
     ]);
@@ -144,6 +241,27 @@ describe('normalizeActivityTimeline', () => {
       .toEqual(['r1', 't1', 'f1']);
     expect(activityUnits[0].type === 'activity' ? activityUnits[0].turnLatencyMs : undefined).toBe(110_000);
     expect(activityUnits[0].type === 'activity' ? activityUnits[0].turnCompletedAt : undefined).toBe(completedAt);
+  });
+
+  it('never substitutes a short thinking segment for whole-turn duration', () => {
+    const units = normalizeActivityTimeline([
+      msg({ id: 'u1', role: 'user', content: 'research' }),
+      msg({
+        id: 'r1',
+        role: 'assistant',
+        content: '',
+        thinking: 'plan',
+        thinkingDuration: 0.2,
+      }),
+      msg({
+        id: 'a1',
+        role: 'assistant',
+        content: 'done',
+        thinkingDuration: 0.2,
+      }),
+    ]);
+
+    expect(units[1].type === 'activity' ? units[1].turnLatencyMs : undefined).toBeUndefined();
   });
 
   it('classifies tool events and media attachments as structured activity items', () => {

@@ -42,120 +42,418 @@ function render(
   return container;
 }
 
-describe('TaskNarrativeTimeline streaming UI', () => {
-  it('shows a live loading state and keeps active steps expanded', () => {
-    const view = render([{
-      id: 'tool-frame', role: 'tool', kind: 'trace', content: '', timestamp: Date.now(),
-      toolEvents: [{ phase: 'start', call_id: 'search-1', name: 'web_search', arguments: { query: '市场规模' } }],
-    }]);
+function trace(partial: Partial<Message> & Pick<Message, 'id'>): Message {
+  return {
+    role: 'tool',
+    kind: 'trace',
+    content: '',
+    timestamp: Date.now(),
+    ...partial,
+  };
+}
 
-    const toggle = view.querySelector<HTMLButtonElement>('button[aria-label="折叠任务步骤"]');
-    expect(toggle?.getAttribute('aria-expanded')).toBe('true');
-    expect(toggle?.textContent).toContain('进行中');
-    expect(toggle?.textContent).toContain('1 step');
-    expect(view.querySelectorAll('.animate-spin').length).toBeGreaterThanOrEqual(2);
+describe('TaskNarrativeTimeline Hope Agent-compatible UI', () => {
+  it('removes the old ToolStep summary and animates only the active timeline item', () => {
+    const view = render([trace({
+      id: 'tool-frame',
+      toolEvents: [{
+        phase: 'start',
+        call_id: 'search-1',
+        name: 'web_search',
+        arguments: { query: '市场规模' },
+      }],
+    })]);
+
+    expect(view.querySelector('[data-toolstep-summary]')).toBeNull();
+    expect(view.querySelector('[data-hope-toolstep]')).not.toBeNull();
+    expect(view.querySelectorAll('[data-hope-timeline-item][data-active="true"]')).toHaveLength(1);
+    expect(view.querySelectorAll('[data-hope-ripple]')).toHaveLength(2);
+    expect(view.querySelectorAll('[data-hope-tool]')).toHaveLength(1);
+    expect(view.querySelector('.animate-spin')).toBeNull();
+    expect(view.textContent).toContain('查询资料');
+    expect(view.textContent).toContain('市场规模');
   });
 
-  it('uses the shared authoritative elapsed duration while active', () => {
-    const view = render([{
-      id: 'tool-frame', role: 'tool', kind: 'trace', content: '', timestamp: Date.now() - 2_000,
-      toolEvents: [{ phase: 'start', call_id: 'search-1', name: 'web_search' }],
-    }], { activeElapsedMs: 23_945 });
-
-    expect(view.textContent).toContain('进行中 24s');
-  });
-
-  it('collapses completed steps into a duration summary and can reopen them', () => {
-    const view = render([{
-      id: 'tool-end', role: 'tool', kind: 'trace', content: '', timestamp: Date.now(),
-      toolEvents: [{ phase: 'end', call_id: 'search-1', name: 'web_search', result: '3 results' }],
-    }], { isActive: false, turnLatencyMs: 548_000 });
-
-    const toggle = view.querySelector<HTMLButtonElement>('button[aria-label="展开任务步骤"]');
-    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
-    expect(toggle?.textContent).toContain('已完成 9m8s');
-    expect(view.querySelector('[aria-hidden="true"]')).not.toBeNull();
-
-    act(() => toggle?.click());
-
-    expect(toggle?.getAttribute('aria-expanded')).toBe('true');
-    expect(toggle?.getAttribute('aria-label')).toBe('折叠任务步骤');
-  });
-
-  it('shows the authoritative duration without duplicating task completion time', () => {
-    const completedAt = Date.parse('2026-07-28T15:01:23+08:00');
-    const view = render([{
-      id: 'tool-end', role: 'tool', kind: 'trace', content: '', timestamp: completedAt - 23_945,
-      toolEvents: [{ phase: 'end', call_id: 'weather-1', name: 'weather', result: 'sunny' }],
-    }], {
-      isActive: false,
-      turnLatencyMs: 23_945,
+  it('keeps a single completed tool visible after answer text begins', () => {
+    const view = render([trace({
+      id: 'tool-end',
+      toolEvents: [{
+        phase: 'end',
+        call_id: 'search-1',
+        name: 'web_search',
+        result: '3 results',
+      }],
+    })], {
+      isActive: true,
+      hasBodyBelow: true,
+      turnLatencyMs: 548_000,
     });
 
-    expect(view.textContent).toContain('已完成 24s');
-    expect(view.textContent).not.toContain('结束于');
+    expect(view.querySelector('[data-hope-processed]')).toBeNull();
+    expect(view.querySelector('[data-hope-tool]')).not.toBeNull();
+    expect(view.querySelectorAll('[data-hope-timeline-item][data-active="true"]')).toHaveLength(0);
+    expect(view.querySelectorAll('[data-hope-ripple]')).toHaveLength(0);
   });
 
-  it('formats long task duration with hour, minute, and second units', () => {
+  it('folds one terminal expert plan into the completed ToolStep above the answer', () => {
+    const view = render([trace({
+      id: 'terminal-team-plan',
+      agentUI: {
+        kind: 'task_progress',
+        plan_kind: 'workflow',
+        team_id: 'asset-research-team',
+        team_run_id: 'run-failed',
+        status: 'failed',
+        note: '专家团队执行失败',
+        active_step_ids: ['team-lead'],
+        current_step_id: 'team-lead',
+        steps: [
+          { id: 'team-lead', title: '主笔交叉质证与汇总', status: 'running' },
+          { id: 'report-audit', title: '报告审校与交付', status: 'pending' },
+        ],
+      },
+    })], {
+      isActive: false,
+      hasBodyBelow: true,
+      turnLatencyMs: 912_000,
+    });
+
+    const processed = view.querySelector<HTMLButtonElement>('button[aria-label="展开已处理步骤"]');
+    expect(processed?.textContent).toContain('已处理');
+    expect(processed?.textContent).toContain('15m12s');
+    expect(processed?.textContent).toContain('1 项失败');
+    expect(view.querySelector('[data-hope-plan]')).toBeNull();
+
+    act(() => processed?.click());
+    expect(view.querySelector('[data-hope-plan]')).not.toBeNull();
+    expect(view.textContent).toContain('专家团队执行失败');
+  });
+
+  it('folds two or more completed process units only after answer text begins', () => {
+    const view = render([
+      trace({
+        id: 'thought',
+        narration: '先核验公司基础资料。',
+        narrationStreaming: false,
+      }),
+      trace({
+        id: 'tool-end',
+        toolEvents: [{
+          phase: 'end',
+          call_id: 'search-1',
+          name: 'web_search',
+          result: '3 results',
+        }],
+      }),
+    ], {
+      isActive: true,
+      hasBodyBelow: true,
+      turnLatencyMs: 548_000,
+    });
+
+    const processed = view.querySelector<HTMLButtonElement>('button[aria-label="展开已处理步骤"]');
+    expect(processed?.getAttribute('aria-expanded')).toBe('false');
+    expect(processed?.textContent).toContain('已处理');
+    expect(processed?.textContent).toContain('9m8s');
+    expect(view.querySelector('[data-hope-thinking]')).toBeNull();
+    expect(view.querySelector('[data-hope-tool]')).toBeNull();
+
+    act(() => processed?.click());
+
+    expect(processed?.getAttribute('aria-expanded')).toBe('true');
+    expect(view.querySelector('[data-hope-thinking]')).not.toBeNull();
+    expect(view.querySelector('[data-hope-tool]')).not.toBeNull();
+  });
+
+  it('does not flash completed work into a processed row before answer text arrives', () => {
+    const view = render([
+      trace({ id: 'thought', narration: '先检查资料。', narrationStreaming: false }),
+      trace({
+        id: 'tool-end',
+        toolEvents: [{ phase: 'end', call_id: 'search-1', name: 'web_search', result: 'ok' }],
+      }),
+    ], {
+      isActive: true,
+      hasBodyBelow: false,
+    });
+
+    expect(view.querySelector('[data-hope-processed]')).toBeNull();
+    expect(view.querySelector('[data-hope-thinking]')).not.toBeNull();
+    expect(view.querySelector('[data-hope-tool]')).not.toBeNull();
+  });
+
+  it('groups consecutive tools into one stable Hope tool group', () => {
+    const view = render([
+      trace({
+        id: 'tool-1',
+        toolEvents: [{ phase: 'start', call_id: 'search-1', name: 'web_search', arguments: { query: 'A' } }],
+      }),
+      trace({
+        id: 'tool-2',
+        toolEvents: [{ phase: 'start', call_id: 'search-2', name: 'web_search', arguments: { query: 'B' } }],
+      }),
+    ]);
+
+    expect(view.querySelectorAll('[data-hope-tool-group]')).toHaveLength(1);
+    expect(view.querySelectorAll('[data-hope-tool]')).toHaveLength(2);
+    expect(view.querySelectorAll('[data-hope-timeline-item][data-active="true"]')).toHaveLength(1);
+    expect(view.querySelectorAll('[data-hope-ripple]')).toHaveLength(2);
+    expect(view.textContent).toContain('正在执行 2 项操作');
+    expect([...view.querySelectorAll('[data-hope-group-member-status]')].map((node) => node.textContent))
+      .toEqual(['进行中', '进行中']);
+    expect(
+      [...view.querySelectorAll('[data-hope-tool][data-group-member="true"] [data-hope-tool-label]')]
+        .some((node) => node.classList.contains('hope-text-shimmer')),
+    ).toBe(false);
+
+    const group = view.querySelector<HTMLButtonElement>('[data-hope-tool-group] > button');
+    act(() => group?.click());
+    expect(group?.getAttribute('aria-expanded')).toBe('false');
+    expect(view.querySelectorAll('[data-hope-tool]')).toHaveLength(0);
+  });
+
+  it('auto-expands labelled parallel work and collapses it after completion', () => {
+    const runningMessages = [
+      trace({
+        id: 'parallel-1',
+        toolEvents: [{
+          phase: 'start',
+          call_id: 'parallel-search',
+          batch_id: 'parallel-batch',
+          name: 'web_search',
+          arguments: { query: '行业数据' },
+        }],
+      }),
+      trace({
+        id: 'parallel-2',
+        toolEvents: [{
+          phase: 'start',
+          call_id: 'parallel-finance',
+          batch_id: 'parallel-batch',
+          name: 'mcp',
+          arguments: { server: 'juyuan', action: '查询财务指标' },
+        }],
+      }),
+    ];
+    const view = render(runningMessages);
+    const group = view.querySelector<HTMLButtonElement>('[data-hope-tool-group] > button');
+
+    expect(group?.getAttribute('aria-expanded')).toBe('true');
+    expect(group?.textContent).toContain('并行执行 · 2 项');
+    expect(view.querySelectorAll('[data-hope-tool][data-group-member="true"]')).toHaveLength(2);
+
+    render([
+      ...runningMessages,
+      trace({
+        id: 'parallel-1-done',
+        toolEvents: [{
+          phase: 'end',
+          call_id: 'parallel-search',
+          batch_id: 'parallel-batch',
+          name: 'web_search',
+          result: 'ok',
+        }],
+      }),
+      trace({
+        id: 'parallel-2-done',
+        toolEvents: [{
+          phase: 'end',
+          call_id: 'parallel-finance',
+          batch_id: 'parallel-batch',
+          name: 'mcp',
+          result: 'ok',
+        }],
+      }),
+    ], { isActive: false });
+
+    const completedGroup = view.querySelector<HTMLButtonElement>('[data-hope-tool-group] > button');
+    expect(completedGroup?.getAttribute('aria-expanded')).toBe('false');
+    expect(completedGroup?.textContent).toContain('已并行完成 2 项');
+    expect(view.querySelectorAll('[data-hope-tool]')).toHaveLength(0);
+  });
+
+  it('shows duration only on the parallel group, not on each child task', () => {
+    const startedAt = 1_785_000_000_000;
+    const view = render([
+      trace({
+        id: 'parallel-start-1',
+        toolEvents: [{
+          phase: 'start',
+          call_id: 'parallel-search',
+          batch_id: 'parallel-duration',
+          name: 'web_search',
+          occurred_at: startedAt,
+          arguments: { query: '行业数据' },
+        }],
+      }),
+      trace({
+        id: 'parallel-start-2',
+        toolEvents: [{
+          phase: 'start',
+          call_id: 'parallel-finance',
+          batch_id: 'parallel-duration',
+          name: 'mcp',
+          occurred_at: startedAt + 1_000,
+          arguments: { server: 'juyuan' },
+        }],
+      }),
+      trace({
+        id: 'parallel-end-1',
+        toolEvents: [{
+          phase: 'end',
+          call_id: 'parallel-search',
+          batch_id: 'parallel-duration',
+          name: 'web_search',
+          occurred_at: startedAt + 4_000,
+          result: 'ok',
+        }],
+      }),
+      trace({
+        id: 'parallel-end-2',
+        toolEvents: [{
+          phase: 'end',
+          call_id: 'parallel-finance',
+          batch_id: 'parallel-duration',
+          name: 'mcp',
+          occurred_at: startedAt + 5_000,
+          result: 'ok',
+        }],
+      }),
+    ], { isActive: false });
+
+    const groupButton = view.querySelector<HTMLButtonElement>('[data-hope-tool-group] > button');
+    expect(groupButton?.textContent).toContain('耗时 5s');
+    act(() => groupButton?.click());
+    const members = view.querySelector<HTMLElement>('[data-hope-tool-group-members]');
+    expect(members?.textContent).not.toContain('耗时');
+  });
+
+  it('shows one quiet loading tail after a tool completes between model rounds', () => {
+    const view = render([trace({
+      id: 'tool-end',
+      toolEvents: [{ phase: 'end', call_id: 'search-1', name: 'web_search', result: 'ok' }],
+    })]);
+
+    const activeItem = view.querySelector('[data-hope-timeline-item][data-active="true"]');
+    expect(activeItem?.querySelector('[data-hope-loading]')).not.toBeNull();
+    expect(view.querySelector('[data-hope-tool]')).not.toBeNull();
+    expect(view.querySelectorAll('[data-hope-ripple]')).toHaveLength(2);
+  });
+
+  it('renders provider thinking and public narration in Hope thinking blocks', () => {
     const view = render([{
-      id: 'tool-end', role: 'tool', kind: 'trace', content: '', timestamp: Date.now(),
-      toolEvents: [{ phase: 'end', call_id: 'long-task', name: 'exec', result: 'done' }],
-    }], { isActive: false, turnLatencyMs: 3_723_000 });
-
-    expect(view.textContent).toContain('已完成 1h2m3s');
-  });
-
-  it('treats a failed inner step as completed when a final answer exists', () => {
-    const view = render([{
-      id: 'tool-error', role: 'tool', kind: 'trace', content: '', timestamp: Date.now(),
-      toolEvents: [{ phase: 'error', call_id: 'search-1', name: 'web_search', error: 'temporary failure' }],
-    }], { isActive: false, turnLatencyMs: 496_000, hasBodyBelow: true });
-
-    const toggle = view.querySelector<HTMLButtonElement>('button[aria-label="展开任务步骤"]');
-    expect(toggle?.textContent).toContain('已完成 8m16s');
-    expect(toggle?.textContent).not.toContain('未完成');
-    expect(view.querySelector('.text-red-600')).toBeNull();
-    expect(view.querySelector('.text-red-500')).toBeNull();
-  });
-
-  it('shows unfinished only when an error ends without a final answer', () => {
-    const view = render([{
-      id: 'tool-error', role: 'tool', kind: 'trace', content: '', timestamp: Date.now(),
-      toolEvents: [{ phase: 'error', call_id: 'search-1', name: 'web_search', error: 'fatal failure' }],
-    }], { isActive: false, turnLatencyMs: 12_000, hasBodyBelow: false });
-
-    expect(view.textContent).toContain('未完成 12s');
-  });
-
-  it('updates one tool row from running to complete as gateway frames arrive', () => {
-    const running: Message[] = [{
-      id: 'tool-frame', role: 'tool', kind: 'trace', content: '', timestamp: 1,
-      toolEvents: [{ phase: 'start', call_id: 'search-1', name: 'web_search', arguments: { query: '市场规模' } }],
-    }];
-    const view = render(running);
-
-    expect(view.textContent).toContain('查询资料');
-    expect(view.textContent).toContain('正在查找“市场规模”公开资料');
-
-    render([...running, {
-      id: 'tool-end', role: 'tool', kind: 'trace', content: '', timestamp: 2,
-      toolEvents: [{ phase: 'end', call_id: 'search-1', name: 'web_search', result: '3 results' }],
+      id: 'narration',
+      role: 'assistant',
+      content: '',
+      thinking: 'Inspect the source tables before choosing the next query.',
+      narration: 'Let me fetch more detailed market data from specific articles.',
+      narrationStreaming: true,
+      reasoningStreaming: true,
+      timestamp: Date.now(),
     }]);
 
-    // The completed row remains stable; the active-stream continuation is a
-    // separate status row, not a duplicate tool event.
-    expect(view.querySelectorAll('li')).toHaveLength(2);
-    expect(view.textContent).toContain('已查到相关公开资料');
+    expect(view.textContent).toContain('正在思考');
+    expect(view.textContent).toContain('Let me fetch more detailed market data from specific articles.');
+    expect(view.querySelectorAll('[data-hope-thinking]')).toHaveLength(2);
+
+    const thinkingButtons = view.querySelectorAll<HTMLButtonElement>('[data-hope-thinking] > button');
+    act(() => thinkingButtons[0]?.click());
+    expect(view.textContent).toContain('Inspect the source tables before choosing the next query.');
   });
 
-  it('does not render file edits, generated-file cards, or file paths in steps', () => {
+  it('collapses completed provider thinking and lets the user reopen it', () => {
+    const view = render([{
+      id: 'reasoning',
+      role: 'assistant',
+      content: '',
+      thinking: '先比较财务口径，再核验公开来源。',
+      reasoningStreaming: false,
+      timestamp: Date.now(),
+    }], { isActive: false });
+
+    const thinking = view.querySelector<HTMLButtonElement>('[data-hope-thinking] > button');
+    expect(thinking?.getAttribute('aria-expanded')).toBe('false');
+    expect(view.textContent).not.toContain('先比较财务口径，再核验公开来源。');
+    expect(view.textContent).toContain('已思考');
+
+    act(() => thinking?.click());
+    expect(thinking?.getAttribute('aria-expanded')).toBe('true');
+    expect(view.textContent).toContain('先比较财务口径，再核验公开来源。');
+  });
+
+  it('freezes completed thinking time even while the rest of the turn is active', () => {
+    const view = render([{
+      id: 'reasoning-frozen',
+      role: 'assistant',
+      content: '',
+      thinking: '思考已完成，后续工具仍在运行。',
+      thinkingDuration: 12,
+      reasoningStreaming: false,
+      isStreaming: true,
+      timestamp: Date.now(),
+    }], {
+      isActive: true,
+      activeElapsedMs: 60_000,
+    });
+
+    expect(view.textContent).toContain('已思考');
+    expect(view.textContent).toContain('耗时 12s');
+    expect(view.textContent).not.toContain('耗时 1m');
+  });
+
+  it('keeps tool result and raw payload hidden until their Hope controls are opened', () => {
+    const view = render([trace({
+      id: 'tool-details',
+      toolEvents: [{
+        phase: 'end',
+        call_id: 'exec-1',
+        name: 'exec',
+        arguments: { command: 'echo safe-summary', secret: 'private-input' },
+        result: 'private-result',
+      }],
+    })], { isActive: false });
+
+    expect(view.textContent).toContain('echo safe-summary');
+    expect(view.textContent).not.toContain('private-input');
+    expect(view.textContent).not.toContain('private-result');
+
+    const toolToggle = view.querySelector<HTMLButtonElement>('[data-hope-tool] button[aria-expanded]');
+    act(() => toolToggle?.click());
+    expect(view.textContent).toContain('private-result');
+    expect(view.textContent).not.toContain('private-input');
+
+    const rawToggle = view.querySelector<HTMLButtonElement>('[data-hope-raw-toggle]');
+    act(() => rawToggle?.click());
+    expect(view.textContent).toContain('private-input');
+  });
+
+  it('preserves thought-tool-thought-tool order without the old step-card projection', () => {
     const view = render([
-      {
+      trace({ id: 'thought-1', narration: '先确认公司基础资料。', narrationStreaming: false }),
+      trace({
+        id: 'tool-1',
+        toolEvents: [{ phase: 'end', call_id: 'search-company', name: 'web_search', result: 'ok' }],
+      }),
+      trace({ id: 'thought-2', narration: '接下来核验行业数据。', narrationStreaming: false }),
+      trace({
+        id: 'tool-2',
+        toolEvents: [{ phase: 'end', call_id: 'search-industry', name: 'web_fetch', result: 'ok' }],
+      }),
+    ], { isActive: false });
+
+    const units = [...view.querySelectorAll<HTMLElement>('[data-hope-thinking], [data-hope-tool]')];
+    expect(units.map((unit) => unit.getAttribute('data-entry-id'))).toEqual([
+      'thought-1:narration',
+      'tool:search-company',
+      'thought-2:narration',
+      'tool:search-industry',
+    ]);
+  });
+
+  it('keeps generated artifact steps concise and hides file paths', () => {
+    const view = render([
+      trace({
         id: 'file-edit',
-        role: 'tool',
-        kind: 'trace',
-        content: '',
-        timestamp: Date.now(),
         fileEdits: [{
           call_id: 'write-1',
           tool: 'write_file',
@@ -165,13 +463,9 @@ describe('TaskNarrativeTimeline streaming UI', () => {
           deleted: 0,
           status: 'done',
         }],
-      },
-      {
+      }),
+      trace({
         id: 'pdf-output',
-        role: 'tool',
-        kind: 'trace',
-        content: '',
-        timestamp: Date.now(),
         toolEvents: [{
           phase: 'end',
           call_id: 'pdf-1',
@@ -186,39 +480,86 @@ describe('TaskNarrativeTimeline streaming UI', () => {
             mime_type: 'application/pdf',
           }],
         }],
-      },
-    ]);
+      }),
+    ], { isActive: false });
 
     expect(view.textContent).toContain('产物已生成');
     expect(view.textContent).not.toContain('report.md');
     expect(view.textContent).not.toContain('report.pdf');
-    expect(view.querySelector('[title="点击预览文件"]')).toBeNull();
   });
 
-  it('shows public narration verbatim but never private reasoning text', () => {
+  it('shows failure state without turning every row into an animation', () => {
+    const view = render([trace({
+      id: 'tool-error',
+      toolEvents: [{
+        phase: 'error',
+        call_id: 'search-1',
+        name: 'web_search',
+        error: 'fatal failure',
+      }],
+    })], { isActive: false, hasBodyBelow: false });
+
+    expect(view.querySelector('[data-hope-tool][data-status="error"]')).not.toBeNull();
+    expect(view.querySelector('[data-hope-timeline-item][data-tone="failed"]')).not.toBeNull();
+    expect(view.querySelectorAll('[data-hope-ripple]')).toHaveLength(0);
+  });
+
+  it('keeps live spawn reasoning open while showing the expert workflow beneath it', () => {
     const view = render([
-      {
-        id: 'reasoning',
+      trace({
+        id: 'team-plan',
+        agentUI: {
+          kind: 'task_progress',
+          plan_kind: 'workflow',
+          team_id: 'asset-research-team',
+          team_run_id: 'run-live',
+          note: '正在启动四位专家',
+          steps: [
+            {
+              id: 'financial-analyst',
+              title: '财务质量与估值',
+              detail: '核验财务报表与估值',
+              status: 'pending',
+            },
+            {
+              id: 'team-lead',
+              title: '主笔交叉质证与汇总',
+              status: 'pending',
+            },
+          ],
+        },
+      }),
+      trace({
+        id: 'spawn-thinking',
         role: 'assistant',
-        content: '',
-        thinking: 'private hidden chain of thought',
-        timestamp: Date.now(),
-      },
-      {
-        id: 'narration',
-        role: 'tool',
-        kind: 'trace',
-        content: '',
-        narration: 'Let me fetch more detailed market data from specific articles.',
-        timestamp: Date.now(),
-      },
-    ], { isActive: false });
+        kind: undefined,
+        thinking: '让我准备研究任务，然后使用 spawn 启动后台代理。',
+        reasoningStreaming: true,
+        isStreaming: true,
+      }),
+      trace({
+        id: 'spawn-call',
+        toolEvents: [{
+          phase: 'end',
+          call_id: 'spawn-finance',
+          name: 'spawn',
+          arguments: {
+            label: 'financial-analyst',
+            task: '核验财务报表与估值',
+          },
+          result: 'Subagent [financial-analyst] started',
+        }],
+      }),
+    ]);
 
-    const toggle = view.querySelector<HTMLButtonElement>('button[aria-label="展开任务步骤"]');
-    act(() => toggle?.click());
+    const thinkingButton = view.querySelector<HTMLButtonElement>('[data-hope-thinking] > button');
+    const planButton = view.querySelector<HTMLButtonElement>('[data-hope-plan] > button');
+    const activeItem = view.querySelector('[data-hope-timeline-item][data-active="true"]');
 
-    expect(view.textContent).toContain('Let me fetch more detailed market data from specific articles.');
-    expect(view.textContent).toContain('整理思路');
-    expect(view.textContent).not.toContain('private hidden chain of thought');
+    expect(thinkingButton?.getAttribute('aria-expanded')).toBe('true');
+    expect(planButton?.getAttribute('aria-expanded')).toBe('true');
+    expect(activeItem?.querySelector('[data-hope-plan]')).not.toBeNull();
+    expect(view.textContent).toContain('让我准备研究任务，然后使用 spawn 启动后台代理。');
+    expect(view.textContent).toContain('研究员已启动，正在等待首个研究进展');
   });
 });

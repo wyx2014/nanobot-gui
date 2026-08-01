@@ -4,6 +4,7 @@ import { usePromptHubStore } from '@/stores/promptHubStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useChatStore } from '@/stores/chatStore';
+import { useI18n } from '@/i18n';
 import { fetchSkillDetail, fetchSkills, runSkillAction, saveSkill } from '@/core/api';
 import { getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/nanobotClient';
 import { fetchPromptHubSkills, publishPromptHubSkill } from '@/core/prompthubApi';
@@ -47,7 +48,7 @@ function getSkillIcon(name: string) {
 }
 
 function displaySkillName(skill: NanobotSkillInfo): string {
-  return skill.source === 'builtin' && skill.name === 'clawhub' ? '如意Hub' : skill.name;
+  return skill.source === 'builtin' && skill.name === 'clawhub' ? 'TPACoworkHub' : skill.name;
 }
 
 async function getSkillsAuth(): Promise<{ token: string; baseUrl: string }> {
@@ -62,16 +63,35 @@ async function getSkillsAuth(): Promise<{ token: string; baseUrl: string }> {
   return { token: refreshed.token, baseUrl: refreshed.baseUrl };
 }
 
-function sourceLabel(source: string): string {
-  if (source === 'builtin') return '内置';
-  if (source === 'workspace') return '工作区';
-  return source || '未知';
+function sourceLabel(source: string, isEnglish: boolean): string {
+  if (source === 'builtin') return isEnglish ? 'Built-in' : '内置';
+  if (source === 'workspace') return isEnglish ? 'Workspace' : '工作区';
+  return source || (isEnglish ? 'Unknown' : '未知');
 }
 
 function sourceClass(source: string): string {
   if (source === 'builtin') return 'bg-blue-50 text-blue-700 border-blue-100';
   if (source === 'workspace') return 'bg-emerald-50 text-emerald-700 border-emerald-100';
   return 'bg-neutral-100 text-neutral-600 border-neutral-200';
+}
+
+const builtinEnglishDescriptions: Record<string, string> = {
+  'deep-research': 'Conduct in-depth research through multi-round search, cross-verification, and research reports.',
+  'create-agent': 'Use AI guidance to create a custom agent.',
+  'create-skill': 'Use AI guidance to create a custom skill.',
+  'code-review': 'Review code, identify potential issues, and suggest improvements.',
+  'schedule': 'Create and manage automations that run automatically at regular intervals.',
+  'weekly-report': 'Generate a weekly report from completed work.',
+  'translate': 'Translate between Chinese and English, including files and text.',
+  'summarize': 'Summarize documents or text and extract key information.',
+  'write-article': 'Create Xiaohongshu- or Douyin-style social-media articles from a topic and knowledge base.',
+  'writing-plans': 'Create a detailed, step-by-step execution plan before implementing a multi-step task or architecture specification.',
+};
+
+function displaySkillDescription(skill: NanobotSkillInfo, isEnglish: boolean): string {
+  return isEnglish && skill.source === 'builtin'
+    ? builtinEnglishDescriptions[skill.name] ?? skill.description
+    : skill.description;
 }
 
 function skillMarkdown(name: string, description: string, body: string): string {
@@ -91,6 +111,8 @@ function normalizeSkillName(value: string): string {
 type SkillPackageFile = { path: string; content: Uint8Array };
 
 export default function SkillsSection({ manualCreateTrigger }: { manualCreateTrigger?: number }) {
+  const { locale } = useI18n();
+  const isEnglish = locale === 'en-US';
   const { refresh: refreshDiscovery } = useDiscoveryStore();
   const removeProjectSkillBinding = useWorkspaceStore((s) => s.removeProjectSkillBinding);
   const { toolboxSearchQuery } = useSettingsStore();
@@ -152,16 +174,16 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
       return [
         skill.name,
         displaySkillName(skill),
-        skill.description,
+        displaySkillDescription(skill, isEnglish),
         skill.source,
         ...(skill.tags ?? []),
       ].some((value) => value.toLowerCase().includes(search));
     });
-  }, [activeSubTab, search, skills]);
+  }, [activeSubTab, isEnglish, search, skills]);
 
   const subTabs = [
-    { id: 'builtin', label: '内置技能', count: skills.filter((skill) => skill.source === 'builtin').length },
-    { id: 'workspace', label: '我的技能', count: skills.filter((skill) => skill.source === 'workspace').length },
+    { id: 'builtin', label: isEnglish ? 'Built-in Skills' : '内置技能', count: skills.filter((skill) => skill.source === 'builtin').length },
+    { id: 'workspace', label: isEnglish ? 'My Skills' : '我的技能', count: skills.filter((skill) => skill.source === 'workspace').length },
   ];
 
   const applyPayload = async (next: SkillsPayload) => {
@@ -289,7 +311,7 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
   };
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    <div data-skills-surface className="flex h-full flex-col overflow-hidden">
       <div className="shrink-0 px-4 pt-4 pb-2">
         <SubTabBar
           tabs={subTabs}
@@ -315,10 +337,10 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-12 text-sm text-neutral-400">
             <Loader2 className="h-4 w-4 animate-spin" />
-            正在读取 nanobot 技能
+            {isEnglish ? 'Loading nanobot skills' : '正在读取 nanobot 技能'}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="py-8 text-center text-sm text-neutral-400">没有找到技能</div>
+          <div className="py-8 text-center text-sm text-neutral-400">{isEnglish ? 'No skills found' : '没有找到技能'}</div>
         ) : (
           <div className="space-y-2">
             {filtered.map((skill) => {
@@ -327,26 +349,26 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
                 <div
                   key={`${skill.source}:${skill.name}`}
                   onClick={() => void openDetail(skill)}
-                  className={`group flex cursor-pointer items-center gap-3 rounded-lg border border-neutral-200/70 bg-white p-3 transition-colors hover:border-neutral-300 ${
-                    !skill.enabled ? 'opacity-60' : ''
-                  }`}
+                  data-skill-card
+                  data-enabled={skill.enabled ? "true" : "false"}
+                  className="group flex cursor-pointer items-center gap-3 rounded-lg border border-neutral-200/70 bg-white p-3 transition-colors hover:border-neutral-300"
                 >
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-500">
+                  <div data-skill-icon className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-500">
                     {getSkillIcon(skill.name)}
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-medium text-neutral-900">/{displaySkillName(skill)}</span>
-                      <span className={`rounded border px-1.5 py-0.5 text-[10px] ${sourceClass(skill.source)}`}>
-                        {sourceLabel(skill.source)}
+                      <span data-skill-name className="truncate text-sm font-medium text-neutral-900">/{displaySkillName(skill)}</span>
+                      <span data-skill-source={skill.source} className={`rounded border px-1.5 py-0.5 text-[10px] ${sourceClass(skill.source)}`}>
+                        {sourceLabel(skill.source, isEnglish)}
                       </span>
                       {!skill.available && (
                         <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">
-                          依赖缺失
+                          {isEnglish ? 'Dependency missing' : '依赖缺失'}
                         </span>
                       )}
                     </div>
-                    <p className="mt-1 truncate text-xs text-neutral-500">{skill.description}</p>
+                    <p data-skill-description className="mt-1 truncate text-xs text-neutral-500">{displaySkillDescription(skill, isEnglish)}</p>
                     {!skill.available && skill.missing && (
                       <p className="mt-1 truncate text-[11px] text-amber-600">{skill.missing}</p>
                     )}
@@ -358,6 +380,7 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
                   />
                   {skill.source === 'workspace' && !hubSkillNames.has(skill.name.toLowerCase()) && (
                     <button
+                      data-skill-action="upload"
                       onClick={(event) => {
                         event.stopPropagation();
                         void handleUpload(skill);
@@ -371,6 +394,7 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
                   )}
                   {skill.source === 'workspace' && (
                     <button
+                      data-skill-action="delete"
                       onClick={(event) => {
                         event.stopPropagation();
                         void handleDelete(skill);
@@ -390,16 +414,16 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
       </div>
 
       {detail && (
-        <div className="absolute inset-0 z-20 flex flex-col bg-[#faf9f5]">
-          <div className="flex shrink-0 items-center justify-between border-b border-neutral-200 px-5 py-4">
+        <div data-skill-detail className="absolute inset-0 z-20 flex flex-col bg-[#faf9f5]">
+          <div data-skill-detail-header className="flex shrink-0 items-center justify-between border-b border-neutral-200 px-5 py-4">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <div className="text-neutral-500">
                   {getSkillIcon(detail.name)}
                 </div>
                 <h3 className="truncate text-base font-semibold text-neutral-900">/{displaySkillName(detail)}</h3>
-                <span className={`rounded border px-1.5 py-0.5 text-[10px] ${sourceClass(detail.source)}`}>
-                  {sourceLabel(detail.source)}
+                <span data-skill-source={detail.source} className={`rounded border px-1.5 py-0.5 text-[10px] ${sourceClass(detail.source)}`}>
+                  {sourceLabel(detail.source, isEnglish)}
                 </span>
               </div>
               <p className="mt-1 truncate text-xs text-neutral-500">{detail.path}</p>
@@ -413,7 +437,7 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
             </button>
           </div>
           <div className="flex-1 overflow-y-auto p-5">
-            <p className="mb-4 text-sm leading-6 text-neutral-700">{detail.description}</p>
+            <p className="mb-4 text-sm leading-6 text-neutral-700">{displaySkillDescription(detail, isEnglish)}</p>
             {!detail.available && detail.missing && (
               <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
                 依赖缺失：{detail.missing}
@@ -428,12 +452,12 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
 
       {createOpen && (
         <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30"
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/20 backdrop-blur-[1px] animate-in fade-in duration-150"
           onClick={(event) => {
             if (event.target === event.currentTarget && !creating) setCreateOpen(false);
           }}
         >
-          <div className="w-[520px] rounded-2xl bg-white p-5 shadow-xl">
+          <div data-skill-create-dialog className="w-[520px] rounded-2xl bg-white p-5 shadow-xl">
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
                 <h3 className="text-[17px] font-semibold text-[#29261b]">创建技能</h3>

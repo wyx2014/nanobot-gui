@@ -171,6 +171,11 @@ export interface UIMessage {
   /** True while ``reasoning_delta`` frames are still arriving for this turn.
    * Drives the shimmer header on ``ReasoningBubble``. */
   reasoningStreaming?: boolean;
+  /** Segment timestamps are separate from whole-turn latency. Once
+   * ``reasoning_end`` arrives, the duration is frozen even while tools run. */
+  reasoningStartedAt?: number;
+  reasoningCompletedAt?: number;
+  reasoningDurationMs?: number;
   /** End-to-end wall time for this assistant turn (persisted ``latency_ms`` / ``turn_end``). */
   latencyMs?: number;
   /** Authoritative wall-clock time when this turn reached a terminal state. */
@@ -926,6 +931,16 @@ export interface McpPresetInfo {
   brand_color?: string | null;
   required_fields: McpPresetField[];
   connection_summary: string;
+  connection?: {
+    transport: "stdio" | "streamableHttp" | "sse" | string;
+    command: string;
+    args: string[];
+    cwd: string;
+    url: string;
+    tool_timeout: number;
+    has_env: boolean;
+    has_headers: boolean;
+  };
   tool_count?: number;
   tool_names?: string[];
   checked_at?: string | null;
@@ -1075,6 +1090,37 @@ export type InboundEvent =
       event: "runtime_status";
       agent_ready: boolean;
       mcp_status: BootstrapResponse["mcp_status"];
+    }
+  | {
+      event: "browser_frame";
+      chat_id: string;
+      browser_session_id: string;
+      backend: "playwright_mcp" | string;
+      url?: string | null;
+      title?: string | null;
+      image_base64: string;
+      mime_type: "image/jpeg" | "image/png";
+      captured_at: number;
+      action_id?: string;
+    }
+  | {
+      event: "browser_status";
+      chat_id: string;
+      browser_session_id: string;
+      backend: "playwright_mcp" | string;
+      status: "starting" | "running" | "user_control" | "stopped" | "error";
+      message?: string;
+      timestamp: number;
+    }
+  | {
+      event: "browser_action";
+      chat_id: string;
+      browser_session_id: string;
+      action_id: string;
+      label: string;
+      tool_name: string;
+      status: "running" | "completed" | "error";
+      timestamp: number;
     }
   | { event: "attached"; chat_id: string }
   | {
@@ -1403,6 +1449,11 @@ export type Outbound =
   | { type: "attach"; chat_id: string }
   | { type: "set_workspace_scope"; chat_id: string; workspace_scope: WorkspaceScopePayload }
   | { type: "set_expert_team"; chat_id: string; expert_team: ExpertTeamBinding | null }
+  | {
+      type: "browser_control";
+      chat_id: string;
+      action: "pause" | "resume" | "stop" | "capture";
+    }
   | {
       type: "transcribe_audio";
       request_id: string;

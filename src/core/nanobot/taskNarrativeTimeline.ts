@@ -1,4 +1,9 @@
-import type { TaskProgressStep, ToolProgressEvent, UIFileEdit } from '@/core/types';
+import type {
+  TaskProgressStep,
+  ToolProgressEvent,
+  TurnPlanStatus,
+  UIFileEdit,
+} from '@/core/types';
 import type { Message } from '@/types';
 import {
   activitySourceFromToolName,
@@ -14,6 +19,9 @@ export interface TaskNarrativeEntry {
   id: string;
   kind: TaskNarrativeKind;
   title: string;
+  /** Provider-delivered thinking or public narration rendered inside the
+   * Hope-style collapsible thinking block. */
+  content?: string;
   detail?: string;
   status: TaskNarrativeStatus;
   source: ActivityStepSource;
@@ -26,6 +34,9 @@ export interface TaskNarrativeEntry {
   sequence?: number;
   batchId?: string;
   occurredAt?: number;
+  startedAt?: number;
+  completedAt?: number;
+  durationMs?: number;
   importance?: 'primary' | 'secondary' | string;
   childEntries?: TaskNarrativeEntry[];
   artifactOutput?: boolean;
@@ -71,35 +82,49 @@ export function buildTaskNarrativeEntries(messages: Message[]): TaskNarrativeEnt
       result: entry.artifactOutput || previous.artifactOutput
         ? undefined
         : entry.result ?? previous.result,
+      content: entry.content ?? previous.content,
       error: entry.error ?? previous.error,
       planSteps: entry.planSteps?.length ? entry.planSteps : previous.planSteps,
       fileEdit: entry.fileEdit ?? previous.fileEdit,
       childEntries: entry.childEntries?.length ? entry.childEntries : previous.childEntries,
       artifactOutput: entry.artifactOutput || previous.artifactOutput,
+      startedAt: entry.startedAt ?? previous.startedAt,
+      completedAt: entry.completedAt ?? previous.completedAt,
+      durationMs: entry.durationMs ?? previous.durationMs,
     };
   };
 
   messages.forEach((message) => {
+    const narration = publicNarration(message);
     if (isReasoningActivity(message)) {
-      const running = !!(message.reasoningStreaming || message.isStreaming);
-      upsert('analysis', {
+      // A reasoning segment ends at reasoning_end. The enclosing assistant
+      // message may stay isStreaming while tools and later model rounds run.
+      const running = message.reasoningStreaming === true;
+      upsert(`analysis:${message.id}`, {
         id: `${message.id}:analysis`,
         kind: 'analysis',
         title: '整理思路',
+        content: providerThinking(message),
         detail: running ? '正在分析任务' : '已完成任务分析',
         status: running ? 'running' : 'done',
         source: 'reasoning',
+        occurredAt: finiteNumber(message.thinkingStartedAt) ?? finiteNumber(message.timestamp),
+        startedAt: finiteNumber(message.thinkingStartedAt),
+        completedAt: finiteNumber(message.thinkingCompletedAt),
+        durationMs: thinkingDurationMs(message.thinkingDuration),
       });
     }
 
-    const narration = publicNarration(message);
     if (narration) {
       upsert(`narration:${message.id}`, {
         id: `${message.id}:narration`,
         kind: 'narration',
         title: narration,
+        content: narration,
         status: message.narrationStreaming ? 'running' : 'done',
         source: 'reasoning',
+        occurredAt: finiteNumber(message.timestamp),
+        durationMs: thinkingDurationMs(message.thinkingDuration),
       });
     }
 
@@ -145,6 +170,7 @@ export function buildTaskNarrativeEntries(messages: Message[]): TaskNarrativeEnt
       const display = event.display;
       const fallbackDetail = toolActivityLabel(name, status, input, result);
       const artifactOutput = toolEventProducesArtifact(name, event, input);
+      const occurredAt = finiteNumber(event.occurred_at) ?? finiteNumber(message.timestamp);
       upsert(`tool:${callId}`, {
         id: `tool:${callId}`,
         kind: 'tool',
@@ -159,7 +185,9 @@ export function buildTaskNarrativeEntries(messages: Message[]): TaskNarrativeEnt
         error,
         sequence: finiteNumber(event.sequence),
         batchId: cleanString(event.batch_id),
-        occurredAt: finiteNumber(event.occurred_at),
+        occurredAt,
+        startedAt: status === 'running' ? occurredAt : undefined,
+        completedAt: status === 'done' || status === 'error' ? occurredAt : undefined,
         importance: display?.importance,
         artifactOutput,
       });
@@ -188,7 +216,9 @@ export function buildTaskNarrativeEntries(messages: Message[]): TaskNarrativeEnt
     }
   });
 
-  return groupParallelEntries(entries);
+  return groupParallelEntries(
+    hasExpertTeamPlan ? moveActiveExpertPlanToTail(entries) : entries,
+  );
 }
 
 function planBarrierPreflightCallIds(messages: Message[]): Set<string> {
@@ -268,6 +298,10 @@ interface ExpertTeamProjection {
   activeStage?: 'team-lead' | 'report-audit';
   activity?: string;
   note?: string;
+  memberSpawns?: Map<string, {
+    status: TaskProgressStep['status'];
+    detail: string;
+  }>;
 }
 
 function buildExpertTeamProjection(messages: Message[]): ExpertTeamProjection {
@@ -287,7 +321,25 @@ function buildExpertTeamProjection(messages: Message[]): ExpertTeamProjection {
         if (steps.length) snapshots.push({ steps, note: cleanString(input.note) });
         continue;
       }
-      if (name === 'spawn') continue;
+      if (name === 'spawn') {
+        const memberId = cleanString(input.label);
+        if (memberId) {
+          const status = toolEventStatus(event);
+          const result = toolEventResult(event);
+          const failed = status === 'error'
+            || /(?:^|\b)(?:error|cannot spawn|failed)(?:\b|:)/i.test(result ?? '');
+          projection.memberSpawns ??= new Map();
+          projection.memberSpawns.set(memberId, {
+            status: failed ? 'error' : 'running',
+            detail: failed
+              ? '研究员暂未启动，等待 Team Lead 调整并发任务'
+              : status === 'running'
+                ? '正在启动研究员'
+                : '研究员已启动，正在等待首个研究进展',
+          });
+        }
+        continue;
+      }
       if (!projection.activeStage) continue;
       const status = toolEventStatus(event);
       const result = toolEventResult(event);
@@ -340,6 +392,24 @@ function projectExpertTeamSteps(
   projection: ExpertTeamProjection,
 ): TaskProgressStep[] {
   return steps.map((step) => {
+    const memberSpawn = projection.memberSpawns?.get(step.id);
+    if (memberSpawn && !isTerminalStepStatus(step.status)) {
+      const status = memberSpawn.status === 'error'
+        ? 'error'
+        : step.status === 'pending'
+          ? 'running'
+          : step.status;
+      return {
+        ...step,
+        status,
+        detail: (
+          step.status === 'pending'
+          || !isSpecificLiveMemberDetail(step.detail)
+        )
+          ? memberSpawn.detail
+          : step.detail,
+      };
+    }
     if (step.id === 'team-lead') {
       const status = projectedStepStatus(step.status, projection.teamLeadStatus);
       return {
@@ -370,6 +440,26 @@ function projectExpertTeamSteps(
     }
     return step;
   });
+}
+
+function isSpecificLiveMemberDetail(detail: string | undefined): boolean {
+  if (!detail?.trim()) return false;
+  return /^(?:正在|已完成|研究完成|自动重试|运行超时|未通过|该角色)/.test(detail.trim());
+}
+
+function moveActiveExpertPlanToTail(entries: TaskNarrativeEntry[]): TaskNarrativeEntry[] {
+  const planIndex = entries.findIndex((entry) => (
+    entry.kind === 'plan'
+    && (entry.status === 'running' || entry.status === 'pending')
+    && entry.title === '专家团队研究'
+  ));
+  if (planIndex < 0 || planIndex === entries.length - 1) return entries;
+  const plan = entries[planIndex];
+  return [
+    ...entries.slice(0, planIndex),
+    ...entries.slice(planIndex + 1),
+    plan,
+  ];
 }
 
 function projectedStepStatus(
@@ -423,7 +513,18 @@ function taskProgressNote(agentUI: Message['agentUI']): string | undefined {
 
 function taskProgressSteps(agentUI: Message['agentUI']): TaskProgressStep[] {
   if (!agentUI || agentUI.kind !== 'task_progress' || !Array.isArray(agentUI.steps)) return [];
-  const steps = normalizeTaskProgressSteps(agentUI.steps);
+  const progressStatus = taskProgressStatus(agentUI);
+  const steps = terminalizeTaskProgressSteps(
+    normalizeTaskProgressSteps(agentUI.steps),
+    progressStatus,
+  );
+  if (
+    progressStatus === 'completed'
+    || progressStatus === 'failed'
+    || progressStatus === 'interrupted'
+  ) {
+    return steps;
+  }
   const currentStepId = cleanString(agentUI.current_step_id);
   if (!currentStepId || steps.some((step) => step.status === 'running')) return steps;
   return steps.map((step) => step.id === currentStepId && step.status === 'pending'
@@ -451,6 +552,8 @@ function normalizeTaskProgressSteps(steps: unknown[]): TaskProgressStep[] {
       || rawStatus === 'completed'
       || rawStatus === 'error'
       || rawStatus === 'pending'
+      || rawStatus === 'skipped'
+      || rawStatus === 'interrupted'
       ? rawStatus
       : 'pending';
     return [{
@@ -462,10 +565,55 @@ function normalizeTaskProgressSteps(steps: unknown[]): TaskProgressStep[] {
   });
 }
 
+function taskProgressStatus(agentUI: Message['agentUI']): TurnPlanStatus | undefined {
+  const status = (agentUI as { status?: unknown } | undefined)?.status;
+  return status === 'created'
+    || status === 'pending'
+    || status === 'inProgress'
+    || status === 'running'
+    || status === 'completed'
+    || status === 'failed'
+    || status === 'interrupted'
+    ? status
+    : undefined;
+}
+
+function terminalizeTaskProgressSteps(
+  steps: TaskProgressStep[],
+  status: TurnPlanStatus | undefined,
+): TaskProgressStep[] {
+  if (status !== 'completed' && status !== 'failed' && status !== 'interrupted') {
+    return steps;
+  }
+  return steps.map((step) => {
+    if (step.status === 'running') {
+      return {
+        ...step,
+        status: status === 'completed'
+          ? 'completed' as const
+          : status === 'failed'
+            ? 'error' as const
+            : 'interrupted' as const,
+      };
+    }
+    if (step.status === 'pending') {
+      return { ...step, status: 'skipped' as const };
+    }
+    return step;
+  });
+}
+
 function planStatus(steps: TaskProgressStep[]): TaskNarrativeStatus {
-  if (steps.some((step) => step.status === 'error')) return 'error';
+  if (steps.some((step) => step.status === 'error' || step.status === 'interrupted')) {
+    return 'error';
+  }
   if (steps.some((step) => step.status === 'running')) return 'running';
-  if (steps.length > 0 && steps.every((step) => step.status === 'completed')) return 'done';
+  if (
+    steps.length > 0
+    && steps.every((step) => step.status === 'completed' || step.status === 'skipped')
+  ) {
+    return 'done';
+  }
   return 'pending';
 }
 
@@ -532,6 +680,8 @@ function groupParallelEntries(entries: TaskNarrativeEntry[]): TaskNarrativeEntry
       sequence: current.sequence,
       batchId: current.batchId,
       occurredAt: current.occurredAt,
+      startedAt: earliestTimestamp(children.map((entry) => entry.startedAt ?? entry.occurredAt)),
+      completedAt: latestTimestamp(children.map((entry) => entry.completedAt)),
       childEntries: children,
     });
     index = nextIndex;
@@ -559,9 +709,12 @@ function messageText(message: Message): string {
 }
 
 function publicNarration(message: Message): string {
-  const compact = message.narration?.replace(/\s+/g, ' ').trim() ?? '';
-  if (!compact) return '';
-  return compact.length > 240 ? `${compact.slice(0, 239)}…` : compact;
+  return message.narration?.trim() ?? '';
+}
+
+function providerThinking(message: Message): string | undefined {
+  const thinking = message.thinking?.trim();
+  return thinking || undefined;
 }
 
 function toolEventName(event: ToolProgressEvent): string {
@@ -664,4 +817,19 @@ function cleanString(value: unknown): string | undefined {
 
 function finiteNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function thinkingDurationMs(value: unknown): number | undefined {
+  const duration = finiteNumber(value);
+  return duration !== undefined && duration >= 0 ? Math.round(duration * 1000) : undefined;
+}
+
+function earliestTimestamp(values: Array<number | undefined>): number | undefined {
+  const timestamps = values.filter((value): value is number => value !== undefined);
+  return timestamps.length ? Math.min(...timestamps) : undefined;
+}
+
+function latestTimestamp(values: Array<number | undefined>): number | undefined {
+  const timestamps = values.filter((value): value is number => value !== undefined);
+  return timestamps.length ? Math.max(...timestamps) : undefined;
 }

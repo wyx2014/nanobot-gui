@@ -183,26 +183,26 @@ export default function PreviewPanel() {
   if (!previewArtifact) return null;
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[#f5f3ee]">
+    <div className="flex h-full min-h-0 flex-col bg-[#f5f3ee] dark:bg-[#202020]">
       {/* OpenWorker-style viewer header: back to the rail, breadcrumb, path, then native actions. */}
-      <div className="mt-7 flex min-h-[58px] shrink-0 items-center gap-3 border-b border-[#e5e2db] bg-[#fbfaf7]/95 px-4 py-2.5">
+      <div className="mt-7 flex min-h-[58px] shrink-0 items-center gap-3 border-b border-[#e5e2db] bg-[#fbfaf7]/95 px-4 py-2.5 dark:border-[#3d3d3d] dark:bg-[#262626]/95">
         <Button
           variant="ghost"
           size="icon"
           onClick={closePreview}
-          className="h-[30px] w-[30px] shrink-0 text-[#656358] hover:bg-[#f0ede7] hover:text-[#29261b]"
+          className="h-[30px] w-[30px] shrink-0 text-[#656358] hover:bg-[#f0ede7] hover:text-[#29261b] dark:text-[#c9c5bc] dark:hover:bg-[#3a3a3a] dark:hover:text-[#f5f2ea]"
           title={t.panel.closePreview}
           aria-label={t.panel.closePreview}
         >
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-1.5 text-[14px] font-semibold text-[#29261b]">
+          <div className="flex min-w-0 items-center gap-1.5 text-[14px] font-semibold text-[#29261b] dark:text-[#f3f0e8]">
             <span className="shrink-0">{t.panel.artifacts}</span>
-            <span className="font-normal text-[#aaa69c]">/</span>
+            <span className="font-normal text-[#aaa69c] dark:text-[#77746d]">/</span>
             <span className="truncate">{fileName}</span>
           </div>
-          <div className="mt-0.5 truncate text-[11.5px] text-[#9a968c]" title={displayPath}>
+          <div className="mt-0.5 truncate text-[11.5px] text-[#9a968c] dark:text-[#a39f96]" title={displayPath}>
             {displayPath}
           </div>
         </div>
@@ -211,7 +211,7 @@ export default function PreviewPanel() {
             variant="ghost"
             size="icon"
             onClick={() => setReloadKey((key) => key + 1)}
-            className="h-[30px] w-[30px] text-[#656358]"
+            className="h-[30px] w-[30px] text-[#656358] hover:bg-[#f0ede7] hover:text-[#29261b] dark:text-[#c9c5bc] dark:hover:bg-[#3a3a3a] dark:hover:text-[#f5f2ea]"
             title={t.panel.artifactsRefresh}
             aria-label={t.panel.artifactsRefresh}
           >
@@ -223,7 +223,7 @@ export default function PreviewPanel() {
             variant="ghost"
             size="icon"
             onClick={handleOpenSystem}
-            className="h-[30px] w-[30px] text-[#656358]"
+            className="h-[30px] w-[30px] text-[#656358] hover:bg-[#f0ede7] hover:text-[#29261b] dark:text-[#c9c5bc] dark:hover:bg-[#3a3a3a] dark:hover:text-[#f5f2ea]"
             title={t.panel.openInSystem}
             aria-label={t.panel.openInSystem}
           >
@@ -245,7 +245,7 @@ export default function PreviewPanel() {
           variant="ghost"
           size="icon"
           onClick={handleCopyPath}
-          className="h-[30px] w-[30px] text-[#656358]"
+          className="h-[30px] w-[30px] text-[#656358] hover:bg-[#f0ede7] hover:text-[#29261b] dark:text-[#c9c5bc] dark:hover:bg-[#3a3a3a] dark:hover:text-[#f5f2ea]"
           title={nativePath ? nativePath : displayPath}
           aria-label={locale.startsWith('zh') ? '复制路径' : 'Copy path'}
         >
@@ -256,7 +256,7 @@ export default function PreviewPanel() {
             variant="ghost"
             size="icon"
             onClick={handleOpenInFinder}
-            className="h-[30px] w-[30px] text-[#656358]"
+            className="h-[30px] w-[30px] text-[#656358] hover:bg-[#f0ede7] hover:text-[#29261b] dark:text-[#c9c5bc] dark:hover:bg-[#3a3a3a] dark:hover:text-[#f5f2ea]"
             title={t.panel.revealInFolder}
             aria-label={t.panel.revealInFolder}
           >
@@ -268,7 +268,7 @@ export default function PreviewPanel() {
             variant="ghost"
             size="icon"
             onClick={handleDownload}
-            className="h-[30px] w-[30px] text-[#656358]"
+            className="h-[30px] w-[30px] text-[#656358] hover:bg-[#f0ede7] hover:text-[#29261b] dark:text-[#c9c5bc] dark:hover:bg-[#3a3a3a] dark:hover:text-[#f5f2ea]"
             title={t.panel.downloadFile}
             aria-label={t.panel.downloadFile}
           >
@@ -279,7 +279,7 @@ export default function PreviewPanel() {
           variant="ghost"
           size="icon"
           onClick={toggleExpanded}
-          className="h-[30px] w-[30px] text-[#656358]"
+          className="h-[30px] w-[30px] text-[#656358] hover:bg-[#f0ede7] hover:text-[#29261b] dark:text-[#c9c5bc] dark:hover:bg-[#3a3a3a] dark:hover:text-[#f5f2ea]"
           title={isExpanded ? '收起预览面板' : '展开预览面板'}
           aria-label={isExpanded ? '收起预览面板' : '展开预览面板'}
         >
@@ -287,7 +287,7 @@ export default function PreviewPanel() {
         </Button>
       </div>
       {actionError ? (
-        <div className="shrink-0 border-b border-red-100 bg-red-50 px-4 py-1.5 text-[11.5px] text-red-600">
+        <div className="shrink-0 border-b border-red-100 bg-red-50 px-4 py-1.5 text-[11.5px] text-red-600 dark:border-red-900/50 dark:bg-red-950/35 dark:text-red-300">
           {actionError}
         </div>
       ) : null}

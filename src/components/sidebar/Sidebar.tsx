@@ -201,7 +201,6 @@ export default function Sidebar() {
   );
 
   const conversationGroups = useMemo(() => {
-    const recentOrder = new Map<string, number>();
     const gatewayProjectById = new Map(gatewayProjects.map((project) => [project.id, project]));
     const gatewayProjectByPath = new Map(
       gatewayProjects.map((project) => [normalizeProjectPath(project.rootPath), project]),
@@ -213,7 +212,6 @@ export default function Sidebar() {
       name: string;
       conversations: Conversation[];
       latestUpdatedAt: number;
-      recentIndex: number;
     }>();
     const unprojected: Conversation[] = [];
 
@@ -228,21 +226,15 @@ export default function Sidebar() {
         name: projectNames[path] ?? project.name,
         conversations: [],
         latestUpdatedAt: project.updatedAt,
-        recentIndex: Number.MAX_SAFE_INTEGER,
       });
     }
 
-    for (const [index, recentPath] of recentWorkspacePaths.entries()) {
+    for (const recentPath of recentWorkspacePaths) {
       const path = visibleProjectPath(recentPath);
       if (!path) continue;
       const gatewayProject = gatewayProjectByPath.get(normalizeProjectPath(path));
       const key = gatewayProject?.id ?? `path:${path}`;
-      if (projectMap.has(key)) {
-        const existing = projectMap.get(key);
-        if (existing) existing.recentIndex = Math.min(existing.recentIndex, index);
-        continue;
-      }
-      recentOrder.set(path, index);
+      if (projectMap.has(key)) continue;
       projectMap.set(key, {
         key,
         id: gatewayProject?.id,
@@ -250,7 +242,6 @@ export default function Sidebar() {
         name: projectNames[path] ?? gatewayProject?.name ?? projectNameFromPath(path),
         conversations: [],
         latestUpdatedAt: 0,
-        recentIndex: index,
       });
     }
 
@@ -284,7 +275,6 @@ export default function Sidebar() {
           name: projectNames[path] ?? pathProject?.name ?? projectNameForConversation(conv, path),
           conversations: [conv],
           latestUpdatedAt: conv.updatedAt,
-          recentIndex: recentOrder.get(path) ?? Number.MAX_SAFE_INTEGER,
         });
       }
     }
@@ -294,13 +284,36 @@ export default function Sidebar() {
         ...project,
         conversations: project.conversations.sort((a, b) => b.updatedAt - a.updatedAt),
       }))
-      .sort((a, b) => a.recentIndex - b.recentIndex || b.latestUpdatedAt - a.latestUpdatedAt);
+      .sort((a, b) => b.latestUpdatedAt - a.latestUpdatedAt);
 
     return {
       projects,
       unprojected: unprojected.sort((a, b) => b.updatedAt - a.updatedAt),
     };
   }, [gatewayProjects, projectNames, recentWorkspacePaths, sortedConvs]);
+
+  // Default to the first (most recently used) project expanded and the rest
+  // collapsed. Re-evaluated whenever the project list changes so projects
+  // arriving in later sync batches also start collapsed; projects the user has
+  // toggled by hand are left alone.
+  const userToggledProjectsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const projects = conversationGroups.projects;
+    if (projects.length === 0) return;
+    setCollapsedProjects((current) => {
+      const next = new Set(current);
+      projects.forEach((project, index) => {
+        if (userToggledProjectsRef.current.has(project.key)) return;
+        if (index === 0) {
+          // Keep the first project expanded by default.
+          next.delete(project.key);
+        } else {
+          next.add(project.key);
+        }
+      });
+      return next;
+    });
+  }, [conversationGroups]);
 
   const searchConversationEntries = useMemo(() => {
     const entries = conversationGroups.projects.flatMap((project) => (
@@ -395,6 +408,9 @@ export default function Sidebar() {
   };
 
   const toggleProject = (path: string) => {
+    // Record the user's explicit choice so the default-collapse effect never
+    // overrides a manual toggle.
+    userToggledProjectsRef.current.add(path);
     setCollapsedProjects((current) => {
       const next = new Set(current);
       if (next.has(path)) next.delete(path);

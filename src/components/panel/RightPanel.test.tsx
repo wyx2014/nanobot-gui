@@ -34,7 +34,7 @@ function render() {
 }
 
 beforeEach(() => {
-  useSettingsStore.setState({ viewMode: 'chat' });
+  useSettingsStore.setState({ viewMode: 'chat', rightPanelCollapsed: false });
   useChatStore.setState({
     activeConversationId: 'chat-1',
     conversations: {
@@ -60,14 +60,20 @@ afterEach(() => {
   usePreviewStore.getState().closePreview();
 });
 
-describe('RightPanel conversation workbench', () => {
-  it('shows the persistent workbench for an active chat without a selected artifact', () => {
+describe('RightPanel pinned conversation summary', () => {
+  it('reserves space while expanded so the pinned summary does not cover chat', () => {
     const view = render();
-    const panel = view.firstElementChild as HTMLDivElement;
+    const spacer = view.querySelector<HTMLElement>('[data-pinned-summary-spacer]');
 
+    expect(view.querySelector('[data-pinned-summary-host]')).not.toBeNull();
     expect(view.querySelector('[data-testid="conversation-workbench"]')).not.toBeNull();
     expect(view.querySelector('[data-testid="preview-panel"]')).toBeNull();
-    expect(panel.style.getPropertyValue('--conversation-panel-width')).toBe('332px');
+    expect(spacer?.style.width).toBe('332px');
+
+    act(() => useSettingsStore.getState().setRightPanelCollapsed(true));
+    expect(spacer?.style.width).toBe('0px');
+    expect(view.querySelector('[data-pinned-summary-host]')).toBeNull();
+    expect(view.querySelector('[data-testid="conversation-workbench"]')).toBeNull();
   });
 
   it('replaces the rail with the existing preview and preserves full-width expansion', () => {

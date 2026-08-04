@@ -1,4 +1,4 @@
-import { Check, Copy, Pencil, RefreshCw, Terminal, Plug, Wand2, X, ArrowUp, ChevronRight, Wrench } from 'lucide-react';
+import { Check, Copy, Pencil, RefreshCw, Terminal, Wand2, X, ArrowUp, ChevronRight, Wrench } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Message, MessageContent } from '@/types';
 import MarkdownRenderer from './MarkdownRenderer';
@@ -291,7 +291,7 @@ export default function MessageBubble({
         {imageBlocks.length > 0 && !isEditing ? <UserImageGrid images={imageBlocks} /> : null}
         {mediaAttachments.length > 0 ? <MessageMedia media={mediaAttachments} align="right" /> : null}
 
-        {(message.delegateAgent || !!message.cliApps?.length || !!message.mcpPresets?.length) && !isEditing && (
+        {(message.delegateAgent || !!message.cliApps?.length) && !isEditing && (
           <div className="flex flex-wrap items-center justify-end gap-1.5 text-[#9a9689]">
             {message.skill && (
               <span className="inline-flex items-center gap-1 rounded-full bg-[#f3f2ee] px-2 py-0.5 text-[11px] font-medium text-[#656358]">
@@ -303,12 +303,6 @@ export default function MessageBubble({
               <span key={`cli-${app.name}`} className="inline-flex items-center gap-1 rounded-full bg-[#f3f2ee] px-2 py-0.5 text-[11px] font-medium text-[#656358]">
                 <Terminal className="h-3 w-3" />
                 {app.display_name || app.name}
-              </span>
-            ))}
-            {message.mcpPresets?.map((preset) => (
-              <span key={`mcp-${preset.name}`} className="inline-flex items-center gap-1 rounded-full bg-[#f3f2ee] px-2 py-0.5 text-[11px] font-medium text-[#656358]">
-                <Plug className="h-3 w-3" />
-                {preset.display_name || preset.name}
               </span>
             ))}
           </div>

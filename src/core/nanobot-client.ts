@@ -13,6 +13,7 @@ import type {
   GoalStateWsPayload,
   WorkspaceScopePayload,
   ThreadRuntimeSnapshot,
+  CanonicalSessionEvent,
 } from "./types";
 
 const WS_OPEN = 1;
@@ -81,6 +82,7 @@ type RuntimeSnapshotHandler = (
   snapshot: ThreadRuntimeSnapshot,
 ) => void;
 type RuntimeSnapshotGapHandler = (chatId: string) => void;
+type CanonicalEventHandler = (event: CanonicalSessionEvent) => void;
 
 export type StreamError =
   | { kind: "message_too_big" }
@@ -174,6 +176,7 @@ export class NanobotClient {
   private runStatusHandlers = new Set<RunStatusHandler>();
   private runtimeSnapshotHandlers = new Set<RuntimeSnapshotHandler>();
   private runtimeSnapshotGapHandlers = new Set<RuntimeSnapshotGapHandler>();
+  private canonicalEventHandlers = new Set<CanonicalEventHandler>();
   private errorHandlers = new Set<ErrorHandler>();
   private chatHandlers = new Map<string, Set<EventHandler>>();
   private pendingInboundByChat = new Map<string, InboundEvent[]>();
@@ -281,6 +284,13 @@ export class NanobotClient {
     this.runtimeSnapshotGapHandlers.add(handler);
     return () => {
       this.runtimeSnapshotGapHandlers.delete(handler);
+    };
+  }
+
+  onCanonicalEvent(handler: CanonicalEventHandler): Unsubscribe {
+    this.canonicalEventHandlers.add(handler);
+    return () => {
+      this.canonicalEventHandlers.delete(handler);
     };
   }
 
@@ -725,6 +735,23 @@ export class NanobotClient {
 
     if (wsInboundDebugEnabled()) {
       console.log("[nanobot ws inbound]", summarizeInboundWsPayload(parsed));
+    }
+
+    const durable = parsed as InboundEvent & Partial<CanonicalSessionEvent>;
+    if (
+      typeof durable.event_id === "string"
+      && durable.event_id.length > 0
+      && typeof durable.event_seq === "number"
+      && Number.isInteger(durable.event_seq)
+      && durable.event_seq > 0
+      && typeof durable.project_id === "string"
+      && typeof durable.session_id === "string"
+      && typeof durable.session_key === "string"
+      && typeof durable.recorded_at === "number"
+    ) {
+      for (const handler of this.canonicalEventHandlers) {
+        handler(durable as CanonicalSessionEvent);
+      }
     }
 
     if (parsed.event === "ready") {

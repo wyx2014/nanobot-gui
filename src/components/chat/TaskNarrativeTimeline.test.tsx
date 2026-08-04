@@ -1,6 +1,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it } from 'vitest';
+import type { TurnLifecycleStatus } from '@/core/types';
 import type { Message } from '@/types';
 import TaskNarrativeTimeline from './TaskNarrativeTimeline';
 
@@ -23,6 +24,7 @@ function render(
     turnLatencyMs?: number;
     activeElapsedMs?: number;
     hasBodyBelow?: boolean;
+    turnStatus?: TurnLifecycleStatus;
   } = {},
 ) {
   if (!container) {
@@ -37,6 +39,7 @@ function render(
       turnLatencyMs={options.turnLatencyMs}
       activeElapsedMs={options.activeElapsedMs}
       hasBodyBelow={options.hasBodyBelow}
+      turnStatus={options.turnStatus}
     />,
   ));
   return container;
@@ -95,7 +98,7 @@ describe('TaskNarrativeTimeline Hope Agent-compatible UI', () => {
     expect(view.querySelectorAll('[data-hope-ripple]')).toHaveLength(0);
   });
 
-  it('folds one terminal expert plan into the completed ToolStep above the answer', () => {
+  it('uses the completed turn outcome for the folded ToolStep even when an inner plan failed', () => {
     const view = render([trace({
       id: 'terminal-team-plan',
       agentUI: {
@@ -116,17 +119,58 @@ describe('TaskNarrativeTimeline Hope Agent-compatible UI', () => {
       isActive: false,
       hasBodyBelow: true,
       turnLatencyMs: 912_000,
+      turnStatus: 'completed',
     });
 
     const processed = view.querySelector<HTMLButtonElement>('button[aria-label="展开已处理步骤"]');
     expect(processed?.textContent).toContain('已处理');
     expect(processed?.textContent).toContain('15m12s');
-    expect(processed?.textContent).toContain('1 项失败');
+    expect(processed?.textContent).not.toContain('项失败');
+    expect(view.querySelector('[data-hope-timeline-item][data-tone="tool"]')).not.toBeNull();
+    expect(view.querySelector('[data-hope-timeline-item][data-tone="failed"]')).toBeNull();
     expect(view.querySelector('[data-hope-plan]')).toBeNull();
 
     act(() => processed?.click());
     expect(view.querySelector('[data-hope-plan]')).not.toBeNull();
     expect(view.textContent).toContain('专家团队执行失败');
+  });
+
+  it('keeps recovered tool errors in expanded details without failing the completed task summary', () => {
+    const view = render([
+      trace({
+        id: 'tool-ok',
+        toolEvents: [{
+          phase: 'end',
+          call_id: 'source-primary',
+          name: 'mcp',
+          result: 'primary source ready',
+        }],
+      }),
+      trace({
+        id: 'tool-fallback-error',
+        toolEvents: [{
+          phase: 'error',
+          call_id: 'source-fallback',
+          name: 'web_search',
+          error: 'fallback source unavailable',
+        }],
+      }),
+    ], {
+      isActive: false,
+      hasBodyBelow: true,
+      turnStatus: 'completed',
+    });
+
+    const item = view.querySelector('[data-hope-timeline-item]');
+    const group = view.querySelector<HTMLButtonElement>('[data-hope-tool-group] > button');
+    expect(item?.getAttribute('data-tone')).toBe('tool');
+    expect(group?.textContent).not.toContain('项失败');
+    expect(group?.className).not.toContain('text-red');
+
+    act(() => group?.click());
+    expect(view.textContent).toContain('失败');
+    const failedTool = view.querySelector<HTMLElement>('[data-hope-tool][data-status="error"]');
+    expect(failedTool).not.toBeNull();
   });
 
   it('folds two or more completed process units only after answer text begins', () => {

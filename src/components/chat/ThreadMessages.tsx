@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { Message } from '@/types';
+import type { TurnLifecycleStatus } from '@/core/types';
 import MessageBubble from './MessageBubble';
 import TaskNarrativeTimeline from './TaskNarrativeTimeline';
 import {
@@ -12,6 +13,7 @@ interface ThreadMessagesProps {
   messages: Message[];
   isStreaming?: boolean;
   activeTurnElapsedMs?: number;
+  latestTurnStatus?: TurnLifecycleStatus;
   onEditUserMessage?: (message: Message, newContent: string) => void;
   onRegenerateAssistant?: (message: Message) => void;
 }
@@ -36,6 +38,7 @@ export default function ThreadMessages({
   messages,
   isStreaming = false,
   activeTurnElapsedMs,
+  latestTurnStatus,
   onEditUserMessage,
   onRegenerateAssistant,
 }: ThreadMessagesProps) {
@@ -45,6 +48,10 @@ export default function ThreadMessages({
   const liveActivityTimelineIndices = useMemo(
     () => isStreaming ? currentActivityTimelineIndices(units) : new Set<number>(),
     [isStreaming, units],
+  );
+  const latestTurnActivityIndices = useMemo(
+    () => activityTimelineIndicesAfterLatestUser(units),
+    [units],
   );
 
   // Chat rows have highly variable, late-settling heights (Markdown, tool steps,
@@ -76,6 +83,7 @@ export default function ThreadMessages({
                 hasBodyBelow={hasBodyBelow}
                 turnLatencyMs={unit.turnLatencyMs}
                 activeElapsedMs={isLiveActivity ? activeTurnElapsedMs : undefined}
+                turnStatus={latestTurnActivityIndices.has(index) ? latestTurnStatus : undefined}
               />
             ) : (
               <MessageBubble
@@ -107,6 +115,16 @@ function currentActivityTimelineIndices(units: DisplayUnit[]): Set<number> {
     }
     if (unit.message.role === 'assistant' && unit.message.isStreaming) continue;
     if (unit.message.role === 'user') break;
+  }
+  return indices;
+}
+
+function activityTimelineIndicesAfterLatestUser(units: DisplayUnit[]): Set<number> {
+  const indices = new Set<number>();
+  for (let index = units.length - 1; index >= 0; index -= 1) {
+    const unit = units[index];
+    if (unit.type === 'message' && unit.message.role === 'user') break;
+    if (unit.type === 'activity') indices.add(index);
   }
   return indices;
 }

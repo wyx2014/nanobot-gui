@@ -14,8 +14,9 @@ import {
   syncSessionsFromGateway,
 } from '@/core/nanobotClient';
 import type { UIMessage, WorkspaceScopePayload, WorkspacesPayload } from '@/core/types';
-import { fetchSessionRuntimeSnapshot, fetchWebuiThread } from '@/core/api';
+import { fetchSessionRuntimeSnapshot, fetchThreadResource, fetchWebuiThread } from '@/core/api';
 import { conversationIdToSessionKey } from '@/core/sessionKey';
+import { projectThreadResource } from '@/core/nanobot/threadResourceProjection';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useScheduleStore } from '@/stores/scheduleStore';
 import { usePromptHubStore } from '@/stores/promptHubStore';
@@ -24,6 +25,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useToastStore } from '@/stores/toastStore';
 import { useConversationWorkbenchStore } from '@/stores/conversationWorkbenchStore';
 import { useTurnPlanStore } from '@/stores/turnPlanStore';
+import { useThreadResourceStore } from '@/stores/threadResourceStore';
 import { useI18n } from '@/i18n';
 import ThreadMessages from './ThreadMessages';
 import InteractivePromptCard, { type InteractivePromptSubmitPayload } from './InteractivePromptCard';
@@ -39,8 +41,11 @@ import { scrubSubagentUiMessages } from '@/core/nanobot/subagent-channel-display
 import { projectUsableSkills, stripUnavailableLeadingSkillMentions } from '@/core/skills/filter';
 import { normalizeProjectPath, visibleProjectPath } from '@/core/workspace';
 import GenerationStatusBar, { type GenerationPhase } from './GenerationStatusBar';
+import ConversationHeader from './ConversationHeader';
 import { historyHasPendingActivity } from '@/core/nanobot/historyActivity';
 import { normalizeTaskTimestamp } from '@/utils/taskDuration';
+import { cn } from '@/lib/utils';
+import { isMacOS } from '@/utils/platform';
 
 interface PendingFirstMessage {
   text: string;
@@ -135,13 +140,7 @@ export default function ChatView({
   const [historyMessages, setHistoryMessages] = useState<UIMessage[]>([]);
   const [historyConversationId, setHistoryConversationId] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyLoadingOlder, setHistoryLoadingOlder] = useState(false);
-  const [historyPage, setHistoryPage] = useState<{
-    beforeCursor: string | null;
-    hasMoreBefore: boolean;
-  }>({ beforeCursor: null, hasMoreBefore: false });
   const [historyVersion, setHistoryVersion] = useState(0);
-  const preserveScrollOnHistoryVersionRef = useRef(false);
   const [promptSubmitState, setPromptSubmitState] = useState<{
     promptId: string;
     status: 'submitting' | 'error';
@@ -153,6 +152,11 @@ export default function ChatView({
     : [];
   const isConversationLoading = !!activeConvId
     && (historyLoading || historyConversationId !== activeConvId);
+  const hasCanonicalThreadResource = useThreadResourceStore((state) => (
+    activeConvId
+      ? Boolean(state.resourcesBySession[conversationIdToSessionKey(activeConvId)])
+      : false
+  ));
 
   const [greeting, setGreeting] = useState('');
   const [userName, setUserName] = useState('');
@@ -180,7 +184,7 @@ export default function ChatView({
       .catch((err) => console.error('Failed to get home dir:', err));
   }, [activeConvId]);
 
-  const { containerRef, scrollElement, isAtBottom, scrollToBottom } = useAutoScroll();
+  const { containerRef, isAtBottom, scrollToBottom } = useAutoScroll();
 
   const returnToSchedule = useCallback(() => {
     if (scheduleReturnTarget?.taskId) {
@@ -195,22 +199,26 @@ export default function ChatView({
       setHistoryMessages([]);
       setHistoryConversationId(null);
       setHistoryLoading(false);
-      setHistoryLoadingOlder(false);
-      setHistoryPage({ beforeCursor: null, hasMoreBefore: false });
       return;
     }
     let cancelled = false;
     setHistoryLoading(true);
-    setHistoryLoadingOlder(false);
-    setHistoryPage({ beforeCursor: null, hasMoreBefore: false });
     (async () => {
       try {
         const token = getNanobotToken();
         const base = getGatewayBaseUrl();
         const sessionKey = conversationIdToSessionKey(activeConvId);
-        void fetchSessionRuntimeSnapshot(token, sessionKey, base)
-          .then((runtimeSnapshot) => {
-            if (cancelled || !runtimeSnapshot) return;
+        const resource = await fetchThreadResource(
+          token,
+          sessionKey,
+          base,
+          { messageLimit: HISTORY_PAGE_LIMIT },
+        );
+        if (cancelled) return;
+        let sourceMessages: UIMessage[] = [];
+        if (resource) {
+          const runtimeSnapshot = projectThreadResource(activeConvId, resource);
+          if (runtimeSnapshot) {
             try {
               getNanobotClient().applyRuntimeSnapshot(activeConvId, runtimeSnapshot);
             } catch {
@@ -221,28 +229,37 @@ export default function ChatView({
               activeConvId,
               runtimeSnapshot,
             );
-          })
-          .catch(() => {
-            // History remains usable when a runtime snapshot is unavailable.
-          });
-        const thread = await fetchWebuiThread(
-          token,
-          sessionKey,
-          base,
-          { limit: HISTORY_PAGE_LIMIT, direction: 'latest' },
-        );
-        if (cancelled) return;
-        const ui = projectWebuiThreadMessages((thread?.messages ?? []).map((message, index) => ({
+          }
+          sourceMessages = resource.messages;
+        } else {
+          // Compatibility fallback for gateways from before Thread Resource.
+          const [thread, runtimeSnapshot] = await Promise.all([
+            fetchWebuiThread(
+              token,
+              sessionKey,
+              base,
+              { limit: HISTORY_PAGE_LIMIT, direction: 'latest' },
+            ),
+            fetchSessionRuntimeSnapshot(token, sessionKey, base),
+          ]);
+          if (cancelled) return;
+          if (runtimeSnapshot) {
+            try {
+              getNanobotClient().applyRuntimeSnapshot(activeConvId, runtimeSnapshot);
+            } catch {
+              // Compatibility store update below remains sufficient.
+            }
+            useChatStore.getState().setConversationRuntimeSnapshot(activeConvId, runtimeSnapshot);
+          }
+          sourceMessages = thread?.messages ?? [];
+        }
+        const ui = projectWebuiThreadMessages(sourceMessages.map((message, index) => ({
           ...message,
           id: message.id ?? `hist-${index}`,
           createdAt: typeof message.createdAt === 'number' ? message.createdAt : Date.now(),
         })));
         setHistoryMessages(ui);
         setHistoryConversationId(activeConvId);
-        setHistoryPage({
-          beforeCursor: thread?.page?.before_cursor ?? null,
-          hasMoreBefore: thread?.page?.has_more_before ?? false,
-        });
         setHistoryVersion((value) => value + 1);
       } catch {
         if (!cancelled) {
@@ -258,64 +275,6 @@ export default function ChatView({
       cancelled = true;
     };
   }, [activeConvId]);
-
-  const loadOlderHistory = useCallback(async () => {
-    if (
-      !activeConvId
-      || historyConversationId !== activeConvId
-      || historyLoadingOlder
-      || !historyPage.hasMoreBefore
-      || !historyPage.beforeCursor
-    ) return;
-    setHistoryLoadingOlder(true);
-    const previousHeight = scrollElement?.scrollHeight ?? 0;
-    const previousTop = scrollElement?.scrollTop ?? 0;
-    try {
-      const thread = await fetchWebuiThread(
-        getNanobotToken(),
-        conversationIdToSessionKey(activeConvId),
-        getGatewayBaseUrl(),
-        {
-          limit: HISTORY_PAGE_LIMIT,
-          before: historyPage.beforeCursor,
-        },
-      );
-      if (useChatStore.getState().activeConversationId !== activeConvId) return;
-      const older = projectWebuiThreadMessages((thread?.messages ?? []).map((message, index) => ({
-        ...message,
-        id: message.id ?? `hist-older-${index}`,
-        createdAt: typeof message.createdAt === 'number' ? message.createdAt : Date.now(),
-      })));
-      preserveScrollOnHistoryVersionRef.current = true;
-      setHistoryMessages((current) => {
-        const seen = new Set(current.map((message) => message.id));
-        return [...older.filter((message) => !seen.has(message.id)), ...current];
-      });
-      setHistoryPage({
-        beforeCursor: thread?.page?.before_cursor ?? null,
-        hasMoreBefore: thread?.page?.has_more_before ?? false,
-      });
-      setHistoryVersion((value) => value + 1);
-      window.requestAnimationFrame(() => {
-        if (!scrollElement) return;
-        scrollElement.scrollTop = previousTop + Math.max(
-          0,
-          scrollElement.scrollHeight - previousHeight,
-        );
-      });
-    } catch {
-      // Keep the currently loaded page when older history cannot be read.
-    } finally {
-      setHistoryLoadingOlder(false);
-    }
-  }, [
-    activeConvId,
-    historyConversationId,
-    historyLoadingOlder,
-    historyPage.beforeCursor,
-    historyPage.hasMoreBefore,
-    scrollElement,
-  ]);
 
   const handleTurnEnd = useCallback(() => {
     void syncSessionsFromGateway();
@@ -398,7 +357,9 @@ export default function ChatView({
   }, [latestTurnMessages]);
   const runStartedAt = stream.runStartedAt;
   const runtimeActive = activeConv?.runtimeSnapshot?.thread_status.type === 'active';
-  const generationActive = stream.isStreaming || runtimeActive;
+  const generationActive = hasCanonicalThreadResource
+    ? runtimeActive
+    : stream.isStreaming || runtimeActive;
   const [turnClockNow, setTurnClockNow] = useState(() => Date.now());
   useEffect(() => {
     if (!generationActive) return;
@@ -437,7 +398,7 @@ export default function ChatView({
       useTurnPlanStore.getState().applyPlan(activeConvId, runtimePlan);
       return;
     }
-    if (stream.messageConversationId !== activeConvId) return;
+    if (hasCanonicalThreadResource || stream.messageConversationId !== activeConvId) return;
     useTurnPlanStore.getState().hydrateLegacyMessages(
       activeConvId,
       stream.messageConversationId,
@@ -447,6 +408,7 @@ export default function ChatView({
   }, [
     activeConv?.runtimeSnapshot,
     activeConvId,
+    hasCanonicalThreadResource,
     stream.isStreaming,
     stream.messageConversationId,
     timelineMessages,
@@ -454,10 +416,6 @@ export default function ChatView({
 
   useLayoutEffect(() => {
     if (!activeConvId || historyLoading) return;
-    if (preserveScrollOnHistoryVersionRef.current) {
-      preserveScrollOnHistoryVersionRef.current = false;
-      return;
-    }
     scrollToBottom({ force: true });
   }, [activeConvId, historyLoading, historyVersion, scrollToBottom]);
 
@@ -678,6 +636,27 @@ export default function ChatView({
         try {
           const token = getNanobotToken();
           const base = getGatewayBaseUrl();
+          const resource = await fetchThreadResource(
+            token,
+            conversationIdToSessionKey(activeConvId),
+            base,
+          );
+          if (cancelled) return;
+          if (resource) {
+            const runtimeSnapshot = projectThreadResource(activeConvId, resource);
+            if (runtimeSnapshot) {
+              try {
+                getNanobotClient().applyRuntimeSnapshot(activeConvId, runtimeSnapshot);
+              } catch {
+                // Store projection below is enough while socket reconnects.
+              }
+              useChatStore.getState().setConversationRuntimeSnapshot(activeConvId, runtimeSnapshot);
+            }
+            setHistoryMessages(projectWebuiThreadMessages(resource.messages));
+            setHistoryConversationId(activeConvId);
+            setHistoryVersion((value) => value + 1);
+            return;
+          }
           const thread = await fetchWebuiThread(
             token,
             conversationIdToSessionKey(activeConvId),
@@ -687,10 +666,6 @@ export default function ChatView({
           if (cancelled) return;
           setHistoryMessages(projectWebuiThreadMessages(thread?.messages ?? []));
           setHistoryConversationId(activeConvId);
-          setHistoryPage({
-            beforeCursor: thread?.page?.before_cursor ?? null,
-            hasMoreBefore: thread?.page?.has_more_before ?? false,
-          });
           setHistoryVersion((value) => value + 1);
         } catch {
           // Keep live messages if canonical refresh fails.
@@ -780,7 +755,17 @@ export default function ChatView({
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0 min-w-0 bg-[#fbfaf7]">
+    <div
+      className={cn(
+        'flex min-h-0 min-w-0 flex-col bg-[#fbfaf7] dark:bg-[#1f1f1f]',
+        isMacOS() ? '-mt-9 h-[calc(100%+2.25rem)]' : 'h-full',
+      )}
+    >
+      <ConversationHeader
+        conversationTitle={activeConv.title}
+        onScrollToBottom={() => scrollToBottom({ force: true })}
+      />
+
       {/* Messages Area */}
       <div className="relative flex-1 min-h-0">
         <div
@@ -808,24 +793,15 @@ export default function ChatView({
                 </div>
               ) : (
                 <>
-                  {historyPage.hasMoreBefore ? (
-                    <div className="mb-5 flex justify-center">
-                      <button
-                        type="button"
-                        onClick={() => void loadOlderHistory()}
-                        disabled={historyLoadingOlder}
-                        className="rounded-full border border-[#d8d5ce] bg-white/80 px-3 py-1.5 text-[12px] text-[#656358] transition-colors hover:bg-white hover:text-[#29261b] disabled:opacity-50"
-                      >
-                        {historyLoadingOlder
-                          ? (useSettingsStore.getState().language === 'en-US' ? 'Loading…' : '正在加载…')
-                          : (useSettingsStore.getState().language === 'en-US' ? 'Load earlier messages' : '加载更早消息')}
-                      </button>
-                    </div>
-                  ) : null}
                   <ThreadMessages
                     messages={timelineMessages}
                     isStreaming={stream.isStreaming}
                     activeTurnElapsedMs={activeTurnElapsedMs}
+                    latestTurnStatus={
+                      !stream.isStreaming && !activeConv.runtimeSnapshot?.active_turn
+                        ? activeConv.runtimeSnapshot?.latest_turn?.status
+                        : undefined
+                    }
                     onEditUserMessage={handleEditUserMessage}
                     onRegenerateAssistant={handleRegenerateAssistant}
                   />

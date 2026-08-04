@@ -29,6 +29,7 @@ import type {
   WorkspaceScopePayload,
 } from "@/core/types";
 import { useTurnPlanStore } from '@/stores/turnPlanStore';
+import { useThreadResourceStore } from '@/stores/threadResourceStore';
 import { useBrowserStore } from '@/stores/browserStore';
 import { normalizeTurnPlan, planFromAgentUI } from '@/core/nanobot/planViewModel';
 import {
@@ -58,6 +59,11 @@ type PendingStreamEvent =
     };
 
 const FILE_EDIT_TOOL_NAMES = new Set(["write_file", "edit_file", "apply_patch"]);
+
+function applyTurnPlanResource(chatId: string, plan: TurnPlanResource): void {
+  useTurnPlanStore.getState().applyPlan(chatId, plan);
+  useThreadResourceStore.getState().applyPlanResource(chatId, plan);
+}
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".svg", ".tif", ".tiff"]);
 const VIDEO_EXTENSIONS = new Set([".mp4", ".webm", ".mov", ".m4v", ".avi", ".mkv", ".3gp"]);
 
@@ -1658,7 +1664,7 @@ export function useNanobotStream(
         setTurnUsage(undefined);
         useTurnPlanStore.getState().activateTurn(ev.chat_id, ev.turn.id);
         if (ev.turn.plan) {
-          useTurnPlanStore.getState().applyPlan(ev.chat_id, ev.turn.plan);
+          applyTurnPlanResource(ev.chat_id, ev.turn.plan);
           setMessages((prev) => applyPlanToMessages(prev, ev.turn.plan!));
         }
         setRunStartedAt(ev.turn.started_at);
@@ -1677,7 +1683,7 @@ export function useNanobotStream(
         // context, never a fallback for the current right-rail progress.
         const snapshotPlan = snapshotTurn?.plan;
         if (snapshotPlan) {
-          useTurnPlanStore.getState().applyPlan(ev.chat_id, snapshotPlan);
+          applyTurnPlanResource(ev.chat_id, snapshotPlan);
           setMessages((prev) => applyPlanToMessages(prev, snapshotPlan));
         }
         if (ev.thread_status.type === "active") {
@@ -1701,7 +1707,7 @@ export function useNanobotStream(
         || ev.event === 'turn_plan_rebased'
         || ev.event === 'turn_plan_terminalized'
       ) {
-        useTurnPlanStore.getState().applyPlan(ev.chat_id, ev.plan);
+        applyTurnPlanResource(ev.chat_id, ev.plan);
         setMessages((prev) => applyPlanToMessages(prev, ev.plan));
         return;
       }
@@ -1891,7 +1897,7 @@ export function useNanobotStream(
         setIsStreaming(false);
         if (ev.event === 'turn_completed' && ev.turn.plan) {
           useTurnPlanStore.getState().activateTurn(ev.chat_id, ev.turn.id);
-          useTurnPlanStore.getState().applyPlan(ev.chat_id, ev.turn.plan);
+          applyTurnPlanResource(ev.chat_id, ev.turn.plan);
         }
         setMessages((prev) => {
           const interrupted = ev.event === "turn_completed"
@@ -2012,7 +2018,7 @@ export function useNanobotStream(
               if (explicitTurnId && !currentTurnId) {
                 useTurnPlanStore.getState().activateTurn(ev.chat_id, explicitTurnId);
               }
-              useTurnPlanStore.getState().applyPlan(ev.chat_id, plan);
+              applyTurnPlanResource(ev.chat_id, plan);
             }
           }
           const workspaceReason = workspaceAccessRequiredReason(structuredEvents);

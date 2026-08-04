@@ -1,15 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   Check,
-  ChevronRight,
   File,
   FileCode2,
   FileImage,
   FileSpreadsheet,
   FileText,
-  FolderOpen,
-  Globe2,
   Loader2,
   Minus,
   RefreshCw,
@@ -24,13 +21,18 @@ import {
   type WorkbenchProgressSnapshot,
 } from '@/stores/conversationWorkbenchStore';
 import { useTurnPlanStore } from '@/stores/turnPlanStore';
+import { useThreadResourceStore } from '@/stores/threadResourceStore';
 import { usePreviewStore } from '@/stores/previewStore';
-import { useBrowserStore } from '@/stores/browserStore';
 import { getGatewayBaseUrl, getNanobotToken } from '@/core/nanobotClient';
 import { conversationIdToSessionKey } from '@/core/sessionKey';
-import { fetchSessionArtifacts, type SessionArtifact } from '@/core/sessionArtifacts';
-import { artifactNativePath, artifactPreviewKind } from '@/core/artifacts';
-import { shellBridge } from '@/lib/ipc-factory';
+import {
+  fetchSessionArtifacts,
+  normalizeSessionArtifactRecords,
+  type SessionArtifact,
+} from '@/core/sessionArtifacts';
+import { fetchThreadResource } from '@/core/api';
+import { projectThreadResource } from '@/core/nanobot/threadResourceProjection';
+import { artifactPreviewKind } from '@/core/artifacts';
 
 const EMPTY_PROGRESS: WorkbenchProgressSnapshot = {
   steps: [],
@@ -74,12 +76,6 @@ function formatModifiedAt(value: string | number | undefined, locale: string): s
 export default function ConversationWorkbench() {
   const { locale, t } = useI18n();
   const activeConversationId = useChatStore((state) => state.activeConversationId);
-  const browserFrameAvailable = useBrowserStore((state) => (
-    activeConversationId
-      ? Boolean(state.sessions[activeConversationId]?.frame)
-      : false
-  ));
-  const openBrowserPanel = useBrowserStore((state) => state.openPanel);
   const conversationStatus = useChatStore((state) => (
     state.activeConversationId
       ? state.conversations[state.activeConversationId]?.status ?? 'idle'
@@ -100,11 +96,17 @@ export default function ConversationWorkbench() {
       ? state.conversations[activeConversationId]?.sessionId
       : undefined
   ));
-  const turnPlan = useTurnPlanStore((state) => (
+  const legacyTurnPlan = useTurnPlanStore((state) => (
     activeConversationId
       ? state.planByConversation[activeConversationId]
       : undefined
   ));
+  const threadResource = useThreadResourceStore((state) => (
+    activeConversationId
+      ? state.resourcesBySession[conversationIdToSessionKey(activeConversationId)]
+      : undefined
+  ));
+  const turnPlan = threadResource?.plan ?? legacyTurnPlan;
   const legacyProgress = useConversationWorkbenchStore((state) => (
     activeConversationId
       ? state.progressByConversation[activeConversationId]
@@ -130,17 +132,9 @@ export default function ConversationWorkbench() {
         isActive: turnPlan.status === 'running' || turnPlan.status === 'inProgress',
         source: 'task_progress',
       }
-    : legacyProgress ?? EMPTY_PROGRESS;
-  const progressCompleted = turnPlan
-    ? turnPlan.status === 'completed'
-    : progress.steps.length > 0
-      && progress.steps.every((step) => step.status === 'completed' || step.status === 'skipped');
-  const [progressExpanded, setProgressExpanded] = useState(() => !progressCompleted);
-  const progressDisplayState = useRef({
-    conversationId: activeConversationId,
-    completed: progressCompleted,
-    active: progress.isActive,
-  });
+    : threadResource
+      ? EMPTY_PROGRESS
+      : legacyProgress ?? EMPTY_PROGRESS;
   const artifactRevision = useConversationWorkbenchStore((state) => (
     activeConversationId
       ? state.artifactRevisionByConversation[activeConversationId] ?? 0
@@ -156,34 +150,19 @@ export default function ConversationWorkbench() {
   const shouldPollActiveTurn = turnPlan
     ? progress.isActive
     : conversationStatus === 'running';
-
-  useEffect(() => {
-    const previous = progressDisplayState.current;
-    if (previous.conversationId !== activeConversationId) {
-      progressDisplayState.current = {
-        conversationId: activeConversationId,
-        completed: progressCompleted,
-        active: progress.isActive,
-      };
-      setProgressExpanded(progress.isActive || !progressCompleted);
-      return;
-    }
-
-    if (progress.isActive) {
-      setProgressExpanded(true);
-    } else if (
-      progressCompleted
-      && (previous.active || !previous.completed)
-    ) {
-      setProgressExpanded(false);
-    }
-
-    progressDisplayState.current = {
-      conversationId: activeConversationId,
-      completed: progressCompleted,
-      active: progress.isActive,
-    };
-  }, [activeConversationId, progress.isActive, progressCompleted]);
+  const canonicalArtifacts = useMemo(() => {
+    if (!activeConversationId || !threadResource) return null;
+    return normalizeSessionArtifactRecords(
+      getGatewayBaseUrl(),
+      threadResource.session_key,
+      threadResource.artifacts,
+      workspacePath,
+      {
+        projectId: threadResource.project_id,
+        sessionId: threadResource.session_id,
+      },
+    );
+  }, [activeConversationId, threadResource, workspacePath]);
 
   const refreshArtifacts = useCallback(async (background = false) => {
     if (!activeConversationId) return;
@@ -192,13 +171,33 @@ export default function ConversationWorkbench() {
     else setLoading(true);
     setError(null);
     try {
-      const rows = await fetchSessionArtifacts(
-        getNanobotToken(),
-        conversationIdToSessionKey(activeConversationId),
-        getGatewayBaseUrl(),
-        workspacePath,
-        { projectId, sessionId },
-      );
+      const key = conversationIdToSessionKey(activeConversationId);
+      const currentResource = useThreadResourceStore.getState().resourcesBySession[key];
+      let rows: SessionArtifact[];
+      if (currentResource) {
+        const refreshed = await fetchThreadResource(
+          getNanobotToken(),
+          key,
+          getGatewayBaseUrl(),
+        );
+        if (!refreshed) throw new Error('Thread Resource is unavailable.');
+        projectThreadResource(activeConversationId, refreshed);
+        rows = normalizeSessionArtifactRecords(
+          getGatewayBaseUrl(),
+          refreshed.session_key,
+          refreshed.artifacts,
+          workspacePath,
+          { projectId: refreshed.project_id, sessionId: refreshed.session_id },
+        );
+      } else {
+        rows = await fetchSessionArtifacts(
+          getNanobotToken(),
+          key,
+          getGatewayBaseUrl(),
+          workspacePath,
+          { projectId, sessionId },
+        );
+      }
       if (requestId !== requestSequence.current) return;
       setArtifacts(rows);
     } catch (loadError) {
@@ -217,9 +216,14 @@ export default function ConversationWorkbench() {
     requestSequence.current += 1;
     setArtifacts([]);
     setError(null);
+    if (canonicalArtifacts) {
+      setArtifacts(canonicalArtifacts);
+      setLoading(false);
+      return;
+    }
     setLoading(!!activeConversationId);
     if (activeConversationId) void refreshArtifacts(false);
-  }, [activeConversationId, refreshArtifacts]);
+  }, [activeConversationId, canonicalArtifacts, refreshArtifacts]);
 
   useEffect(() => {
     if (artifactRevisionConversation.current !== activeConversationId) {
@@ -243,145 +247,115 @@ export default function ConversationWorkbench() {
   }, [activeConversationId, artifacts, refreshArtifacts, shouldPollActiveTurn]);
 
   const artifactStatusLabel = useCallback((artifact: SessionArtifact): string => {
-    if (artifact.status === 'ready') return locale.startsWith('zh') ? '打开' : 'Open';
+    if (artifact.status === 'ready') return '';
     if (artifact.status === 'staging') return locale.startsWith('zh') ? '生成中' : 'Generating';
     if (artifact.status === 'failed') return locale.startsWith('zh') ? '生成失败' : 'Failed';
     if (artifact.status === 'missing') return locale.startsWith('zh') ? '文件缺失' : 'Missing';
     return locale.startsWith('zh') ? '已隔离' : 'Quarantined';
   }, [locale]);
 
-  return (
-    <div className="flex h-full min-h-0 flex-col bg-[#f7f5f0] dark:bg-[#202020]">
-      <div className="shrink-0 border-b border-[#e5e2db] dark:border-[#3d3d3d] px-4 pb-3 pt-10">
-        <div className="flex items-center justify-between gap-2">
-          <div className="text-[13px] font-semibold text-[#29261b] dark:text-[#f3f0e8]">{t.panel.workbench}</div>
-          {activeConversationId && browserFrameAvailable ? (
-            <button
-              type="button"
-              onClick={() => openBrowserPanel(activeConversationId)}
-              className="flex h-7 items-center gap-1.5 rounded-md border border-[#dedacf] bg-white px-2 text-[11px] text-[#656158] shadow-sm transition-colors hover:bg-[#f3f0e9] dark:border-[#454545] dark:bg-[#2a2a2a] dark:text-[#c4c0b6] dark:hover:bg-[#333]"
-              title={t.panel.browserShow}
-              aria-label={t.panel.browserShow}
-            >
-              <Globe2 className="h-3.5 w-3.5" />
-              {t.panel.browserTitle}
-            </button>
-          ) : null}
-        </div>
-      </div>
+  const completedStepCount = progress.steps.filter((step) => (
+    step.status === 'completed' || step.status === 'skipped'
+  )).length;
 
-      <section className="shrink-0 border-b border-[#e5e2db] dark:border-[#3d3d3d] px-4 py-4" aria-label={t.panel.progress}>
-        <button
-          type="button"
-          className={cn(
-            'flex w-full items-center justify-between gap-3 rounded-md text-left',
-            progressExpanded && 'mb-3',
-          )}
-          onClick={() => setProgressExpanded((expanded) => !expanded)}
-          aria-expanded={progressExpanded}
-        >
-          <h2 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#656358]">
+  return (
+    <div
+      data-conversation-summary
+      className="flex max-h-[min(72vh,680px)] min-h-0 flex-col overflow-hidden rounded-[20px] border border-[#dcd8d0] bg-[#fbfaf7]/98 shadow-[0_18px_55px_rgba(59,52,39,0.16)] backdrop-blur-xl dark:border-white/10 dark:bg-[#222]/98 dark:shadow-[0_20px_60px_rgba(0,0,0,0.5)]"
+    >
+      <section
+        data-summary-section="progress"
+        className="shrink-0 px-4 py-4"
+        aria-label={t.panel.progress}
+      >
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#656358] dark:text-[#b8b4ab]">
             {t.panel.progress}
           </h2>
-          <ChevronRight
-            className={cn(
-              'h-3.5 w-3.5 text-[#8b887c] transition-transform duration-200',
-              progressExpanded && 'rotate-90',
-            )}
-          />
-        </button>
+          {progress.steps.length ? (
+            <span className="text-[11px] tabular-nums text-[#9a968c] dark:text-[#88847c]">
+              {completedStepCount}/{progress.steps.length}
+            </span>
+          ) : null}
+        </div>
 
-        {progressExpanded ? (
-          progress.steps.length ? (
-            <>
-              {progress.note ? (
-                <p className="mb-3 text-[12px] leading-5 text-[#656358]">{progress.note}</p>
-              ) : null}
-              <ol className="space-y-[9px]">
-                {progress.steps.map((step) => {
-                  return (
-                    <li key={step.id} className="grid min-w-0 grid-cols-[16px_minmax(0,1fr)] items-start gap-2">
-                      <span
-                        className={cn(
-                          'mt-0.5 flex h-3 w-3 items-center justify-center border',
-                          step.status === 'completed' && 'rounded-[3px] border-[#d97757] bg-[#d97757] text-white',
-                          step.status === 'running' && 'rounded-full border-[#d97757] bg-[#d97757] shadow-[inset_0_0_0_3px_#f7f5f0]',
-                          step.status === 'pending' && 'rounded-[3px] border-[#aaa69c] bg-transparent',
-                          step.status === 'error' && 'rounded-full border-red-500 bg-red-50 text-red-600',
-                          (step.status === 'skipped' || step.status === 'interrupted')
-                            && 'rounded-[3px] border-[#bbb7ad] bg-transparent text-[#9a968c]',
-                        )}
-                      >
-                        {step.status === 'completed' ? <Check className="h-2.5 w-2.5 stroke-[2.4]" /> : null}
-                        {step.status === 'error' ? <AlertCircle className="h-2.5 w-2.5" /> : null}
-                        {step.status === 'skipped' || step.status === 'interrupted'
-                          ? <Minus className="h-2.5 w-2.5" />
-                          : null}
-                      </span>
-                      <div className="min-w-0">
-                        <div
-                          className={cn(
-                            'text-[12.5px] leading-[1.35]',
-                            step.status === 'running' && 'font-medium text-[#29261b]',
-                            step.status === 'completed' && 'text-[#9a968c] line-through decoration-[1px]',
-                            step.status === 'pending' && 'text-[#8b887c]',
-                            step.status === 'error' && 'text-red-600',
-                            (step.status === 'skipped' || step.status === 'interrupted')
-                              && 'text-[#aaa69b] line-through decoration-[1px]',
-                          )}
-                        >
-                          {step.title}
-                        </div>
-                        {step.detail ? (
-                          <div className="truncate text-[11px] text-[#9a968c]">{step.detail}</div>
-                        ) : null}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ol>
-              {progress.isActive ? (
-                <p className="mt-3 text-[11.5px] leading-5 text-[#9a968c]">{t.panel.progressRunning}</p>
-              ) : null}
-            </>
-          ) : (
-            <p className="rounded-xl border border-dashed border-[#ddd9d0] bg-white/50 px-3 py-4 text-center text-[12px] leading-5 text-[#8b887c]">
-              {progress.isActive ? t.panel.progressPlanning : t.panel.progressEmptyHint}
-            </p>
-          )
-        ) : null}
+        {progress.steps.length ? (
+          <>
+            {progress.note ? (
+              <p className="mb-3 text-[12px] leading-5 text-[#656358] dark:text-[#aaa69e]">{progress.note}</p>
+            ) : null}
+            <ol className="max-h-[240px] space-y-[9px] overflow-y-auto pr-1">
+              {progress.steps.map((step) => (
+                <li key={step.id} className="grid min-w-0 grid-cols-[16px_minmax(0,1fr)] items-start gap-2">
+                  <span
+                    className={cn(
+                      'mt-0.5 flex h-3 w-3 items-center justify-center border',
+                      step.status === 'completed' && 'rounded-[3px] border-teal-500 bg-teal-500 text-white',
+                      step.status === 'running' && 'rounded-full border-[#d97757] bg-[#d97757] shadow-[inset_0_0_0_3px_#fbfaf7] dark:shadow-[inset_0_0_0_3px_#222]',
+                      step.status === 'pending' && 'rounded-[3px] border-[#aaa69c] bg-transparent',
+                      step.status === 'error' && 'rounded-full border-red-500 bg-red-50 text-red-600 dark:bg-red-950/30',
+                      (step.status === 'skipped' || step.status === 'interrupted')
+                        && 'rounded-[3px] border-[#bbb7ad] bg-transparent text-[#9a968c]',
+                    )}
+                  >
+                    {step.status === 'completed' ? <Check className="h-2.5 w-2.5 stroke-[2.4]" /> : null}
+                    {step.status === 'error' ? <AlertCircle className="h-2.5 w-2.5" /> : null}
+                    {step.status === 'skipped' || step.status === 'interrupted'
+                      ? <Minus className="h-2.5 w-2.5" />
+                      : null}
+                  </span>
+                  <div className="min-w-0">
+                    <div
+                      className={cn(
+                        'text-[12.5px] leading-[1.35]',
+                        step.status === 'running' && 'font-medium text-[#29261b] dark:text-[#efebe3]',
+                        step.status === 'completed' && 'text-[#8d897f] dark:text-[#969188]',
+                        step.status === 'pending' && 'text-[#8b887c] dark:text-[#8f8a82]',
+                        step.status === 'error' && 'text-red-600 dark:text-red-400',
+                        (step.status === 'skipped' || step.status === 'interrupted')
+                          && 'text-[#aaa69b] line-through decoration-[1px] dark:text-[#77736c]',
+                      )}
+                    >
+                      {step.title}
+                    </div>
+                    {step.detail ? (
+                      <div className="truncate text-[11px] text-[#9a968c] dark:text-[#817d75]">{step.detail}</div>
+                    ) : null}
+                  </div>
+                </li>
+              ))}
+            </ol>
+            {progress.isActive ? (
+              <p className="mt-3 text-[11.5px] leading-5 text-[#9a968c] dark:text-[#88847c]">{t.panel.progressRunning}</p>
+            ) : null}
+          </>
+        ) : (
+          <p className="py-2 text-[12px] leading-5 text-[#8b887c] dark:text-[#918d85]">
+            {progress.isActive ? t.panel.progressPlanning : t.panel.progressEmptyHint}
+          </p>
+        )}
       </section>
 
-      <section className="flex min-h-0 flex-1 flex-col" aria-label={t.panel.artifacts}>
+      <section
+        data-summary-section="artifacts"
+        className="flex min-h-0 flex-col border-t border-[#e5e2db] dark:border-white/10"
+        aria-label={t.panel.artifacts}
+      >
         <div className="flex shrink-0 items-center justify-between gap-3 px-4 pb-2 pt-4">
           <div className="flex items-baseline gap-2">
-            <h2 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#656358]">
+            <h2 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#656358] dark:text-[#b8b4ab]">
               {t.panel.artifacts}
             </h2>
             {artifacts.length ? (
-              <span className="text-[11px] text-[#9a968c]">{artifacts.length}</span>
+              <span className="text-[11px] text-[#9a968c] dark:text-[#88847c]">{artifacts.length}</span>
             ) : null}
           </div>
           <div className="flex items-center gap-0.5">
-            {artifacts.length > 0 && artifactNativePath(artifacts[0].ref) ? (
-              <button
-                type="button"
-                onClick={() => {
-                  const path = artifactNativePath(artifacts[0].ref);
-                  if (path) void shellBridge.revealItemInDir(path);
-                }}
-                className="rounded-md p-1.5 text-[#8b887c] transition-colors hover:bg-[#ebe8e1] hover:text-[#29261b]"
-                aria-label={t.panel.revealInFolder}
-                title={t.panel.revealInFolder}
-              >
-                <FolderOpen className="h-3.5 w-3.5" />
-              </button>
-            ) : null}
             <button
               type="button"
               onClick={() => void refreshArtifacts(true)}
               disabled={loading || refreshing}
-              className="rounded-md p-1.5 text-[#8b887c] transition-colors hover:bg-[#ebe8e1] hover:text-[#29261b] disabled:opacity-50"
+              className="rounded-md p-1.5 text-[#8b887c] transition-colors hover:bg-[#ebe8e1] hover:text-[#29261b] disabled:opacity-50 dark:text-[#969188] dark:hover:bg-white/10 dark:hover:text-white"
               aria-label={t.panel.artifactsRefresh}
               title={t.panel.artifactsRefresh}
             >
@@ -390,7 +364,7 @@ export default function ConversationWorkbench() {
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
+        <div className="min-h-0 max-h-[300px] overflow-y-auto px-3 pb-4">
           {loading && !artifacts.length ? (
             <div className="flex h-24 items-center justify-center">
               <Loader2 className="h-4 w-4 animate-spin text-[#d97757]" />
@@ -413,6 +387,7 @@ export default function ConversationWorkbench() {
                 const Icon = artifactIcon(artifact);
                 const size = formatSize(artifact.size);
                 const modifiedAt = formatModifiedAt(artifact.modifiedAt, locale);
+                const statusLabel = artifactStatusLabel(artifact);
                 return (
                   <li key={artifact.id}>
                     <button
@@ -421,18 +396,18 @@ export default function ConversationWorkbench() {
                         if (artifact.status === 'ready') openArtifact(artifact.ref);
                       }}
                       disabled={artifact.status !== 'ready'}
-                      className="group grid w-full min-w-0 grid-cols-[24px_minmax(0,1fr)_auto] items-center gap-2 rounded-[9px] border border-transparent px-2 py-2 text-left transition-colors hover:border-[#e3dfd7] hover:bg-white"
+                      className="group grid w-full min-w-0 grid-cols-[24px_minmax(0,1fr)_auto] items-center gap-2 rounded-[9px] border border-transparent px-2 py-2 text-left transition-colors hover:border-[#e3dfd7] hover:bg-white dark:hover:border-white/10 dark:hover:bg-white/[0.06]"
                       title={artifact.errorMessage || artifact.path}
                     >
-                      <span className="flex h-6 w-6 shrink-0 items-center justify-center text-[#77746b]">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center text-[#77746b] dark:text-[#aaa69e]">
                         <Icon className="h-4 w-4" />
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[12.5px] font-medium text-[#29261b]">
+                        <span className="block truncate text-[12.5px] font-medium text-[#29261b] dark:text-[#ebe7df]">
                           {artifact.name}
                         </span>
                         {(size || modifiedAt) ? (
-                          <span className="mt-0.5 block truncate text-[10.5px] text-[#9a968c]">
+                          <span className="mt-0.5 block truncate text-[10.5px] text-[#9a968c] dark:text-[#817d75]">
                             {[size, modifiedAt].filter(Boolean).join(' · ')}
                           </span>
                         ) : null}
@@ -442,21 +417,23 @@ export default function ConversationWorkbench() {
                           </span>
                         ) : null}
                       </span>
-                      <span className="text-[11px] text-[#aaa69c] transition-colors group-hover:text-[#656358]">
-                        {artifact.status === 'staging' ? (
-                          <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />
-                        ) : null}
-                        {artifactStatusLabel(artifact)}
-                      </span>
+                      {statusLabel ? (
+                        <span className="text-[11px] text-[#aaa69c] transition-colors group-hover:text-[#656358] dark:text-[#817d75] dark:group-hover:text-[#bbb7ae]">
+                          {artifact.status === 'staging' ? (
+                            <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />
+                          ) : null}
+                          {statusLabel}
+                        </span>
+                      ) : null}
                     </button>
                   </li>
                 );
               })}
             </ul>
           ) : (
-            <div className="mx-1 flex min-h-28 flex-col items-center justify-center rounded-xl border border-dashed border-[#ddd9d0] bg-white/50 px-4 py-5 text-center">
+            <div className="mx-1 flex min-h-20 flex-col items-center justify-center rounded-xl border border-dashed border-[#ddd9d0] bg-white/40 px-4 py-4 text-center dark:border-white/10 dark:bg-white/[0.03]">
               <FileText className="mb-2 h-5 w-5 text-[#aaa69c]" />
-              <p className="text-[12px] leading-5 text-[#8b887c]">{t.panel.artifactsEmptyHint}</p>
+              <p className="text-[12px] leading-5 text-[#8b887c] dark:text-[#918d85]">{t.panel.artifactsEmptyHint}</p>
             </div>
           )}
         </div>

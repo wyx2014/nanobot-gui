@@ -60,6 +60,7 @@ export interface TurnPlanResource {
 
 export interface TurnLifecycleResource {
   id: string;
+  trace_id?: string | null;
   runtime_epoch?: string | null;
   project_id?: string | null;
   session_id?: string | null;
@@ -103,6 +104,157 @@ export interface ThreadRuntimeSnapshot {
   thread_status: ThreadRuntimeStatus;
   active_turn: TurnLifecycleResource | null;
   latest_turn: TurnLifecycleResource | null;
+}
+
+/** One durable, session-scoped event emitted only after journal append and
+ * SQLite projection have both succeeded. Streaming token deltas intentionally
+ * do not use this envelope. */
+export interface CanonicalSessionEvent {
+  schema_version: number;
+  event_id: string;
+  event_seq: number;
+  event: string;
+  recorded_at: number;
+  project_id: string;
+  session_id: string;
+  session_key: string;
+  turn_id?: string;
+  trace_id?: string;
+  runtime_epoch?: string;
+  visibility?: "public" | "private" | string;
+  payload?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export interface ThreadArtifactResource {
+  id?: string;
+  project_id?: string;
+  session_id?: string;
+  status?: "staging" | "ready" | "failed" | "missing" | "quarantined" | string;
+  relation?: string;
+  sha256?: string;
+  path: string;
+  name?: string;
+  kind?: string;
+  size?: number;
+  modified_at?: string | number | null;
+  mime_type?: string;
+  preview_url?: string;
+  download_url?: string;
+  reveal_path?: string;
+  error_code?: string;
+  error_message?: string;
+}
+
+/** Canonical REST read model for one conversation. Renderer stores mirror this
+ * resource instead of independently deriving messages, runtime, plan and
+ * artifact state from several endpoints. */
+export interface ThreadResource {
+  schema_version: number;
+  project_id: string;
+  session_id: string;
+  session_key: string;
+  last_event_seq: number;
+  snapshot_revision: number;
+  runtime_snapshot_revision: number;
+  runtime_epoch: string | null;
+  thread_status: ThreadRuntimeStatus;
+  active_turn: TurnLifecycleResource | null;
+  latest_turn: TurnLifecycleResource | null;
+  messages: UIMessage[];
+  message_page?: {
+    before_event_seq: number | null;
+    has_more_before: boolean;
+    loaded_message_count: number;
+  };
+  has_pending_tool_calls?: boolean;
+  plan: TurnPlanResource | null;
+  artifact_revision: number;
+  artifacts: ThreadArtifactResource[];
+  workspace_scope?: WorkspaceScopePayload;
+  expert_team?: ExpertTeamBinding;
+  from_event_seq: number;
+  to_event_seq: number;
+  events: CanonicalSessionEvent[];
+  has_more: boolean;
+  resync_required: boolean;
+}
+
+export interface TraceResource {
+  id: string;
+  project_id?: string | null;
+  session_id?: string | null;
+  turn_id?: string | null;
+  runtime_epoch: string;
+  status: string;
+  started_at: number;
+  ended_at?: number | null;
+  duration_ms?: number | null;
+  root_run_id?: string | null;
+  provider?: string | null;
+  model?: string | null;
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+  cached_input_tokens?: number | null;
+  total_tokens?: number | null;
+  error_code?: string | null;
+  error?: Record<string, unknown>;
+  runs?: TraceRunResource[];
+}
+
+export interface TraceRunResource {
+  id: string;
+  trace_id: string;
+  parent_run_id?: string | null;
+  parent_span_id?: string | null;
+  agent_kind: string;
+  agent_label?: string | null;
+  status: string;
+  provider?: string | null;
+  model?: string | null;
+  started_at: number;
+  ended_at?: number | null;
+  duration_ms?: number | null;
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+  cached_input_tokens?: number | null;
+  total_tokens?: number | null;
+}
+
+export interface TraceSpanResource {
+  id: string;
+  trace_id: string;
+  run_id: string;
+  parent_span_id?: string | null;
+  sequence_no: number;
+  kind: string;
+  name: string;
+  status: string;
+  started_at: number;
+  ended_at?: number | null;
+  duration_ms?: number | null;
+  ttft_ms?: number | null;
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+  cached_input_tokens?: number | null;
+  total_tokens?: number | null;
+  error_code?: string | null;
+  attributes?: Record<string, unknown>;
+  error?: Record<string, unknown>;
+}
+
+export interface TraceContextItemResource {
+  id: number;
+  trace_id: string;
+  run_id: string;
+  item_kind: string;
+  source_id?: string | null;
+  source_locator?: string | null;
+  content_hash?: string | null;
+  token_estimate?: number | null;
+  selected_reason?: string | null;
+  rank?: number | null;
+  metadata?: Record<string, unknown>;
 }
 
 /** "trace" rows are intermediate agent breadcrumbs (tool-call hints,

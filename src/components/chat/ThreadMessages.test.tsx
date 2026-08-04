@@ -12,7 +12,9 @@ vi.mock('./MessageBubble', () => ({
 }));
 
 vi.mock('./TaskNarrativeTimeline', () => ({
-  default: () => <div data-testid="activity-timeline" />,
+  default: ({ turnStatus }: { turnStatus?: string }) => (
+    <div data-testid="activity-timeline" data-turn-status={turnStatus ?? ''} />
+  ),
 }));
 
 import ThreadMessages from './ThreadMessages';
@@ -130,5 +132,40 @@ describe('ThreadMessages layout', () => {
       [...container.querySelectorAll('[data-testid]')]
         .map((node) => node.getAttribute('data-testid')),
     ).toEqual(['activity-timeline', 'message-bubble']);
+  });
+
+  it('applies the authoritative latest Turn status only to the latest user turn', () => {
+    act(() => root.render(
+      <ThreadMessages
+        latestTurnStatus="completed"
+        messages={[
+          { id: 'user-1', role: 'user', content: '旧任务', timestamp: 1 },
+          {
+            id: 'activity-1',
+            role: 'tool',
+            kind: 'trace',
+            content: '',
+            timestamp: 2,
+            traces: ['旧任务工具步骤'],
+          },
+          { ...message('answer-1', '旧任务结果'), timestamp: 3 },
+          { id: 'user-2', role: 'user', content: '最新任务', timestamp: 4 },
+          {
+            id: 'activity-2',
+            role: 'tool',
+            kind: 'trace',
+            content: '',
+            timestamp: 5,
+            traces: ['最新任务工具步骤'],
+          },
+          { ...message('answer-2', '最新任务结果'), timestamp: 6 },
+        ]}
+      />,
+    ));
+
+    const timelines = [...container.querySelectorAll<HTMLElement>('[data-testid="activity-timeline"]')];
+    expect(timelines).toHaveLength(2);
+    expect(timelines[0].dataset.turnStatus).toBe('');
+    expect(timelines[1].dataset.turnStatus).toBe('completed');
   });
 });

@@ -29,7 +29,11 @@ import type {
   WebSearchSettingsUpdate,
   WorkspacesPayload,
   WebuiThreadPersistedPayload,
+  ThreadResource,
   ThreadRuntimeSnapshot,
+  TraceContextItemResource,
+  TraceResource,
+  TraceSpanResource,
   TurnPlanResource,
   WorkspaceScopePayload,
 } from "./types";
@@ -504,6 +508,38 @@ export async function fetchWebuiThread(
   return (await res.json()) as WebuiThreadPersistedPayload;
 }
 
+/** Fetch the canonical, session-partitioned conversation read model. */
+export async function fetchThreadResource(
+  token: string,
+  key: string,
+  base: string = "",
+  options: {
+    afterEventSeq?: number;
+    beforeMessageEventSeq?: number;
+    messageLimit?: number;
+  } = {},
+): Promise<ThreadResource | null> {
+  const query = new URLSearchParams();
+  if (options.afterEventSeq != null) {
+    query.set("after_event_seq", String(Math.max(0, options.afterEventSeq)));
+  }
+  if (options.messageLimit != null) {
+    query.set("message_limit", String(Math.max(1, options.messageLimit)));
+  }
+  if (options.beforeMessageEventSeq != null) {
+    query.set(
+      "before_message_event_seq",
+      String(Math.max(1, options.beforeMessageEventSeq)),
+    );
+  }
+  const suffix = query.size ? `?${query.toString()}` : "";
+  const url = `${base}/api/sessions/${encodeURIComponent(key)}/thread${suffix}`;
+  const res = await fetchGatewayResponse(url, token, undefined, API_READ_TIMEOUT_MS);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}`);
+  return (await res.json()) as ThreadResource;
+}
+
 /** Authoritative process-local runtime state plus the latest durable terminal turn. */
 export async function fetchSessionRuntimeSnapshot(
   token: string,
@@ -515,6 +551,72 @@ export async function fetchSessionRuntimeSnapshot(
   if (res.status === 404) return null;
   if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}`);
   return (await res.json()) as ThreadRuntimeSnapshot;
+}
+
+export async function fetchTraces(
+  token: string,
+  base: string = "",
+  filters: {
+    projectId?: string;
+    sessionId?: string;
+    turnId?: string;
+    status?: string;
+    limit?: number;
+  } = {},
+): Promise<TraceResource[]> {
+  const query = new URLSearchParams();
+  if (filters.projectId) query.set("project_id", filters.projectId);
+  if (filters.sessionId) query.set("session_id", filters.sessionId);
+  if (filters.turnId) query.set("turn_id", filters.turnId);
+  if (filters.status) query.set("status", filters.status);
+  if (filters.limit != null) query.set("limit", String(filters.limit));
+  const suffix = query.size ? `?${query.toString()}` : "";
+  const response = await request<{ traces?: TraceResource[] }>(
+    `${base}/api/traces${suffix}`,
+    token,
+  );
+  return response.traces ?? [];
+}
+
+export async function fetchTrace(
+  token: string,
+  traceId: string,
+  base: string = "",
+): Promise<TraceResource | null> {
+  const res = await fetchGatewayResponse(
+    `${base}/api/traces/${encodeURIComponent(traceId)}`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
+  );
+  if (res.status === 404) return null;
+  if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}`);
+  const body = (await res.json()) as { trace?: TraceResource };
+  return body.trace ?? null;
+}
+
+export async function fetchTraceSpans(
+  token: string,
+  traceId: string,
+  base: string = "",
+): Promise<TraceSpanResource[]> {
+  const response = await request<{ spans?: TraceSpanResource[] }>(
+    `${base}/api/traces/${encodeURIComponent(traceId)}/spans`,
+    token,
+  );
+  return response.spans ?? [];
+}
+
+export async function fetchTraceContext(
+  token: string,
+  traceId: string,
+  base: string = "",
+): Promise<TraceContextItemResource[]> {
+  const response = await request<{ context_manifest?: TraceContextItemResource[] }>(
+    `${base}/api/traces/${encodeURIComponent(traceId)}/context`,
+    token,
+  );
+  return response.context_manifest ?? [];
 }
 
 export async function fetchTurnPlan(

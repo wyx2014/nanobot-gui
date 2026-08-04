@@ -76,6 +76,17 @@ afterEach(() => {
 });
 
 describe("ConversationWorkbench progress activity", () => {
+  it("renders only progress and artifacts in the pinned summary", () => {
+    const view = renderWorkbench();
+
+    expect(view.querySelector('[data-conversation-summary]')).not.toBeNull();
+    expect(view.querySelectorAll('[data-summary-section]')).toHaveLength(2);
+    expect(view.querySelector('[data-summary-section="progress"]')).not.toBeNull();
+    expect(view.querySelector('[data-summary-section="artifacts"]')).not.toBeNull();
+    expect(view.textContent).not.toContain("Session workbench");
+    expect(view.textContent).not.toContain("Browser");
+  });
+
   it("shows a generic planning state instead of tool steps before a plan arrives", () => {
     useConversationWorkbenchStore.setState((state) => ({
       progressByConversation: {
@@ -172,7 +183,7 @@ describe("ConversationWorkbench progress activity", () => {
     }
   });
 
-  it("collapses completed progress and lets the user expand it again", () => {
+  it("keeps completed progress visible inside the pinned summary", () => {
     useTurnPlanStore.setState({
       currentTurnByConversation: { "chat-progress": "turn-1" },
       planByConversation: {
@@ -183,13 +194,13 @@ describe("ConversationWorkbench progress activity", () => {
           owner: "agent",
           policy: "required",
           execution: "staged",
-          status: "running",
-          revision: 1,
-          active_step_ids: ["report-audit"],
+          status: "completed",
+          revision: 2,
+          active_step_ids: [],
           steps: [{
             id: "report-audit",
             title: "Report audit and delivery",
-            status: "inProgress",
+            status: "completed",
           }],
         },
       },
@@ -197,45 +208,13 @@ describe("ConversationWorkbench progress activity", () => {
 
     const view = renderWorkbench();
     const progressSection = view.querySelector('section[aria-label="Progress"]');
-    const toggle = progressSection?.querySelector("button");
 
-    expect(toggle?.getAttribute("aria-expanded")).toBe("true");
     expect(progressSection?.textContent).toContain("Report audit and delivery");
-
-    act(() => {
-      useTurnPlanStore.setState({
-        currentTurnByConversation: { "chat-progress": "turn-1" },
-        planByConversation: {
-          "chat-progress": {
-            id: "plan:turn-1",
-            turn_id: "turn-1",
-            kind: "workflow",
-            owner: "agent",
-            policy: "required",
-            execution: "staged",
-            status: "completed",
-            revision: 2,
-            active_step_ids: [],
-            steps: [{
-              id: "report-audit",
-              title: "Report audit and delivery",
-              status: "completed",
-            }],
-          },
-        },
-      });
-    });
-
-    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
-    expect(progressSection?.textContent).not.toContain("Report audit and delivery");
-
-    act(() => toggle?.click());
-
-    expect(toggle?.getAttribute("aria-expanded")).toBe("true");
-    expect(progressSection?.textContent).toContain("Report audit and delivery");
+    expect(progressSection?.textContent).toContain("1/1");
+    expect(progressSection?.querySelector('button[aria-expanded]')).toBeNull();
   });
 
-  it("keeps failed progress expanded for diagnosis", () => {
+  it("keeps failed progress visible for diagnosis", () => {
     useTurnPlanStore.setState({
       currentTurnByConversation: { "chat-progress": "turn-2" },
       planByConversation: {
@@ -260,9 +239,7 @@ describe("ConversationWorkbench progress activity", () => {
 
     const view = renderWorkbench();
     const progressSection = view.querySelector('section[aria-label="Progress"]');
-    const toggle = progressSection?.querySelector("button");
 
-    expect(toggle?.getAttribute("aria-expanded")).toBe("true");
     expect(progressSection?.textContent).toContain("Fetch market data");
   });
 });

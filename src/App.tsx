@@ -541,6 +541,7 @@ function App() {
   // macOS uses a full-size hidden title bar so renderer controls can sit beside
   // the native traffic lights. Windows and Linux keep their native title bars.
   const mac = isMacOS();
+  const conversationHeaderVisible = (viewMode === 'chat' || !viewMode) && Boolean(activeConvId);
 
   if (!settingsHydrated) {
     return <div className="h-full w-full bg-[#fbfaf7]" />;
@@ -565,15 +566,16 @@ function App() {
           )}
           style={{ transitionDelay: previewExpanded ? '0ms' : '180ms' }}
         >
-          <div
-            className="window-titlebar-no-drag pointer-events-auto absolute flex items-center gap-1 transition-[left] duration-200"
-            style={{
-              top: 4,
-              left: windowFullScreen
-                ? 12
-                : mac ? 92 : sidebarCollapsed ? 70 : 232,
-            }}
-          >
+          {!conversationHeaderVisible ? (
+            <div
+              className="window-titlebar-no-drag pointer-events-auto absolute flex items-center gap-1 transition-[left] duration-200"
+              style={{
+                top: 4,
+                left: windowFullScreen
+                  ? 12
+                  : mac ? 92 : sidebarCollapsed ? 70 : 232,
+              }}
+            >
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
@@ -638,7 +640,8 @@ function App() {
                 {t.sidebar.goForward}
               </TooltipContent>
             </Tooltip>
-          </div>
+            </div>
+          ) : null}
         </div>
 
         <div className="flex h-full w-full">

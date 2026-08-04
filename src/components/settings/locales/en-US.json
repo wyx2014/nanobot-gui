@@ -690,8 +690,7 @@
         "full": "Full Access"
       }
     },
-    "scrollToBottom": "Scroll to bottom",
-    "loadEarlier": "Load earlier messages"
+    "scrollToBottom": "Scroll to bottom"
   },
   "message": {
     "streaming": "streaming",

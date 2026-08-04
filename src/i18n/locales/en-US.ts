@@ -617,6 +617,7 @@ const enUS: TranslationDict = {
     progressPlanning: 'Preparing the task plan…',
     progressRunning: 'Running',
     workbench: 'Session workbench',
+    pinnedSummary: 'Pinned summary',
     artifacts: 'Artifacts',
     artifactsEmptyHint: 'Generated documents, sheets, and images will appear here',
     artifactsLoadFailed: 'Could not load session artifacts',

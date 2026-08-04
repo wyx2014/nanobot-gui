@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Message } from '@/types';
-import type { TaskProgressStep } from '@/core/types';
+import type { TaskProgressStep, TurnLifecycleStatus } from '@/core/types';
 import {
   buildTaskNarrativeEntries,
   type TaskNarrativeEntry,
@@ -43,6 +43,7 @@ interface TaskNarrativeTimelineProps {
   hasBodyBelow?: boolean;
   turnLatencyMs?: number;
   activeElapsedMs?: number;
+  turnStatus?: TurnLifecycleStatus;
 }
 
 type HopeUnitKind = 'thinking' | 'tool' | 'tool-group' | 'plan' | 'loading';
@@ -66,7 +67,6 @@ interface HopeRenderItem {
   active: boolean;
   tone: HopeTimelineTone;
   markerAlign: HopeMarkerAlign;
-  failedCount: number;
   elapsedMs?: number;
 }
 
@@ -84,6 +84,7 @@ export default function TaskNarrativeTimeline({
   hasBodyBelow = false,
   turnLatencyMs,
   activeElapsedMs,
+  turnStatus,
 }: TaskNarrativeTimelineProps) {
   const entries = useMemo(
     () => removeEmptyThinkingBeforeNarration(buildTaskNarrativeEntries(messages)),
@@ -91,6 +92,10 @@ export default function TaskNarrativeTimeline({
   );
   const baseUnits = useMemo(() => buildHopeUnits(entries), [entries]);
   const activityActive = isActive && !hasBodyBelow;
+  const overallCompleted = !isActive && (
+    turnStatus === 'completed'
+    || (turnStatus === undefined && hasBodyBelow)
+  );
   const [, refreshClock] = useState(0);
 
   useEffect(() => {
@@ -112,6 +117,7 @@ export default function TaskNarrativeTimeline({
     activeUnitKey,
     turnLatencyMs,
     activeElapsedMs,
+    overallCompleted,
   );
 
   if (items.length === 0) return null;
@@ -135,14 +141,15 @@ export default function TaskNarrativeTimeline({
             {item.processed ? (
               <HopeProcessedBlockGroup
                 units={item.units}
-                failedCount={item.failedCount}
                 elapsedMs={item.elapsedMs}
+                overallCompleted={overallCompleted}
               />
             ) : (
               <HopeUnitContent
                 unit={item.units[0]}
                 active={item.active || item.key === liveThinkingUnitKey}
                 elapsedMs={item.elapsedMs}
+                overallCompleted={overallCompleted}
               />
             )}
           </HopeMessageTimelineItem>
@@ -233,10 +240,12 @@ function HopeUnitContent({
   unit,
   active,
   elapsedMs,
+  overallCompleted,
 }: {
   unit: HopeUnit;
   active: boolean;
   elapsedMs?: number;
+  overallCompleted: boolean;
 }) {
   if (unit.kind === 'loading') return <HopeLoadingDots />;
   if (unit.kind === 'thinking') {
@@ -249,13 +258,21 @@ function HopeUnitContent({
         active={active}
         elapsedMs={elapsedMs}
         label={unit.label}
+        overallCompleted={overallCompleted}
       />
     );
   }
   if (unit.kind === 'plan') {
     return <HopePlanBlock entry={unit.entries[0]} active={active} elapsedMs={elapsedMs} />;
   }
-  return <HopeToolCallBlock entry={unit.entries[0]} active={active} elapsedMs={elapsedMs} />;
+  return (
+    <HopeToolCallBlock
+      entry={unit.entries[0]}
+      active={active}
+      elapsedMs={elapsedMs}
+      overallCompleted={overallCompleted}
+    />
+  );
 }
 
 function HopeThinkingBlock({
@@ -338,19 +355,21 @@ function HopeToolCallBlock({
   elapsedMs,
   compact = false,
   groupMember = false,
+  overallCompleted = false,
 }: {
   entry: TaskNarrativeEntry;
   active: boolean;
   elapsedMs?: number;
   compact?: boolean;
   groupMember?: boolean;
+  overallCompleted?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [showRaw, setShowRaw] = useState(false);
   const hasDetails = hasExpandableDetails(entry);
   const canExpand = hasDetails && (entry.status !== 'running' || entry.source === 'shell');
-  const failed = entry.status === 'error';
-  const Icon = entryIcon(entry);
+  const failed = entry.status === 'error' && !overallCompleted;
+  const Icon = entryIcon(entry, failed);
   const target = toolTarget(entry);
 
   return (
@@ -461,16 +480,17 @@ function HopeToolCallGroup({
   active,
   elapsedMs,
   label,
+  overallCompleted,
 }: {
   entries: TaskNarrativeEntry[];
   active: boolean;
   elapsedMs?: number;
   label?: string;
+  overallCompleted: boolean;
 }) {
   const [manualExpanded, setManualExpanded] = useState<boolean | null>(null);
   const expanded = manualExpanded ?? active;
   const status = aggregateStatus(entries);
-  const failedCount = countFailedEntries(entries);
   const Icon = groupIcon(entries);
   const displayLabel = label
     ? labelledToolGroupTitle(label, entries.length, active)
@@ -504,19 +524,11 @@ function HopeToolCallGroup({
           className={cn(
             'min-w-0 font-medium text-muted-foreground',
             active && 'hope-text-shimmer',
-            status === 'error' && 'text-red-500',
+            status === 'error' && !overallCompleted && 'text-red-500',
           )}
         >
           {displayLabel}
         </span>
-        {failedCount > 0 ? (
-          <span className="shrink-0 rounded-full bg-red-500/10 px-1.5 py-0.5 text-[10px] text-red-500">
-            <span className="inline-flex items-center gap-0.5">
-              <AlertCircle className="h-3 w-3" />
-              {failedCount} 项失败
-            </span>
-          </span>
-        ) : null}
         {elapsedMs !== undefined && elapsedMs > 0 ? (
           <span className="ml-auto shrink-0 text-[10px] tabular-nums text-muted-foreground/60">
             耗时 {formatTaskDuration(elapsedMs)}
@@ -536,6 +548,7 @@ function HopeToolCallGroup({
               active={false}
               compact
               groupMember
+              overallCompleted={false}
             />
           ))}
         </div>
@@ -621,12 +634,12 @@ function HopePlanBlock({
 
 function HopeProcessedBlockGroup({
   units,
-  failedCount,
   elapsedMs,
+  overallCompleted,
 }: {
   units: HopeUnit[];
-  failedCount: number;
   elapsedMs?: number;
+  overallCompleted: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -652,14 +665,6 @@ function HopeProcessedBlockGroup({
             {formatTaskDuration(elapsedMs)}
           </span>
         ) : null}
-        {failedCount > 0 ? (
-          <span className="shrink-0 rounded-full bg-red-500/10 px-1.5 py-0.5 text-[10px] text-red-500">
-            <span className="inline-flex items-center gap-0.5">
-              <AlertCircle className="h-3 w-3" />
-              {failedCount} 项失败
-            </span>
-          </span>
-        ) : null}
       </button>
 
       {expanded ? (
@@ -670,6 +675,7 @@ function HopeProcessedBlockGroup({
               unit={unit}
               active={false}
               elapsedMs={unitElapsedMs(unit, Date.now())}
+              overallCompleted={overallCompleted}
             />
           ))}
         </div>
@@ -838,6 +844,7 @@ function buildHopeRenderItems(
   activeUnitKey: string | undefined,
   turnLatencyMs: number | undefined,
   activeElapsedMs: number | undefined,
+  overallCompleted: boolean,
 ): HopeRenderItem[] {
   const items: HopeRenderItem[] = [];
   let index = 0;
@@ -845,7 +852,7 @@ function buildHopeRenderItems(
   while (index < units.length) {
     const unit = units[index];
     if (!hasBodyBelow || !isCompletedProcessUnit(unit)) {
-      items.push(singleRenderItem(unit, activeUnitKey, activeElapsedMs));
+      items.push(singleRenderItem(unit, activeUnitKey, activeElapsedMs, overallCompleted));
       index += 1;
       continue;
     }
@@ -858,7 +865,7 @@ function buildHopeRenderItems(
     }
 
     if (run.length < 2 && unit.kind !== 'plan') {
-      items.push(singleRenderItem(unit, activeUnitKey, activeElapsedMs));
+      items.push(singleRenderItem(unit, activeUnitKey, activeElapsedMs, overallCompleted));
       index = next;
       continue;
     }
@@ -871,13 +878,14 @@ function buildHopeRenderItems(
       units: run,
       processed: true,
       active: false,
-      tone: countFailedUnits(run) > 0
+      tone: overallCompleted
+        ? 'tool'
+        : countFailedUnits(run) > 0
         ? 'failed'
         : run.every((candidate) => candidate.kind === 'thinking')
           ? 'thinking'
           : 'tool',
       markerAlign: 'control',
-      failedCount: countFailedUnits(run),
       elapsedMs: coversWholeRun && validDuration(turnLatencyMs)
         ? turnLatencyMs
         : fallbackElapsed > 0 ? fallbackElapsed : undefined,
@@ -892,6 +900,7 @@ function singleRenderItem(
   unit: HopeUnit,
   activeUnitKey: string | undefined,
   activeElapsedMs: number | undefined,
+  overallCompleted: boolean,
 ): HopeRenderItem {
   const active = unit.key === activeUnitKey;
   return {
@@ -899,9 +908,8 @@ function singleRenderItem(
     units: [unit],
     processed: false,
     active,
-    tone: active ? activeTone(unit) : unit.tone,
+    tone: active ? activeTone(unit) : overallCompleted ? 'tool' : unit.tone,
     markerAlign: unit.markerAlign,
-    failedCount: countFailedEntries(unit.entries),
     elapsedMs: unitElapsedMs(unit, Date.now(), active ? activeElapsedMs : undefined),
   };
 }
@@ -1058,8 +1066,8 @@ function groupIcon(entries: TaskNarrativeEntry[]): LucideIcon {
   return Wrench;
 }
 
-function entryIcon(entry: TaskNarrativeEntry): LucideIcon {
-  if (entry.status === 'error') return AlertCircle;
+function entryIcon(entry: TaskNarrativeEntry, showFailure = true): LucideIcon {
+  if (showFailure && entry.status === 'error') return AlertCircle;
   if (entry.source === 'web') return Search;
   if (entry.source === 'browser') return Monitor;
   if (entry.source === 'shell') return Terminal;

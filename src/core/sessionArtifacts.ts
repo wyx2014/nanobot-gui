@@ -191,6 +191,24 @@ function currentArtifactRevisions(artifacts: SessionArtifact[]): SessionArtifact
   });
 }
 
+export function normalizeSessionArtifactRecords(
+  gatewayBase: string,
+  sessionKey: string,
+  records: SessionArtifactRecord[],
+  workspaceRoot?: string | null,
+  expectedIdentity?: ExpectedSessionArtifactIdentity,
+): SessionArtifact[] {
+  const base = requireGatewayBase(gatewayBase);
+  const normalized = records
+    .map((row) => normalizeArtifact(base, sessionKey, row, workspaceRoot))
+    .filter((artifact) => (
+      (!expectedIdentity?.projectId || !artifact?.projectId || artifact.projectId === expectedIdentity.projectId)
+      && (!expectedIdentity?.sessionId || !artifact?.sessionId || artifact.sessionId === expectedIdentity.sessionId)
+    ))
+    .filter((artifact): artifact is SessionArtifact => artifact !== null);
+  return currentArtifactRevisions(normalized);
+}
+
 export async function fetchSessionArtifacts(
   token: string,
   sessionKey: string,
@@ -235,15 +253,14 @@ export async function fetchSessionArtifacts(
   ) {
     throw new Error('Gateway returned artifacts for a different session.');
   }
-  const normalized = (Array.isArray(payload.artifacts) ? payload.artifacts : [])
-    .map((row) => normalizeArtifact(base, sessionKey, row, workspaceRoot))
-    .filter((artifact) => (
-      (!expectedIdentity?.projectId || !artifact?.projectId || artifact.projectId === expectedIdentity.projectId)
-      && (!expectedIdentity?.sessionId || !artifact?.sessionId || artifact.sessionId === expectedIdentity.sessionId)
-    ))
-    .filter((artifact): artifact is SessionArtifact => artifact !== null);
   // Older gateways may still return every immutable revision.  Keep the GUI
   // compatible by treating a normalized project-relative path as one logical
   // artifact and displaying only its newest revision.
-  return currentArtifactRevisions(normalized);
+  return normalizeSessionArtifactRecords(
+    base,
+    sessionKey,
+    Array.isArray(payload.artifacts) ? payload.artifacts : [],
+    workspaceRoot,
+    expectedIdentity,
+  );
 }

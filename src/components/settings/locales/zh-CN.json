@@ -690,8 +690,7 @@
         "full": "完全访问权限"
       }
     },
-    "scrollToBottom": "滚动到底部",
-    "loadEarlier": "加载更早消息"
+    "scrollToBottom": "滚动到底部"
   },
   "message": {
     "streaming": "流式输出中",

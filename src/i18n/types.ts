@@ -634,6 +634,7 @@ export interface TranslationDict {
     progressPlanning: string;
     progressRunning: string;
     workbench: string;
+    pinnedSummary: string;
     artifacts: string;
     artifactsEmptyHint: string;
     artifactsLoadFailed: string;

@@ -6,7 +6,12 @@
 import { ipc } from '@/lib/ipc-factory';
 import { NanobotClient } from './nanobot-client';
 import { fetchBootstrap, deriveWsUrl } from './bootstrap';
-import type { BootstrapResponse, ConnectionStatus } from './types';
+import type {
+  BootstrapResponse,
+  CanonicalSessionEvent,
+  ConnectionStatus,
+  ThreadRuntimeSnapshot,
+} from './types';
 
 export interface NanobotStatus {
   ready: boolean;
@@ -31,8 +36,33 @@ let globalStatusUnsubscribe: (() => void) | null = null;
 let globalRuntimeStatusUnsubscribe: (() => void) | null = null;
 let globalRuntimeSnapshotUnsubscribe: (() => void) | null = null;
 let globalRuntimeSnapshotGapUnsubscribe: (() => void) | null = null;
+let globalCanonicalEventUnsubscribe: (() => void) | null = null;
 let globalMcpStatus: NonNullable<BootstrapResponse['mcp_status']> = 'unknown';
 const globalConnectionListeners = new Set<() => void>();
+const canonicalRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function scheduleCanonicalThreadRefresh(event: CanonicalSessionEvent): void {
+  const sessionKey = event.session_key;
+  const previous = canonicalRefreshTimers.get(sessionKey);
+  if (previous) clearTimeout(previous);
+  canonicalRefreshTimers.set(sessionKey, setTimeout(() => {
+    canonicalRefreshTimers.delete(sessionKey);
+    void fetchThreadResource(currentToken, sessionKey, currentBaseUrl)
+      .then((resource) => {
+        if (!resource) return;
+        const chatId = sessionKey.startsWith('websocket:')
+          ? sessionKey.slice('websocket:'.length)
+          : sessionKey;
+        const snapshot = projectThreadResource(chatId, resource);
+        if (!snapshot) return;
+        globalClient?.applyRuntimeSnapshot(chatId, snapshot);
+        useChatStore.getState().setConversationRuntimeSnapshot(chatId, snapshot);
+      })
+      .catch((error) => {
+        console.warn('[nanobotClient] canonical Thread Resource refresh failed:', error);
+      });
+  }, 80));
+}
 
 function setGlobalConnectionStatus(status: ConnectionStatus): void {
   if (globalConnectionStatus === status) return;
@@ -110,6 +140,8 @@ export async function bootstrapNanobotGateway(): Promise<NanobotClient> {
   globalRuntimeSnapshotUnsubscribe = null;
   globalRuntimeSnapshotGapUnsubscribe?.();
   globalRuntimeSnapshotGapUnsubscribe = null;
+  globalCanonicalEventUnsubscribe?.();
+  globalCanonicalEventUnsubscribe = null;
   globalClient?.close();
   globalClient = new NanobotClient({
     url: wsUrl,
@@ -142,6 +174,7 @@ export async function bootstrapNanobotGateway(): Promise<NanobotClient> {
     for (const listener of globalConnectionListeners) listener();
   });
   globalRuntimeSnapshotUnsubscribe = globalClient.onRuntimeSnapshot((chatId, snapshot) => {
+    useThreadResourceStore.getState().applyRuntimeSnapshot(chatId, snapshot);
     useChatStore.getState().setConversationRuntimeSnapshot(chatId, snapshot);
   });
   globalRuntimeSnapshotGapUnsubscribe = globalClient.onRuntimeSnapshotGap((chatId) => {
@@ -154,6 +187,25 @@ export async function bootstrapNanobotGateway(): Promise<NanobotClient> {
     }).catch((error) => {
       console.warn('[nanobotClient] Runtime snapshot gap refresh failed:', error);
     });
+  });
+  globalCanonicalEventUnsubscribe = globalClient.onCanonicalEvent((event) => {
+    const result = useThreadResourceStore.getState().applyCanonicalEvent(event);
+    if (result === 'identity_mismatch') {
+      console.error('[nanobotClient] rejected cross-session canonical event', {
+        eventId: event.event_id,
+        sessionKey: event.session_key,
+        projectId: event.project_id,
+      });
+      return;
+    }
+    if (
+      result === 'gap'
+      || event.event === 'turn_completed'
+      || event.event === 'turn_end'
+      || event.event === 'artifact_created'
+    ) {
+      scheduleCanonicalThreadRefresh(event);
+    }
   });
   globalClient.connect();
   try {
@@ -307,6 +359,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import {
   listProjects,
   listSessions,
+  fetchThreadResource,
   fetchWebuiThread,
   fetchSessionRuntimeSnapshot,
   fetchSettings,
@@ -316,6 +369,8 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { normalizeFileEditToolTraces } from './nanobot/toolTraceMerge';
 import { scrubSubagentUiMessages } from './nanobot/subagent-channel-display';
 import { normalizeLegacyLongTaskMessages } from './nanobot/thread-display-compat';
+import { projectThreadResource } from './nanobot/threadResourceProjection';
+import { useThreadResourceStore } from '@/stores/threadResourceStore';
 
 // Register token provider to automatically refresh and retry REST API calls on 401 Unauthorized
 registerTokenProvider(async () => {
@@ -710,14 +765,36 @@ export async function syncSessionFromGateway(
 
     const token = getNanobotToken();
     const baseUrl = `http://127.0.0.1:${status.port}`;
-    const [thread, runtimeSnapshot] = await Promise.all([
-      fetchWebuiThread(token, sessionKey, baseUrl),
-      fetchSessionRuntimeSnapshot(token, sessionKey, baseUrl),
-    ]);
-    if (!thread) return false;
     const chatId = sessionKey.startsWith('websocket:')
       ? sessionKey.slice('websocket:'.length)
       : sessionKey;
+    const resource = await fetchThreadResource(token, sessionKey, baseUrl);
+    let thread: {
+      messages: UIMessage[];
+      session_id?: string;
+      project_id?: string;
+      savedAt?: string;
+      workspace_scope?: import('./types').WorkspaceScopePayload;
+      expert_team?: import('./types').ExpertTeamBinding;
+    } | null = null;
+    let runtimeSnapshot: ThreadRuntimeSnapshot | null = null;
+    if (resource) {
+      runtimeSnapshot = projectThreadResource(sessionKey, resource);
+      thread = {
+        messages: resource.messages,
+        session_id: resource.session_id,
+        project_id: resource.project_id,
+        workspace_scope: resource.workspace_scope,
+        expert_team: resource.expert_team,
+      };
+    } else {
+      // Compatibility fallback for an older gateway during rolling upgrades.
+      [thread, runtimeSnapshot] = await Promise.all([
+        fetchWebuiThread(token, sessionKey, baseUrl),
+        fetchSessionRuntimeSnapshot(token, sessionKey, baseUrl),
+      ]);
+    }
+    if (!thread) return false;
     if (runtimeSnapshot) {
       globalClient?.applyRuntimeSnapshot(chatId, runtimeSnapshot);
     }

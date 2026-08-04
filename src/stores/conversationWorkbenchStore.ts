@@ -33,6 +33,7 @@ interface ConversationWorkbenchState {
     isActive: boolean,
   ) => void;
   requestArtifactRefresh: (conversationId: string) => void;
+  setArtifactRevision: (conversationId: string, revision: number) => void;
   clearConversation: (conversationId: string) => void;
 }
 
@@ -125,6 +126,20 @@ export const useConversationWorkbenchStore = create<ConversationWorkbenchState>(
         [conversationId]: (state.artifactRevisionByConversation[conversationId] ?? 0) + 1,
       },
     }));
+  },
+
+  setArtifactRevision: (conversationId, revision) => {
+    const normalized = Math.max(0, Math.trunc(revision));
+    set((state) => {
+      const previous = state.artifactRevisionByConversation[conversationId] ?? 0;
+      if (normalized <= previous) return state;
+      return {
+        artifactRevisionByConversation: {
+          ...state.artifactRevisionByConversation,
+          [conversationId]: normalized,
+        },
+      };
+    });
   },
 
   clearConversation: (conversationId) => {

@@ -87,6 +87,57 @@ describe("absorbCompleteAssistantMessage", () => {
     });
   });
 
+  it("collapses every detached fragment from the same answer stream", () => {
+    const result = absorbCompleteAssistantMessage(
+      [
+        {
+          id: "user",
+          role: "user",
+          content: "查询上半年进出口",
+          createdAt: 0,
+        },
+        {
+          id: "stream-main",
+          role: "assistant",
+          content: "根据海关总署数据，完整回答",
+          streamId: "answer-stream",
+          turnId: "turn-import-export",
+          isStreaming: false,
+          createdAt: 1,
+        },
+        {
+          id: "stream-tail",
+          role: "assistant",
+          content: "：海关总署",
+          streamId: "answer-stream",
+          turnId: "turn-import-export",
+          isStreaming: true,
+          createdAt: 2,
+        },
+      ],
+      {
+        content: "根据海关总署数据，完整回答\n\n数据来源：海关总署",
+      },
+      {
+        replaceStream: true,
+        streamId: "answer-stream",
+        turnId: "turn-import-export",
+        eventId: "assistant-final",
+      },
+    );
+
+    expect(result).toHaveLength(2);
+    expect(result[1]).toMatchObject({
+      id: "stream-main",
+      eventId: "assistant-final",
+      turnId: "turn-import-export",
+      streamId: "answer-stream",
+      content: "根据海关总署数据，完整回答\n\n数据来源：海关总署",
+      isStreaming: false,
+    });
+    expect(result.some((message) => message.content === "：海关总署")).toBe(false);
+  });
+
   it("repairs legacy exact streamed duplicates without a protocol marker", () => {
     const result = absorbCompleteAssistantMessage(
       [{

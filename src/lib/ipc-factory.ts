@@ -152,6 +152,9 @@ export const windowBridge = {
   setTitle: async (title: string): Promise<void> => {
     return window.ipc.invoke('window:setTitle', title);
   },
+  setBackgroundColor: async (color: string): Promise<void> => {
+    return window.ipc.invoke('window:setBackgroundColor', color);
+  },
   isFullScreen: async (): Promise<boolean> => {
     return window.ipc.invoke('window:isFullScreen');
   },

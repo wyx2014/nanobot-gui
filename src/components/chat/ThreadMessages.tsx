@@ -15,7 +15,6 @@ interface ThreadMessagesProps {
   activeTurnElapsedMs?: number;
   latestTurnStatus?: TurnLifecycleStatus;
   onEditUserMessage?: (message: Message, newContent: string) => void;
-  onRegenerateAssistant?: (message: Message) => void;
 }
 
 export type DisplayUnit = ChatDisplayUnit;
@@ -40,7 +39,6 @@ export default function ThreadMessages({
   activeTurnElapsedMs,
   latestTurnStatus,
   onEditUserMessage,
-  onRegenerateAssistant,
 }: ThreadMessagesProps) {
   const [projector] = useState(createActivityTimelineProjector);
   const units = useMemo(() => projector.project(messages), [messages, projector]);
@@ -91,7 +89,6 @@ export default function ThreadMessages({
                 showAssistantCopyAction={unit.message.role === 'assistant'}
                 isLastAssistantReply={index === lastAssistantIndex}
                 onEditUserMessage={onEditUserMessage}
-                onRegenerateAssistant={onRegenerateAssistant}
               />
             )}
           </div>

@@ -13,6 +13,8 @@ export default defineConfig({
       { find: '@modelcontextprotocol/sdk/client/sse.js', replacement: path.resolve(__dirname, './src/test/__mocks__/mcp.ts') },
       { find: '@modelcontextprotocol/sdk', replacement: path.resolve(__dirname, './src/test/__mocks__/mcp.ts') },
     ],
+    // Locally-linked packages (e.g. thinking-orbs) must share the GUI's React.
+    dedupe: ['react', 'react-dom'],
   },
   test: {
     environment: 'happy-dom',

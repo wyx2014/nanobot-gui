@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Plus, ArrowUp, ArrowRight, Square, X, ChevronDown, Check, FileText, CornerDownRight, Pencil, Trash2, GraduationCap, Code, Coffee, Lightbulb, Paperclip, ChevronRight, Puzzle, Globe, Search, Users, Mic, AudioLines, Loader2 } from 'lucide-react';
+import { Plus, ArrowUp, ArrowRight, Square, X, ChevronDown, Check, FileText, CornerDownRight, Pencil, Trash2, GraduationCap, Code, Coffee, Lightbulb, Paperclip, ChevronRight, Puzzle, Globe, Search, Users, Mic, Loader2 } from 'lucide-react';
+import { ThinkingOrb } from 'thinking-orbs';
 import ExpertTeamIcon from '@/components/common/ExpertTeamIcon';
 import { dialogBridge, fsBridge, mediaBridge } from '@/lib/ipc-factory';
 import { useFileDragDrop } from '@/hooks/useFileDragDrop';
@@ -18,7 +19,7 @@ import { cn } from '@/lib/utils';
 import type { ImageAttachment } from '@/types';
 import type { OutboundCliAppMention, OutboundMcpPresetMention, OutboundSkillScope } from '@/core/types';
 import type { CliAppInfo, ExpertTeamBinding, ExpertTeamSummary, McpPresetInfo, SlashCommand, WorkspaceScopePayload } from '@/core/types';
-import { fetchCliApps, fetchExpertTeams, fetchMcpPresets, listSlashCommands } from '@/core/api';
+import { fetchExpertTeams, fetchMcpPresets } from '@/core/api';
 import { getNanobotClient, getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/nanobotClient';
 import {
   TranscriptionRequestError,
@@ -32,9 +33,6 @@ import {
   type VoiceRecordingResult,
 } from '@/core/audio/pcmVoiceRecorder';
 import {
-  CLI_APPS_CHANGED_EVENT,
-  installedCliAppsFromPayload,
-  isCliAppsPayload,
 } from '@/lib/cli-app-events';
 import {
   MCP_PRESETS_CHANGED_EVENT,
@@ -46,7 +44,7 @@ import PermissionDialog from '@/components/common/PermissionDialog';
 import FolderSelector from '@/components/common/FolderSelector';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { normalizeProjectPath, visibleProjectPath } from '@/core/workspace';
-import { filterAvailableSkillNames, projectUsableSkills, stripUnavailableLeadingSkillMentions } from '@/core/skills/filter';
+import { displaySkillName, filterAvailableSkillNames, stripUnavailableLeadingSkillMentions, usableSkillsForScope } from '@/core/skills/filter';
 
 export interface ChatInputSendOptions {
   cliApps?: OutboundCliAppMention[];
@@ -193,10 +191,11 @@ interface SuggestionItem {
   name: string;
   description: string;
   detail?: string;
-  kind: 'slash' | 'cli' | 'mcp';
+  kind: 'slash' | 'cli' | 'mcp' | 'skill';
   slashCommand?: SlashCommand;
   cliApp?: CliAppInfo;
   mcpPreset?: McpPresetInfo;
+  skillName?: string;
 }
 
 interface FileAttachmentItem {
@@ -238,19 +237,19 @@ function normalizeDraft(value: unknown): ComposerDraft | null {
     text: typeof record.text === 'string' ? record.text : '',
     images: Array.isArray(record.images)
       ? record.images.filter((image): image is ImageAttachment =>
-          !!image
-          && typeof image.id === 'string'
-          && typeof image.data === 'string'
-          && typeof image.mediaType === 'string',
-        ).slice(0, MAX_IMAGES_PER_MESSAGE)
+        !!image
+        && typeof image.id === 'string'
+        && typeof image.data === 'string'
+        && typeof image.mediaType === 'string',
+      ).slice(0, MAX_IMAGES_PER_MESSAGE)
       : [],
     files: Array.isArray(record.files)
       ? record.files.filter((file): file is FileAttachmentItem =>
-          !!file
-          && typeof file.id === 'string'
-          && typeof file.path === 'string'
-          && typeof file.name === 'string',
-        )
+        !!file
+        && typeof file.id === 'string'
+        && typeof file.path === 'string'
+        && typeof file.name === 'string',
+      )
       : [],
     skills: Array.isArray(record.skills) ? record.skills.filter((skill): skill is string => typeof skill === 'string') : [],
     cliApps: Array.isArray(record.cliApps) ? record.cliApps : [],
@@ -392,8 +391,6 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   const [queuedPrompts, setQueuedPrompts] = useState<QueuedPrompt[]>([]);
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([]);
-  const [cliApps, setCliApps] = useState<CliAppInfo[]>([]);
   const [mcpPresets, setMcpPresets] = useState<McpPresetInfo[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const voiceRecorderRef = useRef<PcmVoiceRecorder | null>(null);
@@ -716,19 +713,11 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
           base = refreshed.baseUrl;
         }
 
-        const [commands, cliPayload, mcpPayload] = await Promise.all([
-          listSlashCommands(token, base),
-          fetchCliApps(token, base),
-          fetchMcpPresets(token, base),
-        ]);
+        const mcpPayload = await fetchMcpPresets(token, base);
         if (cancelled) return;
-        setSlashCommands(commands);
-        setCliApps(installedCliAppsFromPayload(cliPayload).filter((app) => app.available));
         setMcpPresets(installedMcpPresetsFromPayload(mcpPayload).filter((preset) => preset.available));
       } catch {
         if (!cancelled) {
-          setSlashCommands([]);
-          setCliApps([]);
           setMcpPresets([]);
         }
       }
@@ -737,14 +726,6 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
 
     const refreshOnFocus = () => {
       if (document.visibilityState === 'hidden') return;
-      void loadCapabilities();
-    };
-    const refreshOnCliAppsChanged = (event: Event) => {
-      const payload = (event as CustomEvent<unknown>).detail;
-      if (isCliAppsPayload(payload)) {
-        setCliApps(installedCliAppsFromPayload(payload).filter((app) => app.available));
-        return;
-      }
       void loadCapabilities();
     };
     const refreshOnMcpPresetsChanged = (event: Event) => {
@@ -757,44 +738,37 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     };
     window.addEventListener('focus', refreshOnFocus);
     document.addEventListener('visibilitychange', refreshOnFocus);
-    window.addEventListener(CLI_APPS_CHANGED_EVENT, refreshOnCliAppsChanged);
     window.addEventListener(MCP_PRESETS_CHANGED_EVENT, refreshOnMcpPresetsChanged);
     return () => {
       cancelled = true;
       window.removeEventListener('focus', refreshOnFocus);
       document.removeEventListener('visibilitychange', refreshOnFocus);
-      window.removeEventListener(CLI_APPS_CHANGED_EVENT, refreshOnCliAppsChanged);
       window.removeEventListener(MCP_PRESETS_CHANGED_EVENT, refreshOnMcpPresetsChanged);
     };
   }, []);
 
-  // Suggestion popup is hidden for business users; use the + menu instead.
-  const suggestionType = useMemo((): 'slash' | 'mention' | null => {
+  const activeProjectPath = visibleProjectPath(workspaceScope?.project_path ?? activeConv?.workspaceScope?.project_path ?? activeConv?.workspacePath ?? localWorkspace);
+  const activeProjectSkillNames = activeProjectPath ? projectSkillBindings[normalizeProjectPath(activeProjectPath)] ?? [] : [];
+  const usableSkills = useMemo(
+    () => usableSkillsForScope(skills, activeProjectPath, activeProjectSkillNames),
+    [activeProjectPath, activeProjectSkillNames, skills],
+  );
+
+  // `@` opens the connector (MCP) picker; `/` opens the skill picker.
+  const suggestionType = useMemo((): 'mention' | 'skill' | null => {
+    const trimmed = text.trim();
+    if (trimmed.startsWith('@')) return 'mention';
+    if (trimmed.startsWith('/')) return 'skill';
     return null;
-  }, []);
+  }, [text]);
 
   // Slash command and capability suggestions.
   const suggestions = useMemo((): SuggestionItem[] => {
     const trimmed = text.trim();
 
-    // Capability suggestions when typing @
+    // Connector (MCP) selection when typing @
     if (suggestionType === 'mention') {
       const query = trimmed.slice(1).toLowerCase();
-      const cliItems: SuggestionItem[] = cliApps
-        .filter((app) => {
-          if (selectedCliApps.some((selected) => selected.name === app.name)) return false;
-          if (!query) return true;
-          return app.name.toLowerCase().includes(query)
-            || app.display_name.toLowerCase().includes(query)
-            || app.description.toLowerCase().includes(query);
-        })
-        .map((app) => ({
-          name: app.name,
-          description: app.description || app.display_name,
-          detail: app.display_name,
-          kind: 'cli' as const,
-          cliApp: app,
-        }));
       const mcpItems: SuggestionItem[] = mcpPresets
         .filter((preset) => {
           if (selectedMcpPresets.some((selected) => selected.name === preset.name)) return false;
@@ -810,30 +784,30 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
           kind: 'mcp' as const,
           mcpPreset: preset,
         }));
-      return [...cliItems, ...mcpItems];
+      return mcpItems;
     }
 
-    // Nanobot slash commands when typing /
-    if (suggestionType === 'slash') {
+    // Skill selection when typing /
+    if (suggestionType === 'skill') {
       const query = trimmed.slice(1).toLowerCase();
-      return slashCommands
-        .filter((command) => command.command !== '/stop' || isStreaming)
-        .filter((command) => {
+      return usableSkills
+        .filter((skill) => {
+          if (selectedSkills.some((selected) => selected === skill.name)) return false;
           if (!query) return true;
-          return command.command.toLowerCase().includes(query)
-            || command.title.toLowerCase().includes(query)
-            || command.description.toLowerCase().includes(query);
+          return skill.name.toLowerCase().includes(query)
+            || displaySkillName(skill.name).toLowerCase().includes(query)
+            || (skill.description ?? '').toLowerCase().includes(query);
         })
-        .map((command) => ({
-          name: command.command,
-          description: command.description || command.title,
-          detail: command.argHint,
-          kind: 'slash' as const,
-          slashCommand: command,
+        .map((skill) => ({
+          name: `/${displaySkillName(skill.name)}`,
+          description: skill.description || displaySkillName(skill.name),
+          detail: skill.name,
+          kind: 'skill' as const,
+          skillName: skill.name,
         }));
     }
     return [];
-  }, [text, suggestionType, cliApps, mcpPresets, slashCommands, selectedCliApps, selectedMcpPresets, isStreaming]);
+  }, [text, suggestionType, mcpPresets, selectedMcpPresets, usableSkills, selectedSkills]);
 
   // Reset dismissed state when suggestions change
   useEffect(() => {
@@ -856,6 +830,12 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     }
   }, [text, maxHeight]);
 
+  // Keep the highlighted suggestion visible while navigating with arrows.
+  const selectedSuggestionRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    selectedSuggestionRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [selectedIndex, showSuggestions]);
+
   const applySuggestion = (item: SuggestionItem) => {
     if (item.kind === 'cli' && item.cliApp) {
       setSelectedCliApps((prev) => [...prev, {
@@ -877,6 +857,8 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
         logo_url: item.mcpPreset!.logo_url,
         brand_color: item.mcpPreset!.brand_color,
       }]);
+    } else if (item.kind === 'skill' && item.skillName) {
+      setSelectedSkills((prev) => [...prev, item.skillName!]);
     } else if (item.kind === 'slash' && item.slashCommand) {
       setText(`${item.slashCommand.command}${item.slashCommand.argHint ? ' ' : ''}`);
       setSuggestionsDismissed(true);
@@ -907,19 +889,22 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     // Build file context prefix
     const fileContext = draft.files?.length
       ? [
-          '本地文件引用（请按路径读取这些文件；如果路径超出当前工作区权限，请先说明无法访问）：',
-          ...draft.files.map((f) => `- ${f.name}: ${f.path}`),
-        ].join('\n')
+        '本地文件引用（请按路径读取这些文件；如果路径超出当前工作区权限，请先说明无法访问）：',
+        ...draft.files.map((f) => `- ${f.name}: ${f.path}`),
+      ].join('\n')
       : '';
 
     // CLI apps still use an explicit text mention for their command adapter.
     // MCP connectors are carried by structured metadata and already render as
     // attachment chips, so repeating them in the user-visible body is redundant.
+    // Skills follow the same rule: explicit skills travel via skill_scope and
+    // render as chips — no /skill prefix in the message body.
     const cliAppMentions = draft.cliApps?.map((app) => `@${app.name}`).join(' ') ?? '';
 
     const projectPath = visibleProjectPath(workspacePath ?? workspaceScope?.project_path ?? localWorkspace);
-    const usableSkillNames = projectUsableSkills(
+    const usableSkillNames = usableSkillsForScope(
       skills,
+      projectPath,
       projectPath ? projectSkillBindings[normalizeProjectPath(projectPath)] ?? [] : [],
     ).map((skill) => skill.name);
     const projectSkills = filterAvailableSkillNames(
@@ -927,13 +912,10 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       usableSkillNames,
     );
     const explicitSkills = filterAvailableSkillNames(draft.skills ?? [], usableSkillNames);
-    const skillPrefix = explicitSkills.length
-      ? explicitSkills.map((skill) => `/${skill}`).join(' ')
-      : '';
 
     // Compose parts, then join with newline
     const cleanText = stripUnavailableLeadingSkillMentions(trimmed, usableSkillNames);
-    const bodyParts = [fileContext, cliAppMentions, skillPrefix, cleanText].filter(Boolean).join('\n');
+    const bodyParts = [fileContext, cliAppMentions, cleanText].filter(Boolean).join('\n');
 
     const message = bodyParts;
 
@@ -1327,17 +1309,17 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
           title: isEn ? 'Microphone access is required' : '需要麦克风权限',
           message: microphonePermission.development && microphonePermission.status === 'denied'
             ? (
-                isEn
-                  ? 'In development, macOS may assign microphone permission to the IDE or terminal that launched Electron. Enable microphone access for that host app (for example Antigravity IDE or Terminal), then try again.'
-                  : '开发模式下，macOS 可能把麦克风权限归到启动 Electron 的 IDE 或终端。请为宿主应用（例如 Antigravity IDE 或“终端”）开启麦克风权限后重试。'
-              )
+              isEn
+                ? 'In development, macOS may assign microphone permission to the IDE or terminal that launched Electron. Enable microphone access for that host app (for example Antigravity IDE or Terminal), then try again.'
+                : '开发模式下，macOS 可能把麦克风权限归到启动 Electron 的 IDE 或终端。请为宿主应用（例如 Antigravity IDE 或“终端”）开启麦克风权限后重试。'
+            )
             : microphonePermission.status === 'restricted'
-            ? (
+              ? (
                 isEn
                   ? 'Microphone access is restricted by system policy.'
                   : '麦克风权限受到系统策略限制，请联系设备管理员。'
               )
-            : (
+              : (
                 isEn
                   ? 'Allow access in Privacy & Security → Microphone, then click the microphone again.'
                   : '请在“隐私与安全性 → 麦克风”中允许访问，然后再次点击麦克风。'
@@ -1366,23 +1348,23 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
 
       const streamStart = typeof client.startVoiceStream === 'function'
         ? client.startVoiceStream(streamId, {
-            onState: (state) => {
-              if (voiceStreamIdRef.current !== streamId) return;
-              if (state === 'finalizing') setVoiceState('finalizing');
-            },
-            onPartial: (draft) => {
-              if (voiceStreamIdRef.current !== streamId) return;
-              writeVoiceDraft(draft);
-            },
-            onError: (error) => {
-              if (
-                voiceStreamIdRef.current !== streamId
-                || voiceStreamModeRef.current !== 'realtime'
-                || voiceFinalizingStreamRef.current === streamId
-              ) return;
-              void failRealtimeVoiceInput(error.message);
-            },
-          })
+          onState: (state) => {
+            if (voiceStreamIdRef.current !== streamId) return;
+            if (state === 'finalizing') setVoiceState('finalizing');
+          },
+          onPartial: (draft) => {
+            if (voiceStreamIdRef.current !== streamId) return;
+            writeVoiceDraft(draft);
+          },
+          onError: (error) => {
+            if (
+              voiceStreamIdRef.current !== streamId
+              || voiceStreamModeRef.current !== 'realtime'
+              || voiceFinalizingStreamRef.current === streamId
+            ) return;
+            void failRealtimeVoiceInput(error.message);
+          },
+        })
         : Promise.resolve<VoiceStreamMode>('batch');
       const recorder = await startPcmVoiceRecorder({
         chunkMs: 40,
@@ -1520,8 +1502,8 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
         ref={plusMenuRef}
         className={cn(
           "absolute left-0 w-64 bg-white rounded-2xl border border-[#dedbd3] shadow-lg py-1.5 z-50 text-[13px] duration-150 animate-in fade-in",
-          isWelcome 
-            ? "top-full mt-2 slide-in-from-top-2" 
+          isWelcome
+            ? "top-full mt-2 slide-in-from-top-2"
             : "bottom-full mb-2 slide-in-from-bottom-2"
         )}
       >
@@ -1535,7 +1517,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
         >
           <div className="flex items-center gap-2.5">
             <Paperclip className="h-4 w-4 text-[#656358]" />
-            <span>{isEn ? 'Add files or photos' : '添加文件或图片'}</span>
+            <span>{isEn ? 'Add files' : '添加文件'}</span>
           </div>
           <span className="text-[#8a867c] text-[11px] font-sans">⌘U</span>
         </button>
@@ -1562,7 +1544,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
           </button>
 
           {activeSubmenu === 'expert-team' && (
-            <div className="absolute left-full top-0 w-72 bg-white rounded-2xl border border-[#dedbd3] shadow-lg py-1.5 z-50 animate-in fade-in slide-in-from-left-1 duration-150">
+            <div className="absolute left-full bottom-0 w-72 bg-white rounded-2xl border border-[#dedbd3] shadow-lg py-1.5 z-50 animate-in fade-in slide-in-from-left-1 duration-150">
               <div className="px-3.5 py-1.5 border-b border-[#f0ede6] flex items-center gap-2">
                 <Search className="h-4 w-4 text-[#8a867c] shrink-0" />
                 <input
@@ -1657,7 +1639,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
 
           {activeSubmenu === 'skills' && (
             <div className={cn(
-              "absolute left-full top-0 w-64 bg-white rounded-2xl border border-[#dedbd3] shadow-lg py-1.5 z-50 animate-in fade-in slide-in-from-left-1 duration-150"
+              "absolute left-full bottom-0 w-64 bg-white rounded-2xl border border-[#dedbd3] shadow-lg py-1.5 z-50 animate-in fade-in slide-in-from-left-1 duration-150"
             )}>
               <div className="px-3.5 py-1.5 border-b border-[#f0ede6] flex items-center gap-2">
                 <Search className="h-4 w-4 text-[#8a867c] shrink-0" />
@@ -1696,7 +1678,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                         className="w-full flex items-center justify-between gap-2 px-3.5 py-2 hover:bg-[#f5f3ee] transition-colors text-left cursor-pointer"
                       >
                         <div className="min-w-0 flex flex-col">
-                          <span className="font-medium text-[#29261b] truncate">/{skill.name}</span>
+                          <span className="font-medium text-[#29261b] truncate">/{displaySkillName(skill.name)}</span>
                           <span className="text-[11px] text-[#8a867c] line-clamp-1">{skill.description}</span>
                         </div>
                         {isSelected && <Check className="h-3.5 w-3.5 text-[#d97757] shrink-0" />}
@@ -1731,7 +1713,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
 
           {activeSubmenu === 'connector' && (
             <div className={cn(
-              "absolute left-full top-0 w-64 bg-white rounded-2xl border border-[#dedbd3] shadow-lg py-1.5 z-50 animate-in fade-in slide-in-from-left-1 duration-150"
+              "absolute left-full bottom-0 w-64 bg-white rounded-2xl border border-[#dedbd3] shadow-lg py-1.5 z-50 animate-in fade-in slide-in-from-left-1 duration-150"
             )}>
               <div className="px-3.5 py-1.5 border-b border-[#f0ede6] flex items-center gap-2">
                 <Search className="h-4 w-4 text-[#8a867c] shrink-0" />
@@ -1880,13 +1862,6 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     return paths;
   }, [conversations, recentPaths]);
 
-  const activeProjectPath = visibleProjectPath(workspaceScope?.project_path ?? activeConv?.workspaceScope?.project_path ?? activeConv?.workspacePath ?? localWorkspace);
-  const activeProjectSkillNames = activeProjectPath ? projectSkillBindings[normalizeProjectPath(activeProjectPath)] ?? [] : [];
-  const usableSkills = useMemo(
-    () => projectUsableSkills(skills, activeProjectSkillNames),
-    [activeProjectSkillNames, skills],
-  );
-
   // Determine placeholder based on selected command
   const placeholder = hoverPrompt
     ? hoverPrompt
@@ -1951,20 +1926,20 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
               : voiceState === 'connecting'
                 ? (isEn ? 'Connecting…' : '正在连接…')
                 : voiceState === 'transcribing' || voiceState === 'finalizing'
-                ? (isEn ? 'Transcribing…' : '正在识别…')
-                : (isEn ? 'Voice input' : '语音输入')
+                  ? (isEn ? 'Transcribing…' : '正在识别…')
+                  : (isEn ? 'Voice input' : '语音输入')
           }
           className={cn(
             'h-8 w-8 rounded-xl transition-colors',
             voiceState === 'recording'
-              ? 'bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700'
+              ? 'bg-[#fbe9e3] text-[#d97757] ring-1 ring-inset ring-[#f0c9bb] hover:bg-[#f6ddd4] hover:text-[#c96a45]'
               : voiceState !== 'idle'
                 ? 'bg-[#f5eee9] text-[#d97757]'
                 : 'text-[#656358] hover:bg-[#eeeeea] hover:text-[#29261b]',
           )}
         >
           {voiceState === 'recording' ? (
-            <AudioLines className="h-4 w-4 animate-pulse" />
+            <ThinkingOrb state="listening" size={20} aria-label="" className="pointer-events-none" />
           ) : voiceState !== 'idle' ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
@@ -1972,7 +1947,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
           )}
         </Button>
         {voiceState === 'recording' ? (
-          <span className="ml-1 min-w-9 font-mono text-[11px] font-medium tabular-nums text-red-600">
+          <span className="ml-1 min-w-9 font-mono text-[11px] font-medium tabular-nums text-[#d97757]">
             {elapsed}
           </span>
         ) : voiceState === 'connecting' ? (
@@ -2049,42 +2024,28 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
 
         {/* Suggestions Popup (slash commands / capabilities) */}
         {showSuggestions && suggestions.length > 0 && (
-          <div className="absolute bottom-full left-0 right-0 mb-2 bg-white rounded-2xl border border-[#dedbd3] shadow-lg overflow-hidden z-20">
-            {suggestions.map((item, idx) => (
-              <button
-                key={`${item.kind ?? suggestionType}-${item.name}`}
-                onClick={() => applySuggestion(item)}
-                className={cn(
-                  'btn-ghost w-full flex flex-col gap-0.5 px-4 py-2.5 text-sm text-left',
-                  idx === selectedIndex ? 'bg-[#e8e5de]' : 'hover:bg-[#f5f3ee]'
-                )}
-              >
-                <div className="flex items-center gap-3">
-                  <span className={cn(
-                    'w-5 text-center font-mono text-[12px] shrink-0',
-                    suggestionType === 'mention' ? 'text-[#656358]' : 'text-[#656358]'
-                  )}>
-                    {suggestionType === 'mention' ? '@' : '/'}
-                  </span>
-                  <span className="font-medium text-[#29261b] text-[13px]">{item.name}</span>
-                  {item.kind === 'slash' && (
-                    <span className="rounded bg-[#f3f2ee] px-1.5 py-0.5 text-[10px] font-medium text-[#656358]">Command</span>
+          <div className="absolute bottom-full left-0 mb-1.5 z-20 w-72 overflow-hidden rounded-xl border border-[#dedbd3] bg-white shadow-[0_8px_28px_rgba(0,0,0,0.12)]">
+            <div className="px-3 pb-1 pt-2 text-[11px] font-medium text-[#8a867c]">
+              {suggestionType === 'mention'
+                ? (isEn ? 'Connectors' : '连接器')
+                : (isEn ? 'Skills' : '技能')}
+            </div>
+            <div className="max-h-[220px] overflow-y-auto overscroll-contain pb-1">
+              {suggestions.map((item, idx) => (
+                <button
+                  key={`${item.kind ?? suggestionType}-${item.name}`}
+                  ref={idx === selectedIndex ? selectedSuggestionRef : undefined}
+                  onClick={() => applySuggestion(item)}
+                  className={cn(
+                    'btn-ghost flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px]',
+                    idx === selectedIndex ? 'bg-[#e8e5de]' : 'hover:bg-[#f5f3ee]'
                   )}
-                  {item.kind === 'cli' && (
-                    <span className="rounded bg-[#eef2ff] px-1.5 py-0.5 text-[10px] font-medium text-[#4f46e5]">CLI</span>
-                  )}
-                  {item.kind === 'mcp' && (
-                    <span className="rounded bg-[#ecfdf5] px-1.5 py-0.5 text-[10px] font-medium text-[#047857]">MCP</span>
-                  )}
-                  <span className="text-[12px] text-[#656358] truncate">{item.description}</span>
-                </div>
-                {item.detail && (
-                  <div className="pl-8 text-[11px] text-[#656358]/70 truncate">
-                    {item.detail}
-                  </div>
-                )}
-              </button>
-            ))}
+                >
+                  <span className="min-w-0 flex-1 truncate font-medium text-[#29261b]">{item.name}</span>
+                  <span className="max-w-[55%] shrink-0 truncate text-[11.5px] text-[#656358]">{item.description}</span>
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
@@ -2114,162 +2075,119 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                 : ''
             )}
           >
-          {/* Chat-only: Drag overlay */}
-          {!isWelcome && isDragging && (
-            <div className="absolute inset-0 flex items-center justify-center rounded-[24px] bg-[#fbfaf7]/90 z-10">
-              <span className="text-sm text-[#d97757] font-medium">{t.chat.dropFilesHere}</span>
-            </div>
-          )}
-
-          {/* Attachment Strip (images + file badges) */}
-          {hasAttachments && (
-            <div className={cn('flex items-center gap-2 overflow-x-auto', isWelcome ? 'px-5 pt-3 pb-1' : 'px-4 pt-3 pb-1')}>
-              {images.map((img) => (
-                <div key={img.id} className="relative group/img shrink-0">
-                  <img
-                    src={`data:${img.mediaType};base64,${img.data}`}
-                    alt=""
-                    className="w-12 h-12 rounded-xl object-cover border border-[#dedbd3]"
-                  />
-                  <button
-                    onClick={() => removeImage(img.id)}
-                    className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-[#29261b] text-white flex items-center justify-center opacity-0 group-hover/img:opacity-100 transition-opacity"
-                    title={t.chat.removeImage}
-                  >
-                    <X className="h-2.5 w-2.5" />
-                  </button>
-                </div>
-              ))}
-              {files.map((f) => (
-                <div
-                  key={f.id}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#f3f2ee] border border-[#dedbd3] shrink-0 group/file"
-                >
-                  <FileText className="h-3.5 w-3.5 text-[#656358] shrink-0" />
-                  <span className="text-[12px] text-[#29261b] max-w-[160px] truncate">{f.name}</span>
-                  <button
-                    onClick={() => removeFile(f.id)}
-                    className="p-0.5 rounded hover:bg-[#e8e5de] text-[#656358] hover:text-[#29261b] transition-colors"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Textarea Row with inline command prefix */}
-          <div className={cn(
-            'flex items-start gap-0',
-            isWelcome
-              ? hasAttachments ? 'px-4 pt-1 pb-1' : 'px-4 pt-4 pb-0.5'
-              : hasAttachments ? 'px-4 pt-1 pb-1' : 'px-4 pt-3.5 pb-1'
-          )}>
-            {/* Inline command prefix (unified for both variants) */}
-            {selectedSkills.map((skill) => (
-              <button
-                key={`selected-skill-${skill}`}
-                onClick={() => setSelectedSkills((prev) => prev.filter((item) => item !== skill))}
-                className="shrink-0 mt-[3px] mr-1.5 rounded-full bg-[#f3f2ee] px-2 py-0.5 text-[12px] font-medium text-[#656358] hover:line-through"
-                title={t.common.close}
-              >
-                /{skill}
-              </button>
-            ))}
-            {selectedCliApps.map((app) => (
-              <button
-                key={`selected-cli-${app.name}`}
-                onClick={() => setSelectedCliApps((prev) => prev.filter((item) => item.name !== app.name))}
-                className="shrink-0 mt-[3px] mr-1.5 rounded-full bg-[#eef2ff] px-2 py-0.5 text-[12px] font-medium text-[#4f46e5] hover:line-through"
-                title={t.common.close}
-              >
-                @{app.display_name || app.name}
-              </button>
-            ))}
-            {selectedMcpPresets.map((preset) => (
-              <button
-                key={`selected-mcp-${preset.name}`}
-                onClick={() => setSelectedMcpPresets((prev) => prev.filter((item) => item.name !== preset.name))}
-                className="shrink-0 mt-[3px] mr-1.5 rounded-full bg-[#ecfdf5] px-2 py-0.5 text-[12px] font-medium text-[#047857] hover:line-through"
-                title={t.common.close}
-              >
-                @{preset.display_name || preset.name}
-              </button>
-            ))}
-            <textarea
-              ref={textareaRef}
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={handleKeyDown}
-              onPaste={handlePaste}
-              onCompositionStart={() => setIsComposing(true)}
-              onCompositionEnd={() => {
-                setIsComposing(false);
-                lastCompositionEndTimeRef.current = Date.now();
-              }}
-              placeholder={placeholder}
-              disabled={disabled}
-              readOnly={voiceState !== 'idle'}
-              data-voice-input-state={voiceState}
-              data-codex-composer-input
-              data-welcome-composer-input={isWelcome ? 'true' : undefined}
-              rows={isWelcome ? 2 : 1}
-              className={cn(
-                'flex-1 resize-none bg-transparent font-user-message text-[#29261b] outline-none placeholder:text-[#969289]',
-                isWelcome
-                  ? 'min-h-[52px] max-h-[160px] text-[16px] leading-6'
-                  : 'min-h-[28px] max-h-[160px] py-0.5 text-[15px] leading-relaxed disabled:opacity-40'
-              )}
-            />
-          </div>
-
-          {/* Bottom Toolbar */}
-          {isWelcome ? (
-            /* Welcome variant: [+] + --- + Start button */
-            <div data-codex-composer-toolbar data-welcome-composer-toolbar className="flex items-center gap-2 px-4 pb-3">
-              <div className="relative">
-                <Button
-                  data-composer-action
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setShowPlusMenu(!showPlusMenu)}
-                  aria-label={t.chat.addAttachment}
-                  className={cn(
-                    "btn-ghost h-8 w-8 rounded-xl text-[#29261b] transition-colors hover:text-[#29261b] dark:text-[#d6d2ca] dark:hover:text-white",
-                    showPlusMenu
-                      ? "bg-[#eeeeea] dark:bg-[#3a3835] dark:text-white"
-                      : "hover:bg-[#eeeeea] dark:hover:bg-[#2d2d2c]"
-                  )}
-                >
-                  <Plus className={cn("h-4 w-4 transition-transform duration-200", showPlusMenu && "rotate-45")} />
-                </Button>
-                {showPlusMenu && renderPlusMenu()}
+            {/* Chat-only: Drag overlay */}
+            {!isWelcome && isDragging && (
+              <div className="absolute inset-0 flex items-center justify-center rounded-[24px] bg-[#fbfaf7]/90 z-10">
+                <span className="text-sm text-[#d97757] font-medium">{t.chat.dropFilesHere}</span>
               </div>
-              {renderVoiceControl()}
-              {renderSelectedExpertTeam()}
-              <div className="flex-1" />
+            )}
 
-              <button
-                data-codex-submit
-                data-welcome-submit
-                onClick={handleSend}
-                disabled={!hasContent || disabled || sendDisabled}
+            {/* Attachment Strip (images + file badges) */}
+            {hasAttachments && (
+              <div className={cn('flex items-center gap-2 overflow-x-auto', isWelcome ? 'px-5 pt-3 pb-1' : 'px-4 pt-3 pb-1')}>
+                {images.map((img) => (
+                  <div key={img.id} className="relative group/img shrink-0">
+                    <img
+                      src={`data:${img.mediaType};base64,${img.data}`}
+                      alt=""
+                      className="w-12 h-12 rounded-xl object-cover border border-[#dedbd3]"
+                    />
+                    <button
+                      onClick={() => removeImage(img.id)}
+                      className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-[#29261b] text-white flex items-center justify-center opacity-0 group-hover/img:opacity-100 transition-opacity"
+                      title={t.chat.removeImage}
+                    >
+                      <X className="h-2.5 w-2.5" />
+                    </button>
+                  </div>
+                ))}
+                {files.map((f) => (
+                  <div
+                    key={f.id}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#f3f2ee] border border-[#dedbd3] shrink-0 group/file"
+                  >
+                    <FileText className="h-3.5 w-3.5 text-[#656358] shrink-0" />
+                    <span className="text-[12px] text-[#29261b] max-w-[160px] truncate">{f.name}</span>
+                    <button
+                      onClick={() => removeFile(f.id)}
+                      className="p-0.5 rounded hover:bg-[#e8e5de] text-[#656358] hover:text-[#29261b] transition-colors"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Textarea Row with inline command prefix */}
+            <div className={cn(
+              'flex items-start gap-0',
+              isWelcome
+                ? hasAttachments ? 'px-4 pt-1 pb-1' : 'px-4 pt-4 pb-0.5'
+                : hasAttachments ? 'px-4 pt-1 pb-1' : 'px-4 pt-3.5 pb-1'
+            )}>
+              {/* Inline command prefix (unified for both variants) */}
+              {selectedSkills.map((skill) => (
+                <button
+                  key={`selected-skill-${skill}`}
+                  onClick={() => setSelectedSkills((prev) => prev.filter((item) => item !== skill))}
+                  className="shrink-0 mt-[3px] mr-1.5 rounded-full bg-[#f2efe9] px-2 py-0.5 text-[12px] font-medium text-[#6b685e] hover:line-through dark:bg-[#4a4a4a] dark:text-[#e2ded5] dark:hover:bg-[#555]"
+                  title={t.common.close}
+                >
+                  /{displaySkillName(skill)}
+                </button>
+              ))}
+              {selectedCliApps.map((app) => (
+                <button
+                  key={`selected-cli-${app.name}`}
+                  onClick={() => setSelectedCliApps((prev) => prev.filter((item) => item.name !== app.name))}
+                  className="shrink-0 mt-[3px] mr-1.5 rounded-full bg-[#eef2ff] px-2 py-0.5 text-[12px] font-medium text-[#4f46e5] hover:line-through dark:bg-[#2e2f4a] dark:text-[#a5b4fc] dark:hover:bg-[#383a5c]"
+                  title={t.common.close}
+                >
+                  @{app.display_name || app.name}
+                </button>
+              ))}
+              {selectedMcpPresets.map((preset) => (
+                <button
+                  key={`selected-mcp-${preset.name}`}
+                  onClick={() => setSelectedMcpPresets((prev) => prev.filter((item) => item.name !== preset.name))}
+                  className="shrink-0 mt-[3px] mr-1.5 rounded-full bg-[#ecfdf5] px-2 py-0.5 text-[12px] font-medium text-[#047857] hover:line-through dark:bg-[#1f3a33] dark:text-[#6ee7b7] dark:hover:bg-[#26473e]"
+                  title={t.common.close}
+                >
+                  @{preset.display_name || preset.name}
+                </button>
+              ))}
+              <textarea
+                ref={textareaRef}
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
+                onCompositionStart={() => setIsComposing(true)}
+                onCompositionEnd={() => {
+                  setIsComposing(false);
+                  lastCompositionEndTimeRef.current = Date.now();
+                }}
+                placeholder={placeholder}
+                disabled={disabled}
+                readOnly={voiceState !== 'idle'}
+                data-voice-input-state={voiceState}
+                data-codex-composer-input
+                data-welcome-composer-input={isWelcome ? 'true' : undefined}
+                rows={isWelcome ? 2 : 1}
                 className={cn(
-                  'btn-claude-primary flex h-9 items-center gap-1.5 rounded-xl px-4 text-[13px] font-medium',
-                  hasContent && !disabled && !sendDisabled
-                    ? 'bg-[#29261b] text-[#faf9f5] shadow-sm'
-                    : 'bg-[#e8e5de] text-[#656358]/50 cursor-not-allowed'
+                  'flex-1 resize-none bg-transparent font-user-message text-[#29261b] outline-none placeholder:text-[#969289]',
+                  isWelcome
+                    ? 'min-h-[52px] max-h-[160px] text-[16px] leading-6'
+                    : 'min-h-[28px] max-h-[160px] py-0.5 text-[15px] leading-relaxed disabled:opacity-40'
                 )}
-              >
-                <span>{t.chat.start}</span>
-                <ArrowRight className="h-3.5 w-3.5" />
-              </button>
+              />
             </div>
-          ) : (
-            /* Chat variant: [+] + --- + Model label + Stop/Send */
-            <div data-codex-composer-toolbar className="flex items-center justify-between px-4 pb-3 pt-1">
-              {/* Left Actions */}
-              <div className="flex items-center gap-0.5">
+
+            {/* Bottom Toolbar */}
+            {isWelcome ? (
+              /* Welcome variant: [+] + --- + Start button */
+              <div data-codex-composer-toolbar data-welcome-composer-toolbar className="flex items-center gap-2 px-4 pb-3">
                 <div className="relative">
                   <Button
                     data-composer-action
@@ -2290,113 +2208,156 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                 </div>
                 {renderVoiceControl()}
                 {renderSelectedExpertTeam()}
-              </div>
+                <div className="flex-1" />
 
-              <div className="flex items-center gap-2">
-                {/* Model picker dropdown */}
-                <div className="relative" ref={modelPickerRef}>
-                  <button
-                    data-codex-model-picker
-                    onClick={() => setShowModelPicker(!showModelPicker)}
-                    className="btn-ghost flex items-center gap-1 px-2.5 py-1.5 text-[14px] text-[#3d3929] font-medium hover:text-[#29261b] hover:bg-[#eeeeea] rounded-lg transition-colors"
-                  >
-                    {modelDisplay}
-                    <ChevronDown className={cn('h-3 w-3 transition-transform', showModelPicker && 'rotate-180')} />
-                  </button>
-                  {showModelPicker && availableModels.length > 0 && (
-                    <div data-codex-model-menu className="absolute bottom-full right-0 mb-1.5 w-56 bg-white rounded-xl border border-[#dedbd3] shadow-lg py-1 z-50">
-                      {availableModels.map((m) => (
-                        <button
-                          key={m.id}
-                          onClick={() => {
-                            setModel(m.id);
-                            setShowModelPicker(false);
-                          }}
-                          className={cn(
-                            'w-full flex items-center justify-between px-3 py-1.5 text-[12px] transition-colors text-left',
-                            m.id === currentModel
-                              ? 'text-[#d97757] font-medium bg-[#d97757]/5'
-                              : 'text-[#29261b] hover:bg-[#f5f3ee]'
-                          )}
-                        >
-                          <span>{m.label}</span>
-                          {m.id === currentModel && <Check className="h-3.5 w-3.5 text-[#d97757]" />}
-                        </button>
-                      ))}
-                    </div>
+                <button
+                  data-codex-submit
+                  data-welcome-submit
+                  onClick={handleSend}
+                  disabled={!hasContent || disabled || sendDisabled}
+                  className={cn(
+                    'btn-claude-primary flex h-9 items-center gap-1.5 rounded-xl px-4 text-[13px] font-medium',
+                    hasContent && !disabled && !sendDisabled
+                      ? 'bg-[#29261b] text-[#faf9f5] shadow-sm'
+                      : 'bg-[#e8e5de] text-[#656358]/50 cursor-not-allowed'
                   )}
+                >
+                  <span>{t.chat.start}</span>
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : (
+              /* Chat variant: [+] + --- + Model label + Stop/Send */
+              <div data-codex-composer-toolbar className="flex items-center justify-between px-4 pb-3 pt-1">
+                {/* Left Actions */}
+                <div className="flex items-center gap-0.5">
+                  <div className="relative">
+                    <Button
+                      data-composer-action
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setShowPlusMenu(!showPlusMenu)}
+                      aria-label={t.chat.addAttachment}
+                      className={cn(
+                        "btn-ghost h-8 w-8 rounded-xl text-[#29261b] transition-colors hover:text-[#29261b] dark:text-[#d6d2ca] dark:hover:text-white",
+                        showPlusMenu
+                          ? "bg-[#eeeeea] dark:bg-[#3a3835] dark:text-white"
+                          : "hover:bg-[#eeeeea] dark:hover:bg-[#2d2d2c]"
+                      )}
+                    >
+                      <Plus className={cn("h-4 w-4 transition-transform duration-200", showPlusMenu && "rotate-45")} />
+                    </Button>
+                    {showPlusMenu && renderPlusMenu()}
+                  </div>
+                  {renderVoiceControl()}
+                  {renderSelectedExpertTeam()}
                 </div>
 
-                {/* Send / Stop Button */}
-                {isStreaming ? (
-                  <>
+                <div className="flex items-center gap-2">
+                  {/* Model picker dropdown */}
+                  <div className="relative" ref={modelPickerRef}>
+                    <button
+                      data-codex-model-picker
+                      onClick={() => setShowModelPicker(!showModelPicker)}
+                      className="btn-ghost flex items-center gap-1 px-2.5 py-1.5 text-[14px] text-[#3d3929] font-medium hover:text-[#29261b] hover:bg-[#eeeeea] rounded-lg transition-colors"
+                    >
+                      {modelDisplay}
+                      <ChevronDown className={cn('h-3 w-3 transition-transform', showModelPicker && 'rotate-180')} />
+                    </button>
+                    {showModelPicker && availableModels.length > 0 && (
+                      <div data-codex-model-menu className="absolute bottom-full right-0 mb-1.5 w-56 bg-white rounded-xl border border-[#dedbd3] shadow-lg py-1 z-50">
+                        {availableModels.map((m) => (
+                          <button
+                            key={m.id}
+                            onClick={() => {
+                              setModel(m.id);
+                              setShowModelPicker(false);
+                            }}
+                            className={cn(
+                              'w-full flex items-center justify-between px-3 py-1.5 text-[12px] transition-colors text-left',
+                              m.id === currentModel
+                                ? 'text-[#d97757] font-medium bg-[#d97757]/5'
+                                : 'text-[#29261b] hover:bg-[#f5f3ee]'
+                            )}
+                          >
+                            <span>{m.label}</span>
+                            {m.id === currentModel && <Check className="h-3.5 w-3.5 text-[#d97757]" />}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Send / Stop Button */}
+                  {isStreaming ? (
+                    <>
+                      <Button
+                        data-codex-submit
+                        size="icon"
+                        onClick={handleSend}
+                        disabled={!hasContent || disabled || sendDisabled}
+                        aria-label="加入队列"
+                        className={cn(
+                          'h-8 w-8 rounded-xl transition-colors',
+                          hasContent && !disabled && !sendDisabled
+                            ? 'bg-[#29261b] hover:bg-[#3d3a2f] text-[#faf9f5] shadow-sm'
+                            : 'bg-[#e8e5de] text-[#656358]/50 cursor-not-allowed hover:bg-[#e8e5de]',
+                        )}
+                        title="加入队列"
+                      >
+                        <CornerDownRight className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        data-codex-stop
+                        size="icon"
+                        onClick={handleStop}
+                        aria-label={t.chat.stop}
+                        className="btn-claude-primary h-8 w-8 rounded-xl bg-red-500 hover:bg-red-600 text-white shadow-sm"
+                        title={t.chat.stop}
+                      >
+                        <Square className="h-3 w-3" fill="currentColor" />
+                      </Button>
+                    </>
+                  ) : (
                     <Button
                       data-codex-submit
                       size="icon"
                       onClick={handleSend}
                       disabled={!hasContent || disabled || sendDisabled}
-                      aria-label="加入队列"
                       className={cn(
                         'h-8 w-8 rounded-xl transition-colors',
                         hasContent && !disabled && !sendDisabled
                           ? 'bg-[#29261b] hover:bg-[#3d3a2f] text-[#faf9f5] shadow-sm'
-                          : 'bg-[#e8e5de] text-[#656358]/50 cursor-not-allowed hover:bg-[#e8e5de]',
+                          : 'bg-[#e8e5de] text-[#656358]/50 cursor-not-allowed hover:bg-[#e8e5de]'
                       )}
-                      title="加入队列"
                     >
-                      <CornerDownRight className="h-3.5 w-3.5" />
+                      <ArrowUp className="h-3.5 w-3.5" strokeWidth={2.5} />
                     </Button>
-                    <Button
-                      data-codex-stop
-                      size="icon"
-                      onClick={handleStop}
-                      aria-label={t.chat.stop}
-                      className="btn-claude-primary h-8 w-8 rounded-xl bg-red-500 hover:bg-red-600 text-white shadow-sm"
-                      title={t.chat.stop}
-                    >
-                      <Square className="h-3 w-3" fill="currentColor" />
-                    </Button>
-                  </>
-                ) : (
-                  <Button
-                    data-codex-submit
-                    size="icon"
-                    onClick={handleSend}
-                    disabled={!hasContent || disabled || sendDisabled}
-                    className={cn(
-                      'h-8 w-8 rounded-xl transition-colors',
-                      hasContent && !disabled && !sendDisabled
-                        ? 'bg-[#29261b] hover:bg-[#3d3a2f] text-[#faf9f5] shadow-sm'
-                        : 'bg-[#e8e5de] text-[#656358]/50 cursor-not-allowed hover:bg-[#e8e5de]'
-                    )}
-                  >
-                    <ArrowUp className="h-3.5 w-3.5" strokeWidth={2.5} />
-                  </Button>
-                )}
+                  )}
+                </div>
               </div>
+            )}
+          </div>
+
+          {showProjectSelector && (
+            <div
+              data-codex-project-selector
+              data-welcome-project-selector={isWelcome ? 'true' : undefined}
+              className={cn(
+                'z-10 flex items-center gap-4 px-4 py-1.5 text-[12.5px] text-[#656358] select-none',
+                isWelcome ? 'rounded-b-[20px]' : 'rounded-b-[24px]',
+              )}
+            >
+              <FolderSelector
+                variant="pill"
+                currentPath={workspaceScope?.project_path ?? localWorkspace}
+                recentPaths={projectSelectorPaths}
+                onSelect={handleSelectFolder}
+                onClear={handleClearWorkspace}
+              />
             </div>
           )}
         </div>
-
-        {showProjectSelector && (
-          <div
-            data-codex-project-selector
-            data-welcome-project-selector={isWelcome ? 'true' : undefined}
-            className={cn(
-              'z-10 flex items-center gap-4 px-4 py-1.5 text-[12.5px] text-[#656358] select-none',
-              isWelcome ? 'rounded-b-[20px]' : 'rounded-b-[24px]',
-            )}
-          >
-            <FolderSelector
-              variant="pill"
-              currentPath={workspaceScope?.project_path ?? localWorkspace}
-              recentPaths={projectSelectorPaths}
-              onSelect={handleSelectFolder}
-              onClear={handleClearWorkspace}
-            />
-          </div>
-        )}
-      </div>
 
 
 

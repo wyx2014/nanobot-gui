@@ -56,7 +56,9 @@ export default defineConfig({
       alias: {
         '@renderer': resolve(__dirname, 'src'),
         '@': resolve(__dirname, 'src')
-      }
+      },
+      // Locally-linked packages (e.g. thinking-orbs) must share the GUI's React.
+      dedupe: ['react', 'react-dom']
     },
     plugins: [react()],
     define: {

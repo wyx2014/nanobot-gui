@@ -190,12 +190,12 @@
       "cliAppsCatalog": "Install only the app-specific CLI adapters nanobot can run locally; native apps stay untouched.",
       "cliAppsFilter": "Search by app, category, or capability.",
       "localServiceAccess": "Allow Full Access shell commands to reach localhost services.",
-      "webuiDefaultAccess": "Used by web chats without a project-specific permission.",
+      "webuiDefaultAccess": "Used by web chats without a workspace-specific permission.",
       "securityManagedControls": "Web fetches always protect local, private, and metadata services. Core channel safety stays in config.json.",
       "logs": "Open the native engine log folder.",
       "diagnostics": "Export a small runtime report for support.",
       "localServiceAccessNative": "Allow Full Access shell commands to reach services on this Mac.",
-      "webuiDefaultAccessNative": "Used by native chats without a project-specific permission.",
+      "webuiDefaultAccessNative": "Used by native chats without a workspace-specific permission.",
       "contextWindow": "Choose the default context budget for this model configuration."
     },
     "timezone": {
@@ -437,7 +437,7 @@
     "collapsed": "{{count}} hidden chats",
     "showLess": "Show less",
     "actions": "Chat actions for {{title}}",
-    "newInProject": "Start a new chat in {{project}}",
+    "newInProject": "Start a new chat in {{workspace}}",
     "activity": {
       "running": "Agent running",
       "complete": "Agent finished"
@@ -448,9 +448,9 @@
     "renameTitle": "Rename chat",
     "renameDescription": "Choose a local sidebar name for this chat.",
     "renamePlaceholder": "Chat name",
-    "renameProjectTitle": "Rename project",
-    "renameProjectDescription": "Choose a local sidebar name for this project.",
-    "renameProjectPlaceholder": "Project name",
+    "renameProjectTitle": "Rename workspace",
+    "renameProjectDescription": "Choose a local sidebar name for this workspace.",
+    "renameProjectPlaceholder": "Workspace name",
     "renameSave": "Save",
     "archive": "Archive",
     "unarchive": "Unarchive",
@@ -461,7 +461,7 @@
     "groups": {
       "pinned": "Pinned",
       "all": "Chats",
-      "projects": "Projects",
+      "projects": "Workspaces",
       "today": "Today",
       "yesterday": "Yesterday",
       "earlier": "Earlier",
@@ -684,8 +684,8 @@
       },
       "workspace": {
         "accessAria": "Workspace access mode",
-        "projectAria": "Choose project",
-        "projectPlaceholder": "Select project",
+        "projectAria": "Choose workspace",
+        "projectPlaceholder": "Select workspace",
         "default": "Default Permission",
         "full": "Full Access"
       }
@@ -748,14 +748,14 @@
     },
     "workspaceScopeRejected": {
       "title": "Workspace was not changed",
-      "body": "Nanobot kept the previous workspace because the requested project or access mode was rejected by the gateway."
+      "body": "Nanobot kept the previous workspace because the requested workspace or access mode was rejected by the gateway."
     }
   },
   "workspace": {
     "dialog": {
       "defaultProject": "Default workspace",
       "manual": "Paste path",
-      "manualPlaceholder": "/Users/name/project",
+      "manualPlaceholder": "/Users/name/workspace",
       "usePath": "Use Path",
       "absolutePathRequired": "Enter an absolute folder path on this machine."
     }

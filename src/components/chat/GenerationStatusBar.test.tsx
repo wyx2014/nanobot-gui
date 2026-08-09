@@ -40,22 +40,40 @@ describe('GenerationStatusBar', () => {
     expect(container.textContent).toContain('Generating...');
     expect(container.textContent).toContain('7s');
     expect(container.textContent).toContain('328 tokens');
-    expect(container.querySelector('svg.lucide-sparkles')).not.toBeNull();
-    expect(container.querySelector('.generation-status-breathe')).not.toBeNull();
+    expect(container.querySelector('canvas')).not.toBeNull();
     expect(container.querySelector('[data-generation-status]')).not.toBeNull();
     expect(container.querySelector('[role="status"]')?.classList.contains('bg-gradient-to-t')).toBe(true);
     expect(container.querySelector('[role="status"]')?.classList.contains('to-transparent')).toBe(true);
   });
 
-  it('uses the distinct thinking icon and keeps the active breathing state', () => {
+  it('uses the distinct thinking orb and keeps the active breathing state', () => {
     act(() => {
       root.render(
         <GenerationStatusBar phase="thinking" startedAt={Date.now()} />,
       );
     });
     expect(container.textContent).toContain('Thinking...');
-    expect(container.querySelector('svg.lucide-brain-circuit')).not.toBeNull();
-    expect(container.querySelector('.generation-status-breathe')).not.toBeNull();
+    expect(container.querySelector('canvas')).not.toBeNull();
+  });
+
+  it('renders the working phase for local tool calls', () => {
+    act(() => {
+      root.render(
+        <GenerationStatusBar phase="working" startedAt={Date.now()} />,
+      );
+    });
+    expect(container.textContent).toContain('Working...');
+    expect(container.querySelector('canvas')).not.toBeNull();
+  });
+
+  it('renders the searching phase for web lookups', () => {
+    act(() => {
+      root.render(
+        <GenerationStatusBar phase="searching" startedAt={Date.now()} />,
+      );
+    });
+    expect(container.textContent).toContain('Searching...');
+    expect(container.querySelector('canvas')).not.toBeNull();
   });
 
   it('formats long durations and compact token counts', () => {

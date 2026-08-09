@@ -190,12 +190,12 @@
       "cliAppsCatalog": "只安装 nanobot 可本地运行的应用 CLI 适配器；不会改动原生应用。",
       "cliAppsFilter": "按应用、类别或能力搜索。",
       "localServiceAccess": "允许完全访问权限下的 shell 命令访问 localhost 服务。",
-      "webuiDefaultAccess": "用于没有单独项目权限的 Web 聊天。",
+      "webuiDefaultAccess": "用于没有单独工作空间权限的 Web 聊天。",
       "securityManagedControls": "网页抓取始终保护本机、内网和元数据服务。核心渠道安全仍由 config.json 管理。",
       "logs": "打开原生引擎日志文件夹。",
       "diagnostics": "导出一份用于支持排查的小型运行报告。",
       "localServiceAccessNative": "允许完全访问权限下的 shell 命令访问这台 Mac 上的服务。",
-      "webuiDefaultAccessNative": "用于没有单独项目权限的原生聊天。",
+      "webuiDefaultAccessNative": "用于没有单独工作空间权限的原生聊天。",
       "contextWindow": "选择此模型配置的默认上下文预算。"
     },
     "timezone": {
@@ -448,9 +448,9 @@
     "renameTitle": "重命名对话",
     "renameDescription": "为这个对话设置一个仅用于 WebUI 侧边栏的名称。",
     "renamePlaceholder": "对话名称",
-    "renameProjectTitle": "重命名项目",
-    "renameProjectDescription": "为这个项目设置一个仅用于 WebUI 侧边栏的名称。",
-    "renameProjectPlaceholder": "项目名称",
+    "renameProjectTitle": "重命名工作空间",
+    "renameProjectDescription": "为这个工作空间设置一个仅用于 WebUI 侧边栏的名称。",
+    "renameProjectPlaceholder": "工作空间名称",
     "renameSave": "保存",
     "archive": "归档",
     "unarchive": "取消归档",
@@ -461,7 +461,7 @@
     "groups": {
       "pinned": "置顶",
       "all": "对话",
-      "projects": "项目",
+      "projects": "工作空间",
       "today": "今天",
       "yesterday": "昨天",
       "earlier": "更早",
@@ -684,8 +684,8 @@
       "goalStateCloseAria": "关闭目标",
       "workspace": {
         "accessAria": "工作区访问权限",
-        "projectAria": "选择项目",
-        "projectPlaceholder": "选择项目",
+        "projectAria": "选择工作空间",
+        "projectPlaceholder": "选择工作空间",
         "default": "默认权限",
         "full": "完全访问权限"
       }
@@ -748,7 +748,7 @@
     },
     "workspaceScopeRejected": {
       "title": "工作区未更改",
-      "body": "网关拒绝了请求的项目或访问权限，Nanobot 已继续使用之前的工作区。"
+      "body": "网关拒绝了请求的工作空间或访问权限，Nanobot 已继续使用之前的工作区。"
     }
   },
   "workspace": {

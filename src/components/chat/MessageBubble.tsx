@@ -1,9 +1,10 @@
-import { Check, Copy, Pencil, RefreshCw, Terminal, Wand2, X, ArrowUp, ChevronRight, Wrench } from 'lucide-react';
+import { Check, Copy, Pencil, Plug, Terminal, Wand2, X, ArrowUp, ChevronRight, Wrench } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Message, MessageContent } from '@/types';
 import MarkdownRenderer from './MarkdownRenderer';
 import { useActiveConversation } from '@/stores/chatStore';
 import { useI18n } from '@/i18n';
+import { displaySkillName } from '@/core/skills/filter';
 import { cn } from '@/lib/utils';
 import { MessageMedia, UserImageGrid } from './MessageMedia';
 
@@ -16,6 +17,12 @@ function getTextContent(content: string | MessageContent[]): string {
 function getImageBlocks(content: string | MessageContent[]): Extract<MessageContent, { type: 'image' }>[] {
   if (typeof content === 'string') return [];
   return content.filter((c): c is Extract<MessageContent, { type: 'image' }> => c.type === 'image');
+}
+
+function mcpPresetName(
+  preset: NonNullable<Message['mcpPresets']>[number],
+): string {
+  return preset.display_name || preset.name;
 }
 
 export function formatAssistantCompletedAt(
@@ -214,19 +221,20 @@ export default function MessageBubble({
   showAssistantCopyAction = true,
   isLastAssistantReply = false,
   onEditUserMessage,
-  onRegenerateAssistant,
 }: {
   message: Message;
   showAssistantCopyAction?: boolean;
   isLastAssistantReply?: boolean;
   onEditUserMessage?: (message: Message, newContent: string) => void;
-  onRegenerateAssistant?: (message: Message) => void;
 }) {
   const { t } = useI18n();
   const isUser = message.role === 'user';
   const textContent = getTextContent(message.content);
   const imageBlocks = getImageBlocks(message.content);
   const mediaAttachments = message.mediaAttachments ?? [];
+  const mcpPresets = message.mcpPresets ?? [];
+  const primaryMcpPreset = mcpPresets[0];
+  const hiddenMcpPresets = mcpPresets.slice(1);
   const activeConv = useActiveConversation();
   const isConvRunning = activeConv?.status === 'running';
 
@@ -270,10 +278,6 @@ export default function MessageBubble({
     onEditUserMessage?.(message, newContent);
   };
 
-  const handleRegenerate = async () => {
-    onRegenerateAssistant?.(message);
-  };
-
   if (message.kind === 'trace' || message.role === 'tool') {
     return <TraceGroup message={message} />;
   }
@@ -291,20 +295,42 @@ export default function MessageBubble({
         {imageBlocks.length > 0 && !isEditing ? <UserImageGrid images={imageBlocks} /> : null}
         {mediaAttachments.length > 0 ? <MessageMedia media={mediaAttachments} align="right" /> : null}
 
-        {(message.delegateAgent || !!message.cliApps?.length) && !isEditing && (
-          <div className="flex flex-wrap items-center justify-end gap-1.5 text-[#9a9689]">
+        {(message.delegateAgent || !!message.cliApps?.length || !!message.skills?.length || !!message.mcpPresets?.length) && !isEditing && (
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
             {message.skill && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-[#f3f2ee] px-2 py-0.5 text-[11px] font-medium text-[#656358]">
+              <span className="inline-flex items-center gap-1 rounded-full bg-[#f2efe9] px-2 py-0.5 text-[11px] font-medium text-[#6b685e] dark:bg-[#4a4a4a] dark:text-[#e2ded5]">
                 <Wand2 className="h-3 w-3" />
                 /{message.skill.name}
               </span>
             )}
+            {message.skills?.map((skillName) => (
+              <span key={`skill-${skillName}`} className="inline-flex items-center gap-1 rounded-full bg-[#f2efe9] px-2 py-0.5 text-[11px] font-medium text-[#6b685e] dark:bg-[#4a4a4a] dark:text-[#e2ded5]">
+                <Wand2 className="h-3 w-3" />
+                /{displaySkillName(skillName)}
+              </span>
+            ))}
             {message.cliApps?.map((app) => (
-              <span key={`cli-${app.name}`} className="inline-flex items-center gap-1 rounded-full bg-[#f3f2ee] px-2 py-0.5 text-[11px] font-medium text-[#656358]">
+              <span key={`cli-${app.name}`} className="inline-flex items-center gap-1 rounded-full bg-[#f2efe9] px-2 py-0.5 text-[11px] font-medium text-[#6b685e] dark:bg-[#4a4a4a] dark:text-[#e2ded5]">
                 <Terminal className="h-3 w-3" />
                 {app.display_name || app.name}
               </span>
             ))}
+            {primaryMcpPreset ? (
+              <span data-mcp-preset-chip className="inline-flex items-center gap-1 rounded-full bg-[#ecfdf5] px-2 py-0.5 text-[11px] font-medium text-[#047857] dark:bg-[#1f3a33] dark:text-[#6ee7b7]">
+                <Plug className="h-3 w-3" />
+                {mcpPresetName(primaryMcpPreset)}
+              </span>
+            ) : null}
+            {hiddenMcpPresets.length > 0 ? (
+              <span
+                data-mcp-preset-overflow
+                className="inline-flex items-center rounded-full bg-[#ecfdf5] px-2 py-0.5 text-[11px] font-semibold tabular-nums text-[#047857] dark:bg-[#1f3a33] dark:text-[#6ee7b7]"
+                title={hiddenMcpPresets.map(mcpPresetName).join('\n')}
+                aria-label={`${hiddenMcpPresets.length} more MCP connectors: ${hiddenMcpPresets.map(mcpPresetName).join(', ')}`}
+              >
+                +{hiddenMcpPresets.length}
+              </span>
+            ) : null}
           </div>
         )}
 
@@ -411,15 +437,6 @@ export default function MessageBubble({
                     className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-[#e8e5de] hover:text-[#29261b]"
                   >
                     {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleRegenerate}
-                    aria-label="Regenerate"
-                    title="Regenerate"
-                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-[#e8e5de] hover:text-[#29261b]"
-                  >
-                    <RefreshCw className="h-4 w-4" />
                   </button>
                 </>
               ) : null}

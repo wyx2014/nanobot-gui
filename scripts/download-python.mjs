@@ -1,4 +1,5 @@
-import { execSync } from 'child_process';
+import { execFileSync, execSync } from 'child_process';
+import { createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -6,6 +7,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RELEASE_TAG = '20250212';
 const PYTHON_VERSION = '3.12.9';
+const RUNTIME_PROFILE = 'desktop-v1';
 
 const TARGETS = {
   'darwin-arm64': `cpython-${PYTHON_VERSION}+${RELEASE_TAG}-aarch64-apple-darwin-install_only.tar.gz`,
@@ -21,9 +23,43 @@ if (!tarball) {
 }
 
 const destDir = path.join(__dirname, '..', 'embedded-python', 'runtime');
+const nanobotSrc = path.resolve(__dirname, '..', '..', 'nanobot');
+const nanobotPyproject = path.join(nanobotSrc, 'pyproject.toml');
+const dependencySpecSha256 = createHash('sha256')
+  .update(fs.readFileSync(nanobotPyproject))
+  .digest('hex');
+const runtimeMarkerPath = path.join(destDir, '.tpacowork-runtime.json');
+const expectedRuntimeMarker = {
+  target: key,
+  pythonVersion: PYTHON_VERSION,
+  releaseTag: RELEASE_TAG,
+  profile: RUNTIME_PROFILE,
+  dependencySpecSha256,
+};
 const pythonBin = process.platform === 'win32'
   ? path.join(destDir, 'python.exe')
   : path.join(destDir, 'bin', 'python3');
+
+function readRuntimeMarker() {
+  try {
+    return JSON.parse(fs.readFileSync(runtimeMarkerPath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function runtimeMarkerMatches(marker) {
+  return marker != null
+    && Object.entries(expectedRuntimeMarker).every(([name, value]) => marker[name] === value);
+}
+
+function writeRuntimeMarker() {
+  fs.writeFileSync(
+    runtimeMarkerPath,
+    `${JSON.stringify(expectedRuntimeMarker, null, 2)}\n`,
+    'utf8',
+  );
+}
 
 function pruneRuntime(rootDir) {
   const pruneDirNames = new Set(['__pycache__', 'test', 'tests']);
@@ -51,10 +87,15 @@ function pruneRuntime(rootDir) {
   console.log(`Pruned Python runtime: removed ${removedDirs} directories and ${removedFiles} cache files.`);
 }
 
-if (fs.existsSync(pythonBin)) {
+if (fs.existsSync(pythonBin) && runtimeMarkerMatches(readRuntimeMarker())) {
   console.log(`Python already present for ${key}, skipping download.`);
   pruneRuntime(destDir);
   process.exit(0);
+}
+
+if (fs.existsSync(destDir)) {
+  console.log(`Python runtime cache is stale for ${key}; rebuilding the ${RUNTIME_PROFILE} profile.`);
+  fs.rmSync(destDir, { recursive: true, force: true });
 }
 
 const BASE_URL = `https://github.com/astral-sh/python-build-standalone/releases/download/${RELEASE_TAG}`;
@@ -73,15 +114,20 @@ try {
     execSync(`curl -L "${url}" | tar -xz -C "${destDir}" --strip-components=1`, { stdio: 'inherit' });
   }
 
-  // Install nanobot dependencies into the standalone Python
+  // Install only the desktop gateway dependency profile. Chat-channel SDKs
+  // and AWS Bedrock are optional nanobot extras and must not enter installers.
   const pip = process.platform === 'win32'
     ? path.join(destDir, 'Scripts', 'pip.exe')
     : path.join(destDir, 'bin', 'pip3');
-  
-  const nanobotSrc = path.resolve(__dirname, '..', '..', 'nanobot');
-  console.log(`Installing nanobot [api] dependencies from ${nanobotSrc}...`);
-  execSync(`"${pip}" install --quiet "${nanobotSrc}[api]"`, { stdio: 'inherit' });
+
+  console.log(`Installing nanobot [desktop] dependencies from ${nanobotSrc}...`);
+  execFileSync(
+    pip,
+    ['install', '--quiet', '--no-compile', '--no-cache-dir', `${nanobotSrc}[desktop]`],
+    { stdio: 'inherit' },
+  );
   pruneRuntime(destDir);
+  writeRuntimeMarker();
   console.log('Done! Standalone Python is ready and configured.');
 } catch (err) {
   console.error('Failed to configure standalone Python:', err);

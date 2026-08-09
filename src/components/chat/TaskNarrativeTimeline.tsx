@@ -410,7 +410,7 @@ function HopeToolCallBlock({
             data-hope-tool-label
             className={cn(
               'shrink-0 whitespace-nowrap font-medium text-muted-foreground',
-              failed && 'text-red-500',
+              failed && 'text-red-400',
               active && 'hope-text-shimmer',
             )}
           >
@@ -428,7 +428,7 @@ function HopeToolCallBlock({
                 'ml-auto shrink-0 text-[10px] font-normal',
                 entry.status === 'running' && 'text-blue-500/80',
                 entry.status === 'done' && 'text-teal-600/75 dark:text-teal-400/70',
-                entry.status === 'error' && 'text-red-500/85',
+                entry.status === 'error' && 'text-red-400/85',
                 entry.status === 'pending' && 'text-muted-foreground/55',
               )}
             >
@@ -524,7 +524,7 @@ function HopeToolCallGroup({
           className={cn(
             'min-w-0 font-medium text-muted-foreground',
             active && 'hope-text-shimmer',
-            status === 'error' && !overallCompleted && 'text-red-500',
+            status === 'error' && !overallCompleted && 'text-red-400',
           )}
         >
           {displayLabel}
@@ -610,7 +610,7 @@ function HopePlanBlock({
                       'h-3 w-3 shrink-0 text-muted-foreground/50',
                       step.status === 'running' && 'text-blue-500 motion-safe:animate-spin',
                       step.status === 'completed' && 'text-teal-500',
-                      step.status === 'error' && 'text-red-500',
+                      step.status === 'error' && 'text-red-400',
                     )}
                   />
                   <span
@@ -717,12 +717,12 @@ function TechnicalBlock({
 }) {
   return (
     <div className="mt-2 first:mt-0">
-      <div className={cn('mb-1 text-[10px] font-medium text-muted-foreground/60', error && 'text-red-500')}>
+      <div className={cn('mb-1 text-[10px] font-medium text-muted-foreground/60', error && 'text-red-400')}>
         {label}
       </div>
       <pre className={cn(
         'max-h-56 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-muted-foreground/80',
-        error && 'text-red-500',
+        error && 'text-red-400',
       )}>
         {content}
       </pre>
@@ -1114,14 +1114,14 @@ function formatUnknown(value: unknown): string {
 }
 
 function hopeDotClass(tone: HopeTimelineTone): string {
-  if (tone === 'failed') return 'bg-red-500';
+  if (tone === 'failed') return 'bg-red-300';
   if (tone === 'running') return 'bg-blue-500';
   if (tone === 'thinking') return 'bg-violet-500';
   return 'bg-teal-500';
 }
 
 function hopeRippleClass(tone: HopeTimelineTone): string {
-  if (tone === 'failed') return 'bg-red-400';
+  if (tone === 'failed') return 'bg-red-300';
   if (tone === 'running') return 'bg-blue-400';
   if (tone === 'thinking') return 'bg-violet-400';
   return 'bg-teal-400';

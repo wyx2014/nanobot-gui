@@ -285,6 +285,13 @@ export interface UIMessage {
   role: Role;
   content: string;
   kind?: MessageKind;
+  /** Durable event / turn identity supplied by the gateway. Live stream rows
+   * retain these fields so an authoritative final message can reconcile every
+   * provisional fragment from the same turn without relying on list position. */
+  eventId?: string;
+  turnId?: string;
+  turnPhase?: string;
+  turnSeq?: number;
   isStreaming?: boolean;
   createdAt: number;
   /** For trace rows: each individual hint line, so consecutive hints can
@@ -316,6 +323,8 @@ export interface UIMessage {
   cliApps?: UICliAppAttachment[];
   /** Settings-managed MCP presets explicitly attached to this user turn. */
   mcpPresets?: UIMcpPresetAttachment[];
+  /** Explicit skills selected in the composer for this user turn. */
+  skills?: string[];
   /** Assistant turn: accumulated model reasoning / thinking text. Built up
    * incrementally from ``reasoning_delta`` frames; finalized when
    * ``reasoning_end`` arrives. */
@@ -538,59 +547,6 @@ export interface ProjectSessionPayload {
   status: string;
   createdAt: number;
   updatedAt: number;
-}
-
-export interface ProjectMemorySourcePayload {
-  id: string;
-  stage1Id?: string | null;
-  sourceSessionId: string;
-  sourceSessionKey?: string | null;
-  sourceTurnId?: string | null;
-  sourceEventId?: string | null;
-  evidenceLocator?: string | null;
-  createdAt: number;
-}
-
-export interface ProjectMemoryPayload {
-  id: string;
-  projectId: string;
-  kind: string;
-  title: string;
-  content: string;
-  confidence?: number | null;
-  status: string;
-  usageCount: number;
-  lastUsedAt?: number | null;
-  createdAt: number;
-  updatedAt: number;
-  sources: ProjectMemorySourcePayload[];
-}
-
-export interface ProjectMemoryJobPayload {
-  status: string;
-  attemptCount: number;
-  inputWatermark?: number | null;
-  completedWatermark?: number | null;
-  updatedAt: number;
-  completedAt?: number | null;
-  error?: { code?: string; message?: string; retryable?: boolean } | null;
-}
-
-export interface ProjectMemoryStatusPayload {
-  projectId: string;
-  inputWatermark: number;
-  phase1?: ProjectMemoryJobPayload | null;
-  phase2?: ProjectMemoryJobPayload | null;
-}
-
-export interface ProjectMemoriesPayload {
-  projectId: string;
-  memories: ProjectMemoryPayload[];
-  status: ProjectMemoryStatusPayload;
-  retrieval: {
-    mode: "bounded_lexical";
-    deepRagEnabled: false;
-  };
 }
 
 export type WorkspaceAccessMode = "restricted" | "full";
@@ -978,6 +934,11 @@ export interface SkillsPayload {
     ok: boolean;
     message: string;
   };
+}
+
+export interface PersonalizationPayload {
+  soul: string;
+  user: string;
 }
 
 export interface ExpertTeamBinding {

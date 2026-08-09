@@ -64,7 +64,6 @@ describe('MessageBubble assistant reply actions', () => {
     expect(actions?.classList.contains('opacity-100')).toBe(true);
     expect(actions?.classList.contains('opacity-0')).toBe(false);
     expect(actions?.querySelector('[aria-label="Copy reply"]')).not.toBeNull();
-    expect(actions?.querySelector('[aria-label="Regenerate"]')).not.toBeNull();
   });
 
   it('keeps restored conversation text static while only a live reply may animate', () => {
@@ -86,5 +85,32 @@ describe('MessageBubble assistant reply actions', () => {
     const live = container.querySelector<HTMLElement>('[data-message-bubble]');
     expect(live?.className).toContain('motion-safe:animate-in');
     expect(live?.getAttribute('data-streaming')).toBe('true');
+  });
+});
+
+describe('MessageBubble user context badges', () => {
+  it('collapses multiple MCP connectors into one badge and an overflow count', () => {
+    const message: Message = {
+      id: 'user-with-mcp',
+      role: 'user',
+      content: '帮我分析下 长江电力',
+      timestamp: Date.now(),
+      mcpPresets: [
+        { name: 'ifind-stock', display_name: '同花顺 iFinD 股票 MCP' },
+        { name: 'ifind-news', display_name: '同花顺 iFinD 新闻 MCP' },
+        { name: 'juyuan', display_name: '聚源金融数据 MCP' },
+      ],
+    };
+
+    act(() => root.render(<MessageBubble message={message} />));
+
+    const badges = container.querySelectorAll('[data-mcp-preset-chip]');
+    const overflow = container.querySelector<HTMLElement>('[data-mcp-preset-overflow]');
+    expect(badges).toHaveLength(1);
+    expect(badges[0].textContent).toContain('同花顺 iFinD 股票 MCP');
+    expect(overflow?.textContent).toBe('+2');
+    expect(overflow?.title).toContain('同花顺 iFinD 新闻 MCP');
+    expect(overflow?.title).toContain('聚源金融数据 MCP');
+    expect(container.textContent).not.toContain('同花顺 iFinD 新闻 MCP');
   });
 });

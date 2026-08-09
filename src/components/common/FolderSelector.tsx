@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Folder, FolderOpen, ChevronDown, Check, X, Notebook, Search, ChevronRight, Plus } from 'lucide-react';
-import { dialogBridge, fsBridge, osBridge } from '@/lib/ipc-factory';
+import { dialogBridge } from '@/lib/ipc-factory';
+import NewWorkspaceDialog from './NewWorkspaceDialog';
 import { useI18n } from '@/i18n';
 import { cn } from '@/lib/utils';
 import { projectNameFromPath, visibleProjectPath } from '@/core/workspace';
@@ -30,11 +31,9 @@ export default function FolderSelector({
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showNewProjectSubmenu, setShowNewProjectSubmenu] = useState(false);
-  const [isNameDialogOpen, setIsNameDialogOpen] = useState(false);
-  const [newProjectName, setNewProjectName] = useState('');
+  const [newWorkspaceOpen, setNewWorkspaceOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const nameInputRef = useRef<HTMLInputElement>(null);
   const { t } = useI18n();
 
   // Close dropdown when clicking outside
@@ -78,13 +77,10 @@ export default function FolderSelector({
   }, [isOpen]);
 
   useEffect(() => {
-    if (isNameDialogOpen) {
-      setTimeout(() => {
-        nameInputRef.current?.focus();
-        nameInputRef.current?.select();
-      }, 50);
+    if (isOpen) {
+      setTimeout(() => searchInputRef.current?.focus(), 50);
     }
-  }, [isNameDialogOpen]);
+  }, [isOpen]);
 
   const handleOpenDialog = async () => {
     setIsOpen(false);
@@ -103,29 +99,10 @@ export default function FolderSelector({
     }
   };
 
-  const handleCreateBlankProject = async () => {
+  const handleCreateBlankProject = () => {
     setIsOpen(false);
     setShowNewProjectSubmenu(false);
-    setNewProjectName(t.folder.defaultProjectName);
-    setIsNameDialogOpen(true);
-  };
-
-  const handleSaveBlankProject = async () => {
-    const trimmedName = newProjectName.trim();
-    if (!trimmedName) return;
-
-    try {
-      const documentsPath = await osBridge.documentDir();
-      const sep = documentsPath.includes('\\') ? '\\' : '/';
-      const safeName = trimmedName.replace(/[\\/:*?"<>|]/g, '-');
-      const newProjectPath = `${documentsPath}${sep}TpaRuyi Projects${sep}${safeName}`;
-
-      await fsBridge.mkdir(newProjectPath, { recursive: true });
-      setIsNameDialogOpen(false);
-      onSelect(newProjectPath);
-    } catch (err) {
-      console.error('Failed to create blank project:', err);
-    }
+    setNewWorkspaceOpen(true);
   };
 
   const handleSelectRecent = (path: string) => {
@@ -320,64 +297,11 @@ export default function FolderSelector({
         </div>
       )}
 
-      {isNameDialogOpen && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/20 px-4 backdrop-blur-[1px] animate-in fade-in duration-150">
-          <div className="w-full max-w-[500px] rounded-[20px] bg-white shadow-[0_16px_48px_rgba(0,0,0,0.16)] border border-[#e6e1d8] overflow-hidden">
-            <div className="flex items-start justify-between px-7 pt-6 pb-4">
-              <div>
-                <h2 className="text-[22px] leading-tight font-semibold text-[#242424]">
-                  {t.folder.nameProject}
-                </h2>
-                <p className="mt-2.5 text-[15px] font-medium text-[#8d8d8d] whitespace-nowrap">
-                  {t.folder.nameProjectHint}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsNameDialogOpen(false)}
-                className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg text-[#4b4b4b] hover:bg-[#f3f1ed] transition-colors"
-                aria-label={t.common.cancel}
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="px-7 py-4">
-              <input
-                ref={nameInputRef}
-                value={newProjectName}
-                onChange={(event) => setNewProjectName(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    handleSaveBlankProject();
-                  } else if (event.key === 'Escape') {
-                    setIsNameDialogOpen(false);
-                  }
-                }}
-                className="w-full h-12 rounded-[15px] border border-[#e5e2dc] bg-white px-3.5 text-[17px] font-medium text-[#242424] outline-none focus:border-[#d7d1c7] focus:ring-4 focus:ring-[#e7edf5]"
-              />
-            </div>
-
-            <div className="flex justify-end gap-3 px-7 pb-6">
-              <button
-                type="button"
-                onClick={() => setIsNameDialogOpen(false)}
-                className="h-10 rounded-[12px] border border-[#e8e5df] bg-white px-6 text-[15px] font-semibold text-[#242424] hover:bg-[#f8f6f2] transition-colors"
-              >
-                {t.common.cancel}
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveBlankProject}
-                disabled={!newProjectName.trim()}
-                className="h-10 rounded-[12px] bg-[#1f2024] px-6 text-[15px] font-semibold text-white hover:bg-[#111214] disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
-              >
-                {t.common.save}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <NewWorkspaceDialog
+        open={newWorkspaceOpen}
+        onClose={() => setNewWorkspaceOpen(false)}
+        onCreated={onSelect}
+      />
     </div>
   );
 }

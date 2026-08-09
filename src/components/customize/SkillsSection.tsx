@@ -8,8 +8,9 @@ import { useI18n } from '@/i18n';
 import { fetchSkillDetail, fetchSkills, runSkillAction, saveSkill } from '@/core/api';
 import { getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/nanobotClient';
 import { fetchPromptHubSkills, publishPromptHubSkill } from '@/core/prompthubApi';
+import { displaySkillName } from '@/core/skills/filter';
 import type { NanobotSkillInfo, SkillsPayload } from '@/core/types';
-import { ipc } from '@/lib/ipc-factory';
+import { ipc, shellBridge } from '@/lib/ipc-factory';
 import SubTabBar from './SubTabBar';
 import { Toggle } from '@/components/ui/toggle';
 import { Input } from '@/components/ui/input';
@@ -28,7 +29,8 @@ import {
   Code,
   Download,
   Brain,
-  UploadCloud
+  UploadCloud,
+  FolderOpen
 } from 'lucide-react';
 
 type SkillTab = 'builtin' | 'workspace';
@@ -47,9 +49,6 @@ function getSkillIcon(name: string) {
   return <IconComponent className="h-4 w-4" />;
 }
 
-function displaySkillName(skill: NanobotSkillInfo): string {
-  return skill.source === 'builtin' && skill.name === 'clawhub' ? 'TPACoworkHub' : skill.name;
-}
 
 async function getSkillsAuth(): Promise<{ token: string; baseUrl: string }> {
   const status = await getNanobotStatus();
@@ -122,6 +121,7 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
   const [hubSkillNames, setHubSkillNames] = useState<Set<string>>(new Set());
   const [activeSubTab, setActiveSubTab] = useState<SkillTab>('builtin');
   const [detail, setDetail] = useState<NanobotSkillInfo | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [actingName, setActingName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -173,7 +173,7 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
       if (!search) return true;
       return [
         skill.name,
-        displaySkillName(skill),
+        displaySkillName(skill.name),
         displaySkillDescription(skill, isEnglish),
         skill.source,
         ...(skill.tags ?? []),
@@ -300,6 +300,7 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
 
   const openDetail = async (skill: NanobotSkillInfo) => {
     setDetail(skill);
+    setDetailLoading(true);
     setError(null);
     try {
       const { token, baseUrl } = await getSkillsAuth();
@@ -307,11 +308,13 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
       setDetail(next.skills[0] ?? skill);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDetailLoading(false);
     }
   };
 
   return (
-    <div data-skills-surface className="flex h-full flex-col overflow-hidden">
+    <div data-skills-surface className="relative flex h-full flex-col overflow-hidden">
       <div className="shrink-0 px-4 pt-4 pb-2">
         <SubTabBar
           tabs={subTabs}
@@ -337,7 +340,7 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-12 text-sm text-neutral-400">
             <Loader2 className="h-4 w-4 animate-spin" />
-            {isEnglish ? 'Loading nanobot skills' : '正在读取 nanobot 技能'}
+            {isEnglish ? 'Loading skills' : '正在读取技能'}
           </div>
         ) : filtered.length === 0 ? (
           <div className="py-8 text-center text-sm text-neutral-400">{isEnglish ? 'No skills found' : '没有找到技能'}</div>
@@ -358,7 +361,7 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span data-skill-name className="truncate text-sm font-medium text-neutral-900">/{displaySkillName(skill)}</span>
+                      <span data-skill-name className="truncate text-sm font-medium text-neutral-900">/{displaySkillName(skill.name)}</span>
                       <span data-skill-source={skill.source} className={`rounded border px-1.5 py-0.5 text-[10px] ${sourceClass(skill.source)}`}>
                         {sourceLabel(skill.source, isEnglish)}
                       </span>
@@ -421,20 +424,35 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
                 <div className="text-neutral-500">
                   {getSkillIcon(detail.name)}
                 </div>
-                <h3 className="truncate text-base font-semibold text-neutral-900">/{displaySkillName(detail)}</h3>
+                <h3 className="truncate text-base font-semibold text-neutral-900">/{displaySkillName(detail.name)}</h3>
                 <span data-skill-source={detail.source} className={`rounded border px-1.5 py-0.5 text-[10px] ${sourceClass(detail.source)}`}>
                   {sourceLabel(detail.source, isEnglish)}
                 </span>
               </div>
               <p className="mt-1 truncate text-xs text-neutral-500">{detail.path}</p>
             </div>
-            <button
-              onClick={() => setDetail(null)}
-              className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
-              title="关闭"
-            >
-              <X className="h-4 w-4" />
-            </button>
+            <div className="flex items-center gap-1">
+              {detail.path ? (
+                <button
+                  onClick={() => {
+                    const separator = detail.path.includes('\\') ? '\\' : '/';
+                    const dir = detail.path.slice(0, detail.path.lastIndexOf(separator));
+                    void shellBridge.openPath(dir || detail.path);
+                  }}
+                  className="rounded-lg p-2 text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
+                  title={isEnglish ? 'Open skill folder' : '打开技能目录'}
+                >
+                  <FolderOpen className="h-4 w-4" />
+                </button>
+              ) : null}
+              <button
+                onClick={() => setDetail(null)}
+                className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+                title="关闭"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
           </div>
           <div className="flex-1 overflow-y-auto p-5">
             <p className="mb-4 text-sm leading-6 text-neutral-700">{displaySkillDescription(detail, isEnglish)}</p>
@@ -443,9 +461,16 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
                 依赖缺失：{detail.missing}
               </div>
             )}
-            <pre className="whitespace-pre-wrap rounded-lg border border-neutral-200 bg-white p-4 text-xs leading-5 text-neutral-700">
-              {detail.content || '未读取到技能内容'}
-            </pre>
+            {detailLoading ? (
+              <div className="flex items-center gap-2 py-8 text-sm text-neutral-400">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                {isEnglish ? 'Loading skill details...' : '正在读取技能详情'}
+              </div>
+            ) : (
+              <pre className="whitespace-pre-wrap rounded-lg border border-neutral-200 bg-white p-4 text-xs leading-5 text-neutral-700">
+                {detail.content || '未读取到技能内容'}
+              </pre>
+            )}
           </div>
         </div>
       )}

@@ -41,6 +41,7 @@ interface StreamBuffer {
   /** ID of the assistant message currently receiving deltas (cleared on ``stream_end``). */
   messageId: string;
   streamId?: string;
+  turnId?: string;
 }
 
 interface ActiveAssistantCursor {
@@ -49,14 +50,72 @@ interface ActiveAssistantCursor {
 }
 
 type PendingStreamEvent =
-  | { kind: "delta"; text: string; streamId?: string }
-  | { kind: "reasoning"; text: string }
+  | { kind: "delta"; text: string; streamId?: string; turnId?: string }
+  | { kind: "reasoning"; text: string; turnId?: string }
   | {
       kind: "narration";
       text: string;
       streamId?: string;
       replacesStreamId?: string;
+      turnId?: string;
     };
+
+interface AnswerStreamIdentity {
+  streamId?: string;
+  turnId?: string;
+}
+
+function inboundStringField(event: InboundEvent, key: string): string | undefined {
+  const value = (event as InboundEvent & Record<string, unknown>)[key];
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function inboundTurnId(event: InboundEvent): string | undefined {
+  const direct = inboundStringField(event, "turn_id");
+  if (direct) return direct;
+  if (event.event === "turn_started" || event.event === "turn_completed") {
+    return event.turn.id;
+  }
+  return undefined;
+}
+
+function taskProgressField(
+  agentUI: UIMessage["agentUI"],
+  field: "plan_id" | "team_run_id" | "turn_id",
+): string | undefined {
+  if (agentUI?.kind !== "task_progress") return undefined;
+  const value = agentUI[field];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+/** Consecutive revisions of one plan are state updates, not timeline rows. */
+function isSameTaskProgressPlan(
+  previous: UIMessage["agentUI"],
+  incoming: UIMessage["agentUI"],
+): boolean {
+  if (
+    previous?.kind !== "task_progress"
+    || incoming?.kind !== "task_progress"
+  ) {
+    return false;
+  }
+  for (const field of ["plan_id", "team_run_id", "turn_id"] as const) {
+    const previousValue = taskProgressField(previous, field);
+    const incomingValue = taskProgressField(incoming, field);
+    if (previousValue && incomingValue) return previousValue === incomingValue;
+  }
+  const previousSteps = Array.isArray(previous.steps)
+    ? previous.steps.map((step) => step.id).join("\u0000")
+    : "";
+  const incomingSteps = Array.isArray(incoming.steps)
+    ? incoming.steps.map((step) => step.id).join("\u0000")
+    : "";
+  return !previousSteps || !incomingSteps || previousSteps === incomingSteps;
+}
+
+function sameTurn(message: UIMessage, turnId?: string): boolean {
+  return !turnId || !message.turnId || message.turnId === turnId;
+}
 
 const FILE_EDIT_TOOL_NAMES = new Set(["write_file", "edit_file", "apply_patch"]);
 
@@ -109,11 +168,17 @@ function toMediaAttachment(media: {
 function findStreamingAssistantIndex(
   prev: UIMessage[],
   closedStreamIds: ReadonlySet<string>,
+  turnId?: string,
 ): number | null {
   for (let i = prev.length - 1; i >= 0; i -= 1) {
     const m = prev[i];
     if (m.kind === "trace") continue;
-    if (m.role === "assistant" && m.isStreaming && !closedStreamIds.has(m.id)) return i;
+    if (
+      m.role === "assistant"
+      && m.isStreaming
+      && !closedStreamIds.has(m.id)
+      && sameTurn(m, turnId)
+    ) return i;
     if (m.role === "user") break;
   }
   return null;
@@ -147,6 +212,7 @@ function attachReasoningChunk(
   chunk: string,
   segments?: {
     ensure: () => string;
+    turnId?: string;
   },
 ): UIMessage[] {
   const receivedAt = Date.now();
@@ -175,6 +241,7 @@ function attachReasoningChunk(
         reasoningStartedAt: candidate.reasoningStartedAt ?? receivedAt,
         reasoningCompletedAt: undefined,
         reasoningDurationMs: undefined,
+        ...(segments?.turnId ? { turnId: segments.turnId } : {}),
         ...(activitySegmentId ? { activitySegmentId } : {}),
       };
       return [...prev.slice(0, i), merged, ...prev.slice(i + 1)];
@@ -192,6 +259,7 @@ function attachReasoningChunk(
       reasoning: chunk,
       reasoningStreaming: true,
       reasoningStartedAt: receivedAt,
+      ...(segments?.turnId ? { turnId: segments.turnId } : {}),
       ...(activitySegmentId ? { activitySegmentId } : {}),
       createdAt: Date.now(),
     },
@@ -206,12 +274,16 @@ function attachReasoningChunk(
  * the model already produced an answer in a previous turn, so the new
  * delta belongs in a fresh row.
  */
-function findActiveAssistantPlaceholderIndex(prev: UIMessage[]): number | null {
+function findActiveAssistantPlaceholderIndex(
+  prev: UIMessage[],
+  turnId?: string,
+): number | null {
   const last = prev[prev.length - 1];
   if (!last) return null;
   if (last.role !== "assistant" || last.kind === "trace") return null;
   if (last.content.length > 0) return null;
   if (!last.isStreaming) return null;
+  if (!sameTurn(last, turnId)) return null;
   return prev.length - 1;
 }
 
@@ -259,6 +331,7 @@ export function attachNarrationChunk(
     ensure?: () => string;
     streamId?: string;
     replacesStreamId?: string;
+    turnId?: string;
   },
 ): UIMessage[] {
   if (options?.replacesStreamId) {
@@ -295,6 +368,7 @@ export function attachNarrationChunk(
         narrationStreaming: true,
         isStreaming: true,
         narrationStreamId: options.streamId,
+        ...(options.turnId ? { turnId: options.turnId } : {}),
       });
     }
   }
@@ -314,6 +388,7 @@ export function attachNarrationChunk(
       isStreaming: true,
       narrationStreaming: true,
       narrationStreamId: options?.streamId ?? last.narrationStreamId,
+      ...(options?.turnId ? { turnId: options.turnId } : {}),
     });
   }
   const activitySegmentId = options?.ensure?.();
@@ -327,6 +402,7 @@ export function attachNarrationChunk(
       narration: chunk,
       narrationStreaming: true,
       narrationStreamId: options?.streamId,
+      ...(options?.turnId ? { turnId: options.turnId } : {}),
       isStreaming: true,
       ...(activitySegmentId ? { activitySegmentId } : {}),
       createdAt: Date.now(),
@@ -754,8 +830,69 @@ function stampLastAssistantUsage(
 export function absorbCompleteAssistantMessage(
   prev: UIMessage[],
   message: Omit<UIMessage, "id" | "role" | "createdAt">,
-  options?: { replaceStream?: boolean },
+  options?: {
+    replaceStream?: boolean;
+    streamId?: string;
+    turnId?: string;
+    eventId?: string;
+  },
 ): UIMessage[] {
+  if (options?.replaceStream) {
+    let lastUserIndex = -1;
+    for (let index = prev.length - 1; index >= 0; index -= 1) {
+      if (prev[index].role === "user") {
+        lastUserIndex = index;
+        break;
+      }
+    }
+    const assistantIndexes: number[] = [];
+    for (let index = lastUserIndex + 1; index < prev.length; index += 1) {
+      const candidate = prev[index];
+      if (candidate.role !== "assistant" || candidate.kind === "trace") continue;
+      const sameStream = Boolean(
+        options.streamId
+        && candidate.streamId
+        && candidate.streamId === options.streamId,
+      );
+      const sameTurnFallback = Boolean(
+        !options.streamId
+        && options.turnId
+        && candidate.turnId === options.turnId
+        && (
+          candidate.isStreaming
+          || candidate.content === message.content
+          || (
+            candidate.content.length > 0
+            && message.content.endsWith(candidate.content)
+          )
+        ),
+      );
+      if (sameStream || sameTurnFallback) assistantIndexes.push(index);
+    }
+
+    if (assistantIndexes.length > 0) {
+      const targetIndex = assistantIndexes[0];
+      const candidate = prev[targetIndex];
+      const duplicateIndexes = new Set(assistantIndexes.slice(1));
+      return prev.flatMap((item, index) => {
+        if (duplicateIndexes.has(index)) return [];
+        if (index !== targetIndex) return [item];
+        return [{
+          ...candidate,
+          ...message,
+          id: candidate.id,
+          role: "assistant" as const,
+          createdAt: candidate.createdAt,
+          isStreaming: false,
+          reasoningStreaming: false,
+          ...(options.streamId ? { streamId: options.streamId } : {}),
+          ...(options.turnId ? { turnId: options.turnId } : {}),
+          ...(options.eventId ? { eventId: options.eventId } : {}),
+        }];
+      });
+    }
+  }
+
   // A streamed reply can be followed by an authoritative ``message`` that
   // carries generated attachments. By then ``stream_end`` has closed the
   // active cursor, so merge into the latest assistant bubble in this user
@@ -774,6 +911,9 @@ export function absorbCompleteAssistantMessage(
     return replaceMessageAt(prev, index, {
       ...candidate,
       ...message,
+      ...(options?.streamId ? { streamId: options.streamId } : {}),
+      ...(options?.turnId ? { turnId: options.turnId } : {}),
+      ...(options?.eventId ? { eventId: options.eventId } : {}),
       id: candidate.id,
       role: "assistant",
       createdAt: candidate.createdAt,
@@ -791,6 +931,9 @@ export function absorbCompleteAssistantMessage(
         role: "assistant",
         createdAt: Date.now(),
         ...message,
+        ...(options?.streamId ? { streamId: options.streamId } : {}),
+        ...(options?.turnId ? { turnId: options.turnId } : {}),
+        ...(options?.eventId ? { eventId: options.eventId } : {}),
       },
     ];
   }
@@ -799,6 +942,9 @@ export function absorbCompleteAssistantMessage(
     {
       ...last,
       ...message,
+      ...(options?.streamId ? { streamId: options.streamId } : {}),
+      ...(options?.turnId ? { turnId: options.turnId } : {}),
+      ...(options?.eventId ? { eventId: options.eventId } : {}),
       isStreaming: false,
       reasoningStreaming: false,
     },
@@ -1211,6 +1357,11 @@ export function useNanobotStream(
   const setStreamError = useCallback((value: StreamError | null) => dispatchProtocol({ type: 'error', value }), []);
   const buffer = useRef<StreamBuffer | null>(null);
   const activeAssistantRef = useRef<ActiveAssistantCursor | null>(null);
+  const activeTurnIdRef = useRef<string | null>(initialRuntimeSnapshot?.active_turn?.id ?? null);
+  /** Keep the answer identity beyond ``stream_end``. The final authoritative
+   * message can arrive after the active cursor is closed and must still replace
+   * every buffered fragment from the same stream. */
+  const lastAnswerStreamRef = useRef<AnswerStreamIdentity | null>(null);
   const closedAssistantStreamIdsRef = useRef<Set<string>>(new Set());
   const activitySegmentRef = useRef<string | null>(null);
   const fileEditSegmentRef = useRef<string | null>(null);
@@ -1309,15 +1460,27 @@ export function useNanobotStream(
   }, []);
 
   const appendAnswerChunk = useCallback(
-    (prev: UIMessage[], chunk: string, streamId?: string): UIMessage[] => {
+    (
+      prev: UIMessage[],
+      chunk: string,
+      streamId?: string,
+      turnId?: string,
+    ): UIMessage[] => {
       let next = prev;
       let targetIndex = resolveActiveAssistantIndex(next);
+      if (targetIndex !== null && !sameTurn(next[targetIndex], turnId)) {
+        targetIndex = null;
+      }
 
       if (targetIndex === null) {
-        targetIndex = findActiveAssistantPlaceholderIndex(next);
+        targetIndex = findActiveAssistantPlaceholderIndex(next, turnId);
       }
       if (targetIndex === null) {
-        targetIndex = findStreamingAssistantIndex(next, closedAssistantStreamIdsRef.current);
+        targetIndex = findStreamingAssistantIndex(
+          next,
+          closedAssistantStreamIdsRef.current,
+          turnId,
+        );
       }
       if (targetIndex === null) {
         const id = crypto.randomUUID();
@@ -1329,6 +1492,7 @@ export function useNanobotStream(
             content: "",
             isStreaming: true,
             ...(streamId ? { streamId } : {}),
+            ...(turnId ? { turnId } : {}),
             createdAt: Date.now(),
           },
         ];
@@ -1341,12 +1505,14 @@ export function useNanobotStream(
         content: target.content + chunk,
         isStreaming: true,
         streamId: streamId ?? target.streamId,
+        turnId: turnId ?? target.turnId,
       };
       closedAssistantStreamIdsRef.current.delete(merged.id);
       activeAssistantRef.current = { id: merged.id, index: targetIndex };
       buffer.current = {
         messageId: merged.id,
         streamId: streamId ?? target.streamId,
+        turnId: turnId ?? target.turnId,
       };
       return replaceMessageAt(next, targetIndex, merged);
     },
@@ -1358,11 +1524,12 @@ export function useNanobotStream(
       let next = prev;
       for (const event of events) {
         if (event.kind === "delta") {
-          next = appendAnswerChunk(next, event.text, event.streamId);
+          next = appendAnswerChunk(next, event.text, event.streamId, event.turnId);
         } else if (event.kind === "reasoning") {
           if (closeActiveAssistantStream()) clearActivitySegment();
           next = attachReasoningChunk(next, event.text, {
             ensure: ensureActivitySegmentId,
+            turnId: event.turnId,
           });
         } else {
           if (closeActiveAssistantStream()) clearActivitySegment();
@@ -1371,6 +1538,7 @@ export function useNanobotStream(
             ensure: ensureActivitySegmentId,
             streamId: event.streamId,
             replacesStreamId: event.replacesStreamId,
+            turnId: event.turnId,
           });
         }
       }
@@ -1491,6 +1659,8 @@ export function useNanobotStream(
     });
     buffer.current = null;
     activeAssistantRef.current = null;
+    activeTurnIdRef.current = runtimeSnapshotForClient(client, chatId)?.active_turn?.id ?? null;
+    lastAnswerStreamRef.current = null;
     closedAssistantStreamIdsRef.current.clear();
     clearActivitySegment();
     clearPendingStreamWork();
@@ -1540,10 +1710,17 @@ export function useNanobotStream(
         if (!chunk) return;
         clearActivitySegment();
         setIsStreaming(true);
+        const turnId = inboundTurnId(ev) ?? activeTurnIdRef.current ?? undefined;
+        if (turnId) activeTurnIdRef.current = turnId;
+        lastAnswerStreamRef.current = {
+          streamId: ev.stream_id ?? lastAnswerStreamRef.current?.streamId,
+          turnId: turnId ?? lastAnswerStreamRef.current?.turnId,
+        };
         pendingStreamEventsRef.current.push({
           kind: "delta",
           text: chunk,
           streamId: ev.stream_id,
+          turnId,
         });
         schedulePendingStreamFlush();
         return;
@@ -1555,7 +1732,9 @@ export function useNanobotStream(
         if (!chunk) return;
         if (fileEditSegmentRef.current) clearActivitySegment();
         setIsStreaming(true);
-        pendingStreamEventsRef.current.push({ kind: "reasoning", text: chunk });
+        const turnId = inboundTurnId(ev) ?? activeTurnIdRef.current ?? undefined;
+        if (turnId) activeTurnIdRef.current = turnId;
+        pendingStreamEventsRef.current.push({ kind: "reasoning", text: chunk, turnId });
         schedulePendingStreamFlush();
         return;
       }
@@ -1564,11 +1743,14 @@ export function useNanobotStream(
         const chunk = typeof ev.text === "string" ? ev.text : "";
         if (!chunk) return;
         setIsStreaming(true);
+        const turnId = inboundTurnId(ev) ?? activeTurnIdRef.current ?? undefined;
+        if (turnId) activeTurnIdRef.current = turnId;
         pendingStreamEventsRef.current.push({
           kind: "narration",
           text: chunk,
           streamId: ev.stream_id,
           replacesStreamId: ev.replaces_stream_id,
+          turnId,
         });
         schedulePendingStreamFlush();
         return;
@@ -1590,6 +1772,16 @@ export function useNanobotStream(
         const messageId = buffer.current?.messageId ?? activeAssistantRef.current?.id;
         const streamId = ev.stream_id ?? buffer.current?.streamId;
         const isNarration = isNarrationStreamEnd(ev);
+        const turnId = inboundTurnId(ev)
+          ?? buffer.current?.turnId
+          ?? activeTurnIdRef.current
+          ?? undefined;
+        if (!isNarration) {
+          lastAnswerStreamRef.current = {
+            streamId: streamId ?? lastAnswerStreamRef.current?.streamId,
+            turnId: turnId ?? lastAnswerStreamRef.current?.turnId,
+          };
+        }
         // A media-bearing assistant frame is authoritative for the answer.
         // Ignore a later duplicate answer terminator, but keep public
         // narration protocol frames usable.
@@ -1661,6 +1853,8 @@ export function useNanobotStream(
 
       if (ev.event === "turn_started") {
         lifecycleTerminalHandledRef.current = false;
+        activeTurnIdRef.current = ev.turn.id;
+        lastAnswerStreamRef.current = { turnId: ev.turn.id };
         setTurnUsage(undefined);
         useTurnPlanStore.getState().activateTurn(ev.chat_id, ev.turn.id);
         if (ev.turn.plan) {
@@ -1687,6 +1881,7 @@ export function useNanobotStream(
           setMessages((prev) => applyPlanToMessages(prev, snapshotPlan));
         }
         if (ev.thread_status.type === "active") {
+          activeTurnIdRef.current = ev.active_turn?.id ?? activeTurnIdRef.current;
           if (ev.active_turn?.started_at) setRunStartedAt(ev.active_turn.started_at);
           setIsStreaming(true);
         } else if (ev.thread_status.type === "systemError") {
@@ -1965,6 +2160,11 @@ export function useNanobotStream(
         });
         suppressStreamUntilTurnEndRef.current = false;
         if (ev.event === "turn_completed") {
+          activeTurnIdRef.current = ev.turn.id;
+          lastAnswerStreamRef.current = {
+            ...lastAnswerStreamRef.current,
+            turnId: ev.turn.id,
+          };
           lifecycleTerminalHandledRef.current = true;
         }
         if (!wasLifecycleHandled) onTurnEnd?.();
@@ -2045,15 +2245,59 @@ export function useNanobotStream(
                   : [];
             if (lines.length === 0) return base;
             const last = base[base.length - 1];
+            let replacedProgressIndex = -1;
+            if (agentUI?.kind === "task_progress") {
+              for (let index = base.length - 1; index >= 0; index -= 1) {
+                const candidate = base[index];
+                if (candidate.role === "user") break;
+                if (
+                  candidate.kind === "trace"
+                  && !candidate.isStreaming
+                  && !candidate.narration
+                  && isSameTaskProgressPlan(candidate.agentUI, agentUI)
+                ) {
+                  replacedProgressIndex = index;
+                  break;
+                }
+              }
+            }
+            if (replacedProgressIndex >= 0) {
+              const previous = base[replacedProgressIndex];
+              const previousTraces = previous.traces?.length
+                ? previous.traces
+                : previous.content
+                  ? [previous.content]
+                  : [];
+              const mergedLines = visibleStructuredEvents.length > 0
+                ? mergeUniqueToolTraceLines(previousTraces, structuredLines)
+                : null;
+              const replacement: UIMessage = {
+                ...previous,
+                traces: mergedLines?.traces ?? (previousTraces.length ? previousTraces : lines),
+                content: mergedLines
+                  ? mergedLines.traces[mergedLines.traces.length - 1]
+                  : previous.content || lines[lines.length - 1],
+                toolEvents: visibleStructuredEvents.length
+                  ? mergeToolProgressEvents(previous.toolEvents, visibleStructuredEvents)
+                  : previous.toolEvents,
+                agentUI,
+                activitySegmentId: segmentId,
+                createdAt: Date.now(),
+              };
+              // Move the mutable plan card to the newest event position. This
+              // matches the canonical history projection while keeping the
+              // live transcript at constant size even across media/tool rows.
+              return [
+                ...base.slice(0, replacedProgressIndex),
+                ...base.slice(replacedProgressIndex + 1),
+                replacement,
+              ];
+            }
             if (
               last
               && last.kind === "trace"
               && !last.isStreaming
               && !last.narration
-              // Keep consecutive task-progress snapshots as separate timeline
-              // moments. Tool start/end frames may still merge into either
-              // snapshot through call_id, but a newer plan update must not
-              // overwrite the earlier user-visible stage.
               && !(agentUI?.kind === "task_progress" && last.agentUI?.kind === "task_progress")
               && (!last.activitySegmentId || last.activitySegmentId === segmentId)
             ) {
@@ -2113,6 +2357,18 @@ export function useNanobotStream(
         // Do NOT reset isStreaming here — only ``turn_end`` signals that
         // the full turn (all tool calls + final text) is complete.
         clearActivitySegment();
+        const eventTurn = inboundTurnId(ev)
+          ?? lastAnswerStreamRef.current?.turnId
+          ?? activeTurnIdRef.current
+          ?? undefined;
+        const answerStream = (
+          !lastAnswerStreamRef.current?.turnId
+          || !eventTurn
+          || lastAnswerStreamRef.current.turnId === eventTurn
+        )
+          ? lastAnswerStreamRef.current?.streamId
+          : undefined;
+        const eventId = inboundStringField(ev, "event_id");
         setMessages((prev) => {
           const activeId = buffer.current?.messageId;
           buffer.current = null;
@@ -2132,6 +2388,9 @@ export function useNanobotStream(
             ...(lat !== undefined ? { latencyMs: lat } : {}),
           }, {
             replaceStream: ev.replace_stream === true,
+            streamId: answerStream,
+            turnId: eventTurn,
+            eventId,
           });
         });
         if (hasMedia) {
@@ -2223,6 +2482,8 @@ export function useNanobotStream(
       unsubRuntime();
       buffer.current = null;
       activeAssistantRef.current = null;
+      activeTurnIdRef.current = null;
+      lastAnswerStreamRef.current = null;
       closedAssistantStreamIdsRef.current.clear();
       clearActivitySegment();
       clearPendingStreamWork();
@@ -2262,6 +2523,8 @@ export function useNanobotStream(
       setMessages((prev) => {
         buffer.current = null;
         activeAssistantRef.current = null;
+        activeTurnIdRef.current = null;
+        lastAnswerStreamRef.current = null;
         closedAssistantStreamIdsRef.current.clear();
         clearActivitySegment();
         return [
@@ -2275,6 +2538,9 @@ export function useNanobotStream(
             ...(options?.interactivePromptAnswer ? { interactivePromptAnswer: options.interactivePromptAnswer } : {}),
             ...(options?.cliApps?.length ? { cliApps: options.cliApps } : {}),
             ...(options?.mcpPresets?.length ? { mcpPresets: options.mcpPresets } : {}),
+            ...(options?.skillScope?.explicit_skills?.length
+              ? { skills: options.skillScope.explicit_skills }
+              : {}),
           },
         ];
       });
@@ -2301,6 +2567,8 @@ export function useNanobotStream(
     setMessages((prev) => {
       buffer.current = null;
       activeAssistantRef.current = null;
+      activeTurnIdRef.current = null;
+      lastAnswerStreamRef.current = null;
       closedAssistantStreamIdsRef.current.clear();
       clearActivitySegment();
       return finalizeInterruptedTurn(prev);

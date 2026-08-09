@@ -34,10 +34,8 @@
 
 ### 第一步：数据收集
 
-> **数据源规范**：参见 `skills/financial-data.md`。所有财务数据必须来自两个独立来源，误差>1%须标记。
-> - 美股：macrotrends（主）+ stockanalysis（副）
-> - 港股：aastocks（主）+ macrotrends ADR（副）
-> - A股：东方财富（主）+ 巨潮资讯（副）
+> **数据源规范**：参见 `skills/financial-data.md`。A 股关键数值字段使用当前可用的聚源 + 同花顺 iFinD + 财汇 Caihui MCP 按字段交叉核验；其他市场至少使用两个独立来源。误差>1%须标记。
+> - A股：聚源 + 同花顺 iFinD + 财汇 Caihui MCP（当前已配置且覆盖该字段的来源）
 
 使用 Task 工具启动后台 Agent，从网络收集以下数据：
 
@@ -221,7 +219,7 @@ python3 tools/report_audit.py extract \
 
 **Step 2 — 取数核验：**
 对清单中每个数据点，按 `skills/financial-data.md` 规范从可靠信源取数
-（美股：macrotrends+stockanalysis；港股：aastocks+macrotrends；A股：东方财富+巨潮资讯），
+（美股：macrotrends+stockanalysis；港股：aastocks+macrotrends；A股：聚源+iFinD+财汇 Caihui MCP），
 填入 `fetched_value` / `fetched_source` / `fetched_value2` / `fetched_source2`。
 
 **Step 3 — 输出判决：**

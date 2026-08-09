@@ -60,6 +60,19 @@
   background: rgba(255, 255, 255, 0.22);
 }
 
+/* Hide the scrollbar entirely while keeping the region scrollable
+   (used by compact floating surfaces like the pinned summary). */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 /* Animations */
 .sidebar-transition {
   transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -80,6 +93,17 @@
 .window-titlebar-no-drag * {
   -webkit-app-region: no-drag;
   app-region: no-drag;
+}
+
+/* While a theme switch is in flight, suppress transitions so buttons and
+   surfaces flip to the new palette in the same frame as the page background
+   instead of lagging behind with an animated light->dark fade. This class is
+   only ever applied when the effective scheme actually changes (never on
+   no-op switches), and it must not touch backdrop-filter or animations:
+   disabling those for even two frames makes modal overlays visibly blink. */
+.theme-transitioning,
+.theme-transitioning * {
+  transition: none !important;
 }
 
 @keyframes fadeIn {
@@ -116,21 +140,6 @@
 }
 .typing-dot:nth-child(2) { animation-delay: 0.15s; }
 .typing-dot:nth-child(3) { animation-delay: 0.3s; }
-
-@keyframes generation-status-breathe {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.38; }
-}
-
-.generation-status-breathe {
-  animation: generation-status-breathe 2.2s ease-in-out infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .generation-status-breathe {
-    animation: none;
-  }
-}
 
 /* shadcn theme */
 @theme inline {
@@ -554,7 +563,11 @@ input[type="range"].slider-filled::-moz-range-thumb {
   [class~="bg-[#e8e4dd]"], [class~="bg-[#edeae4]"], [class~="bg-[#eee9df]"]
 ) { background-color: #282828; }
 
-.dark :is([class~="bg-[#f4f1e8]"], [class~="bg-white/50"]) { background-color: #2a2a2a; }
+.dark :is(
+  [class~="bg-[#f4f1e8]"], [class~="bg-white/50"], [class~="bg-[#fff7f1]"]
+) { background-color: #2a2a2a; }
+
+.dark [class~="text-[#a65034]"] { color: #e7a384; }
 
 .dark :is(
   [class~="bg-[#f4f3f1]"], [class~="bg-[#f3f0e9]"], [class~="bg-[#f1efe9]"],
@@ -592,6 +605,7 @@ input[type="range"].slider-filled::-moz-range-thumb {
   [class~="border-[#e6e6e8]"], [class~="border-[#e5e5e5]"], [class~="border-[#e5e2db]"],
   [class~="border-[#e5e2dc]"], [class~="border-[#e5e1d8]"], [class~="border-[#e4e4e6]"],
   [class~="border-[#e3dfd7]"], [class~="border-[#e2e2e4]"], [class~="border-[#e2ded6]"],
+  [class~="border-[#eeeae3]"], [class~="border-[#eeeae2]"],
   [class~="border-[#dedbd3]"], [class~="border-[#dedad1]"], [class~="border-[#ded9ce]"]
 ) { border-color: #404040; }
 
@@ -638,6 +652,42 @@ input[type="range"].slider-filled::-moz-range-thumb {
  * Settings has its own elevation hierarchy. Keep this scoped so stronger
  * contrast for settings navigation and form cards doesn't leak into chat.
  */
+.dark [data-help-manual] {
+  color: #eeeae2;
+}
+
+.dark [data-help-manual] > div {
+  background: #1b1b1b;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.58);
+}
+
+.dark [data-help-manual] :is(
+  [class~="border-[#e6e0d7]"]
+) { border-color: #3a3a3a; }
+
+.dark [data-help-manual] :is(
+  [class~="bg-[#f7f6f2]"], [class~="bg-[#efede8]"], [class~="bg-[#e8e6e1]"]
+) { background-color: #242424; }
+
+.dark [data-help-manual] :is(
+  [class~="text-[#202020]"], [class~="text-[#5f5a50]"]
+) { color: #eeeae2; }
+
+.dark [data-help-manual] [class~="text-[#8a867c]"] { color: #aaa69d; }
+
+.dark [data-help-manual] [class~="text-[#6f6f73]"] { color: #aaa69d; }
+
+.dark [data-help-manual] :is(
+  [class~="bg-[#d97757]/15"], [class~="bg-[#d97757]/20"]
+) { background: rgba(217, 119, 87, 0.18); }
+
+.dark [data-help-manual] [class~="hover:bg-[#efede8]"]:hover { background-color: #2f2f2f; }
+
+.dark [data-help-manual] :is(
+  [class~="text-[#b96346]"], [class~="text-[#d97757]"]
+) { color: #e7a384; }
+
 .dark [data-settings-dialog] {
   background: #1b1b1b;
   color: #f2eee6;
@@ -846,6 +896,44 @@ input[type="range"].slider-filled::-moz-range-thumb {
 .dark [data-expert-dependency] {
   background: #252525;
   border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Expert team list + detail cards: cover the hardcoded light palette that the
+   generic surface maps do not touch (badges, stat chips, dividers, hovers). */
+.dark :is([data-expert-team-list], [data-expert-team-detail]) :is(
+  [class~="border-[#e6e0d7]"], [class~="border-[#e5ded4]"],
+  [class~="border-[#eee9e2]"], [class~="border-[#d8c9bd]"]
+) { border-color: #3a3a3a; }
+
+.dark [data-expert-team-list] [class~="hover:border-[#d8c9bd]"]:hover,
+.dark [data-expert-team-detail] [class~="hover:border-[#d8c9bd]"]:hover {
+  border-color: #555555;
+}
+
+.dark :is([data-expert-team-list], [data-expert-team-detail]) :is(
+  [class~="text-[#888579]"], [class~="text-[#7a6658]"],
+  [class~="text-[#777368]"], [class~="text-[#6d695f]"],
+  [class~="text-[#656358]"]
+) { color: #aaa69d; }
+
+.dark :is([data-expert-team-list], [data-expert-team-detail]) :is(
+  [class~="text-[#b85c3d]"], [class~="text-[#a06b52]"]
+) { color: #e7a384; }
+
+.dark :is([data-expert-team-list], [data-expert-team-detail]) [class~="bg-[#fff1e8]"] {
+  background: rgba(217, 119, 87, 0.16);
+}
+
+.dark :is([data-expert-team-list], [data-expert-team-detail]) [class~="bg-[#f3eee8]"] {
+  background: #2e2c28;
+}
+
+.dark [data-expert-team-detail] [class~="bg-[#f5f2ed]"] {
+  background: #33312d;
+}
+
+.dark :is([data-expert-team-list], [data-expert-team-detail]) [class~="bg-[#29261b]"] {
+  background: #d97757;
 }
 
 .dark [data-skill-tabs] {

@@ -11,8 +11,18 @@ import BrowserPanel from './BrowserPanel';
 // surface that leaves the conversation visible beside the artifact.
 const PREVIEW_WIDTH = 'min(62vw, 960px)';
 const BROWSER_WIDTH = 'min(42vw, 560px)';
-const PINNED_SUMMARY_WIDTH = 320;
-const PINNED_SUMMARY_GAP = 12;
+
+// Pinned summary overlay geometry, shared with ChatView so the conversation
+// content can reserve room on the right without moving its scrollbar.
+export const PINNED_SUMMARY_WIDTH = 288;
+export const PINNED_SUMMARY_RIGHT = 8;
+// Extra breathing room between the reserved content edge and the summary card.
+export const PINNED_SUMMARY_GAP = 8;
+/** Right inset ChatView applies to its content while the summary is open. */
+export const PINNED_SUMMARY_CONTENT_INSET =
+  PINNED_SUMMARY_WIDTH + PINNED_SUMMARY_RIGHT + PINNED_SUMMARY_GAP;
+/** Max width of the content column while the summary is open (max-w-3xl). */
+export const PINNED_SUMMARY_CONTENT_MAX_WIDTH = 768;
 
 export default function RightPanel() {
   const viewMode = useSettingsStore((s) => s.viewMode);
@@ -45,34 +55,29 @@ export default function RightPanel() {
   }
 
   if (!previewArtifact && !browserOpen) {
+    // The pinned summary floats over the conversation's right edge instead of
+    // reserving layout width, so the chat header buttons and the content
+    // scrollbar stay pinned to the window's right edge.
+    if (summaryCollapsed) return null;
     return (
-      <>
+      <div
+        data-pinned-summary-host
+        className="window-titlebar-no-drag fixed z-[55] flex flex-col items-end"
+        style={{ top: 56, right: PINNED_SUMMARY_RIGHT }}
+      >
         <div
-          data-pinned-summary-spacer
-          aria-hidden="true"
-          className="h-full shrink-0 transition-[width] duration-300 ease-in-out"
+          id="conversation-pinned-summary"
+          data-pinned-summary
+          className="origin-top-right motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95"
           style={{
-            width: summaryCollapsed
-              ? 0
-              : PINNED_SUMMARY_WIDTH + PINNED_SUMMARY_GAP,
+            width: PINNED_SUMMARY_WIDTH,
+            // Hard safety cap so an extremely narrow window never overflows.
+            maxWidth: 'calc(100vw - 24px)',
           }}
-        />
-        {!summaryCollapsed ? (
-          <div
-            data-pinned-summary-host
-            className="window-titlebar-no-drag fixed right-3 z-[55] flex flex-col items-end"
-            style={{ top: 56 }}
-          >
-            <div
-              id="conversation-pinned-summary"
-              data-pinned-summary
-              className="w-[min(320px,calc(100vw-24px))] origin-top-right motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95"
-            >
-              <ConversationWorkbench />
-            </div>
-          </div>
-        ) : null}
-      </>
+        >
+          <ConversationWorkbench />
+        </div>
+      </div>
     );
   }
 

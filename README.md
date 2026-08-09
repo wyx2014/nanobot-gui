@@ -78,7 +78,7 @@ nanobot gateway (Python)
 ```bash
 cd ../nanobot
 python3 -m venv venv
-venv/bin/pip install -e ".[api]"
+venv/bin/pip install -e ".[desktop]"
 ```
 
 ### 安装依赖
@@ -131,7 +131,7 @@ dist/installers/
 
 1. `npm run prepare-python`
 2. 下载 standalone Python 到 `embedded-python/runtime/`
-3. 将 `../nanobot[api]` 安装进这个 Python runtime
+3. 将 `../nanobot[desktop]` 安装进这个 Python runtime
 4. `electron-vite build`
 5. `electron-builder`
 

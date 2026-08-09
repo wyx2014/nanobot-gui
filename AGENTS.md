@@ -104,7 +104,7 @@ npm run test:coverage
 npm run lint
 ```
 
-打包命令会先执行 `prepare-python`。该脚本会下载 standalone Python 到 `embedded-python/runtime/`，并把 `../nanobot[api]` 安装进去。
+打包命令会先执行 `prepare-python`。该脚本会下载 standalone Python 到 `embedded-python/runtime/`，并把 `../nanobot[desktop]` 安装进去。
 
 ## 运行环境要求
 
@@ -118,7 +118,7 @@ npm run lint
 ```bash
 cd ../nanobot
 python3 -m venv venv
-venv/bin/pip install -e ".[api]"
+venv/bin/pip install -e ".[desktop]"
 ```
 
 打包后的应用：

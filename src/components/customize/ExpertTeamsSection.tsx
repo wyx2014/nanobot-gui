@@ -22,25 +22,10 @@ import { useI18n } from '@/i18n';
 
 const teamEnglish: Record<string, { name: string; description: string }> = {
   'asset-research-team': { name: 'Asset Research Team', description: 'Four research specialists analyze business, financials, industry, and risks in parallel. A team lead cross-checks evidence and produces the final report.' },
-  'trading-analysis-team': { name: 'Trading Analysis Team', description: 'Twelve research roles evaluate technicals, fundamentals, events, sentiment, debate, execution, and risk to produce a traceable trading plan.' },
 };
 
 function teamText(team: { id: string; name: string; description: string }, isEnglish: boolean) {
   return isEnglish ? teamEnglish[team.id] ?? { name: team.name, description: team.description } : team;
-}
-
-function dataSourceText(
-  source: { id: string; name: string; description?: string },
-  isEnglish: boolean,
-) {
-  if (!isEnglish) return source;
-  if (source.id === 'ifind-finance-data' || /ifind|同花顺/i.test(source.name)) {
-    return {
-      name: 'iFinD Financial Data',
-      description: 'Structured data for A-shares, Hong Kong and U.S. companies, including company profiles, financial metrics, market quotes, announcements, news, and industry sectors.',
-    };
-  }
-  return source;
 }
 
 function mcpPresetText(
@@ -353,7 +338,7 @@ export default function ExpertTeamsSection() {
               <CheckCircle2 className="h-4 w-4" />
               {isEnglish ? 'Runtime Dependencies' : '运行依赖'}
             </div>
-            <p className="mt-2 text-xs leading-5 text-[#777368]">{isEnglish ? 'Teams reuse the current TPACowork model, web search, built-in iFinD skill, and configured MCP services; an alternative bound source is used when one is unavailable.' : '团队复用当前 Cowork 的模型、联网搜索、内置 iFinD Skill 和已配置的聚源 MCP；单一来源不可用时自动换用另一绑定来源。'}</p>
+            <p className="mt-2 text-xs leading-5 text-[#777368]">{isEnglish ? 'Teams reuse the current TPACowork model, web search, built-in iFinD skill, and configured MCP services; an alternative bound source is used when one is unavailable.' : '团队复用当前 Cowork 的模型、联网搜索、内置 聚源、同花顺、财汇MCP；单一来源不可用时自动换用另一绑定来源。'}</p>
           </div>
         </section>
       </div>
@@ -380,50 +365,51 @@ export default function ExpertTeamsSection() {
           {filtered.map((team) => {
             const display = teamText(team, isEnglish);
             return (
-            <article
-              key={team.id}
-              className="group rounded-2xl border border-[#e5ded4] bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[#d8c9bd] hover:shadow-md"
-            >
-              <div className="flex items-start gap-4">
-                <TeamAvatar teamId={team.id} compact />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <h3 className="truncate text-base font-semibold text-[#29261b]">{display.name}</h3>
-                    <span className="rounded-full bg-[#fff1e8] px-2 py-0.5 text-[10px] font-medium text-[#b85c3d]">{isEnglish ? 'Built-in' : '内置'}</span>
+              <article
+                key={team.id}
+                className="group rounded-2xl border border-[#e5ded4] bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[#d8c9bd] hover:shadow-md"
+              >
+                <div className="flex items-start gap-4">
+                  <TeamAvatar teamId={team.id} compact />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="truncate text-base font-semibold text-[#29261b]">{display.name}</h3>
+                      <span className="rounded-full bg-[#fff1e8] px-2 py-0.5 text-[10px] font-medium text-[#b85c3d]">{isEnglish ? 'Built-in' : '内置'}</span>
+                    </div>
+                    <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-[#656358]">{display.description}</p>
                   </div>
-                  <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-[#656358]">{display.description}</p>
                 </div>
-              </div>
-              <div className="mt-4 flex flex-wrap items-center gap-2">
-                <span className="rounded-lg bg-[#f5f2ed] px-2 py-1 text-[11px] text-[#6d695f]">{team.member_count} {isEnglish ? 'specialists' : '位专家'}</span>
-                <span className="rounded-lg bg-[#f5f2ed] px-2 py-1 text-[11px] text-[#6d695f]">{team.workflow_count} {isEnglish ? 'workflows' : '个工作流'}</span>
-                <span className={cn(
-                  'ml-auto inline-flex items-center gap-1 text-[11px]',
-                  team.available ? 'text-emerald-700' : 'text-amber-700',
-                )}>
-                  <span className={cn('h-1.5 w-1.5 rounded-full', team.available ? 'bg-emerald-500' : 'bg-amber-500')} />
-                  {team.available ? (isEnglish ? 'Available' : '可用') : (isEnglish ? 'Needs attention' : '需要检查')}
-                </span>
-              </div>
-              <div className="mt-4 flex items-center justify-between border-t border-[#eee9e2] pt-3">
-                <button
-                  onClick={() => void openDetail(team)}
-                  className="inline-flex items-center gap-1 text-xs font-medium text-[#656358] hover:text-[#29261b]"
-                >
-                  {isEnglish ? 'View Team' : '查看团队'}
-                  {detailLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                </button>
-                <button
-                  onClick={() => startTeam(team)}
-                  disabled={!team.available}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-[#29261b] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#423e31] disabled:opacity-40"
-                >
-                  <Play className="h-3 w-3 fill-current" />
-                  {isEnglish ? 'Start Team' : '启动团队'}
-                </button>
-              </div>
-            </article>
-          );})}
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <span className="rounded-lg bg-[#f5f2ed] px-2 py-1 text-[11px] text-[#6d695f]">{team.member_count} {isEnglish ? 'specialists' : '位专家'}</span>
+                  <span className="rounded-lg bg-[#f5f2ed] px-2 py-1 text-[11px] text-[#6d695f]">{team.workflow_count} {isEnglish ? 'workflows' : '个工作流'}</span>
+                  <span className={cn(
+                    'ml-auto inline-flex items-center gap-1 text-[11px]',
+                    team.available ? 'text-emerald-700' : 'text-amber-700',
+                  )}>
+                    <span className={cn('h-1.5 w-1.5 rounded-full', team.available ? 'bg-emerald-500' : 'bg-amber-500')} />
+                    {team.available ? (isEnglish ? 'Available' : '可用') : (isEnglish ? 'Needs attention' : '需要检查')}
+                  </span>
+                </div>
+                <div className="mt-4 flex items-center justify-between border-t border-[#eee9e2] pt-3">
+                  <button
+                    onClick={() => void openDetail(team)}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-[#656358] hover:text-[#29261b]"
+                  >
+                    {isEnglish ? 'View Team' : '查看团队'}
+                    {detailLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                  </button>
+                  <button
+                    onClick={() => startTeam(team)}
+                    disabled={!team.available}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-[#29261b] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#423e31] disabled:opacity-40"
+                  >
+                    <Play className="h-3 w-3 fill-current" />
+                    {isEnglish ? 'Start Team' : '启动团队'}
+                  </button>
+                </div>
+              </article>
+            );
+          })}
         </div>
       )}
     </div>

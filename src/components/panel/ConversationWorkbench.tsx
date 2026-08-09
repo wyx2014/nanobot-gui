@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   Check,
+  CodeXml,
   File,
   FileCode2,
   FileImage,
   FileSpreadsheet,
   FileText,
+  FileType,
   Loader2,
   Minus,
   RefreshCw,
@@ -47,10 +49,10 @@ function artifactIcon(artifact: SessionArtifact): LucideIcon {
   if (kind === 'image') return FileImage;
   if (kind === 'video') return Video;
   if (kind === 'xlsx' || kind === 'csv') return FileSpreadsheet;
+  if (kind === 'html') return CodeXml;
+  if (kind === 'markdown') return FileType;
   if (kind === 'code') return FileCode2;
-  if (kind === 'pdf' || kind === 'docx' || kind === 'markdown' || kind === 'text' || kind === 'html') {
-    return FileText;
-  }
+  if (kind === 'pdf' || kind === 'docx' || kind === 'text') return FileText;
   return File;
 }
 
@@ -284,7 +286,7 @@ export default function ConversationWorkbench() {
             {progress.note ? (
               <p className="mb-3 text-[12px] leading-5 text-[#656358] dark:text-[#aaa69e]">{progress.note}</p>
             ) : null}
-            <ol className="max-h-[240px] space-y-[9px] overflow-y-auto pr-1">
+            <ol className="no-scrollbar max-h-[240px] space-y-[9px] overflow-y-auto pr-1">
               {progress.steps.map((step) => (
                 <li key={step.id} className="grid min-w-0 grid-cols-[16px_minmax(0,1fr)] items-start gap-2">
                   <span
@@ -364,7 +366,7 @@ export default function ConversationWorkbench() {
           </div>
         </div>
 
-        <div className="min-h-0 max-h-[300px] overflow-y-auto px-3 pb-4">
+        <div className="no-scrollbar min-h-0 max-h-[300px] overflow-y-auto px-3 pb-4">
           {loading && !artifacts.length ? (
             <div className="flex h-24 items-center justify-center">
               <Loader2 className="h-4 w-4 animate-spin text-[#d97757]" />

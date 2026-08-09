@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState, useCallback, useMemo } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useState, useCallback, useMemo, useSyncExternalStore } from 'react';
 import { ipc, windowBridge, eventBridge } from '@/lib/ipc-factory';
 import Sidebar from '@/components/sidebar/Sidebar';
 import ChatView from '@/components/chat/ChatView';
@@ -10,7 +10,7 @@ import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { initNetworkProxy } from '@/core/sandbox/config';
 import type { WorkspaceScopePayload, WorkspacesPayload } from '@/core/types';
 import { fetchWorkspaces, updateNetworkSafetySettings } from '@/core/api';
-import { getNanobotClient, getNanobotToken, getNanobotStatus } from '@/core/nanobotClient';
+import { getNanobotClient, getNanobotConnectionStatus, getNanobotToken, getNanobotStatus, subscribeNanobotConnectionStatus } from '@/core/nanobotClient';
 import { projectNameFromPath } from '@/core/workspace';
 import { useChatStore } from '@/stores/chatStore';
 import { useScheduleStore } from '@/stores/scheduleStore';
@@ -33,6 +33,7 @@ import { cn } from '@/lib/utils';
 import { initNotifications } from '@/utils/notifications';
 import { startBehaviorSensor, stopBehaviorSensor } from '@/core/runtime/behaviorSensor';
 import { useI18n } from '@/i18n';
+import { ThinkingOrb } from 'thinking-orbs';
 import CloseDialog from '@/components/common/CloseDialog';
 import { checkForUpdate } from '@/core/updates/checker';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
@@ -80,6 +81,17 @@ function App() {
   const theme = useSettingsStore((s) => s.theme);
   const keyboardShortcuts = useSettingsStore((s) => s.keyboardShortcuts);
   const [settingsHydrated, setSettingsHydrated] = useState(() => useSettingsStore.persist.hasHydrated());
+  const gatewayConnectionStatus = useSyncExternalStore(
+    subscribeNanobotConnectionStatus,
+    getNanobotConnectionStatus,
+    getNanobotConnectionStatus,
+  );
+  // Unlock once the gateway has ever been open; don't flash the starting
+  // screen again on transient websocket reconnects after load.
+  const [gatewayUnlocked, setGatewayUnlocked] = useState(() => gatewayConnectionStatus === 'open');
+  useEffect(() => {
+    if (gatewayConnectionStatus === 'open') setGatewayUnlocked(true);
+  }, [gatewayConnectionStatus]);
   const [windowFullScreen, setWindowFullScreen] = useState(false);
   const {
     canGoBack,
@@ -114,16 +126,36 @@ function App() {
     };
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!settingsHydrated) return;
 
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const applyTheme = () => {
+      const root = document.documentElement;
       const isDark = theme === 'dark' || (theme === 'system' && mediaQuery.matches);
-      document.documentElement.classList.toggle('dark', isDark);
-      document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
+      const currentlyDark = root.classList.contains('dark');
+      // No-op switch (e.g. "system" -> "light" while the OS is already light)
+      // must not touch the DOM at all: even toggling the suppression class
+      // makes backdrop-filter overlays flicker for a frame.
+      if (isDark === currentlyDark) return;
+      // Suppress transitions for the duration of the switch so buttons and
+      // surfaces land on the new palette in the same frame as the page
+      // background (no animated light->dark fade on transitioning elements).
+      root.classList.add('theme-transitioning');
+      root.classList.toggle('dark', isDark);
+      root.style.colorScheme = isDark ? 'dark' : 'light';
+      // Keep the native window background in sync so the composited window
+      // layer never flashes the light palette during an OS-triggered flip.
+      void windowBridge.setBackgroundColor(isDark ? '#171717' : '#fbfaf7');
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => root.classList.remove('theme-transitioning'));
+      });
     };
 
+    // useLayoutEffect: flip the .dark class before the browser paints the
+    // frame, so toggling the theme never flashes a light frame first (the
+    // onboarding gradient is a full-screen surface and makes that flash very
+    // visible). The listener setup still happens once per theme/"system".
     applyTheme();
     if (theme !== 'system') return;
 
@@ -398,7 +430,7 @@ function App() {
       if (error.kind !== 'workspace_scope_rejected') return;
       setWorkspaceError(
         error.reason === 'session_project_mismatch'
-          ? '会话创建后不能切换到其他项目；请在目标项目中新建对话'
+          ? '会话创建后不能切换到其他工作空间；请在目标工作空间中新建对话'
           : '工作区路径被拒绝，请确认路径有效且 nanobot 有权访问',
       );
       if (error.chatId) {
@@ -489,6 +521,10 @@ function App() {
           console.log('[App] Nanobot gateway bootstrap completed');
           const status = await getNanobotStatus();
           const base = `http://127.0.0.1:${status.port}`;
+          // Discovery may have run on mount before the gateway was ready;
+          // reload skills now that the gateway is confirmed up so the
+          // composer's "+" skill/MCP lists are populated.
+          void refreshDiscovery();
           updateNetworkSafetySettings(getNanobotToken(), {
             webuiAllowLocalServiceAccess,
             webuiDefaultAccessMode: 'full',
@@ -536,6 +572,7 @@ function App() {
     networkWhitelist,
     webuiAllowLocalServiceAccess,
     refreshWorkspaces,
+    refreshDiscovery,
   ]);
 
   // macOS uses a full-size hidden title bar so renderer controls can sit beside
@@ -544,6 +581,22 @@ function App() {
 
   if (!settingsHydrated) {
     return <div className="h-full w-full bg-[#fbfaf7]" />;
+  }
+
+  // Keep the whole window (sidebar included) out of reach until the local
+  // gateway is ready — clicking settings/toolbox before that would surface
+  // "gateway not ready" errors. The UI unlocks once the connection is open.
+  if (!gatewayUnlocked) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-[#fbfaf7]">
+        <div className="flex flex-col items-center gap-4" role="status" aria-live="polite">
+          <ThinkingOrb state="connecting" size={64} aria-label="" />
+          <p className="text-[14px] font-medium text-[#88857b] dark:text-[#aaa69e]">
+            {t.chat.gatewayStarting}
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (

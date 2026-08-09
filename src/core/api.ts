@@ -14,11 +14,6 @@ import type {
   ProviderModelsPayload,
   ProviderSettingsUpdate,
   ProjectPayload,
-  ProjectMemoriesPayload,
-  ProjectMemoryJobPayload,
-  ProjectMemoryPayload,
-  ProjectMemorySourcePayload,
-  ProjectMemoryStatusPayload,
   ProjectSessionPayload,
   ScheduleTasksPayload,
   SettingsPayload,
@@ -36,11 +31,19 @@ import type {
   TraceSpanResource,
   TurnPlanResource,
   WorkspaceScopePayload,
+  PersonalizationPayload,
 } from "./types";
 import type { ScheduleConfig } from "@/types/schedule";
 import { fetchWithTimeout } from "./bootstrap";
 
 const API_READ_TIMEOUT_MS = 20_000;
+
+/**
+ * Keep every canonical thread read on the gateway's maximum bounded page.
+ * Expert-team runs can legitimately produce hundreds of durable progress
+ * events, so the old implicit 200-row default could hide earlier user turns.
+ */
+export const THREAD_HISTORY_MESSAGE_LIMIT = 500;
 
 export class ApiError extends Error {
   status: number;
@@ -131,7 +134,9 @@ function mcpValuesHeader(values: Record<string, unknown>): HeadersInit | undefin
     payload[key] = value;
   });
   if (!Object.keys(payload).length) return undefined;
-  return { "X-Nanobot-MCP-Values": JSON.stringify(payload) };
+  // Header values must stay ISO-8859-1; escape non-ASCII characters (e.g.
+  // Chinese server names, tokens, or custom header JSON) as \uXXXX.
+  return { "X-Nanobot-MCP-Values": asciiJsonStringify(payload) };
 }
 
 function skillValuesHeader(values: Record<string, unknown>): HeadersInit | undefined {
@@ -142,6 +147,18 @@ function skillValuesHeader(values: Record<string, unknown>): HeadersInit | undef
   });
   if (!Object.keys(payload).length) return undefined;
   return { "X-Nanobot-Skill-Values": asciiJsonStringify(payload) };
+}
+
+function personalizationValuesHeader(values: Record<string, unknown>): HeadersInit | undefined {
+  const payload: Record<string, unknown> = {};
+  Object.entries(values).forEach(([key, value]) => {
+    if (value === null || value === undefined) return;
+    payload[key] = value;
+  });
+  if (!Object.keys(payload).length) return undefined;
+  // Header values must stay ISO-8859-1; escape non-ASCII (e.g. Chinese text)
+  // as \uXXXX, exactly like the MCP/Skill values headers.
+  return { "X-Nanobot-Personalization-Values": asciiJsonStringify(payload) };
 }
 
 function projectSkillValuesHeader(values: Record<string, unknown>): HeadersInit | undefined {
@@ -265,149 +282,6 @@ export async function listProjectSessions(
   }));
 }
 
-function mapProjectMemoryJob(value: Record<string, unknown> | null): ProjectMemoryJobPayload | null {
-  if (!value) return null;
-  return {
-    status: String(value.status ?? "unknown"),
-    attemptCount: Number(value.attempt_count ?? 0),
-    inputWatermark: value.input_watermark == null ? null : Number(value.input_watermark),
-    completedWatermark: value.completed_watermark == null ? null : Number(value.completed_watermark),
-    updatedAt: Number(value.updated_at ?? 0),
-    completedAt: value.completed_at == null ? null : Number(value.completed_at),
-    error: (value.error as ProjectMemoryJobPayload["error"]) ?? null,
-  };
-}
-
-function mapProjectMemoryStatus(value: Record<string, unknown>): ProjectMemoryStatusPayload {
-  return {
-    projectId: String(value.project_id ?? ""),
-    inputWatermark: Number(value.input_watermark ?? 0),
-    phase1: mapProjectMemoryJob((value.phase1 as Record<string, unknown> | null) ?? null),
-    phase2: mapProjectMemoryJob((value.phase2 as Record<string, unknown> | null) ?? null),
-  };
-}
-
-function mapProjectMemorySource(value: Record<string, unknown>): ProjectMemorySourcePayload {
-  return {
-    id: String(value.id ?? ""),
-    stage1Id: value.stage1_id == null ? null : String(value.stage1_id),
-    sourceSessionId: String(value.source_session_id ?? ""),
-    sourceSessionKey: value.source_session_key == null ? null : String(value.source_session_key),
-    sourceTurnId: value.source_turn_id == null ? null : String(value.source_turn_id),
-    sourceEventId: value.source_event_id == null ? null : String(value.source_event_id),
-    evidenceLocator: value.evidence_locator == null ? null : String(value.evidence_locator),
-    createdAt: Number(value.created_at ?? 0),
-  };
-}
-
-export async function listProjectMemories(
-  token: string,
-  projectId: string,
-  base: string = "",
-): Promise<ProjectMemoriesPayload> {
-  const body = await request<{
-    project_id: string;
-    memories: Array<Record<string, unknown>>;
-    status: Record<string, unknown>;
-    retrieval: { mode: "bounded_lexical"; deep_rag_enabled: false };
-  }>(
-    `${base}/api/projects/${encodeURIComponent(projectId)}/memories`,
-    token,
-    undefined,
-    API_READ_TIMEOUT_MS,
-  );
-  const memories: ProjectMemoryPayload[] = body.memories.map((value) => ({
-    id: String(value.id ?? ""),
-    projectId: String(value.project_id ?? ""),
-    kind: String(value.kind ?? "reference"),
-    title: String(value.title ?? ""),
-    content: String(value.content ?? ""),
-    confidence: value.confidence == null ? null : Number(value.confidence),
-    status: String(value.status ?? "active"),
-    usageCount: Number(value.usage_count ?? 0),
-    lastUsedAt: value.last_used_at == null ? null : Number(value.last_used_at),
-    createdAt: Number(value.created_at ?? 0),
-    updatedAt: Number(value.updated_at ?? 0),
-    sources: Array.isArray(value.sources)
-      ? value.sources.map((source) => mapProjectMemorySource(source as Record<string, unknown>))
-      : [],
-  }));
-  return {
-    projectId: body.project_id,
-    memories,
-    status: mapProjectMemoryStatus(body.status),
-    retrieval: {
-      mode: body.retrieval.mode,
-      deepRagEnabled: body.retrieval.deep_rag_enabled,
-    },
-  };
-}
-
-export async function consolidateProjectMemories(
-  token: string,
-  projectId: string,
-  base: string = "",
-): Promise<{ refreshed: boolean; status: ProjectMemoryStatusPayload }> {
-  const body = await request<{
-    refreshed: boolean;
-    status: Record<string, unknown>;
-  }>(
-    `${base}/api/projects/${encodeURIComponent(projectId)}/memories/consolidate`,
-    token,
-  );
-  return {
-    refreshed: body.refreshed,
-    status: mapProjectMemoryStatus(body.status),
-  };
-}
-
-export async function forgetProjectMemory(
-  token: string,
-  projectId: string,
-  memoryId: string,
-  base: string = "",
-): Promise<boolean> {
-  const body = await request<{ ok: boolean }>(
-    `${base}/api/projects/${encodeURIComponent(projectId)}/memories/${encodeURIComponent(memoryId)}/forget`,
-    token,
-  );
-  return body.ok;
-}
-
-export async function clearProjectMemories(
-  token: string,
-  projectId: string,
-  base: string = "",
-): Promise<number> {
-  const body = await request<{ removed: number }>(
-    `${base}/api/projects/${encodeURIComponent(projectId)}/memories/clear`,
-    token,
-  );
-  return body.removed;
-}
-
-export async function reindexProjectMemories(
-  token: string,
-  projectId: string,
-  base: string = "",
-): Promise<{ artifactsSeen: number; indexed: number; skipped: number; missing: number }> {
-  const body = await request<{
-    artifacts_seen: number;
-    indexed: number;
-    skipped: number;
-    missing: number;
-  }>(
-    `${base}/api/projects/${encodeURIComponent(projectId)}/memories/reindex`,
-    token,
-  );
-  return {
-    artifactsSeen: body.artifacts_seen,
-    indexed: body.indexed,
-    skipped: body.skipped,
-    missing: body.missing,
-  };
-}
-
 function mapProject(project: {
   id: string;
   kind: ProjectPayload["kind"];
@@ -496,7 +370,10 @@ export async function fetchWebuiThread(
   } = {},
 ): Promise<WebuiThreadPersistedPayload | null> {
   const query = new URLSearchParams();
-  if (options.limit != null) query.set("limit", String(options.limit));
+  query.set(
+    "limit",
+    String(Math.max(1, options.limit ?? THREAD_HISTORY_MESSAGE_LIMIT)),
+  );
   if (options.direction) query.set("direction", options.direction);
   if (options.before) query.set("before", options.before);
   const queryString = query.toString();
@@ -523,9 +400,10 @@ export async function fetchThreadResource(
   if (options.afterEventSeq != null) {
     query.set("after_event_seq", String(Math.max(0, options.afterEventSeq)));
   }
-  if (options.messageLimit != null) {
-    query.set("message_limit", String(Math.max(1, options.messageLimit)));
-  }
+  query.set(
+    "message_limit",
+    String(Math.max(1, options.messageLimit ?? THREAD_HISTORY_MESSAGE_LIMIT)),
+  );
   if (options.beforeMessageEventSeq != null) {
     query.set(
       "before_message_event_seq",
@@ -938,6 +816,45 @@ export async function saveSkill(
     `${base}/api/settings/skills/save?${query}`,
     token,
     { headers: skillValuesHeader({ content }) },
+  );
+}
+
+export async function fetchPersonalization(
+  token: string,
+  base: string = "",
+): Promise<PersonalizationPayload> {
+  return request<PersonalizationPayload>(
+    `${base}/api/settings/personalization`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
+  );
+}
+
+export async function savePersonalization(
+  token: string,
+  values: { soul?: string; user?: string },
+  base: string = "",
+): Promise<PersonalizationPayload> {
+  return request<PersonalizationPayload>(
+    `${base}/api/settings/personalization/save`,
+    token,
+    { headers: personalizationValuesHeader(values) },
+  );
+}
+
+export async function restorePersonalization(
+  token: string,
+  kind: "soul" | "user",
+  base: string = "",
+): Promise<PersonalizationPayload> {
+  const query = new URLSearchParams();
+  query.set("kind", kind);
+  return request<PersonalizationPayload>(
+    `${base}/api/settings/personalization/restore?${query}`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
   );
 }
 

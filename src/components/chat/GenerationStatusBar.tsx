@@ -1,9 +1,10 @@
-import { ArrowDown, BrainCircuit, Sparkles } from 'lucide-react';
+import { ArrowDown } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { ThinkingOrb, type OrbState } from 'thinking-orbs';
 import { cn } from '@/lib/utils';
 import { formatTaskDuration, normalizeTaskTimestamp } from '@/utils/taskDuration';
 
-export type GenerationPhase = 'generating' | 'thinking';
+export type GenerationPhase = 'generating' | 'thinking' | 'working' | 'searching';
 
 interface GenerationStatusBarProps {
   phase: GenerationPhase;
@@ -30,17 +31,27 @@ export function formatGenerationTokens(tokenCount: number): string {
 const PHASE_PRESENTATION = {
   generating: {
     label: 'Generating...',
-    Icon: Sparkles,
+    orbState: 'composing',
     color: 'text-[#b7633e]',
   },
   thinking: {
     label: 'Thinking...',
-    Icon: BrainCircuit,
+    orbState: 'solving',
     color: 'text-[#8c664f]',
+  },
+  working: {
+    label: 'Working...',
+    orbState: 'working',
+    color: 'text-[#6f6b60]',
+  },
+  searching: {
+    label: 'Searching...',
+    orbState: 'searching',
+    color: 'text-[#4a7db5]',
   },
 } satisfies Record<GenerationPhase, {
   label: string;
-  Icon: typeof Sparkles;
+  orbState: OrbState;
   color: string;
 }>;
 
@@ -68,7 +79,6 @@ export default function GenerationStatusBar({
       ? Math.max(0, now - startedAtMs)
       : 0;
   const presentation = PHASE_PRESENTATION[phase];
-  const Icon = presentation.Icon;
 
   return (
     <div
@@ -85,10 +95,9 @@ export default function GenerationStatusBar({
         className={cn(
           'inline-flex min-w-0 items-center gap-2 font-semibold',
           presentation.color,
-          'generation-status-breathe',
         )}
       >
-        <Icon className="h-4 w-4 shrink-0" strokeWidth={1.9} aria-hidden />
+        <ThinkingOrb state={presentation.orbState} size={20} aria-label="" className="shrink-0" />
         <span>{presentation.label}</span>
       </div>
 

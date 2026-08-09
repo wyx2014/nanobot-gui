@@ -70,52 +70,6 @@ export interface TranslationDict {
     resetProfile: string;
   };
 
-  projectMemory: {
-    title: string;
-    menu: string;
-    phase1: string;
-    phase2: string;
-    statusWaiting: string;
-    statusRunning: string;
-    statusFailed: string;
-    statusNoOutput: string;
-    statusDone: string;
-    retrievalMode: string;
-    searchPlaceholder: string;
-    refresh: string;
-    reindex: string;
-    consolidate: string;
-    loading: string;
-    noMatch: string;
-    empty: string;
-    emptyHint: string;
-    forget: string;
-    forgetConfirm: string;
-    clearConfirm: string;
-    loadFailed: string;
-    consolidateFailed: string;
-    reindexFailed: string;
-    forgetFailed: string;
-    clearFailed: string;
-    unnamed: string;
-    usageCount: string;
-    lastUsed: string;
-    neverUsed: string;
-    sourceCount: string;
-    confidence: string;
-    updatedAt: string;
-    sessionSource: string;
-    clear: string;
-    clearHint: string;
-    kindProjectPreference: string;
-    kindWorkflow: string;
-    kindRepoFact: string;
-    kindFailureShield: string;
-    kindDecisionRule: string;
-    kindReference: string;
-    kindLongTerm: string;
-  };
-
   // Chat/Welcome
   chat: {
     inputPlaceholder: string;
@@ -818,7 +772,29 @@ export interface TranslationDict {
     themeLightDescription: string;
     themeDark: string;
     themeDarkDescription: string;
+    next: string;
+    back: string;
     start: string;
+    profileTitle: string;
+    profileHint: string;
+    name: string;
+    namePlaceholder: string;
+    timezone: string;
+    timezoneSystem: string;
+    preferredLanguage: string;
+    communicationStyle: string;
+    communicationCasual: string;
+    communicationProfessional: string;
+    communicationTechnical: string;
+    responseLength: string;
+    responseBrief: string;
+    responseDetailed: string;
+    responseAdaptive: string;
+    technicalLevel: string;
+    levelBeginner: string;
+    levelIntermediate: string;
+    levelExpert: string;
+    language: string;
   };
 
   // Command Confirmation Dialog

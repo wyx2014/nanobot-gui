@@ -462,7 +462,7 @@ describe("useNanobotStream media progress lifecycle", () => {
     });
   });
 
-  it("keeps structured completion after media and closes the plan on turn_end", () => {
+  it("replaces a live task-progress revision and keeps its structured completion", () => {
     emit({
       event: "message",
       chat_id: "chat-media-progress",
@@ -522,17 +522,71 @@ describe("useNanobotStream media progress lifecycle", () => {
     const progressFrames = messages.filter(
       (message) => message.agentUI?.kind === "task_progress",
     );
-    expect(progressFrames).toHaveLength(2);
-    expect(progressFrames.at(-1)?.agentUI).toMatchObject({
+    expect(progressFrames).toHaveLength(1);
+    expect(progressFrames[0]?.agentUI).toMatchObject({
       steps: [{ id: "convert-pdf", status: "completed" }],
-    });
-    expect(progressFrames[0].agentUI).toMatchObject({
-      steps: [{ id: "convert-pdf", status: "running" }],
     });
     expect(messages.some((message) => (
       message.media?.some((media) => media.name === "小红书上市分析报告.pdf")
     ))).toBe(true);
     expect(latest?.isStreaming).toBe(false);
+  });
+
+  it("keeps 196 revisions of one expert task as one live progress row", () => {
+    act(() => {
+      for (let revision = 1; revision <= 196; revision += 1) {
+        eventHandler?.({
+          event: "message",
+          chat_id: "chat-media-progress",
+          kind: "progress",
+          text: "",
+          agent_ui: {
+            kind: "task_progress",
+            plan_id: "plan:expert-research",
+            turn_id: "turn:expert-research",
+            revision,
+            current_step_id: "research",
+            steps: [{
+              id: "research",
+              title: "专家团队分析",
+              status: revision === 196 ? "completed" : "running",
+            }],
+          },
+        });
+      }
+    });
+
+    const progressFrames = (latest?.messages ?? []).filter(
+      (message) => message.agentUI?.kind === "task_progress",
+    );
+    expect(progressFrames).toHaveLength(1);
+    expect(progressFrames[0]?.agentUI).toMatchObject({
+      plan_id: "plan:expert-research",
+      revision: 196,
+      steps: [{ id: "research", status: "completed" }],
+    });
+    expect(progressFrames[0]?.traces).toEqual(["task_progress"]);
+
+    emit({
+      event: "message",
+      chat_id: "chat-media-progress",
+      kind: "progress",
+      text: "",
+      agent_ui: {
+        kind: "task_progress",
+        plan_id: "plan:separate-delivery",
+        turn_id: "turn:expert-research",
+        revision: 1,
+        steps: [{
+          id: "delivery",
+          title: "交付结果",
+          status: "running",
+        }],
+      },
+    });
+    expect((latest?.messages ?? []).filter(
+      (message) => message.agentUI?.kind === "task_progress",
+    )).toHaveLength(2);
   });
 
   it("stamps authoritative duration and completion time from turn_completed", () => {
@@ -667,6 +721,76 @@ describe("useNanobotStream media progress lifecycle", () => {
       latencyMs: 48_095,
       completedAt: 48_096,
     });
+  });
+
+  it("reconciles a late tail after stream_end into one authoritative answer", () => {
+    const turnId = "turn-import-export";
+    const streamId = "answer-stream";
+    emit({
+      event: "turn_started",
+      chat_id: "chat-media-progress",
+      snapshot_revision: 1,
+      turn: {
+        id: turnId,
+        status: "inProgress",
+        started_at: 1,
+      },
+    });
+    emit({
+      event: "delta",
+      chat_id: "chat-media-progress",
+      text: "根据海关总署数据，完整回答",
+      stream_id: streamId,
+    });
+    emit({
+      event: "reasoning_end",
+      chat_id: "chat-media-progress",
+    });
+    emit({
+      event: "stream_end",
+      chat_id: "chat-media-progress",
+      stream_id: streamId,
+    });
+    // Reproduce a transport/animation-frame tail delivered after the cursor was
+    // closed. Previously this created a second provisional assistant row.
+    emit({
+      event: "delta",
+      chat_id: "chat-media-progress",
+      text: "：海关总署",
+      stream_id: streamId,
+    });
+    emit({
+      event: "message",
+      chat_id: "chat-media-progress",
+      text: "根据海关总署数据，完整回答\n\n数据来源：海关总署",
+      replace_stream: true,
+    });
+    emit({
+      event: "turn_completed",
+      chat_id: "chat-media-progress",
+      snapshot_revision: 2,
+      turn: {
+        id: turnId,
+        status: "completed",
+        started_at: 1,
+        completed_at: 89_608,
+        duration_ms: 89_607,
+      },
+    });
+
+    const assistant = (latest?.messages ?? []).filter(
+      (message) => message.role === "assistant" && message.kind !== "trace",
+    );
+    expect(assistant).toHaveLength(1);
+    expect(assistant[0]).toMatchObject({
+      turnId,
+      streamId,
+      content: "根据海关总署数据，完整回答\n\n数据来源：海关总署",
+      isStreaming: false,
+      latencyMs: 89_607,
+    });
+    const projected = mapWebuiThreadToGuiMessages(latest?.messages ?? []);
+    expect(projected.some((message) => message.narration === "：海关总署")).toBe(false);
   });
 
   it("does not misreport a lost final progress snapshot as completed", () => {

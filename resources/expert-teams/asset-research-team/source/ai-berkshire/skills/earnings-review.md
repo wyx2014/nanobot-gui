@@ -33,12 +33,12 @@
 
 使用 Task 工具启动多个后台 Agent **并行**获取以下原始材料：
 
-1. **财报原文**：从公司IR页面、SEC EDGAR（美股10-K/10-Q）、港交所披露易（港股）、巨潮资讯网（A股）获取
+1. **财报原文**：从公司IR页面、SEC EDGAR（美股10-K/10-Q）、港交所披露易（港股）、公司/交易所公告（A股）获取
 2. **业绩电话会纪要/录音**：从 Seeking Alpha、公司IR页面、雪球等获取
 3. **管理层致股东信**（如有年报）：完整阅读
 4. **投资者日/分析师日材料**（如近期有）
 
-如果无法获取完整原文，按 `skills/financial-data.md` 规范使用标准数据源拼凑（美股：macrotrends+stockanalysis；港股：aastocks+macrotrends；A股：东方财富+巨潮资讯），但必须标注"非原始财报，来自第三方汇总"，且关键数据两源误差>1%须标记。
+如果无法获取完整原文，按 `skills/financial-data.md` 规范使用标准数据源补齐（美股：macrotrends+stockanalysis；港股：aastocks+macrotrends；A股：聚源+iFinD+财汇 Caihui MCP），但必须标注"非原始财报，来自结构化数据源"，且来源误差>1%须标记。
 
 ### 第二步：核心财务数据提取与验证
 

@@ -41,6 +41,14 @@ let globalMcpStatus: NonNullable<BootstrapResponse['mcp_status']> = 'unknown';
 const globalConnectionListeners = new Set<() => void>();
 const canonicalRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+function canonicalEventFinalizesAnswer(event: CanonicalSessionEvent): boolean {
+  if (event.event !== 'message') return false;
+  const payload = event.payload && typeof event.payload === 'object'
+    ? event.payload
+    : undefined;
+  return event.replace_stream === true || payload?.replace_stream === true;
+}
+
 function scheduleCanonicalThreadRefresh(event: CanonicalSessionEvent): void {
   const sessionKey = event.session_key;
   const previous = canonicalRefreshTimers.get(sessionKey);
@@ -203,6 +211,7 @@ export async function bootstrapNanobotGateway(): Promise<NanobotClient> {
       || event.event === 'turn_completed'
       || event.event === 'turn_end'
       || event.event === 'artifact_created'
+      || canonicalEventFinalizesAnswer(event)
     ) {
       scheduleCanonicalThreadRefresh(event);
     }
@@ -562,6 +571,7 @@ export function mapWebuiThreadToGuiMessages(webuiMessages: UIMessage[]): Message
         interactivePromptAnswer: msg.interactivePromptAnswer,
         cliApps: msg.cliApps,
         mcpPresets: msg.mcpPresets,
+        skills: msg.skills,
       });
     } 
     

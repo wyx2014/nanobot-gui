@@ -13,6 +13,9 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
+    // Ensure locally-linked packages (e.g. thinking-orbs) share the GUI's React
+    // instance instead of pulling their own copy from their node_modules.
+    dedupe: ['react', 'react-dom'],
   },
   clearScreen: false,
   server: {

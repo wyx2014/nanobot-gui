@@ -67,13 +67,17 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "TPACowork-3_1024x1024.png",
+        "to": "app-icon.png"
       }
     ],
     "mac": {
       "target": [
         "zip"
       ],
-      "icon": "public/icon.icns",
+      "icon": "resources/icons/TPACowork-macos.png",
       "extendInfo": {
         "NSMicrophoneUsageDescription": "TPACowork需要使用麦克风，将录音通过默认语音识别模型转换为输入文字。"
       }
@@ -84,7 +88,10 @@
         "portable",
         "nsis"
       ],
-      "icon": "public/icon.ico"
+      "icon": "TPACowork-3_512x512.png"
+    },
+    "linux": {
+      "icon": "TPACowork-3_512x512.png"
     },
     "nsis": {
       "oneClick": false,
@@ -114,6 +121,7 @@
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.5.0",
+    "thinking-orbs": "^0.2.0",
     "three": "^0.180.0",
     "turndown": "^7.2.2",
     "ws": "^8.21.1",

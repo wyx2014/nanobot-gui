@@ -61,17 +61,17 @@ afterEach(() => {
 });
 
 describe('RightPanel pinned conversation summary', () => {
-  it('reserves space while expanded so the pinned summary does not cover chat', () => {
+  it('floats the pinned summary over the chat without reserving layout width', () => {
     const view = render();
-    const spacer = view.querySelector<HTMLElement>('[data-pinned-summary-spacer]');
+    // No spacer: the conversation keeps its full width, so the chat header
+    // buttons and the content scrollbar stay pinned to the window's right edge.
+    expect(view.querySelector('[data-pinned-summary-spacer]')).toBeNull();
 
     expect(view.querySelector('[data-pinned-summary-host]')).not.toBeNull();
     expect(view.querySelector('[data-testid="conversation-workbench"]')).not.toBeNull();
     expect(view.querySelector('[data-testid="preview-panel"]')).toBeNull();
-    expect(spacer?.style.width).toBe('332px');
 
     act(() => useSettingsStore.getState().setRightPanelCollapsed(true));
-    expect(spacer?.style.width).toBe('0px');
     expect(view.querySelector('[data-pinned-summary-host]')).toBeNull();
     expect(view.querySelector('[data-testid="conversation-workbench"]')).toBeNull();
   });

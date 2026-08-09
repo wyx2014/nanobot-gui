@@ -111,6 +111,8 @@ export interface Message {
     name: string;
     description?: string;
   };
+  // Explicit skills selected in the composer (shown as tags on the bubble)
+  skills?: string[];
   // Delegate agent information - when message is directed to a sub-agent via @agent
   delegateAgent?: {
     name: string;

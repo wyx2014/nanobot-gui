@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import HelpManual from "./HelpManual";
 import {
   AlertCircle,
   ArrowLeft,
-  Bot,
   Check,
   Cpu,
   ExternalLink,
@@ -15,8 +15,10 @@ import {
   MessageSquare,
   Mic,
   RefreshCw,
+  RotateCcw,
   Save,
   SlidersHorizontal,
+  Sparkles,
   UserRound,
   X,
 } from "lucide-react";
@@ -29,6 +31,9 @@ import {
   deleteModelConfiguration,
   fetchProviderModels,
   fetchSettings,
+  fetchPersonalization,
+  restorePersonalization,
+  savePersonalization,
   updateModelConfiguration,
   updateModelDefault,
   updateProviderSettings,
@@ -45,6 +50,7 @@ import type {
   SettingsPayload,
   ModelCapability,
   WebuiDefaultAccessMode,
+  PersonalizationPayload,
 } from "@/core/types";
 import type { LanguageSetting } from "@/i18n";
 import { useI18n } from "@/i18n";
@@ -68,6 +74,7 @@ type TabKey =
   | "voice"
   | "search"
   | "general"
+  | "personalization"
   | "shortcuts"
   | "help";
 
@@ -106,12 +113,12 @@ const tabs: Array<{ key: TabKey; label: string; description: string; icon: typeo
   { key: "general", label: "系统设置", description: "语言、关闭行为、助手信息", icon: SlidersHorizontal },
   { key: "providers", label: "模型配置", description: "提供商 / API 密钥 / OAuth 授权", icon: Cpu },
   { key: "voice", label: "语音设置", description: "默认 ASR 模型和语音输入", icon: Mic },
+  { key: "personalization", label: "个性化", description: "助手人格 SOUL.md 与用户画像 USER.md", icon: Sparkles },
 ];
 
 const secondaryTabs: Array<{ key: TabKey | null; label: string; icon: typeof Cpu; disabled?: boolean }> = [
   { key: "account", label: "账户管理", icon: UserRound },
   { key: "shortcuts", label: "快捷键", icon: Keyboard },
-  { key: null, label: "助理设置", icon: Bot, disabled: true },
   { key: "help", label: "帮助与反馈", icon: HelpCircle },
 ];
 
@@ -120,11 +127,11 @@ const settingsEnglish = {
     general: { label: "System", description: "Language, behavior, and assistant preferences" },
     providers: { label: "Model Configuration", description: "Providers, API keys, and OAuth" },
     voice: { label: "Voice", description: "Default ASR model and voice input" },
+    personalization: { label: "Personalization", description: "Assistant persona (SOUL.md) and user profile (USER.md)" },
     safety: { label: "Security", description: "Workspace permissions and local-service access" },
   },
   account: "Account",
   shortcuts: "Keyboard Shortcuts",
-  assistant: "Assistant Settings",
   help: "Help & Feedback",
   settings: "Settings",
   close: "Close settings",
@@ -280,9 +287,7 @@ export function SettingsView({
       ? settingsEnglish.account
       : tab.key === "help"
         ? settingsEnglish.help
-        : tab.key === "shortcuts"
-          ? settingsEnglish.shortcuts
-          : settingsEnglish.assistant;
+        : settingsEnglish.shortcuts;
     return { ...tab, label };
   }), [isEnglish]);
   const settingsStore = useSettingsStore();
@@ -798,7 +803,9 @@ export function SettingsView({
                     ? (isEnglish ? settingsEnglish.account : "账户管理")
                     : activeTab === "help"
                       ? (isEnglish ? settingsEnglish.help : "帮助与反馈")
-                      : localizedTabs.find((tab) => tab.key === activeTab)?.label || (isEnglish ? settingsEnglish.settings : "设置")}
+                      : activeTab === "shortcuts"
+                        ? (isEnglish ? settingsEnglish.shortcuts : "快捷键")
+                        : localizedTabs.find((tab) => tab.key === activeTab)?.label || (isEnglish ? settingsEnglish.settings : "设置")}
                 </h2>
               </div>
               <div className="flex items-center gap-2">
@@ -853,6 +860,10 @@ export function SettingsView({
                 />
               )}
 
+              {activeTab === "personalization" && (
+                <PersonalizationSection isEnglish={isEnglish} />
+              )}
+
               {activeTab === "general" && settings && (
                 <GeneralSection
                   language={settingsStore.language ?? setting}
@@ -862,8 +873,6 @@ export function SettingsView({
                   setTheme={settingsStore.setTheme}
                   fontSize={settingsStore.fontSize}
                   setFontSize={settingsStore.setFontSize}
-                  skillsAutoUpdate={settingsStore.skillsAutoUpdate}
-                  setSkillsAutoUpdate={settingsStore.setSkillsAutoUpdate}
                   workspacePath={settingsStore.defaultWorkspacePath || settings.runtime.workspace_path}
                   desktopNotificationsEnabled={settingsStore.desktopNotificationsEnabled}
                   setDesktopNotificationsEnabled={settingsStore.setDesktopNotificationsEnabled}
@@ -1001,6 +1010,7 @@ function AccountSection({
 }
 
 function HelpFeedbackSection({ onOpenFeedback, isEnglish }: { onOpenFeedback: () => void; isEnglish: boolean }) {
+  const [helpOpen, setHelpOpen] = useState(false);
   const openExternal = (url: string) => {
     void shellBridge.open(url);
   };
@@ -1008,7 +1018,7 @@ function HelpFeedbackSection({ onOpenFeedback, isEnglish }: { onOpenFeedback: ()
   return (
     <div className="space-y-6">
       <div className="space-y-3">
-        <HelpRow icon={FileText} label={isEnglish ? "Documentation" : "帮助文档"} trailing onClick={() => openExternal("https://tparuyi.com/docs")} />
+        <HelpRow icon={FileText} label={isEnglish ? "Documentation" : "帮助文档"} trailing onClick={() => setHelpOpen(true)} />
         <HelpRow icon={MessageSquare} label={isEnglish ? "Send Feedback" : "意见反馈"} onClick={onOpenFeedback} />
         <HelpRow icon={Link} label={isEnglish ? "Contact Us" : "联系我们"} trailing onClick={() => openExternal("https://tparuyi.com/contact")} />
       </div>
@@ -1021,6 +1031,7 @@ function HelpFeedbackSection({ onOpenFeedback, isEnglish }: { onOpenFeedback: ()
           {isEnglish ? "Terms of Service" : "服务协议"}
         </button>
       </div>
+      {helpOpen ? <HelpManual onClose={() => setHelpOpen(false)} /> : null}
     </div>
   );
 }
@@ -1183,8 +1194,7 @@ function ModelManagerSection({
 }) {
   const copy = isEnglish ? {
     use: "Use", connect: "Connect", add: "Add Model Service", back: "Back to List",
-    defaults: "Automatically Detected Model Purposes", defaultsHint: "TPACowork identifies text and speech-recognition models from provider and model metadata, then keeps an appropriate default automatically.",
-    notSet: "No automatically selected model", current: "Automatically selected", setDefault: "Set as Default", addToCategory: "Add to This Category",
+    current: "Automatically selected", setDefault: "Set as Default", addToCategory: "Add to This Category",
     empty: "No model configuration is available for this purpose. Add a model service from Connect first.",
     addCustom: "Add Custom Model Service", editCustom: "Configure Custom Model Service", customHint: "Connect another model API provider using the OpenAI-compatible protocol.",
     providerName: "Provider Name", protocol: "Connection Protocol", protocolHint: "OpenAI-compatible custom services are currently supported.",
@@ -1234,13 +1244,9 @@ function ModelManagerSection({
     () =>
       uniqueModelPresets(
         settings.model_presets.filter(
-          (preset) => selectedCapability === "text" || !preset.is_default,
+          (preset) => preset.capabilities.includes(selectedCapability),
         ),
-      ).sort((left, right) => {
-        const leftSupports = left.capabilities.includes(selectedCapability) ? 1 : 0;
-        const rightSupports = right.capabilities.includes(selectedCapability) ? 1 : 0;
-        return rightSupports - leftSupports;
-      }),
+      ),
     [selectedCapability, settings.model_presets],
   );
   const providerPresets = useMemo(
@@ -1361,44 +1367,23 @@ function ModelManagerSection({
 
       {subTab === "use" ? (
         <div className="space-y-3">
-          <div className="rounded-lg bg-[#f7f7f8] p-4">
-            <div className="text-[15px] font-semibold text-[#202020]">{copy?.defaults ?? "自动识别模型用途"}</div>
-            <div className="mt-1 text-[13px] text-[#6f6f73]">
-              {copy?.defaultsHint ?? "TPACowork 会根据供应商和模型名称自动识别文字与语音识别用途，并自动保留合适的默认模型。"}
-            </div>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {localizedCapabilities.map((capability) => {
-              const active = selectedCapability === capability.value;
-              const defaultName = settings.model_defaults[capability.value];
-              const defaultPreset = settings.model_presets.find((preset) => preset.name === defaultName);
-              return (
-                <button
-                  type="button"
-                  key={capability.value}
-                  onClick={() => setSelectedCapability(capability.value)}
-                  className={cn(
-                    "rounded-lg border p-3 text-left transition-colors",
-                    active
-                      ? "border-[#202020] bg-white shadow-sm"
-                      : "border-[#e6e6e8] bg-[#fafafa] hover:border-[#cfcfd2]",
-                  )}
-                >
-                  <div className="text-sm font-semibold text-[#202020]">{capability.label}</div>
-                  <div className="mt-1 truncate text-xs text-[#6f6f73]">
-                    {defaultPreset?.model || copy?.notSet || "尚未设置默认模型"}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-          <div className="rounded-lg border border-[#ececee] bg-white px-4 py-3">
-            <div className="text-sm font-semibold text-[#202020]">
-              {localizedCapabilities.find((item) => item.value === selectedCapability)?.label}
-            </div>
-            <div className="mt-1 text-xs text-[#6f6f73]">
-              {localizedCapabilities.find((item) => item.value === selectedCapability)?.description}
-            </div>
+          {/* Compact capability switch between conversation and speech models. */}
+          <div className="inline-flex rounded-lg bg-[#f2f2f3] p-1">
+            {localizedCapabilities.map((capability) => (
+              <button
+                key={capability.value}
+                type="button"
+                onClick={() => setSelectedCapability(capability.value)}
+                className={cn(
+                  "rounded-md px-4 py-1.5 text-sm font-medium transition-colors",
+                  selectedCapability === capability.value
+                    ? "bg-white text-[#202020] shadow-sm"
+                    : "text-[#6f6f73] hover:text-[#202020]",
+                )}
+              >
+                {capability.label}
+              </button>
+            ))}
           </div>
           {visiblePresets.length ? (
             <div className="grid gap-3 md:grid-cols-2">
@@ -1837,6 +1822,188 @@ function VoiceSection({
   );
 }
 
+const MAX_PERSONALIZATION_CHARS = 32_000;
+
+async function personalizationAuth(): Promise<{ token: string; baseUrl: string }> {
+  const status = await getNanobotStatus();
+  if (!status.ready) throw new Error("nanobot 服务尚未就绪");
+  const baseUrl = `http://127.0.0.1:${status.port}`;
+  let token = getNanobotToken();
+  if (!token) {
+    const refreshed = await refreshNanobotAuth();
+    token = refreshed.token;
+  }
+  return { token, baseUrl };
+}
+
+function PersonalizationSection({ isEnglish }: { isEnglish: boolean }) {
+  const copy = isEnglish ? {
+    title: "Personalization",
+    description: "Customize how TPACowork behaves and what it knows about you. Changes take effect from the next message.",
+    soulTitle: "Assistant Persona (SOUL.md)",
+    soulHint: "Defines the assistant's personality and working style. Loaded into the system prompt every turn.",
+    userTitle: "User Profile (USER.md)",
+    userHint: "Facts about you that the assistant should always keep in mind, such as preferences and background.",
+    restore: "Restore default",
+    restoreConfirm: "Replace this file with the bundled default template?",
+    save: "Save",
+    saved: "Personalization saved — takes effect from the next message.",
+    restored: "Restored the bundled template.",
+    chars: "{used} / {max} characters",
+    loading: "Loading personalization files...",
+  } : null;
+  const [payload, setPayload] = useState<PersonalizationPayload | null>(null);
+  const [soul, setSoul] = useState("");
+  const [user, setUser] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [restoring, setRestoring] = useState<"soul" | "user" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const { token, baseUrl } = await personalizationAuth();
+      const next = await fetchPersonalization(token, baseUrl);
+      setPayload(next);
+      setSoul(next.soul ?? "");
+      setUser(next.user ?? "");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const applyPayload = (next: PersonalizationPayload) => {
+    setPayload(next);
+    setSoul(next.soul ?? "");
+    setUser(next.user ?? "");
+  };
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const { token, baseUrl } = await personalizationAuth();
+      applyPayload(await savePersonalization(token, { soul, user }, baseUrl));
+      setMessage(copy?.saved ?? "个性化设置已保存，下一条消息起生效。");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const restore = async (kind: "soul" | "user") => {
+    if (!window.confirm(copy?.restoreConfirm ?? "用内置默认模板替换该文件？")) return;
+    setRestoring(kind);
+    setError(null);
+    setMessage(null);
+    try {
+      const { token, baseUrl } = await personalizationAuth();
+      applyPayload(await restorePersonalization(token, kind, baseUrl));
+      setMessage(copy?.restored ?? "已恢复内置默认模板。");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRestoring(null);
+    }
+  };
+
+  if (loading && !payload) {
+    return (
+      <div className="flex items-center justify-center gap-2 py-12 text-sm text-[#6f6f73]">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        {copy?.loading ?? "正在加载个性化文件..."}
+      </div>
+    );
+  }
+
+  const charCount = (value: string) => (copy?.chars ?? "{used} / {max} 字符").replace("{used}", String(value.length)).replace("{max}", String(MAX_PERSONALIZATION_CHARS));
+
+  return (
+    <SettingsGroup>
+      <SettingsCard
+        title={copy?.title ?? "个性化"}
+        description={copy?.description ?? "自定义 TPACowork 的行为与对你的了解，修改后下一条消息起生效。"}
+      >
+        {error ? (
+          <div className="mb-4 rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+        ) : null}
+        {message ? (
+          <div className="mb-4 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div>
+        ) : null}
+
+        <div className="mb-5">
+          <div className="mb-1 flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-[#202020]">{copy?.soulTitle ?? "助手人格 (SOUL.md)"}</div>
+              <div className="mt-0.5 text-xs text-[#6f6f73]">{copy?.soulHint ?? "定义助手的性格与工作方式，每轮都会加载进系统提示。"}</div>
+            </div>
+            <Button
+              variant="outline"
+              className="shrink-0 border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]"
+              onClick={() => void restore("soul")}
+              disabled={restoring !== null || saving}
+            >
+              {restoring === "soul" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+              {copy?.restore ?? "恢复默认"}
+            </Button>
+          </div>
+          <Textarea
+            value={soul}
+            onChange={(event) => setSoul(event.target.value)}
+            className="mt-2 min-h-[240px] font-mono text-xs"
+            spellCheck={false}
+          />
+          <div className="mt-1 text-right text-[11px] text-[#a1a1a9]">{charCount(soul)}</div>
+        </div>
+
+        <div className="mb-5">
+          <div className="mb-1 flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-[#202020]">{copy?.userTitle ?? "用户画像 (USER.md)"}</div>
+              <div className="mt-0.5 text-xs text-[#6f6f73]">{copy?.userHint ?? "关于你的信息，如偏好与背景，让助手始终牢记。"}</div>
+            </div>
+            <Button
+              variant="outline"
+              className="shrink-0 border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]"
+              onClick={() => void restore("user")}
+              disabled={restoring !== null || saving}
+            >
+              {restoring === "user" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+              {copy?.restore ?? "恢复默认"}
+            </Button>
+          </div>
+          <Textarea
+            value={user}
+            onChange={(event) => setUser(event.target.value)}
+            className="mt-2 min-h-[200px] font-mono text-xs"
+            spellCheck={false}
+          />
+          <div className="mt-1 text-right text-[11px] text-[#a1a1a9]">{charCount(user)}</div>
+        </div>
+
+        <div className="flex justify-end pt-1">
+          <Button className="bg-[#202020] text-white hover:bg-[#333]" onClick={() => void save()} disabled={saving || loading}>
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            {copy?.save ?? "保存"}
+          </Button>
+        </div>
+      </SettingsCard>
+    </SettingsGroup>
+  );
+}
+
 export function SafetySection({
   form,
   setForm,
@@ -1989,8 +2156,6 @@ function GeneralSection({
   setTheme,
   fontSize,
   setFontSize,
-  skillsAutoUpdate,
-  setSkillsAutoUpdate,
   workspacePath,
   desktopNotificationsEnabled,
   setDesktopNotificationsEnabled,
@@ -2002,8 +2167,6 @@ function GeneralSection({
   setTheme: (theme: ThemeMode) => void;
   fontSize: FontSizeSetting;
   setFontSize: (size: FontSizeSetting) => void;
-  skillsAutoUpdate: boolean;
-  setSkillsAutoUpdate: (enabled: boolean) => void;
   workspacePath: string;
   desktopNotificationsEnabled: boolean;
   setDesktopNotificationsEnabled: (enabled: boolean) => void;
@@ -2018,14 +2181,14 @@ function GeneralSection({
     ? {
       displayLanguage: "Display Language", languageDescription: "Choose the language used by the application interface.",
       appearance: "Appearance", appearanceDescription: "Choose automatic, light, or dark appearance.",
-      fontSize: "Font Size", skillsAutoUpdate: "Automatically Update Skills", skillsDescription: "Automatically update installed skills. Skills edited in TPACowork are not updated.",
+      fontSize: "Font Size",
       workspace: "Default Workspace Location", workspaceDescription: "New tasks and workspaces are stored in this location.", notSet: "Not set", view: "View",
       notifications: "Notifications", desktopNotifications: "Desktop Notifications", desktopNotificationsDescription: "Show a system notification when a task completes or a new message arrives.",
     }
     : {
       displayLanguage: "显示语言", languageDescription: "设置应用程序界面的显示语言。",
       appearance: "外观主题", appearanceDescription: "选择外观模式：自动、亮色或暗色。",
-      fontSize: "字体大小", skillsAutoUpdate: "技能自动更新", skillsDescription: "开启后将自动更新已安装的技能为最新版本，不会更新你在 TPACowork 中编辑过的技能。",
+      fontSize: "字体大小",
       workspace: "默认工作空间存储路径", workspaceDescription: "新建任务、工作空间时将自动存放在该路径下。", notSet: "未设置", view: "查看",
       notifications: "通知", desktopNotifications: "桌面通知", desktopNotificationsDescription: "允许发送系统桌面通知，任务完成或有新消息时即时提醒。",
     };
@@ -2048,9 +2211,6 @@ function GeneralSection({
       </SettingsRow>
       <SettingsRow title={labels.fontSize}>
         <FontSizeControl value={fontSize} onChange={setFontSize} isEnglish={isEnglish} />
-      </SettingsRow>
-      <SettingsRow title={labels.skillsAutoUpdate} description={labels.skillsDescription}>
-        <Toggle checked={skillsAutoUpdate} onChange={() => setSkillsAutoUpdate(!skillsAutoUpdate)} />
       </SettingsRow>
       <SettingsRow title={labels.workspace} description={labels.workspaceDescription} stacked>
         <div className="flex w-full items-center gap-2 border-t border-[#e4e4e6] pt-3">

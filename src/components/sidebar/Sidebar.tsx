@@ -7,8 +7,8 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { usePromptHubStore } from '@/stores/promptHubStore';
 import { useI18n } from '@/i18n';
-import { Clock, Wrench, Trash2, Settings, Download, Pencil, HelpCircle, ChevronRight, MoreHorizontal, SquarePen, FolderOpen, FolderClosed, X, Search, LogOut, UserRound } from 'lucide-react';
-import ProjectMemoryDialog from '@/components/sidebar/ProjectMemoryDialog';
+import { Clock, Wrench, Trash2, Settings, Download, Pencil, Folder, HelpCircle, ChevronRight, MoreHorizontal, Plus, SquarePen, FolderOpen, FolderClosed, X, Search, LogOut, UserRound } from 'lucide-react';
+import NewWorkspaceDialog from '@/components/common/NewWorkspaceDialog';
 import { matchesConversationSearch, matchesProjectSearch } from '@/components/sidebar/conversationSearch';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -57,7 +57,7 @@ function StatusIndicator({ status, onComplete }: StatusIndicatorProps) {
 
 const PROJECT_VISIBLE_LIMIT = 5;
 const PROJECT_MENU_WIDTH = 150;
-const PROJECT_MENU_HEIGHT = 250;
+const PROJECT_MENU_HEIGHT = 215;
 
 async function getProjectSkillsAuth(): Promise<{ token: string; baseUrl: string }> {
   const status = await getNanobotStatus();
@@ -104,13 +104,16 @@ export default function Sidebar() {
   const logoutPromptHub = usePromptHubStore((s) => s.logout);
   const openPromptHubLogin = usePromptHubStore((s) => s.openLogin);
   const closePromptHubLogin = usePromptHubStore((s) => s.closeLogin);
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const isEnglish = locale === 'en-US';
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; convId: string } | null>(null);
   const [projectMenu, setProjectMenu] = useState<{ x: number; y: number; path: string; id?: string; name: string } | null>(null);
   const [pendingRemoveProject, setPendingRemoveProject] = useState<{ path: string; name: string; id?: string } | null>(null);
-  const [memoryProject, setMemoryProject] = useState<{ id: string; name: string } | null>(null);
+  const [newWorkspaceOpen, setNewWorkspaceOpen] = useState(false);
+  const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
+  const [workspaceMenuPos, setWorkspaceMenuPos] = useState<{ left: number; top: number } | null>(null);
   const [skillProject, setSkillProject] = useState<{ path: string; name: string } | null>(null);
   const [skillSearch, setSkillSearch] = useState('');
   const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
@@ -170,14 +173,15 @@ export default function Sidebar() {
 
   // Close context menu when clicking outside
   useEffect(() => {
-    if (!contextMenu && !projectMenu) return;
+    if (!contextMenu && !projectMenu && !workspaceMenuOpen) return;
     const handleClick = () => {
       setContextMenu(null);
       setProjectMenu(null);
+      setWorkspaceMenuOpen(false);
     };
     document.addEventListener('click', handleClick);
     return () => document.removeEventListener('click', handleClick);
-  }, [contextMenu, projectMenu]);
+  }, [contextMenu, projectMenu, workspaceMenuOpen]);
 
   // Sort by createdAt to keep positions stable during status updates
   // Filter out conversations created by scheduled tasks — they appear in ScheduledSection
@@ -430,6 +434,22 @@ export default function Sidebar() {
     startNewConversation();
     setViewMode('chat');
     window.dispatchEvent(new CustomEvent('nanobot-gui:new-chat', { detail: { projectPath: path } }));
+  };
+
+  const openWorkspaceFolder = async () => {
+    try {
+      const selected = await dialogBridge.open({
+        directory: true,
+        multiple: false,
+        title: isEnglish ? 'Select workspace folder' : '选择工作空间文件夹',
+        properties: ['openDirectory'],
+      });
+      if (selected) {
+        startProjectConversation(selected as string);
+      }
+    } catch (err) {
+      console.error('Failed to open workspace folder:', err);
+    }
   };
 
   const requestRemoveProject = (path: string) => {
@@ -711,7 +731,55 @@ export default function Sidebar() {
           <div className="space-y-4 py-1">
             {conversationGroups.projects.length > 0 && (
               <section>
-                <div className="px-3 pb-1.5 text-[13px] font-semibold leading-5 tracking-[-0.01em] text-[#8a867c]">{t.sidebar.projects}</div>
+                <div className="flex items-center justify-between px-3 pb-1.5">
+                  <div className="text-[13px] font-semibold leading-5 tracking-[-0.01em] text-[#8a867c]">{t.sidebar.projects}</div>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        setWorkspaceMenuPos({ left: rect.right + 8, top: rect.bottom + 4 });
+                        setWorkspaceMenuOpen((open) => !open);
+                      }}
+                      title={isEnglish ? 'New workspace' : '新建工作空间'}
+                      aria-label={isEnglish ? 'New workspace' : '新建工作空间'}
+                      className="grid h-5 w-5 place-items-center rounded-md text-[#8a867c] transition-colors hover:bg-[#eeeeea] hover:text-[#29261b] dark:text-[#aaa69d] dark:hover:bg-[#333] dark:hover:text-white"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </button>
+                    {workspaceMenuOpen && workspaceMenuPos && (
+                      <div
+                        className="fixed z-[80] w-52 rounded-xl border border-[#e8e4dd] bg-white py-1.5 shadow-[0_4px_20px_rgba(0,0,0,0.12)] animate-in fade-in slide-in-from-top-1 duration-150"
+                        style={{ left: workspaceMenuPos.left, top: workspaceMenuPos.top }}
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setWorkspaceMenuOpen(false);
+                            setNewWorkspaceOpen(true);
+                          }}
+                          className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] font-medium text-[#29261b] transition-colors hover:bg-[#f5f3ee]"
+                        >
+                          <Plus className="h-4 w-4 shrink-0 text-[#656358]" />
+                          <span>{t.folder.createBlankProject}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setWorkspaceMenuOpen(false);
+                            void openWorkspaceFolder();
+                          }}
+                          className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] font-medium text-[#29261b] transition-colors hover:bg-[#f5f3ee]"
+                        >
+                          <Folder className="h-4 w-4 shrink-0 text-[#656358]" />
+                          <span>{t.folder.useExistingFolder}</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
                 <div className="space-y-0.5">
                   {conversationGroups.projects.map((project) => {
                     const collapsed = collapsedProjects.has(project.key);
@@ -1016,20 +1084,6 @@ export default function Sidebar() {
             <Wrench className="h-3.5 w-3.5" />
             管理技能
           </button>
-          {projectMenu.id ? (
-            <>
-              <button
-                onClick={() => {
-                  setMemoryProject({ id: projectMenu.id!, name: projectMenu.name });
-                  setProjectMenu(null);
-                }}
-                className="flex items-center gap-2 w-full px-3 py-1.5 text-[13px] text-[#3d3929] hover:bg-[#f0ede6]"
-              >
-                <span className="flex h-3.5 w-3.5 items-center justify-center text-[13px]">◌</span>
-                {t.projectMemory.menu}
-              </button>
-            </>
-          ) : null}
           <button
             onClick={() => {
               requestRemoveProject(projectMenu.path);
@@ -1043,12 +1097,11 @@ export default function Sidebar() {
         </div>
       )}
 
-      {memoryProject && (
-        <ProjectMemoryDialog
-          project={memoryProject}
-          onClose={() => setMemoryProject(null)}
-        />
-      )}
+      <NewWorkspaceDialog
+        open={newWorkspaceOpen}
+        onClose={() => setNewWorkspaceOpen(false)}
+        onCreated={(path) => startProjectConversation(path)}
+      />
 
       {skillProject && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/20 px-4 backdrop-blur-[1px] animate-in fade-in duration-150">
@@ -1146,7 +1199,7 @@ export default function Sidebar() {
                   移除 {pendingRemoveProject.name}?
                 </h2>
                 <p className="mt-2.5 text-[15px] font-medium leading-snug text-[#8d8d8d] whitespace-nowrap">
-                  这将从 TPACowork 中移除该项目。磁盘上的文件不会被删除。
+                  这将从 TPACowork 中移除该工作空间。磁盘上的文件不会被删除。
                 </p>
               </div>
               <button

@@ -30,12 +30,20 @@ if (process.env.TPARUYI_DISABLE_GPU === '1') {
 
 let isQuitting = false;
 
+function applicationIconPath(): string {
+  if (app.isPackaged) return join(process.resourcesPath, 'app-icon.png');
+  return process.platform === 'darwin'
+    ? join(process.cwd(), 'resources/icons/TPACowork-macos.png')
+    : join(process.cwd(), 'TPACowork-3_512x512.png');
+}
+
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
     ...MAIN_WINDOW_BOUNDS,
     ...getMainWindowChrome(process.platform),
     show: false,
     autoHideMenuBar: true,
+    icon: applicationIconPath(),
     backgroundColor: MAIN_WINDOW_BACKGROUND,
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
@@ -76,6 +84,10 @@ function createWindow(): void {
 
 app.whenReady().then(async () => {
   console.log('[Main] app.whenReady fired');
+
+  if (process.platform === 'darwin' && isDev) {
+    app.dock.setIcon(applicationIconPath());
+  }
   
   app.on('before-quit', async (e) => {
     if (!isQuitting) {
@@ -421,6 +433,16 @@ app.whenReady().then(async () => {
   ipcMain.handle('window:setTitle', (event, title: string) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (win) win.setTitle(title)
+  })
+
+  // Keep the native window background in sync with the renderer theme so the
+  // window's composited background layer never flashes the other palette
+  // during a theme switch (especially OS-triggered changes in "system" mode).
+  ipcMain.handle('window:setBackgroundColor', (event, color: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (win && typeof color === 'string' && /^#[0-9a-fA-F]{6}$/.test(color)) {
+      win.setBackgroundColor(color)
+    }
   })
 
   ipcMain.handle('window:isFullScreen', (event) => {

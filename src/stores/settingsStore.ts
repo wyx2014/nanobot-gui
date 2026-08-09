@@ -259,7 +259,6 @@ interface SettingsState {
   // Window close behavior
   closeAction: 'ask' | 'minimize' | 'quit';
   fontSize: FontSizeSetting;
-  skillsAutoUpdate: boolean;
   defaultWorkspacePath: string;
   desktopNotificationsEnabled: boolean;
   keyboardShortcuts: KeyboardShortcuts;
@@ -339,7 +338,6 @@ interface SettingsActions {
   // Window close behavior
   setCloseAction: (action: 'ask' | 'minimize' | 'quit') => void;
   setFontSize: (size: FontSizeSetting) => void;
-  setSkillsAutoUpdate: (enabled: boolean) => void;
   setDefaultWorkspacePath: (path: string) => void;
   setDesktopNotificationsEnabled: (enabled: boolean) => void;
   setKeyboardShortcut: (id: ShortcutId, shortcut: string) => void;
@@ -444,7 +442,6 @@ export const useSettingsStore = create<SettingsStore>()(
       allowPrivateNetworks: true,
       closeAction: 'ask' as 'ask' | 'minimize' | 'quit',
       fontSize: 'default' as FontSizeSetting,
-      skillsAutoUpdate: true,
       defaultWorkspacePath: '',
       desktopNotificationsEnabled: true,
       keyboardShortcuts: DEFAULT_KEYBOARD_SHORTCUTS,
@@ -533,7 +530,6 @@ export const useSettingsStore = create<SettingsStore>()(
         applyFontSize(fontSize);
         set({ fontSize });
       },
-      setSkillsAutoUpdate: (skillsAutoUpdate) => set({ skillsAutoUpdate }),
       setDefaultWorkspacePath: (defaultWorkspacePath) => set({ defaultWorkspacePath }),
       setDesktopNotificationsEnabled: (desktopNotificationsEnabled) => set({ desktopNotificationsEnabled }),
       setKeyboardShortcut: (id, shortcut) => set((state) => ({ keyboardShortcuts: { ...state.keyboardShortcuts, [id]: shortcut } })),
@@ -640,7 +636,6 @@ export const useSettingsStore = create<SettingsStore>()(
         allowPrivateNetworks: state.allowPrivateNetworks,
         closeAction: state.closeAction,
         fontSize: state.fontSize,
-        skillsAutoUpdate: state.skillsAutoUpdate,
         defaultWorkspacePath: state.defaultWorkspacePath,
         desktopNotificationsEnabled: state.desktopNotificationsEnabled,
         keyboardShortcuts: state.keyboardShortcuts,

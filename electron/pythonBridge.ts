@@ -85,7 +85,7 @@ export class PythonBridge {
     if (!fs.existsSync(pythonBin)) {
       throw new Error(
         `Python binary not found: ${pythonBin}\n` +
-        `In dev mode, run: cd nanobot && python3 -m venv venv && venv/bin/pip install -e ".[api]"`
+        `In dev mode, run: cd nanobot && python3 -m venv venv && venv/bin/pip install -e ".[desktop]"`
       );
     }
 

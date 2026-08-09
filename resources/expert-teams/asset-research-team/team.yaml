@@ -17,23 +17,41 @@ runtime:
   max_members: 4
   report_directory: reports
   adapter: adapter.md
-data_sources:
-  - id: ifind-finance-data
-    name: 同花顺 iFinD 金融数据
-    skill: ifind-finance-data
-    priority: primary
-    required: true
-    description: A股、港美股公司资料、财务指标、行情、公告、新闻与行业板块结构化数据。
-    assignments:
-      business-analyst: 公司摘要、主营构成、业务变化与关键公告
-      financial-analyst: 财务报表、核心指标、现金流、盈利质量与估值基础数据
-      industry-researcher: 行业板块、可比公司、竞争格局与行业经济指标
-      risk-assessor: 公司公告、治理事件、诉讼处罚、质押减持与风险新闻
+  completion:
+    required_tools:
+      - write_file
+    required_artifacts:
+      - html
+    instruction: 即使部分数据源或成员失败，也必须基于已核验材料生成最终 Markdown 与 HTML 报告，并在报告中标注缺口、冲突和置信度。
 mcp_presets:
+  - name: hexin-ifind-ds-stock-mcp
+    display_name: 同花顺 iFinD 股票 MCP
+    required: false
+    description: 已配置时用于 A 股行情、公司资料和股票结构化字段，并与聚源、财汇按字段交叉核验。
+  - name: hexin-ifind-ds-news-mcp
+    display_name: 同花顺 iFinD 新闻 MCP
+    required: false
+    description: 已配置时用于公司新闻和事件核验。
+  - name: hexin-ifind-ds-edb-mcp
+    display_name: 同花顺 iFinD 宏观 MCP
+    required: false
+    description: 已配置时用于行业和宏观经济序列。
+  - name: hexin-ifind-ds-index-mcp
+    display_name: 同花顺 iFinD 指数 MCP
+    required: false
+    description: 已配置时用于板块、指数和基准对比数据。
   - name: juyuan
     display_name: 聚源金融数据 MCP
     required: false
-    description: 工具箱已配置时由团队自动启用，补充行情、财务、估值、公告与机构数据，并与 iFinD 交叉核验。
+    description: 工具箱已配置时由团队自动启用，提供行情、财务、估值、公告与机构数据。
+  - name: caihui_mcp
+    display_name: 财汇金融数据 MCP
+    required: false
+    description: 已配置时提供 A 股公司、财务、行情和公告数据，参与关键字段三源核验。
+  - name: anysearch
+    display_name: AnySearch MCP
+    required: false
+    description: iFinD、聚源、财汇对同一字段均不可用时的第一层公开资料兜底。
 members:
   - id: business-analyst
     name: 商业分析师

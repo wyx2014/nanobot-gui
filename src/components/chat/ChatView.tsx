@@ -7,17 +7,24 @@ import {
   getGatewayBaseUrl,
   getNanobotClient,
   getNanobotConnectionStatus,
-  getNanobotMcpStatus,
   getNanobotToken,
   mapWebuiThreadToGuiMessages,
   subscribeNanobotConnectionStatus,
   syncSessionsFromGateway,
 } from '@/core/nanobotClient';
 import type { UIMessage, WorkspaceScopePayload, WorkspacesPayload } from '@/core/types';
-import { fetchSessionRuntimeSnapshot, fetchThreadResource, fetchWebuiThread } from '@/core/api';
+import {
+  fetchSessionRuntimeSnapshot,
+  fetchThreadResource,
+  fetchWebuiThread,
+  THREAD_HISTORY_MESSAGE_LIMIT,
+} from '@/core/api';
 import { conversationIdToSessionKey } from '@/core/sessionKey';
 import { projectThreadResource } from '@/core/nanobot/threadResourceProjection';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { usePreviewStore } from '@/stores/previewStore';
+import { useBrowserStore } from '@/stores/browserStore';
+import { PINNED_SUMMARY_CONTENT_INSET, PINNED_SUMMARY_CONTENT_MAX_WIDTH } from '@/components/panel/RightPanel';
 import { useScheduleStore } from '@/stores/scheduleStore';
 import { usePromptHubStore } from '@/stores/promptHubStore';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
@@ -31,18 +38,20 @@ import ThreadMessages from './ThreadMessages';
 import InteractivePromptCard, { type InteractivePromptSubmitPayload } from './InteractivePromptCard';
 import ChatInput, { type ChatInputSendOptions } from './ChatInput';
 import ActiveSkillsBar from './ActiveSkillsBar';
-import { ArrowLeft, ChevronDown, Loader2, Settings } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Settings } from 'lucide-react';
 import { osBridge } from '@/lib/ipc-factory';
 import { extractUsername } from '@/utils/pathUtils';
-import ThinkingIndicator from './ThinkingIndicator';
 import StreamErrorNotice from './StreamErrorNotice';
 import { normalizeLegacyLongTaskMessages } from '@/core/nanobot/thread-display-compat';
 import { scrubSubagentUiMessages } from '@/core/nanobot/subagent-channel-display';
 import { projectUsableSkills, stripUnavailableLeadingSkillMentions } from '@/core/skills/filter';
 import { normalizeProjectPath, visibleProjectPath } from '@/core/workspace';
 import GenerationStatusBar, { type GenerationPhase } from './GenerationStatusBar';
+import { ThinkingOrb } from 'thinking-orbs';
 import ConversationHeader from './ConversationHeader';
 import { historyHasPendingActivity } from '@/core/nanobot/historyActivity';
+import { buildTaskNarrativeEntries } from '@/core/nanobot/taskNarrativeTimeline';
+import { preserveLatestUserAnchor } from '@/core/nanobot/threadHistoryMerge';
 import { normalizeTaskTimestamp } from '@/utils/taskDuration';
 import { cn } from '@/lib/utils';
 import { isMacOS } from '@/utils/platform';
@@ -54,7 +63,7 @@ interface PendingFirstMessage {
   workspaceScope?: WorkspaceScopePayload | null;
 }
 
-const HISTORY_PAGE_LIMIT = 200;
+const HISTORY_PAGE_LIMIT = THREAD_HISTORY_MESSAGE_LIMIT;
 
 function imageAttachmentsToSendImages(images?: ImageAttachment[]): SendImage[] | undefined {
   if (!images?.length) return undefined;
@@ -104,6 +113,18 @@ export default function ChatView({
 }) {
   const activeConv = useActiveConversation();
   const activeConvId = activeConv?.id;
+  const summaryCollapsed = useSettingsStore((s) => s.rightPanelCollapsed);
+  // The summary inset must match what RightPanel actually renders: it only
+  // floats the summary card when no artifact preview / browser panel is open.
+  // Otherwise opening an artifact while the summary toggle is still on would
+  // squeeze the conversation by the phantom summary inset PLUS the panel.
+  const previewArtifact = usePreviewStore((s) => s.previewArtifact);
+  const browserOpen = useBrowserStore((s) => (
+    activeConvId ? s.sessions[activeConvId]?.open === true : false
+  ));
+  const summaryContentInset = activeConvId && !summaryCollapsed && !previewArtifact && !browserOpen
+    ? PINNED_SUMMARY_CONTENT_INSET
+    : 0;
   const { createConversation } = useChatStore();
   const scheduleReturnTarget = useScheduleStore((s) => s.returnTarget);
   const setScheduleActiveTaskId = useScheduleStore((s) => s.setActiveTaskId);
@@ -125,18 +146,8 @@ export default function ChatView({
     getNanobotConnectionStatus,
   );
   const gatewayReady = gatewayConnectionStatus === 'open';
-  const mcpStatus = useSyncExternalStore(
-    subscribeNanobotConnectionStatus,
-    getNanobotMcpStatus,
-    getNanobotMcpStatus,
-  );
-  const runtimeNotice = !gatewayReady
-    ? t.chat.gatewayStarting
-    : mcpStatus === 'pending' || mcpStatus === 'warming'
-      ? t.chat.mcpWarming
-      : mcpStatus === 'unavailable'
-        ? t.chat.mcpUnavailable
-        : null;
+
+
   const [historyMessages, setHistoryMessages] = useState<UIMessage[]>([]);
   const [historyConversationId, setHistoryConversationId] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -152,11 +163,12 @@ export default function ChatView({
     : [];
   const isConversationLoading = !!activeConvId
     && (historyLoading || historyConversationId !== activeConvId);
-  const hasCanonicalThreadResource = useThreadResourceStore((state) => (
+  const canonicalThreadResource = useThreadResourceStore((state) => (
     activeConvId
-      ? Boolean(state.resourcesBySession[conversationIdToSessionKey(activeConvId)])
-      : false
+      ? state.resourcesBySession[conversationIdToSessionKey(activeConvId)]
+      : undefined
   ));
+  const hasCanonicalThreadResource = Boolean(canonicalThreadResource);
 
   const [greeting, setGreeting] = useState('');
   const [userName, setUserName] = useState('');
@@ -298,6 +310,25 @@ export default function ChatView({
   );
   const creatingConversationRef = useRef(false);
 
+  // The live stream is an optimistic overlay; a freshly fetched Thread
+  // Resource is the durable transcript authority. Global terminal refreshes
+  // replace the resource's message array, so immediately project that array
+  // back into the chat instead of waiting for a conversation switch.
+  useEffect(() => {
+    if (!activeConvId || !canonicalThreadResource?.messages) return;
+    setHistoryMessages((current) => preserveLatestUserAnchor(
+      current,
+      projectWebuiThreadMessages(canonicalThreadResource.messages),
+      canonicalThreadResource.message_page,
+    ));
+    setHistoryConversationId(activeConvId);
+    setHistoryVersion((value) => value + 1);
+  }, [
+    activeConvId,
+    canonicalThreadResource?.message_page,
+    canonicalThreadResource?.messages,
+  ]);
+
   useEffect(() => {
     if (!activeConvId || historyLoading) return;
     stream.setMessages((current) => {
@@ -374,8 +405,14 @@ export default function ChatView({
   }, [generationActive, runStartedAt, turnClockNow]);
   const generationPhase = useMemo<GenerationPhase | null>(() => {
     if (!generationActive) return null;
-    return latestAssistantMessage?.reasoningStreaming ? 'thinking' : 'generating';
-  }, [generationActive, latestAssistantMessage?.reasoningStreaming]);
+    if (latestAssistantMessage?.reasoningStreaming) return 'thinking';
+    const runningTools = buildTaskNarrativeEntries(latestTurnMessages)
+      .filter((entry) => entry.status === 'running' && entry.kind !== 'analysis' && entry.kind !== 'narration');
+    if (runningTools.length > 0) {
+      return runningTools.some((entry) => entry.source === 'web') ? 'searching' : 'working';
+    }
+    return 'generating';
+  }, [generationActive, latestAssistantMessage?.reasoningStreaming, latestTurnMessages]);
   const generationTokenCount = useMemo(
     () => stream.turnUsage?.newTokens ?? latestTurnMessages.reduce((total, message) => (
       total
@@ -537,17 +574,6 @@ export default function ChatView({
     resendFromUserMessage(userMessage, trimmed);
   }, [resendFromUserMessage, stream.messages]);
 
-  const handleRegenerateAssistant = useCallback((message: Message) => {
-    const assistantIndex = stream.messages.findIndex((item) => item.id === message.id);
-    if (assistantIndex < 0) return;
-    for (let i = assistantIndex - 1; i >= 0; i -= 1) {
-      const candidate = stream.messages[i];
-      if (candidate.role !== 'user') continue;
-      resendFromUserMessage(candidate, candidate.content);
-      return;
-    }
-  }, [resendFromUserMessage, stream.messages]);
-
   const handleSubmitInteractivePromptAnswer = useCallback((
     message: Message,
     payload: InteractivePromptSubmitPayload,
@@ -652,7 +678,11 @@ export default function ChatView({
               }
               useChatStore.getState().setConversationRuntimeSnapshot(activeConvId, runtimeSnapshot);
             }
-            setHistoryMessages(projectWebuiThreadMessages(resource.messages));
+            setHistoryMessages((current) => preserveLatestUserAnchor(
+              current,
+              projectWebuiThreadMessages(resource.messages),
+              resource.message_page,
+            ));
             setHistoryConversationId(activeConvId);
             setHistoryVersion((value) => value + 1);
             return;
@@ -683,6 +713,21 @@ export default function ChatView({
   const apiKey = useSettingsStore((s) => s.apiKey);
   const needsSetup = !apiKey?.trim();
   const welcomeProjectName = workspaceScope?.project_name || workspaceScope?.project_path?.split(/[\\/]/).filter(Boolean).pop();
+
+  // Gateway is still booting — show a full starting screen instead of the
+  // chat/input surfaces; they become usable only once the connection is open.
+  if (!gatewayReady) {
+    return (
+      <div className="flex h-full min-h-[45vh] w-full items-center justify-center bg-[#fbfaf7]">
+        <div className="flex flex-col items-center gap-3" role="status" aria-live="polite">
+          <ThinkingOrb state="connecting" size={20} aria-label="" />
+          <p className="text-[13px] font-medium text-[#88857b] dark:text-[#aaa69e]">
+            {t.chat.gatewayStarting}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (!activeConv) {
     return (
@@ -742,11 +787,7 @@ export default function ChatView({
                 workspaceScope={workspaceScope}
                 onWorkspaceScopeChange={_onWorkspaceScopeChange}
               />
-              {runtimeNotice ? (
-                <p className="mt-2 text-center text-[12px] text-amber-700">
-                  {runtimeNotice}
-                </p>
-              ) : null}
+
             </div>
           </div>
         </div>
@@ -772,9 +813,19 @@ export default function ChatView({
           key={activeConvId}
           className="h-full overflow-y-auto"
           ref={containerRef}
+          style={summaryContentInset ? { paddingRight: summaryContentInset } : undefined}
           aria-busy={isConversationLoading}
         >
-          <div className="w-full max-w-4xl mx-auto px-6 md:px-10 py-8 overflow-hidden">
+          <div className={cn(
+            "w-full py-8 overflow-hidden",
+            // Summary open: drop the horizontal padding and cap the column at a
+            // comfortable reading width, right-aligned against the summary card
+            // (never stretching edge-to-edge or hugging the sidebar).
+            // Summary closed: keep the original centered padded layout.
+            summaryContentInset
+              ? 'max-w-3xl ml-auto mr-0'
+              : 'max-w-4xl mx-auto px-6 md:px-10',
+          )}>
             <div>
               {isConversationLoading ? (
                 <div
@@ -783,11 +834,8 @@ export default function ChatView({
                   role="status"
                   aria-live="polite"
                 >
-                  <div className="inline-flex items-center gap-2 text-[12.5px] text-[#88857b] dark:text-[#aaa69e]">
-                    <Loader2
-                      className="h-3.5 w-3.5 animate-spin text-[#d97757]"
-                      aria-hidden="true"
-                    />
+                  <div className="inline-flex items-center gap-2.5 text-[13px] text-[#88857b] dark:text-[#aaa69e]">
+                    <ThinkingOrb state="solving" size={20} aria-label="" />
                     <span>{t.chat.loadingConversation}</span>
                   </div>
                 </div>
@@ -803,15 +851,7 @@ export default function ChatView({
                         : undefined
                     }
                     onEditUserMessage={handleEditUserMessage}
-                    onRegenerateAssistant={handleRegenerateAssistant}
                   />
-
-                  {/* Thinking indicator - shown after user message but before assistant message appears */}
-                  {stream.isStreaming && timelineMessages.length > 0 && timelineMessages.every((m) => m.role === 'user') && (
-                    <div className="pl-9">
-                      <ThinkingIndicator />
-                    </div>
-                  )}
                 </>
               )}
             </div>
@@ -825,7 +865,17 @@ export default function ChatView({
             onClick={() => scrollToBottom({ force: true })}
             title={t.chat.scrollToBottom}
             aria-label={t.chat.scrollToBottom}
-            className="absolute bottom-3 left-1/2 z-10 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border border-[#706b5730] bg-white/90 text-[#656358] shadow-md backdrop-blur-sm transition-all hover:bg-white hover:text-[#29261b] dark:border-white/15 dark:bg-[#2b2b2b]/95 dark:text-[#d9d5cd] dark:shadow-[0_4px_16px_rgba(0,0,0,0.45)] dark:hover:bg-[#3a3a3a] dark:hover:text-white"
+            style={{
+              left: summaryContentInset
+                // Center on the conversation content column (right-aligned
+                // max-w-3xl with the summary inset), never over the summary.
+                // min() keeps the center correct when the window is too narrow
+                // for the full 768px column.
+                ? `calc(100% - ${PINNED_SUMMARY_CONTENT_INSET}px - min(${PINNED_SUMMARY_CONTENT_MAX_WIDTH}px, calc(100% - ${PINNED_SUMMARY_CONTENT_INSET}px)) / 2)`
+                : '50%',
+              transform: 'translateX(-50%)',
+            }}
+            className="absolute bottom-3 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-[#706b5730] bg-white/90 text-[#656358] shadow-md backdrop-blur-sm transition-all hover:bg-white hover:text-[#29261b] dark:border-white/15 dark:bg-[#2b2b2b]/95 dark:text-[#d9d5cd] dark:shadow-[0_4px_16px_rgba(0,0,0,0.45)] dark:hover:bg-[#3a3a3a] dark:hover:text-white"
           >
             <ChevronDown className="h-4 w-4" />
           </button>
@@ -835,9 +885,17 @@ export default function ChatView({
       {/* Bottom Input */}
       <div
         data-chat-composer-dock
-        className="shrink-0 bg-gradient-to-t from-[#fbfaf7] via-[#fbfaf7]/95 to-transparent px-6 pb-4 pt-2 md:px-10"
+        className={cn(
+          'shrink-0 bg-gradient-to-t from-[#fbfaf7] via-[#fbfaf7]/95 to-transparent pb-4 pt-2',
+          // Summary open: drop the dock's horizontal padding so the composer
+          // column shares the exact same box as the message content above.
+          summaryContentInset ? 'px-0' : 'px-6 md:px-10',
+        )}
+        style={summaryContentInset ? { paddingRight: summaryContentInset } : undefined}
       >
-        <div className="max-w-4xl mx-auto">
+        <div className={cn(
+          summaryContentInset ? 'max-w-3xl ml-auto mr-0' : 'max-w-4xl mx-auto',
+        )}>
           <ActiveSkillsBar />
           {scheduleReturnTarget && (
             <button
@@ -894,11 +952,7 @@ export default function ChatView({
             workspaceScope={workspaceScope}
             onWorkspaceScopeChange={_onWorkspaceScopeChange}
           />
-          {runtimeNotice ? (
-            <p className="mt-2 text-center text-[12px] text-amber-700">
-              {runtimeNotice}
-            </p>
-          ) : null}
+
         </div>
       </div>
     </div>

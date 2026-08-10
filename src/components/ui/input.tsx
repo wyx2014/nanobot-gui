@@ -11,6 +11,7 @@ function Input({ className, type, ...props }: React.ComponentProps<"input">) {
         "w-full h-9 px-3 bg-[#faf9f7] border border-[#e8e4dd] rounded-lg",
         "text-sm text-[#29261b]",
         "placeholder:text-[#b8b5ab]",
+        "dark:bg-[#262624] dark:border-[#3a3a3a] dark:text-[#ece8e1] dark:placeholder:text-[#77746d]",
         "focus:outline-none focus:ring-2 focus:ring-[#d97757]/30 focus:border-[#d97757]",
         "disabled:pointer-events-none disabled:opacity-50",
         "transition-all",

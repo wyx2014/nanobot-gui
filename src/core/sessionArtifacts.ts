@@ -56,7 +56,7 @@ export interface ExpectedSessionArtifactIdentity {
 function requireGatewayBase(base: string): string {
   const normalized = base.trim().replace(/\/+$/, '');
   if (!/^https?:\/\/[^/]+/i.test(normalized)) {
-    throw new Error('Session artifacts require an explicit nanobot gateway base URL.');
+    throw new Error('Session artifacts require an explicit local service base URL.');
   }
   return normalized;
 }

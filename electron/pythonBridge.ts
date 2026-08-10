@@ -6,7 +6,7 @@ import crypto from 'crypto';
 
 const NANOBOT_PORT = 8900;
 const MAX_WAIT_MS = 30_000;  // 30s — Python + asyncio startup on slow systems
-const POLL_INTERVAL_MS = 300;
+const POLL_INTERVAL_MS = 100;
 const MAX_RESTARTS = 3;
 
 export class PythonBridge {
@@ -36,6 +36,10 @@ export class PythonBridge {
     return this._ready;
   }
 
+  get isStarting(): boolean {
+    return this._startingPromise !== null;
+  }
+
   get port(): number {
     return NANOBOT_PORT;
   }
@@ -59,6 +63,7 @@ export class PythonBridge {
   }
 
   private async _doStart(): Promise<void> {
+    const startedAt = Date.now();
     this._stopping = false;
     const { pythonBin, nanobotSrc, workspaceDir, configDir, expertTeamsDir } = this.resolvePaths();
 
@@ -97,12 +102,24 @@ export class PythonBridge {
       '--config', path.join(configDir, 'config.json'),
     ];
 
+    const gatewayEnv = { ...process.env };
+    if (app.isPackaged) {
+      // The packaged runtime must use the wheel prepared inside standalone
+      // Python even when the parent shell happens to export PYTHONPATH.
+      delete gatewayEnv.PYTHONPATH;
+    } else {
+      gatewayEnv.PYTHONPATH = nanobotSrc;
+    }
+
     this.proc = spawn(pythonBin, args, {
       cwd: nanobotSrc,
       env: {
-        ...process.env,
-        PYTHONPATH: nanobotSrc,
+        ...gatewayEnv,
         PYTHONUNBUFFERED: '1',
+        // Lets the Python CLI skip interactive terminal-only imports on the
+        // desktop gateway path. This matters most on Windows cold starts,
+        // where every additional Python module is inspected by Defender.
+        NANOBOT_DESKTOP_GATEWAY: '1',
         // Write nanobot's own logs to a file so they don't pollute Electron's stdout
         NANOBOT_LOG_FILE: path.join(app.getPath('userData'), 'nanobot.log'),
         NANOBOT_EXPERT_TEAMS_DIR: expertTeamsDir,
@@ -159,7 +176,11 @@ export class PythonBridge {
     await this.waitReady();
     this._ready = true;
     this._restarts = 0; // Reset counter on successful start
-    console.log('[PythonBridge] nanobot ready on port', NANOBOT_PORT);
+    console.log(
+      '[PythonBridge] nanobot ready on port',
+      NANOBOT_PORT,
+      `in ${Date.now() - startedAt}ms`,
+    );
   }
 
   async stop(): Promise<void> {
@@ -238,7 +259,10 @@ export class PythonBridge {
       ? path.join(process.resourcesPath, 'python', 'python.exe')
       : path.join(process.resourcesPath, 'python', 'bin', 'python3');
 
-    const nanobotSrc = path.join(process.resourcesPath, 'nanobot-src');
+    // Production runs the wheel installed into the standalone Python runtime
+    // during prepare-python. Using the workspace as cwd avoids shadowing that
+    // precompiled package with an unpacked source tree.
+    const nanobotSrc = workspaceDir;
     const expertTeamsDir = path.join(process.resourcesPath, 'expert-teams');
 
     return { pythonBin, nanobotSrc, workspaceDir, configDir, expertTeamsDir };

@@ -180,12 +180,13 @@ describe('ChatInput welcome layout', () => {
     expect(Number(textarea?.rows)).toBe(2);
     expect(textarea?.className).toContain('min-h-[52px]');
     expect(shortcuts.map((button) => button.dataset.welcomeShortcut)).toEqual([
-      'write',
-      'learn',
-      'code',
-      'life',
-      'ruyi',
+      'research',
+      'portfolio-risk',
+      'office',
     ]);
+    expect(shortcuts[0]?.textContent).toMatch(/投研决策|Investment Research/);
+    expect(shortcuts[1]?.textContent).toMatch(/组合风控|Portfolio Risk/);
+    expect(shortcuts[2]?.textContent).toMatch(/综合办公|Office Work/);
 
     await act(async () => shortcuts[0]?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
     expect(shortcuts[0]?.dataset.active).toBe('true');

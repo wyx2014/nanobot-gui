@@ -47,6 +47,8 @@ export interface TranslationDict {
     openProjectLocation: string;
     renameProject: string;
     removeProject: string;
+    removeProjectTitle: string;
+    removeProjectDesc: string;
     noSessionsYet: string;
     hideSidebar: string;
     showSidebar: string;
@@ -77,6 +79,7 @@ export interface TranslationDict {
     inputPlaceholderWithSkill: string;
     inputPlaceholderWithAgent: string;
     inputPlaceholderMidTask: string;
+    appLoading: string;
     gatewayStarting: string;
     mcpWarming: string;
     mcpUnavailable: string;
@@ -95,7 +98,10 @@ export interface TranslationDict {
     showAllSources: string;
     collapseSources: string;
     scrollToBottom: string;
+    openTerminal: string;
     loadingConversation: string;
+    conversationLoadFailed: string;
+    conversationLoadFailedDesc: string;
     codeBlockExpand: string;
     codeBlockCollapse: string;
     codeBlockSaveAs: string;
@@ -112,11 +118,9 @@ export interface TranslationDict {
     inputTokens: string;
     outputTokens: string;
     addAttachment: string;
-    shortcutWrite: string;
-    shortcutLearn: string;
-    shortcutCode: string;
-    shortcutLife: string;
-    shortcutRuyi: string;
+    shortcutResearch: string;
+    shortcutPortfolioRisk: string;
+    shortcutOffice: string;
   };
 
   // Status Bar
@@ -330,6 +334,9 @@ export interface TranslationDict {
     title: string;
     expertTeams: string;
     skills: string;
+    manageSkills: string;
+    searchMySkills: string;
+    noMySkills: string;
     mcp: string;
     searchPlaceholder: string;
     footerDescription: string;
@@ -594,6 +601,7 @@ export interface TranslationDict {
     artifactsLoadFailed: string;
     artifactsRetry: string;
     artifactsRefresh: string;
+    artifactsOpenFolder: string;
     browserTitle: string;
     browserShow: string;
     browserClose: string;
@@ -720,15 +728,6 @@ export interface TranslationDict {
     unreadRuns: string;
     askRuyiToCreate: string;
     askAbuCreatePrompt: string;
-  };
-
-  // Window Close Dialog
-  windowClose: {
-    title: string;
-    message: string;
-    quit: string;
-    minimize: string;
-    rememberChoice: string;
   };
 
   // Updates

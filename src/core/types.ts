@@ -976,19 +976,8 @@ export interface ExpertTeamSummary {
   cover?: string;
   member_count: number;
   workflow_count: number;
-  data_source_count?: number;
   tags: string[];
   requested_concurrency: number;
-}
-
-export interface ExpertTeamDataSource {
-  id: string;
-  name: string;
-  skill: string;
-  priority: "primary" | "supplemental";
-  required: boolean;
-  description?: string;
-  assignments: Record<string, string>;
 }
 
 export interface ExpertTeamMcpPreset {
@@ -1002,7 +991,6 @@ export interface ExpertTeamMcpPreset {
 export interface ExpertTeamDetail extends ExpertTeamSummary {
   members: ExpertTeamMember[];
   workflows: ExpertTeamWorkflow[];
-  data_sources?: ExpertTeamDataSource[];
   mcp_presets?: ExpertTeamMcpPreset[];
   optional_dependencies: Array<{
     name: string;

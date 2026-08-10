@@ -140,7 +140,7 @@ dist/installers/
 - `out/**/*`
 - `package.json`
 - `embedded-python/runtime/` -> `resources/python/`
-- `../nanobot/` 的运行源码 -> `resources/nanobot-src/`
+- `../nanobot/` 会在 `prepare-python` 时安装并预编译进 `resources/python/`
 
 用户机器是否需要环境：
 

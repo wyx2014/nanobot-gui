@@ -61,7 +61,7 @@ const PROJECT_MENU_HEIGHT = 215;
 
 async function getProjectSkillsAuth(): Promise<{ token: string; baseUrl: string }> {
   const status = await getNanobotStatus();
-  if (!status.ready) throw new Error('nanobot 服务尚未就绪');
+  if (!status.ready) throw new Error('本地服务尚未就绪');
   const baseUrl = `http://127.0.0.1:${status.port}`;
   const token = getNanobotToken();
   if (token) return { token, baseUrl };
@@ -81,7 +81,7 @@ export default function Sidebar() {
   const { conversations, activeConversationId, startNewConversation, switchConversation, deleteConversation, renameConversation, clearCompletedStatus, exportConversation } = useChatStore();
   const openToolbox = useSettingsStore((s) => s.openToolbox);
   const openSystemSettings = useSettingsStore((s) => s.openSystemSettings);
-  const setGuideShown = useSettingsStore((s) => s.setGuideShown);
+  const openGuide = useSettingsStore((s) => s.openGuide);
   const viewMode = useSettingsStore((s) => s.viewMode);
   const setViewMode = useSettingsStore((s) => s.setViewMode);
   const updateInfo = useSettingsStore((s) => s.updateInfo);
@@ -651,7 +651,7 @@ export default function Sidebar() {
       {/* Layout spacer for the macOS title-bar overlay. The shared App drag
           region starts after the traffic lights and sidebar toggle. */}
       {isMacOS() && (
-        <div className="h-9 shrink-0" />
+        <div className="h-12 shrink-0" />
       )}
       <header className="shrink-0 px-3 pb-2.5 pt-2.5">
         <div className="flex h-9 items-center justify-between gap-2">
@@ -897,7 +897,7 @@ export default function Sidebar() {
             )}
           </button>
           <button
-            onClick={() => setGuideShown(false)}
+            onClick={openGuide}
             className="btn-ghost flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[#656358] hover:bg-[#e8e5de] hover:text-[#29261b]"
             title={t.sidebar.help}
           >
@@ -1082,7 +1082,7 @@ export default function Sidebar() {
             className="flex items-center gap-2 w-full px-3 py-1.5 text-[13px] text-[#3d3929] hover:bg-[#f0ede6]"
           >
             <Wrench className="h-3.5 w-3.5" />
-            管理技能
+            {t.toolbox.manageSkills}
           </button>
           <button
             onClick={() => {
@@ -1104,44 +1104,46 @@ export default function Sidebar() {
       />
 
       {skillProject && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/20 px-4 backdrop-blur-[1px] animate-in fade-in duration-150">
-          <div className="w-full max-w-[500px] rounded-[20px] border border-[#e6e1d8] bg-white shadow-[0_16px_48px_rgba(0,0,0,0.16)] overflow-hidden">
-            <div className="flex items-start justify-between px-7 pt-6 pb-4">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/20 px-4 backdrop-blur-[1px] animate-in fade-in duration-150 dark:bg-black/45">
+          <div className="flex w-[480px] max-h-[85vh] flex-col bg-white rounded-2xl shadow-xl overflow-hidden dark:border dark:border-[#3a3a3a] dark:bg-[#262626]">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100 shrink-0 dark:border-white/10">
               <div className="min-w-0">
-                <h2 className="text-[22px] font-semibold leading-tight text-[#242424]">
-                  管理技能
+                <h2 className="text-[16px] font-semibold text-[#29261b] dark:text-[#ece8e1]">
+                  {t.toolbox.manageSkills}
                 </h2>
-                <p className="mt-2.5 text-[15px] font-medium leading-snug text-[#8d8d8d] truncate">
+                <p className="mt-0.5 text-[12.5px] font-medium text-[#8d8d8d] truncate dark:text-[#a3a099]">
                   {skillProject.name}
                 </p>
               </div>
               <button
                 onClick={() => setSkillProject(null)}
-                className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg text-[#4b4b4b] hover:bg-[#f3f1ed] transition-colors"
+                className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 transition-colors dark:text-[#b8b5ae] dark:hover:bg-[#333]"
                 aria-label={t.common.close}
               >
-                <X className="h-5 w-5" />
+                <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="px-7 pb-4">
-              <div className="mb-3 flex h-10 items-center gap-2 rounded-[12px] border border-[#e8e5df] bg-white px-3">
-                <Search className="h-4 w-4 shrink-0 text-[#8d8d8d]" />
+            {/* Content */}
+            <div className="px-6 py-4 space-y-4 overflow-auto flex-1">
+              <div className="flex h-10 items-center gap-2 rounded-lg border border-[#e8e4dd] bg-white px-3 dark:border-[#444] dark:bg-[#1f1f1f]">
+                <Search className="h-4 w-4 shrink-0 text-[#8d8d8d] dark:text-[#a3a099]" />
                 <input
                   value={skillSearch}
                   onChange={(event) => setSkillSearch(event.target.value)}
-                  placeholder="搜索我的技能"
-                  className="w-full bg-transparent text-[14px] text-[#242424] outline-none placeholder:text-[#a6a29a]"
+                  placeholder={t.toolbox.searchMySkills}
+                  className="w-full bg-transparent text-sm text-[#29261b] outline-none placeholder:text-[#a6a29a] dark:text-[#ece8e1] dark:placeholder:text-[#77746d]"
                 />
               </div>
-              <div className="max-h-[260px] overflow-y-auto rounded-[12px] border border-[#eeeae3]">
+              <div className="max-h-[260px] overflow-y-auto rounded-lg border border-[#eeeae3] dark:border-[#3a3a3a]">
                 {workspaceSkills.length === 0 ? (
-                  <div className="px-4 py-8 text-center text-[13px] text-[#8d8d8d]">
-                    暂无我的技能
+                  <div className="px-4 py-8 text-center text-[13px] text-[#8d8d8d] dark:text-[#a3a099]">
+                    {t.toolbox.noMySkills}
                   </div>
                 ) : filteredWorkspaceSkills.length === 0 ? (
-                  <div className="px-4 py-8 text-center text-[13px] text-[#8d8d8d]">
-                    未找到技能
+                  <div className="px-4 py-8 text-center text-[13px] text-[#8d8d8d] dark:text-[#a3a099]">
+                    {t.toolbox.noSkillsFound}
                   </div>
                 ) : (
                   filteredWorkspaceSkills.map((skill) => {
@@ -1149,7 +1151,7 @@ export default function Sidebar() {
                     return (
                       <label
                         key={skill.name}
-                        className="flex cursor-pointer items-start gap-3 px-3.5 py-2.5 hover:bg-[#f8f6f2]"
+                        className="flex cursor-pointer items-start gap-3 px-3.5 py-2.5 hover:bg-[#f5f3ee] dark:hover:bg-[#2c2c2c]"
                       >
                         <input
                           type="checkbox"
@@ -1158,10 +1160,10 @@ export default function Sidebar() {
                           className="mt-1 h-4 w-4 accent-[#d97757]"
                         />
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[13.5px] font-medium text-[#29261b]">
+                          <span className="block truncate text-[13.5px] font-medium text-[#29261b] dark:text-[#ece8e1]">
                             {skill.name}
                           </span>
-                          <span className="line-clamp-2 text-[12px] leading-snug text-[#8d8d8d]">
+                          <span className="line-clamp-2 text-[12px] leading-snug text-[#8d8d8d] dark:text-[#a3a099]">
                             {skill.description}
                           </span>
                         </span>
@@ -1172,16 +1174,17 @@ export default function Sidebar() {
               </div>
             </div>
 
-            <div className="flex justify-end gap-3 px-7 pb-6">
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-neutral-100 shrink-0 dark:border-white/10">
               <button
                 onClick={() => setSkillProject(null)}
-                className="h-10 rounded-[12px] border border-[#e8e5df] bg-white px-6 text-[15px] font-semibold text-[#242424] hover:bg-[#f8f6f2] transition-colors"
+                className="px-4 py-2 rounded-lg text-[13px] text-[#3d3929] hover:bg-[#f5f3ee] transition-colors dark:text-[#ece8e1] dark:hover:bg-[#333]"
               >
                 {t.common.cancel}
               </button>
               <button
                 onClick={() => void saveProjectSkills()}
-                className="h-10 rounded-[12px] bg-[#1f2024] px-6 text-[15px] font-semibold text-white hover:bg-[#111214] transition-colors"
+                className="px-4 py-2 rounded-lg text-[13px] font-medium bg-[#d97757] text-white hover:bg-[#c8664a] transition-colors"
               >
                 {t.common.save}
               </button>
@@ -1191,20 +1194,20 @@ export default function Sidebar() {
       )}
 
       {pendingRemoveProject && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/20 px-4 backdrop-blur-[1px] animate-in fade-in duration-150">
-          <div className="w-full max-w-[500px] rounded-[20px] border border-[#e6e1d8] bg-white shadow-[0_16px_48px_rgba(0,0,0,0.16)] overflow-hidden">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/20 px-4 backdrop-blur-[1px] animate-in fade-in duration-150 dark:bg-black/45">
+          <div className="w-full max-w-[500px] rounded-[20px] border border-[#e6e1d8] bg-white shadow-[0_16px_48px_rgba(0,0,0,0.16)] overflow-hidden dark:border-[#3a3a3a] dark:bg-[#262626] dark:shadow-[0_16px_48px_rgba(0,0,0,0.5)]">
             <div className="flex items-start justify-between px-7 pt-6 pb-4">
               <div>
-                <h2 className="text-[22px] font-semibold leading-tight text-[#242424]">
-                  移除 {pendingRemoveProject.name}?
+                <h2 className="text-[22px] font-semibold leading-tight text-[#242424] dark:text-[#ece8e1]">
+                  {t.sidebar.removeProjectTitle.replace('{name}', pendingRemoveProject.name)}
                 </h2>
-                <p className="mt-2.5 text-[15px] font-medium leading-snug text-[#8d8d8d] whitespace-nowrap">
-                  这将从 TPACowork 中移除该工作空间。磁盘上的文件不会被删除。
+                <p className="mt-2.5 text-[15px] font-medium leading-snug text-[#8d8d8d] whitespace-nowrap dark:text-[#a3a099]">
+                  {t.sidebar.removeProjectDesc}
                 </p>
               </div>
               <button
                 onClick={() => setPendingRemoveProject(null)}
-                className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg text-[#4b4b4b] hover:bg-[#f3f1ed] transition-colors"
+                className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg text-[#4b4b4b] hover:bg-[#f3f1ed] transition-colors dark:text-[#b8b5ae] dark:hover:bg-[#333]"
                 aria-label={t.common.close}
               >
                 <X className="h-5 w-5" />
@@ -1213,13 +1216,13 @@ export default function Sidebar() {
             <div className="flex justify-end gap-3 px-7 pb-6 pt-4">
               <button
                 onClick={() => setPendingRemoveProject(null)}
-                className="h-10 rounded-[12px] border border-[#e8e5df] bg-white px-6 text-[15px] font-semibold text-[#242424] hover:bg-[#f8f6f2] transition-colors"
+                className="h-10 rounded-[12px] border border-[#e8e5df] bg-white px-6 text-[15px] font-semibold text-[#242424] hover:bg-[#f8f6f2] transition-colors dark:border-[#3a3a3a] dark:bg-[#2c2c2c] dark:text-[#ece8e1] dark:hover:bg-[#383838]"
               >
                 {t.common.cancel}
               </button>
               <button
                 onClick={() => void confirmRemoveProject()}
-                className="h-10 rounded-[12px] bg-[#fae7e7] px-6 text-[15px] font-semibold text-[#d83434] hover:bg-[#f5dddd] transition-colors"
+                className="h-10 rounded-[12px] bg-[#fae7e7] px-6 text-[15px] font-semibold text-[#d83434] hover:bg-[#f5dddd] transition-colors dark:bg-[#3d2323] dark:text-[#f29494] dark:hover:bg-[#4a2a2a]"
               >
                 {t.sidebar.removeProject}
               </button>

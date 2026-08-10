@@ -82,6 +82,9 @@ export const osBridge = {
   },
   resolveResource: async (path: string): Promise<string> => {
     return window.ipc.invoke('os:resolveResource', path);
+  },
+  openTerminal: async (cwd?: string): Promise<void> => {
+    return window.ipc.invoke('shell:openTerminal', cwd);
   }
 };
 

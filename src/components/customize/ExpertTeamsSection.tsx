@@ -130,7 +130,6 @@ export default function ExpertTeamsSection() {
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const dataSources = detail?.data_sources ?? [];
   const mcpPresets = detail?.mcp_presets ?? [];
 
   const load = useCallback(async () => {
@@ -208,7 +207,7 @@ export default function ExpertTeamsSection() {
               <div className="mt-3 flex flex-wrap gap-3 text-xs text-[#777368]">
                 <span>{detail.member_count} {isEnglish ? 'specialists' : '位专家'}</span>
                 <span>{detail.workflow_count} {isEnglish ? 'workflows' : '个工作流'}</span>
-                <span>{dataSources.length + mcpPresets.length} {isEnglish ? 'connected data sources' : '个绑定数据源'}</span>
+                <span>{mcpPresets.length} {isEnglish ? 'MCP bindings' : '个 MCP 绑定'}</span>
                 <span>{isEnglish ? 'Version' : '版本'} {detail.version}</span>
               </div>
             </div>
@@ -269,31 +268,6 @@ export default function ExpertTeamsSection() {
             ))}
           </div>
         </section>
-
-        {dataSources.length > 0 && (
-          <section className="mt-5">
-            <h3 className="mb-3 text-sm font-semibold text-[#29261b]">{isEnglish ? 'Built-in Data Sources' : '内置数据源'}</h3>
-            <div data-expert-data-source-group className="space-y-2 rounded-xl border border-[#dce9df] bg-[#f7fbf8] p-3">
-              {dataSources.map((source) => {
-                const display = dataSourceText(source, isEnglish);
-                return (
-                  <div key={source.id} data-expert-data-source className="flex items-start gap-3 rounded-lg bg-white/75 px-3 py-2.5">
-                    <Database className="mt-0.5 h-4 w-4 shrink-0 text-[#4f9576]" />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 text-sm font-medium text-[#294f35]">
-                        {display.name}
-                        {source.priority === 'primary' && (
-                          <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">{isEnglish ? 'Primary source' : '优先数据源'}</span>
-                        )}
-                      </div>
-                      <p className="mt-1 text-xs leading-5 text-[#5f7565]">{display.description}</p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        )}
 
         {mcpPresets.length > 0 && (
           <section className="mt-5">

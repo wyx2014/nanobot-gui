@@ -9,14 +9,15 @@ import {
   FileSpreadsheet,
   FileText,
   FileType,
+  FolderOpen,
   Loader2,
   Minus,
-  RefreshCw,
   Video,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/i18n';
+import { shellBridge } from '@/lib/ipc-factory';
 import { useChatStore } from '@/stores/chatStore';
 import {
   useConversationWorkbenchStore,
@@ -73,6 +74,15 @@ function formatModifiedAt(value: string | number | undefined, locale: string): s
     hour: '2-digit',
     minute: '2-digit',
   }).format(date);
+}
+
+/** Parent directory of a POSIX- or Windows-style absolute path. */
+function dirnameOf(path: string): string {
+  const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '');
+  const idx = normalized.lastIndexOf('/');
+  if (idx === -1) return normalized;
+  if (idx === 0) return '/';
+  return normalized.slice(0, idx);
 }
 
 export default function ConversationWorkbench() {
@@ -145,7 +155,7 @@ export default function ConversationWorkbench() {
   const openArtifact = usePreviewStore((state) => state.openArtifact);
   const [artifacts, setArtifacts] = useState<SessionArtifact[]>([]);
   const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+  const previewArtifact = usePreviewStore((state) => state.previewArtifact);
   const [error, setError] = useState<string | null>(null);
   const requestSequence = useRef(0);
   const artifactRevisionConversation = useRef<string | null>(null);
@@ -166,11 +176,10 @@ export default function ConversationWorkbench() {
     );
   }, [activeConversationId, threadResource, workspacePath]);
 
-  const refreshArtifacts = useCallback(async (background = false) => {
+  const refreshArtifacts = useCallback(async () => {
     if (!activeConversationId) return;
     const requestId = ++requestSequence.current;
-    if (background) setRefreshing(true);
-    else setLoading(true);
+    setLoading(true);
     setError(null);
     try {
       const key = conversationIdToSessionKey(activeConversationId);
@@ -209,7 +218,6 @@ export default function ConversationWorkbench() {
     } finally {
       if (requestId === requestSequence.current) {
         setLoading(false);
-        setRefreshing(false);
       }
     }
   }, [activeConversationId, projectId, sessionId, t.panel.artifactsLoadFailed, workspacePath]);
@@ -224,7 +232,7 @@ export default function ConversationWorkbench() {
       return;
     }
     setLoading(!!activeConversationId);
-    if (activeConversationId) void refreshArtifacts(false);
+    if (activeConversationId) void refreshArtifacts();
   }, [activeConversationId, canonicalArtifacts, refreshArtifacts]);
 
   useEffect(() => {
@@ -233,7 +241,7 @@ export default function ConversationWorkbench() {
       return;
     }
     if (!activeConversationId || artifactRevision === 0) return;
-    void refreshArtifacts(true);
+    void refreshArtifacts();
   }, [activeConversationId, artifactRevision, refreshArtifacts]);
 
   useEffect(() => {
@@ -243,10 +251,24 @@ export default function ConversationWorkbench() {
       || (!shouldPollActiveTurn && !hasStagingArtifact)
     ) return;
     const timer = window.setInterval(() => {
-      void refreshArtifacts(true);
+      void refreshArtifacts();
     }, POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
   }, [activeConversationId, artifacts, refreshArtifacts, shouldPollActiveTurn]);
+
+  const openArtifactFolder = useCallback(async () => {
+    // Prefer the currently previewed artifact, otherwise the first ready one.
+    const ready = artifacts.find((artifact) => artifact.status === 'ready');
+    const nativePath = previewArtifact?.nativePath ?? ready?.ref.nativePath;
+    const folder = nativePath ? dirnameOf(nativePath) : workspacePath;
+    if (folder) {
+      try {
+        await shellBridge.openPath(folder);
+      } catch (openError) {
+        console.warn('[ConversationWorkbench] Failed to open artifact folder:', openError);
+      }
+    }
+  }, [artifacts, previewArtifact, workspacePath]);
 
   const artifactStatusLabel = useCallback((artifact: SessionArtifact): string => {
     if (artifact.status === 'ready') return '';
@@ -355,13 +377,12 @@ export default function ConversationWorkbench() {
           <div className="flex items-center gap-0.5">
             <button
               type="button"
-              onClick={() => void refreshArtifacts(true)}
-              disabled={loading || refreshing}
+              onClick={() => void openArtifactFolder()}
               className="rounded-md p-1.5 text-[#8b887c] transition-colors hover:bg-[#ebe8e1] hover:text-[#29261b] disabled:opacity-50 dark:text-[#969188] dark:hover:bg-white/10 dark:hover:text-white"
-              aria-label={t.panel.artifactsRefresh}
-              title={t.panel.artifactsRefresh}
+              aria-label={t.panel.artifactsOpenFolder}
+              title={t.panel.artifactsOpenFolder}
             >
-              <RefreshCw className={cn('h-3.5 w-3.5', (loading || refreshing) && 'animate-spin')} />
+              <FolderOpen className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>
@@ -377,7 +398,7 @@ export default function ConversationWorkbench() {
               <p className="mt-1 break-words text-[10.5px] leading-4 text-red-500">{error}</p>
               <button
                 type="button"
-                onClick={() => void refreshArtifacts(false)}
+                onClick={() => void refreshArtifacts()}
                 className="mt-2 text-[11px] font-medium text-red-600 underline underline-offset-2"
               >
                 {t.panel.artifactsRetry}

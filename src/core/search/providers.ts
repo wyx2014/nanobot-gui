@@ -251,6 +251,6 @@ export function createSearchProvider(
     case 'searxng':
       return createSearXNGProvider(baseUrl || '');
     case 'duckduckgo':
-      throw new Error('DuckDuckGo search is handled by the nanobot gateway.');
+      throw new Error('DuckDuckGo search is handled by the local service.');
   }
 }

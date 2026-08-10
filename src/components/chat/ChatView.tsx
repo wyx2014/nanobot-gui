@@ -14,9 +14,6 @@ import {
 } from '@/core/nanobotClient';
 import type { UIMessage, WorkspaceScopePayload, WorkspacesPayload } from '@/core/types';
 import {
-  fetchSessionRuntimeSnapshot,
-  fetchThreadResource,
-  fetchWebuiThread,
   THREAD_HISTORY_MESSAGE_LIMIT,
 } from '@/core/api';
 import { conversationIdToSessionKey } from '@/core/sessionKey';
@@ -24,7 +21,7 @@ import { projectThreadResource } from '@/core/nanobot/threadResourceProjection';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { usePreviewStore } from '@/stores/previewStore';
 import { useBrowserStore } from '@/stores/browserStore';
-import { PINNED_SUMMARY_CONTENT_INSET, PINNED_SUMMARY_CONTENT_MAX_WIDTH } from '@/components/panel/RightPanel';
+import { PINNED_SUMMARY_CONTENT_INSET, PINNED_SUMMARY_CONTENT_MAX_WIDTH } from '@/components/panel/layout';
 import { useScheduleStore } from '@/stores/scheduleStore';
 import { usePromptHubStore } from '@/stores/promptHubStore';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
@@ -46,12 +43,17 @@ import { normalizeLegacyLongTaskMessages } from '@/core/nanobot/thread-display-c
 import { scrubSubagentUiMessages } from '@/core/nanobot/subagent-channel-display';
 import { projectUsableSkills, stripUnavailableLeadingSkillMentions } from '@/core/skills/filter';
 import { normalizeProjectPath, visibleProjectPath } from '@/core/workspace';
+import {
+  projectLegacyLocalFileContext,
+  replaceVisibleLocalFileContent,
+} from '@/core/nanobot/localFileContext';
 import GenerationStatusBar, { type GenerationPhase } from './GenerationStatusBar';
 import { ThinkingOrb } from 'thinking-orbs';
 import ConversationHeader from './ConversationHeader';
 import { historyHasPendingActivity } from '@/core/nanobot/historyActivity';
 import { buildTaskNarrativeEntries } from '@/core/nanobot/taskNarrativeTimeline';
 import { preserveLatestUserAnchor } from '@/core/nanobot/threadHistoryMerge';
+import { loadConversationHistory } from '@/core/nanobot/conversationHistory';
 import { normalizeTaskTimestamp } from '@/utils/taskDuration';
 import { cn } from '@/lib/utils';
 import { isMacOS } from '@/utils/platform';
@@ -151,6 +153,8 @@ export default function ChatView({
   const [historyMessages, setHistoryMessages] = useState<UIMessage[]>([]);
   const [historyConversationId, setHistoryConversationId] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyLoadFailed, setHistoryLoadFailed] = useState(false);
+  const [historyReloadRevision, setHistoryReloadRevision] = useState(0);
   const [historyVersion, setHistoryVersion] = useState(0);
   const [promptSubmitState, setPromptSubmitState] = useState<{
     promptId: string;
@@ -211,25 +215,34 @@ export default function ChatView({
       setHistoryMessages([]);
       setHistoryConversationId(null);
       setHistoryLoading(false);
+      setHistoryLoadFailed(false);
+      return;
+    }
+    if (!gatewayReady) {
+      // Persisted conversation metadata is already safe to show in the
+      // sidebar. Wait for authenticated HTTP/WS state before hydrating its
+      // transcript so a normal cold start never becomes a false load error.
+      setHistoryLoading(true);
+      setHistoryLoadFailed(false);
       return;
     }
     let cancelled = false;
     setHistoryLoading(true);
+    setHistoryLoadFailed(false);
     (async () => {
       try {
         const token = getNanobotToken();
         const base = getGatewayBaseUrl();
         const sessionKey = conversationIdToSessionKey(activeConvId);
-        const resource = await fetchThreadResource(
+        const history = await loadConversationHistory(
           token,
           sessionKey,
           base,
-          { messageLimit: HISTORY_PAGE_LIMIT },
+          HISTORY_PAGE_LIMIT,
         );
         if (cancelled) return;
-        let sourceMessages: UIMessage[] = [];
-        if (resource) {
-          const runtimeSnapshot = projectThreadResource(activeConvId, resource);
+        if (history.resource) {
+          const runtimeSnapshot = projectThreadResource(activeConvId, history.resource);
           if (runtimeSnapshot) {
             try {
               getNanobotClient().applyRuntimeSnapshot(activeConvId, runtimeSnapshot);
@@ -242,19 +255,8 @@ export default function ChatView({
               runtimeSnapshot,
             );
           }
-          sourceMessages = resource.messages;
-        } else {
-          // Compatibility fallback for gateways from before Thread Resource.
-          const [thread, runtimeSnapshot] = await Promise.all([
-            fetchWebuiThread(
-              token,
-              sessionKey,
-              base,
-              { limit: HISTORY_PAGE_LIMIT, direction: 'latest' },
-            ),
-            fetchSessionRuntimeSnapshot(token, sessionKey, base),
-          ]);
-          if (cancelled) return;
+        } else if (history.runtimeSnapshot) {
+          const runtimeSnapshot = history.runtimeSnapshot;
           if (runtimeSnapshot) {
             try {
               getNanobotClient().applyRuntimeSnapshot(activeConvId, runtimeSnapshot);
@@ -263,9 +265,8 @@ export default function ChatView({
             }
             useChatStore.getState().setConversationRuntimeSnapshot(activeConvId, runtimeSnapshot);
           }
-          sourceMessages = thread?.messages ?? [];
         }
-        const ui = projectWebuiThreadMessages(sourceMessages.map((message, index) => ({
+        const ui = projectWebuiThreadMessages(history.messages.map((message, index) => ({
           ...message,
           id: message.id ?? `hist-${index}`,
           createdAt: typeof message.createdAt === 'number' ? message.createdAt : Date.now(),
@@ -273,10 +274,12 @@ export default function ChatView({
         setHistoryMessages(ui);
         setHistoryConversationId(activeConvId);
         setHistoryVersion((value) => value + 1);
-      } catch {
+      } catch (error) {
         if (!cancelled) {
+          console.error('[ChatView] Failed to load conversation history:', error);
           setHistoryMessages([]);
           setHistoryConversationId(activeConvId);
+          setHistoryLoadFailed(true);
           setHistoryVersion((value) => value + 1);
         }
       } finally {
@@ -286,7 +289,7 @@ export default function ChatView({
     return () => {
       cancelled = true;
     };
-  }, [activeConvId]);
+  }, [activeConvId, gatewayReady, historyReloadRevision]);
 
   const handleTurnEnd = useCallback(() => {
     void syncSessionsFromGateway();
@@ -322,6 +325,7 @@ export default function ChatView({
       canonicalThreadResource.message_page,
     ));
     setHistoryConversationId(activeConvId);
+    setHistoryLoadFailed(false);
     setHistoryVersion((value) => value + 1);
   }, [
     activeConvId,
@@ -505,6 +509,10 @@ export default function ChatView({
     const convId = activeConv?.id;
     if (!convId) {
       if (creatingConversationRef.current) return false;
+      const localFileContext = projectLegacyLocalFileContext(text);
+      const titleSource = localFileContext.visibleContent.trim()
+        || localFileContext.files.map((file) => file.name).join(', ')
+        || text;
       pendingFirstRef.current = {
         text,
         images,
@@ -518,7 +526,7 @@ export default function ChatView({
           createConversation(welcomeWorkspacePath ?? effectiveScope?.project_path ?? null, {
             id: gatewayChatId,
             workspaceScope: effectiveScope,
-            title: text.slice(0, 30) + (text.length > 30 ? '...' : ''),
+            title: titleSource.slice(0, 30) + (titleSource.length > 30 ? '...' : ''),
             expertTeam: sendOptions.expertTeam ?? null,
           });
         })
@@ -571,7 +579,10 @@ export default function ChatView({
     if (!trimmed) return;
     const userMessage = stream.messages.find((item) => item.id === message.id && item.role === 'user');
     if (!userMessage) return;
-    resendFromUserMessage(userMessage, trimmed);
+    resendFromUserMessage(
+      userMessage,
+      replaceVisibleLocalFileContent(userMessage.content, trimmed),
+    );
   }, [resendFromUserMessage, stream.messages]);
 
   const handleSubmitInteractivePromptAnswer = useCallback((
@@ -662,14 +673,15 @@ export default function ChatView({
         try {
           const token = getNanobotToken();
           const base = getGatewayBaseUrl();
-          const resource = await fetchThreadResource(
+          const history = await loadConversationHistory(
             token,
             conversationIdToSessionKey(activeConvId),
             base,
+            HISTORY_PAGE_LIMIT,
           );
           if (cancelled) return;
-          if (resource) {
-            const runtimeSnapshot = projectThreadResource(activeConvId, resource);
+          if (history.resource) {
+            const runtimeSnapshot = projectThreadResource(activeConvId, history.resource);
             if (runtimeSnapshot) {
               try {
                 getNanobotClient().applyRuntimeSnapshot(activeConvId, runtimeSnapshot);
@@ -680,22 +692,28 @@ export default function ChatView({
             }
             setHistoryMessages((current) => preserveLatestUserAnchor(
               current,
-              projectWebuiThreadMessages(resource.messages),
-              resource.message_page,
+              projectWebuiThreadMessages(history.messages),
+              history.resource?.message_page,
             ));
-            setHistoryConversationId(activeConvId);
-            setHistoryVersion((value) => value + 1);
-            return;
+          } else {
+            if (history.runtimeSnapshot) {
+              try {
+                getNanobotClient().applyRuntimeSnapshot(
+                  activeConvId,
+                  history.runtimeSnapshot,
+                );
+              } catch {
+                // The durable fallback transcript is still usable on its own.
+              }
+              useChatStore.getState().setConversationRuntimeSnapshot(
+                activeConvId,
+                history.runtimeSnapshot,
+              );
+            }
+            setHistoryMessages(projectWebuiThreadMessages(history.messages));
           }
-          const thread = await fetchWebuiThread(
-            token,
-            conversationIdToSessionKey(activeConvId),
-            base,
-            { limit: HISTORY_PAGE_LIMIT, direction: 'latest' },
-          );
-          if (cancelled) return;
-          setHistoryMessages(projectWebuiThreadMessages(thread?.messages ?? []));
           setHistoryConversationId(activeConvId);
+          setHistoryLoadFailed(false);
           setHistoryVersion((value) => value + 1);
         } catch {
           // Keep live messages if canonical refresh fails.
@@ -714,13 +732,13 @@ export default function ChatView({
   const needsSetup = !apiKey?.trim();
   const welcomeProjectName = workspaceScope?.project_name || workspaceScope?.project_path?.split(/[\\/]/).filter(Boolean).pop();
 
-  // Gateway is still booting — show a full starting screen instead of the
-  // chat/input surfaces; they become usable only once the connection is open.
+  // Keep the application shell visible while the local runtime starts, and
+  // use the chat surface itself for a calm, contextual readiness indicator.
   if (!gatewayReady) {
     return (
-      <div className="flex h-full min-h-[45vh] w-full items-center justify-center bg-[#fbfaf7]">
+      <div className="flex h-full min-h-[45vh] w-full items-center justify-center bg-[#fbfaf7] dark:bg-[#1f1f1f]">
         <div className="flex flex-col items-center gap-3" role="status" aria-live="polite">
-          <ThinkingOrb state="connecting" size={20} aria-label="" />
+          <ThinkingOrb state="solving" size={64} style={{ width: 32, height: 32 }} aria-label="" />
           <p className="text-[13px] font-medium text-[#88857b] dark:text-[#aaa69e]">
             {t.chat.gatewayStarting}
           </p>
@@ -799,12 +817,12 @@ export default function ChatView({
     <div
       className={cn(
         'flex min-h-0 min-w-0 flex-col bg-[#fbfaf7] dark:bg-[#1f1f1f]',
-        isMacOS() ? '-mt-9 h-[calc(100%+2.25rem)]' : 'h-full',
+        isMacOS() ? '-mt-12 h-[calc(100%+3rem)]' : 'h-full',
       )}
     >
       <ConversationHeader
         conversationTitle={activeConv.title}
-        onScrollToBottom={() => scrollToBottom({ force: true })}
+        onOpenTerminal={() => osBridge.openTerminal(activeProjectPath ?? undefined)}
       />
 
       {/* Messages Area */}
@@ -835,23 +853,44 @@ export default function ChatView({
                   aria-live="polite"
                 >
                   <div className="inline-flex items-center gap-2.5 text-[13px] text-[#88857b] dark:text-[#aaa69e]">
-                    <ThinkingOrb state="solving" size={20} aria-label="" />
+                    <ThinkingOrb state="solving" size={64} style={{ width: 32, height: 32 }} aria-label="" />
                     <span>{t.chat.loadingConversation}</span>
                   </div>
                 </div>
               ) : (
                 <>
-                  <ThreadMessages
-                    messages={timelineMessages}
-                    isStreaming={stream.isStreaming}
-                    activeTurnElapsedMs={activeTurnElapsedMs}
-                    latestTurnStatus={
-                      !stream.isStreaming && !activeConv.runtimeSnapshot?.active_turn
-                        ? activeConv.runtimeSnapshot?.latest_turn?.status
-                        : undefined
-                    }
-                    onEditUserMessage={handleEditUserMessage}
-                  />
+                  {historyLoadFailed ? (
+                    <div
+                      className="flex min-h-[45vh] flex-col items-center justify-center gap-3 text-center"
+                      role="alert"
+                    >
+                      <p className="text-[14px] font-medium text-[#4d4a42] dark:text-[#d8d4cc]">
+                        {t.chat.conversationLoadFailed}
+                      </p>
+                      <p className="max-w-md text-[12.5px] text-[#88857b] dark:text-[#aaa69e]">
+                        {t.chat.conversationLoadFailedDesc}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setHistoryReloadRevision((value) => value + 1)}
+                        className="rounded-lg border border-[#d8d4ca] bg-white px-3 py-1.5 text-[12.5px] font-medium text-[#4d4a42] shadow-sm hover:bg-[#f5f3ee] dark:border-white/15 dark:bg-[#2b2b2b] dark:text-[#e7e2d9] dark:hover:bg-[#363636]"
+                      >
+                        {t.task.retryAction}
+                      </button>
+                    </div>
+                  ) : (
+                    <ThreadMessages
+                      messages={timelineMessages}
+                      isStreaming={stream.isStreaming}
+                      activeTurnElapsedMs={activeTurnElapsedMs}
+                      latestTurnStatus={
+                        !stream.isStreaming && !activeConv.runtimeSnapshot?.active_turn
+                          ? activeConv.runtimeSnapshot?.latest_turn?.status
+                          : undefined
+                      }
+                      onEditUserMessage={handleEditUserMessage}
+                    />
+                  )}
                 </>
               )}
             </div>

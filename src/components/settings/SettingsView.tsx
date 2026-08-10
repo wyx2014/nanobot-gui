@@ -3,10 +3,11 @@ import HelpManual from "./HelpManual";
 import {
   AlertCircle,
   ArrowLeft,
+  BookOpenText,
   Check,
+  ChevronDown,
   Cpu,
   ExternalLink,
-  FileText,
   HelpCircle,
   ImagePlus,
   Keyboard,
@@ -229,11 +230,11 @@ function SettingsCard({
   actions?: React.ReactNode;
 }) {
   return (
-    <section data-settings-card className="rounded-lg bg-[#f7f7f8] p-4">
+    <section data-settings-card className="rounded-lg bg-[#f7f7f8] p-4 dark:bg-[#262624]">
       <div className="mb-4 flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-[15px] font-semibold text-[#202020]">{title}</h2>
-          {description ? <p className="mt-1 text-sm text-[#777267]">{description}</p> : null}
+          <h2 className="text-[15px] font-semibold text-[#202020] dark:text-[#e8e5de]">{title}</h2>
+          {description ? <p className="mt-1 text-sm text-[#777267] dark:text-[#8a867c]">{description}</p> : null}
         </div>
         {actions}
       </div>
@@ -258,10 +259,10 @@ function SettingsRow({
   stacked?: boolean;
 }) {
   return (
-    <div data-settings-card className={cn("min-h-[64px] rounded-md bg-[#f7f7f8] px-4 py-3", stacked ? "space-y-3" : "flex items-center justify-between gap-6")}>
+    <div data-settings-card className={cn("min-h-[64px] rounded-md bg-[#f7f7f8] px-4 py-3 dark:bg-[#262624]", stacked ? "space-y-3" : "flex items-center justify-between gap-6")}>
       <div className="min-w-0">
-        <div className="text-[15px] font-semibold text-[#202020]">{title}</div>
-        {description ? <div className="mt-1 text-[13px] leading-5 text-[#6f6f73]">{description}</div> : null}
+        <div className="text-[15px] font-semibold text-[#202020] dark:text-[#e8e5de]">{title}</div>
+        {description ? <div className="mt-1 text-[13px] leading-5 text-[#6f6f73] dark:text-[#8a867c]">{description}</div> : null}
       </div>
       <div className={cn(stacked ? "w-full" : "flex min-w-[180px] flex-1 justify-end")}>{children}</div>
     </div>
@@ -715,10 +716,10 @@ export function SettingsView({
 
   if (loading && !settings) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-[1px] animate-in fade-in duration-150 text-[#777267]">
+      <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/20 backdrop-blur-[1px] animate-in fade-in duration-150 text-[#777267]">
         <div className="flex h-[720px] w-[1040px] items-center justify-center rounded-xl bg-white shadow-2xl">
           <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-          正在连接 nanobot 设置服务...
+          正在连接设置服务...
         </div>
       </div>
     );
@@ -726,7 +727,7 @@ export function SettingsView({
 
   if (error && !settings) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 p-6 backdrop-blur-[1px] animate-in fade-in duration-150">
+      <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/20 p-6 backdrop-blur-[1px] animate-in fade-in duration-150">
         <div className="max-w-xl rounded-xl border border-red-100 bg-white p-6 shadow-sm">
           <div className="flex items-center gap-3 text-red-700">
             <AlertCircle className="h-5 w-5" />
@@ -743,7 +744,7 @@ export function SettingsView({
   }
 
   return (
-    <div data-settings-surface className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 p-8 text-[#202020] backdrop-blur-[1px] animate-in fade-in duration-150">
+    <div data-settings-surface className="fixed inset-0 z-[70] flex items-center justify-center bg-black/20 p-8 text-[#202020] backdrop-blur-[1px] animate-in fade-in duration-150">
       <div data-settings-dialog className="flex h-[min(720px,calc(100vh-64px))] w-[min(1040px,calc(100vw-96px))] overflow-hidden rounded-xl bg-white shadow-2xl">
         <aside data-settings-sidebar className="w-[236px] shrink-0 bg-[#f2f2f3] px-3 py-9">
           <nav className="space-y-1">
@@ -1011,26 +1012,30 @@ function AccountSection({
 
 function HelpFeedbackSection({ onOpenFeedback, isEnglish }: { onOpenFeedback: () => void; isEnglish: boolean }) {
   const [helpOpen, setHelpOpen] = useState(false);
-  const openExternal = (url: string) => {
-    void shellBridge.open(url);
-  };
+  const [contactOpen, setContactOpen] = useState(false);
 
   return (
     <div className="space-y-6">
       <div className="space-y-3">
-        <HelpRow icon={FileText} label={isEnglish ? "Documentation" : "帮助文档"} trailing onClick={() => setHelpOpen(true)} />
+        <HelpRow icon={BookOpenText} label={isEnglish ? "User Manual" : "使用手册"} trailing onClick={() => setHelpOpen(true)} />
         <HelpRow icon={MessageSquare} label={isEnglish ? "Send Feedback" : "意见反馈"} onClick={onOpenFeedback} />
-        <HelpRow icon={Link} label={isEnglish ? "Contact Us" : "联系我们"} trailing onClick={() => openExternal("https://tparuyi.com/contact")} />
+        <HelpRow
+          icon={Link}
+          label={isEnglish ? "Contact Us" : "联系我们"}
+          expanded={contactOpen}
+          onClick={() => setContactOpen((open) => !open)}
+        />
       </div>
-      <div className="pt-6 text-center text-sm text-[#8a8a8d]">
-        <button type="button" className="hover:text-[#202020]" onClick={() => openExternal("https://tparuyi.com/privacy")}>
-          {isEnglish ? "Privacy Policy" : "隐私政策"}
-        </button>
-        <span className="px-3">|</span>
-        <button type="button" className="hover:text-[#202020]" onClick={() => openExternal("https://tparuyi.com/terms")}>
-          {isEnglish ? "Terms of Service" : "服务协议"}
-        </button>
-      </div>
+      {contactOpen ? (
+        <div
+          data-contact-details
+          className="rounded-xl border border-[#e8e4dd] bg-[#f7f7f8] px-5 py-4 text-[13px] leading-6 text-[#6f6f73] dark:border-[#3a3a3a] dark:bg-[#2a2a2a] dark:text-[#c5c1b8] motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-1 motion-safe:duration-200"
+        >
+          {isEnglish
+            ? "If you run into any issues while using TPACowork, please reach out to the TPA Asset Information Technology Department: Wang Yaobin (ext. 3397), Zhang Zhiqing (ext. 3346)."
+            : "如您在使用 TPACowork 时遇到任何问题，欢迎联系太平资产信息科技部：王耀彬（分机 3397）、张志庆（分机 3346）。"}
+        </div>
+      ) : null}
       {helpOpen ? <HelpManual onClose={() => setHelpOpen(false)} /> : null}
     </div>
   );
@@ -1040,24 +1045,34 @@ function HelpRow({
   icon: Icon,
   label,
   trailing,
+  expanded,
   onClick,
 }: {
   icon: typeof Cpu;
   label: string;
   trailing?: boolean;
+  expanded?: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center justify-between rounded-md bg-[#f7f7f8] px-5 py-4 text-left text-[#202020] hover:bg-[#f1f1f2]"
+      className="flex w-full items-center justify-between rounded-md bg-[#f7f7f8] px-5 py-4 text-left text-[#202020] hover:bg-[#f1f1f2] dark:bg-[#2a2a2a] dark:text-[#e8e5de] dark:hover:bg-[#333]"
     >
       <span className="flex items-center gap-4 text-[15px] font-medium">
-        <Icon className="h-5 w-5 text-[#555]" strokeWidth={1.8} />
+        <Icon className="h-5 w-5 text-[#555] dark:text-[#aaa69e]" strokeWidth={1.8} />
         {label}
       </span>
-      {trailing ? <ExternalLink className="h-5 w-5 text-[#777]" strokeWidth={1.8} /> : null}
+      {expanded !== undefined ? (
+        <ChevronDown
+          className={cn(
+            'h-5 w-5 text-[#777] transition-transform duration-200 dark:text-[#8a867c]',
+            expanded && 'rotate-180',
+          )}
+          strokeWidth={1.8}
+        />
+      ) : trailing ? <ExternalLink className="h-5 w-5 text-[#777] dark:text-[#8a867c]" strokeWidth={1.8} /> : null}
     </button>
   );
 }
@@ -1668,7 +1683,7 @@ function VoiceSection({
     title: "Voice Input", description: "The default ASR model transcribes microphone recordings. Configure its credentials and recording preferences here.",
     ready: "ASR service ready", notReady: "ASR service not configured", current: "Current default speech recognition model", notSelected: "Not selected", select: "Select Default Model",
     enable: "Enable Voice Input", enableHint: "Use the default ASR model from the chat input microphone.", apiBase: "API Base URL", apiBaseHint: "Usually keep the provider default; change it for private deployments.", language: "Recognition Language", duration: "Maximum Recording Duration", durationHint: "Allowed range: 1–600 seconds.", save: "Save Voice Settings",
-    selectSpeechModel: "Select a model that supports speech recognition first.", realtime: "Realtime streaming transcription", afterRecording: "Transcribe after recording", keyHint: "Saved: {key}. Leave blank to keep the existing key.", keyLocalHint: "The key is stored only in the local nanobot configuration.", leaveBlank: "Leave blank to keep unchanged", enterKey: "Enter the ASR service API key", noDefaultWarning: "No default ASR model is configured. Select one in Model Configuration → Use → Speech Recognition.",
+    selectSpeechModel: "Select a model that supports speech recognition first.", realtime: "Realtime streaming transcription", afterRecording: "Transcribe after recording", keyHint: "Saved: {key}. Leave blank to keep the existing key.", keyLocalHint: "The key is stored only in the local app configuration.", leaveBlank: "Leave blank to keep unchanged", enterKey: "Enter the ASR service API key", noDefaultWarning: "No default ASR model is configured. Select one in Model Configuration → Use → Speech Recognition.",
   } : null;
   const defaultName = settings.model_defaults.speech_to_text;
   const preset = settings.model_presets.find((item) => item.name === defaultName);
@@ -1745,7 +1760,7 @@ function VoiceSection({
             hint={
               provider?.api_key_hint
                 ? (copy?.keyHint ?? "当前已保存：{key}；留空表示不修改。").replace("{key}", provider.api_key_hint)
-                : (copy?.keyLocalHint ?? "密钥只保存在本机 nanobot 配置中。")
+                : (copy?.keyLocalHint ?? "密钥只保存在本机配置中。")
             }
           >
             <Input
@@ -1826,7 +1841,7 @@ const MAX_PERSONALIZATION_CHARS = 32_000;
 
 async function personalizationAuth(): Promise<{ token: string; baseUrl: string }> {
   const status = await getNanobotStatus();
-  if (!status.ready) throw new Error("nanobot 服务尚未就绪");
+  if (!status.ready) throw new Error("本地服务尚未就绪");
   const baseUrl = `http://127.0.0.1:${status.port}`;
   let token = getNanobotToken();
   if (!token) {
@@ -2029,7 +2044,7 @@ export function SafetySection({
           : workspaceSandbox?.level || "未知";
   const workspaceSummary =
     workspaceSandbox?.summary ??
-    (workspaceRestriction ? "工作区限制由 nanobot 工具层执行。" : "工作区限制已关闭。");
+    (workspaceRestriction ? "工作区限制由本地工具层执行。" : "工作区限制已关闭。");
   return (
     <SettingsCard
       title="访问边界"
@@ -2100,7 +2115,7 @@ function FontSizeControl({
         className="relative h-6 cursor-pointer"
         onClick={(event) => selectNearestTick(event.clientX, event.currentTarget.getBoundingClientRect())}
       >
-        <div data-font-size-track className="absolute left-0 right-0 top-1/2 h-px -translate-y-1/2 bg-[#d8d8d8]" />
+        <div data-font-size-track className="absolute left-0 right-0 top-1/2 h-px -translate-y-1/2 bg-[#d8d8d8] dark:bg-[#4a4a4a]" />
         {localizedFontSizeOptions.map((option, optionIndex) => (
           <button
             key={option.value}
@@ -2113,13 +2128,13 @@ function FontSizeControl({
               onChange(option.value);
             }}
           >
-            <span data-font-size-tick className="absolute left-1/2 top-1/2 h-3 w-px -translate-x-1/2 -translate-y-1/2 bg-[#bdbdbd]" />
+            <span data-font-size-tick className="absolute left-1/2 top-1/2 h-3 w-px -translate-x-1/2 -translate-y-1/2 bg-[#bdbdbd] dark:bg-[#666]" />
           </button>
         ))}
         <span
           aria-hidden="true"
           data-font-size-thumb
-          className="pointer-events-none absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[#202020] shadow"
+          className="pointer-events-none absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[#202020] shadow dark:border-[#262624] dark:bg-[#e8e5de]"
           style={{ left: `${percent}%` }}
         />
       </div>
@@ -2133,7 +2148,7 @@ function FontSizeControl({
         value={index}
         onChange={(event) => onChange(localizedFontSizeOptions[Number(event.target.value)]?.value ?? "default")}
       />
-      <div className="relative mt-1 h-5 text-xs text-[#6f6f73]">
+      <div className="relative mt-1 h-5 text-xs text-[#6f6f73] dark:text-[#8a867c]">
         {localizedFontSizeOptions.map((option, optionIndex) => (
           <span
             key={option.value}
@@ -2213,14 +2228,14 @@ function GeneralSection({
         <FontSizeControl value={fontSize} onChange={setFontSize} isEnglish={isEnglish} />
       </SettingsRow>
       <SettingsRow title={labels.workspace} description={labels.workspaceDescription} stacked>
-        <div className="flex w-full items-center gap-2 border-t border-[#e4e4e6] pt-3">
+        <div className="flex w-full items-center gap-2 border-t border-[#e4e4e6] pt-3 dark:border-white/10">
           <Input className="min-w-0 flex-1" value={workspacePath || labels.notSet} readOnly />
-          <Button variant="outline" className="shrink-0 border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]" onClick={revealWorkspacePath} disabled={!workspacePath}>
+          <Button variant="outline" className="shrink-0 border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5] dark:border-[#3a3a3a] dark:bg-[#2c2c2c] dark:text-[#e8e5de] dark:hover:bg-[#383838]" onClick={revealWorkspacePath} disabled={!workspacePath}>
             {labels.view}
           </Button>
         </div>
       </SettingsRow>
-      <div className="px-1 pt-4 text-[15px] font-semibold text-[#202020]">{labels.notifications}</div>
+      <div className="px-1 pt-4 text-[15px] font-semibold text-[#202020] dark:text-[#e8e5de]">{labels.notifications}</div>
       <SettingsRow title={labels.desktopNotifications} description={labels.desktopNotificationsDescription}>
         <Toggle checked={desktopNotificationsEnabled} onChange={() => setDesktopNotificationsEnabled(!desktopNotificationsEnabled)} />
       </SettingsRow>
@@ -2230,7 +2245,7 @@ function GeneralSection({
 
 export function AboutSection({ settings, apiBase }: { settings: SettingsPayload; apiBase: string }) {
   return (
-    <SettingsCard title="运行信息" description="用于确认 GUI 当前连接的是嵌入式 nanobot 网关，而不是 WebUI 页面。">
+    <SettingsCard title="运行信息" description="用于确认 GUI 当前连接的是嵌入式本地服务，而不是 WebUI 页面。">
       <div className="grid gap-3 md:grid-cols-2">
         <InfoBlock label="网关 API" value={apiBase} />
         <InfoBlock label="运行表面" value={(settings.runtime_surface || settings.surface || "native") === "native" ? "本地宿主 (native)" : (settings.runtime_surface || settings.surface || "unknown")} />

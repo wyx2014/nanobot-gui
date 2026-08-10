@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, systemPreferences } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, systemPreferences, Tray, Menu, nativeImage } from 'electron'
 import { join } from 'path'
 import fs from 'fs/promises'
 import { exec, spawn } from 'child_process'
@@ -11,6 +11,7 @@ import {
   MAIN_WINDOW_BACKGROUND,
   MAIN_WINDOW_BOUNDS,
 } from './mainWindowConfig'
+import { getOpenDialogProperties } from './dialogOptions'
 import { deviceLinkBridge } from './deviceLinkBridge'
 
 import { electronApp, optimizer } from '@electron-toolkit/utils'
@@ -29,6 +30,8 @@ if (process.env.TPARUYI_DISABLE_GPU === '1') {
 }
 
 let isQuitting = false;
+let mainWindow: BrowserWindow | null = null;
+let appTray: Tray | null = null;
 
 function applicationIconPath(): string {
   if (app.isPackaged) return join(process.resourcesPath, 'app-icon.png');
@@ -38,7 +41,8 @@ function applicationIconPath(): string {
 }
 
 function createWindow(): void {
-  const mainWindow = new BrowserWindow({
+  const windowStartedAt = Date.now();
+  const win = new BrowserWindow({
     ...MAIN_WINDOW_BOUNDS,
     ...getMainWindowChrome(process.platform),
     show: false,
@@ -51,35 +55,65 @@ function createWindow(): void {
       webSecurity: false
     }
   })
+  mainWindow = win
 
-  mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
+  win.on('ready-to-show', () => {
+    console.log(`[Main] Window ready to show in ${Date.now() - windowStartedAt}ms`);
+    win.show()
   })
 
-  mainWindow.on('close', (e) => {
+  win.on('close', (e) => {
     if (!isQuitting) {
       e.preventDefault();
-      mainWindow.webContents.send('event:close-requested');
+      win.webContents.send('event:close-requested');
     }
   });
 
   const publishFullScreenState = () => {
-    if (mainWindow.isDestroyed()) return;
-    mainWindow.webContents.send('event:window-full-screen-changed', mainWindow.isFullScreen());
+    if (win.isDestroyed()) return;
+    win.webContents.send('event:window-full-screen-changed', win.isFullScreen());
   };
-  mainWindow.on('enter-full-screen', publishFullScreenState);
-  mainWindow.on('leave-full-screen', publishFullScreenState);
+  win.on('enter-full-screen', publishFullScreenState);
+  win.on('leave-full-screen', publishFullScreenState);
 
-  mainWindow.webContents.setWindowOpenHandler((details) => {
+  win.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
   })
 
   if (isDev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    win.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    win.loadFile(join(__dirname, '../renderer/index.html'))
   }
+}
+
+function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function createTray(): void {
+  if (appTray) return;
+  let icon = nativeImage.createFromPath(applicationIconPath());
+  if (process.platform === 'darwin') {
+    // macOS menu bar expects a small icon; resize to a reasonable size.
+    icon = icon.resize({ width: 18, height: 18 });
+  }
+  const tray = new Tray(icon);
+  appTray = tray;
+  tray.setToolTip('TPACowork');
+  tray.on('click', showMainWindow);
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: '显示主界面', click: showMainWindow },
+    { type: 'separator' },
+    { label: '退出', click: () => app.quit() },
+  ]));
 }
 
 app.whenReady().then(async () => {
@@ -94,6 +128,8 @@ app.whenReady().then(async () => {
       isQuitting = true;
       e.preventDefault();
       console.log('[Main] Gracefully stopping nanobot before quit...');
+      appTray?.destroy();
+      appTray = null;
       deviceLinkBridge.stop();
       await pythonBridge.stop();
       app.quit();
@@ -106,6 +142,23 @@ app.whenReady().then(async () => {
   pythonBridge.setPdfRenderer(mermaidBridge.pdfUrl, mermaidBridge.token);
   pythonBridge.setHtmlRenderer(mermaidBridge.htmlUrl, mermaidBridge.token);
   console.log('[Main] UserData Path:', userData);
+
+  // Start the Python runtime as soon as its renderer endpoints are known.
+  // IPC registration and BrowserWindow loading continue in parallel, so the
+  // renderer no longer has to begin the expensive Python cold start itself.
+  const earlyConfigPath = join(userData, 'nanobot-workspace', '.nanobot', 'config.json');
+  void fs.access(earlyConfigPath).then(() => {
+    console.log('[Main] Config found — pre-starting nanobot bridge...');
+    return pythonBridge.start();
+  }).then(() => {
+    console.log('[Main] nanobot bridge pre-started successfully');
+  }).catch((err) => {
+    if (err?.code === 'ENOENT') {
+      console.log('[Main] No existing config, waiting for renderer to push settings via nanobot:sync-config');
+      return;
+    }
+    console.warn('[Main] nanobot bridge pre-start failed (renderer will retry via sync-config):', err?.message ?? err);
+  });
 
   // Ensure models directory exists
   const modelsDirPath = join(userData, 'models');
@@ -308,6 +361,50 @@ app.whenReady().then(async () => {
     if (error) throw new Error(error)
   })
 
+  // Open a system terminal in the given directory (falls back to home).
+  ipcMain.handle('shell:openTerminal', async (_, cwd?: string) => {
+    const target = cwd?.trim();
+    let dir = target && target.length > 0 ? target : os.homedir();
+    try {
+      const stat = await fs.stat(dir);
+      if (!stat.isDirectory()) dir = os.homedir();
+    } catch {
+      dir = os.homedir();
+    }
+
+    if (process.platform === 'darwin') {
+      // Prefer iTerm2 if installed, otherwise the built-in Terminal.
+      const iTerm = '/Applications/iTerm.app';
+      const terminal = fs.access(iTerm).then(() => 'iTerm').catch(() => 'Terminal');
+      const appName = await terminal;
+      spawn('open', ['-a', appName, dir], { stdio: 'ignore', detached: true }).unref();
+    } else if (process.platform === 'win32') {
+      spawn('cmd.exe', ['/c', 'start', 'cmd', '/K', `cd /d "${dir}"`], {
+        stdio: 'ignore',
+        detached: true,
+        windowsHide: false,
+      }).unref();
+    } else {
+      // Linux: try common terminal emulators with a working-directory flag.
+      const launchers: Array<[string, string[]]> = [
+        ['x-terminal-emulator', ['--working-directory', dir]],
+        ['gnome-terminal', ['--working-directory', dir]],
+        ['konsole', ['--workdir', dir]],
+        ['xfce4-terminal', ['--working-directory', dir]],
+      ];
+      for (const [bin, args] of launchers) {
+        try {
+          const child = spawn(bin, args, { stdio: 'ignore', detached: true });
+          child.on('error', () => {});
+          child.unref();
+          return;
+        } catch {
+          // try next
+        }
+      }
+    }
+  })
+
   ipcMain.handle('shell:reveal', async (_, path: string) => {
     shell.showItemInFolder(path)
   })
@@ -342,16 +439,7 @@ app.whenReady().then(async () => {
       defaultPath: options.defaultPath,
       buttonLabel: options.buttonLabel,
       filters: options.filters,
-      properties: options.properties || []
-    }
-    if (options.directory && !electronOptions.properties.includes('openDirectory')) {
-      electronOptions.properties.push('openDirectory')
-    }
-    if (options.multiple && !electronOptions.properties.includes('multiSelections')) {
-      electronOptions.properties.push('multiSelections')
-    }
-    if (electronOptions.properties.length === 0) {
-      electronOptions.properties.push('openFile')
+      properties: getOpenDialogProperties(options)
     }
     const result = await dialog.showOpenDialog(win, electronOptions)
     if (result.canceled) return null
@@ -526,12 +614,20 @@ app.whenReady().then(async () => {
   ipcMain.handle('nanobot:sync-config', async (_, settings: NanobotConfigInput) => {
     try {
       const changed = await syncNanobotConfig(settings);
+      let restarted = false;
+      // A pre-start may already have read the previous config. Wait for that
+      // shared start before restarting, otherwise restart() can race the
+      // in-flight readiness poll and leave the renderer on stale settings.
+      if (changed && pythonBridge.isStarting) {
+        await pythonBridge.start();
+      }
       if (pythonBridge.isReady && changed) {
         await pythonBridge.restart();
+        restarted = true;
       } else if (!pythonBridge.isReady) {
         await pythonBridge.start();
       }
-      return { ok: true };
+      return { ok: true, changed, restarted };
     } catch (err: any) {
       console.error('[Main] nanobot:sync-config error:', err);
       return { ok: false, error: err.message };
@@ -554,27 +650,13 @@ app.whenReady().then(async () => {
   });
 
   createWindow()
+  createTray()
 
   app.on('activate', function () {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    // Re-show the existing window instead of recreating it, so the app can
+    // be reopened from the Dock / taskbar after being hidden to the tray.
+    showMainWindow()
   })
-
-  // ── Early nanobot startup (best-effort) ────────────────────────────────
-  // If a config.json from a previous session exists, start nanobot NOW so
-  // that it is ready (or nearly ready) by the time the renderer asks for it.
-  // The renderer's nanobot:sync-config call will still run later; if the
-  // config hasn't changed, isReady will already be true and no restart happens.
-  const earlyConfigPath = join(app.getPath('userData'), 'nanobot-workspace', '.nanobot', 'config.json');
-  fs.access(earlyConfigPath).then(() => {
-    console.log('[Main] Config found — pre-starting nanobot bridge...');
-    pythonBridge.start().then(() => {
-      console.log('[Main] nanobot bridge pre-started successfully');
-    }).catch((err) => {
-      console.warn('[Main] nanobot bridge pre-start failed (renderer will retry via sync-config):', err.message);
-    });
-  }).catch(() => {
-    console.log('[Main] No existing config, waiting for renderer to push settings via nanobot:sync-config');
-  });
 
 })
 

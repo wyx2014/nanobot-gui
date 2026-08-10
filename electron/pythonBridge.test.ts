@@ -6,6 +6,7 @@ const execFile = vi.fn((_file: string, _args: string[], callback: (error: Error 
 const existsSync = vi.fn(() => true);
 const mkdirSync = vi.fn();
 const fetchMock = vi.fn();
+let appIsPackaged = false;
 
 vi.mock('child_process', () => ({
   default: { spawn, execFile },
@@ -15,7 +16,9 @@ vi.mock('child_process', () => ({
 vi.mock('fs', () => ({ default: { existsSync, mkdirSync }, existsSync, mkdirSync }));
 vi.mock('electron', () => ({
   app: {
-    isPackaged: false,
+    get isPackaged() {
+      return appIsPackaged;
+    },
     getPath: vi.fn(() => '/tmp/tparuyi-test'),
   },
   BrowserWindow: { getAllWindows: vi.fn(() => []) },
@@ -43,6 +46,7 @@ describe('PythonBridge lifecycle', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    appIsPackaged = false;
     existsSync.mockReturnValue(true);
     execFile.mockImplementation((_file, _args, callback) => callback(null, ''));
     fetchMock.mockResolvedValue({
@@ -122,6 +126,40 @@ describe('PythonBridge lifecycle', () => {
     expect(spawn.mock.calls[0][2]?.env).toMatchObject({
       NANOBOT_PDF_RENDER_URL: 'http://127.0.0.1:3210/render-pdf',
       NANOBOT_PDF_RENDER_TOKEN: 'render-secret',
+      NANOBOT_DESKTOP_GATEWAY: '1',
     });
+  });
+
+  it('uses the precompiled installed wheel in packaged apps', async () => {
+    appIsPackaged = true;
+    const previousPythonPath = process.env.PYTHONPATH;
+    const previousResourcesPath = Object.getOwnPropertyDescriptor(process, 'resourcesPath');
+    process.env.PYTHONPATH = '/tmp/parent-python-path';
+    Object.defineProperty(process, 'resourcesPath', {
+      configurable: true,
+      value: '/tmp/resources',
+    });
+    try {
+      const child = processStub();
+      spawn.mockReturnValue(child);
+      const { PythonBridge } = await import('./pythonBridge');
+      const bridge = new PythonBridge();
+
+      await bridge.start();
+
+      expect(spawn.mock.calls[0][2]).toMatchObject({
+        cwd: '/tmp/tparuyi-test/nanobot-workspace',
+      });
+      expect(spawn.mock.calls[0][2]?.env?.PYTHONPATH).toBeUndefined();
+      expect(spawn.mock.calls[0][0]).toBe('/tmp/resources/python/bin/python3');
+    } finally {
+      if (previousPythonPath === undefined) delete process.env.PYTHONPATH;
+      else process.env.PYTHONPATH = previousPythonPath;
+      if (previousResourcesPath) {
+        Object.defineProperty(process, 'resourcesPath', previousResourcesPath);
+      } else {
+        delete (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
+      }
+    }
   });
 });

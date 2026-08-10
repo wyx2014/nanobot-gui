@@ -23,12 +23,12 @@ describe('main window bounds', () => {
 
 describe('main window chrome', () => {
   it('uses a full-size hidden title bar aligned with macOS traffic lights', () => {
-    expect(MACOS_TITLE_BAR_HEIGHT).toBe(36);
+    expect(MACOS_TITLE_BAR_HEIGHT).toBe(48);
     expect(MAIN_WINDOW_BACKGROUND).toBe('#fbfaf7');
     expect(getMainWindowChrome('darwin')).toEqual({
       titleBarStyle: 'hidden',
-      titleBarOverlay: { height: 36 },
-      trafficLightPosition: { x: 16, y: 12 },
+      titleBarOverlay: { height: 48 },
+      trafficLightPosition: { x: 16, y: 17 },
     });
   });
 

@@ -1,8 +1,6 @@
-import { lazy, Suspense, useEffect, useLayoutEffect, useState, useCallback, useMemo, useSyncExternalStore } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef, type CSSProperties } from 'react';
 import { ipc, windowBridge, eventBridge } from '@/lib/ipc-factory';
 import Sidebar from '@/components/sidebar/Sidebar';
-import ChatView from '@/components/chat/ChatView';
-import RightPanel from '@/components/panel/RightPanel';
 import ToastContainer from '@/components/common/ToastContainer';
 import { useToastStore } from '@/stores/toastStore';
 import { initPlatform } from '@/utils/platform';
@@ -10,7 +8,7 @@ import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { initNetworkProxy } from '@/core/sandbox/config';
 import type { WorkspaceScopePayload, WorkspacesPayload } from '@/core/types';
 import { fetchWorkspaces, updateNetworkSafetySettings } from '@/core/api';
-import { getNanobotClient, getNanobotConnectionStatus, getNanobotToken, getNanobotStatus, subscribeNanobotConnectionStatus } from '@/core/nanobotClient';
+import { getNanobotClient, getNanobotConnectionStatus, getNanobotToken, getNanobotStatus } from '@/core/nanobotClient';
 import { projectNameFromPath } from '@/core/workspace';
 import { useChatStore } from '@/stores/chatStore';
 import { useScheduleStore } from '@/stores/scheduleStore';
@@ -28,13 +26,12 @@ initPlatform().then(() => {
 import { useSettingsStore, getEffectiveModel } from '@/stores/settingsStore';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ArrowLeft, ArrowRight, PanelLeft } from 'lucide-react';
+import { ThinkingOrb } from 'thinking-orbs';
 import { isMacOS } from '@/utils/platform';
 import { cn } from '@/lib/utils';
 import { initNotifications } from '@/utils/notifications';
 import { startBehaviorSensor, stopBehaviorSensor } from '@/core/runtime/behaviorSensor';
 import { useI18n } from '@/i18n';
-import { ThinkingOrb } from 'thinking-orbs';
-import CloseDialog from '@/components/common/CloseDialog';
 import { checkForUpdate } from '@/core/updates/checker';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
 import { syncNanobotSettings, bootstrapNanobotGateway, syncProjectsFromGateway, syncSessionsFromGateway, syncGatewaySettingsToStore } from '@/core/nanobotClient';
@@ -44,15 +41,46 @@ import { renderMermaidPng } from '@/core/mermaid';
 import { usePromptHubStore } from '@/stores/promptHubStore';
 import FirstRunWelcome from '@/components/onboarding/FirstRunWelcome';
 import { useAppNavigationHistory } from '@/hooks/useAppNavigationHistory';
+import { resolveTitlebarLayout } from '@/core/navigation/titlebarLayout';
 
 // These views are only needed after explicit navigation. Keeping them out of
 // the initial chat bundle reduces startup work on the common path.
 const ScheduleView = lazy(() => import('@/components/schedule/ScheduleView'));
 const SystemSettingsView = lazy(() => import('@/components/settings/SystemSettingsModal'));
 const ToolboxView = lazy(() => import('@/components/settings/ToolboxModal'));
+const ChatView = lazy(() => import('@/components/chat/ChatView'));
+const RightPanel = lazy(() => import('@/components/panel/RightPanel'));
 
 function DeferredViewFallback() {
   return <div className="flex h-full items-center justify-center text-sm text-[#77746b]">正在加载…</div>;
+}
+
+function DeferredChatFallback({ label }: { label: string }) {
+  return (
+    <div className="flex h-full min-h-[45vh] w-full items-center justify-center bg-[#fbfaf7] dark:bg-[#1f1f1f]">
+      <div className="flex flex-col items-center gap-3" role="status" aria-live="polite">
+        <ThinkingOrb state="solving" size={64} style={{ width: 32, height: 32 }} aria-label="" />
+        <p className="text-[13px] font-medium text-[#88857b] dark:text-[#aaa69e]">
+          {label}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function scheduleStartupTask(task: () => void | Promise<void>, delayMs: number): void {
+  window.setTimeout(() => {
+    const run = () => {
+      void Promise.resolve(task()).catch((error) => {
+        console.warn('[App] Deferred startup task failed:', error);
+      });
+    };
+    if ('requestIdleCallback' in window) {
+      window.requestIdleCallback(run, { timeout: 2_000 });
+    } else {
+      run();
+    }
+  }, delayMs);
 }
 
 function normalizeWorkspaceScope(scope: WorkspaceScopePayload): WorkspaceScopePayload {
@@ -72,26 +100,18 @@ function App() {
   const toggleSidebar = useSettingsStore((s) => s.toggleSidebar);
   const viewMode = useSettingsStore((s) => s.viewMode);
   const { t } = useI18n();
-  const [showCloseDialog, setShowCloseDialog] = useState(false);
+  const gatewayBootstrapRef = useRef<Promise<void> | null>(null);
+  const startupHydrationScheduledRef = useRef(false);
   const artifactPreviewOpen = previewArtifact !== null;
   const promptHubBaseUrl = usePromptHubStore((s) => s.baseUrl);
   const promptHubToken = usePromptHubStore((s) => s.token);
   const guideShown = useSettingsStore((s) => s.guideShown);
+  const guideOpen = useSettingsStore((s) => s.guideOpen);
   const setGuideShown = useSettingsStore((s) => s.setGuideShown);
+  const closeGuide = useSettingsStore((s) => s.closeGuide);
   const theme = useSettingsStore((s) => s.theme);
   const keyboardShortcuts = useSettingsStore((s) => s.keyboardShortcuts);
   const [settingsHydrated, setSettingsHydrated] = useState(() => useSettingsStore.persist.hasHydrated());
-  const gatewayConnectionStatus = useSyncExternalStore(
-    subscribeNanobotConnectionStatus,
-    getNanobotConnectionStatus,
-    getNanobotConnectionStatus,
-  );
-  // Unlock once the gateway has ever been open; don't flash the starting
-  // screen again on transient websocket reconnects after load.
-  const [gatewayUnlocked, setGatewayUnlocked] = useState(() => gatewayConnectionStatus === 'open');
-  useEffect(() => {
-    if (gatewayConnectionStatus === 'open') setGatewayUnlocked(true);
-  }, [gatewayConnectionStatus]);
   const [windowFullScreen, setWindowFullScreen] = useState(false);
   const {
     canGoBack,
@@ -319,29 +339,13 @@ function App() {
     setDraftWorkspaceScope(next);
   }, [activeConvId]);
 
-  const handleQuit = useCallback(() => {
-    setShowCloseDialog(false);
-    ipc.invoke('app_exit');
-  }, []);
-
-  const handleMinimize = useCallback(() => {
-    setShowCloseDialog(false);
-    ipc.invoke('window_hide');
-  }, []);
-
-  // Listen for window close-requested event from Rust
+  // Listen for window close-requested: always hide to system tray.
+  // Quitting is done via the tray menu or Cmd+Q.
   useEffect(() => {
     let unlistenFn: (() => void) | null = null;
     let cancelled = false;
     eventBridge.listen('close-requested', () => {
-      const action = useSettingsStore.getState().closeAction;
-      if (action === 'quit') {
-        ipc.invoke('app_exit');
-      } else if (action === 'minimize') {
-        ipc.invoke('window_hide');
-      } else {
-        setShowCloseDialog(true);
-      }
+      ipc.invoke('window_hide');
     }).then((fn) => {
       if (cancelled) fn();
       else unlistenFn = fn;
@@ -431,7 +435,7 @@ function App() {
       setWorkspaceError(
         error.reason === 'session_project_mismatch'
           ? '会话创建后不能切换到其他工作空间；请在目标工作空间中新建对话'
-          : '工作区路径被拒绝，请确认路径有效且 nanobot 有权访问',
+          : '工作区路径被拒绝，请确认路径有效且应用有权访问',
       );
       if (error.chatId) {
         setWorkspaceOverrides((current) => {
@@ -498,7 +502,9 @@ function App() {
   const webuiAllowLocalServiceAccess = useSettingsStore((s) => s.allowPrivateNetworks);
 
   useEffect(() => {
-    syncNanobotSettings({
+    let cancelled = false;
+
+    void syncNanobotSettings({
       apiKey,
       baseUrl,
       model: effectiveModel,
@@ -514,48 +520,66 @@ function App() {
       restrictToWorkspace: false,
       networkWhitelist,
       webuiAllowLocalServiceAccess,
-    }).then((res) => {
-      if (res.ok) {
-        console.log('[App] Nanobot settings synced and bridge started successfully');
-        bootstrapNanobotGateway().then(async () => {
-          console.log('[App] Nanobot gateway bootstrap completed');
-          const status = await getNanobotStatus();
-          const base = `http://127.0.0.1:${status.port}`;
-          // Discovery may have run on mount before the gateway was ready;
-          // reload skills now that the gateway is confirmed up so the
-          // composer's "+" skill/MCP lists are populated.
-          void refreshDiscovery();
-          updateNetworkSafetySettings(getNanobotToken(), {
-            webuiAllowLocalServiceAccess,
-            webuiDefaultAccessMode: 'full',
-          }, base).catch((err) => {
-            console.warn('[App] Failed to apply full access default:', err);
-          }).finally(() => {
-            syncGatewaySettingsToStore().then(() => {
-              console.log('[App] Settings synced from gateway');
-            });
-            void refreshWorkspaces();
-          });
-          void Promise.all([
-            syncSessionsFromGateway().then(() => {
-              console.log('[App] Session history sync completed');
-            }),
-            syncProjectsFromGateway().then(() => {
-              console.log('[App] Project registry sync completed');
-            }),
-          ]);
-          useScheduleStore.getState().loadTasks().then(() => {
-            console.log('[App] Scheduled tasks sync completed');
-          });
-        }).catch((err) => {
-          console.error('[App] Nanobot gateway bootstrap failed:', err);
-        });
-      } else {
+    }).then(async (res) => {
+      if (!res.ok) {
         console.error('[App] Nanobot settings sync failed:', res.error);
+        return;
       }
+
+      console.log('[App] Nanobot settings synced and bridge started successfully');
+      const needsBootstrap = res.restarted || getNanobotConnectionStatus() !== 'open';
+      if (needsBootstrap) {
+        if (!gatewayBootstrapRef.current) {
+          gatewayBootstrapRef.current = bootstrapNanobotGateway()
+            .then(() => undefined)
+            .finally(() => {
+              gatewayBootstrapRef.current = null;
+            });
+        }
+        await gatewayBootstrapRef.current;
+      }
+      if (cancelled) return;
+
+      console.log(`[App] Nanobot gateway bootstrap completed at ${Math.round(performance.now())}ms`);
+      const status = await getNanobotStatus();
+      const base = `http://127.0.0.1:${status.port}`;
+      void updateNetworkSafetySettings(getNanobotToken(), {
+        webuiAllowLocalServiceAccess,
+        webuiDefaultAccessMode: 'full',
+      }, base).catch((err) => {
+        console.warn('[App] Failed to apply full access default:', err);
+      });
+
+      if (startupHydrationScheduledRef.current) return;
+      startupHydrationScheduledRef.current = true;
+
+      // Conversation metadata and workspaces affect the visible shell, so
+      // hydrate them first. Toolbox, schedule and settings data are deferred
+      // to avoid a burst of parsing/store updates immediately after first paint.
+      void syncSessionsFromGateway().then(() => {
+        console.log('[App] Session history sync completed');
+      });
+      void refreshWorkspaces();
+      scheduleStartupTask(refreshDiscovery, 150);
+      scheduleStartupTask(async () => {
+        await syncProjectsFromGateway();
+        console.log('[App] Project registry sync completed');
+      }, 300);
+      scheduleStartupTask(async () => {
+        await useScheduleStore.getState().loadTasks();
+        console.log('[App] Scheduled tasks sync completed');
+      }, 500);
+      scheduleStartupTask(async () => {
+        await syncGatewaySettingsToStore();
+        console.log('[App] Settings synced from gateway');
+      }, 700);
     }).catch((err) => {
       console.error('[App] Nanobot settings sync exception:', err);
     });
+
+    return () => {
+      cancelled = true;
+    };
   }, [
     apiKey,
     baseUrl,
@@ -578,53 +602,51 @@ function App() {
   // macOS uses a full-size hidden title bar so renderer controls can sit beside
   // the native traffic lights. Windows and Linux keep their native title bars.
   const mac = isMacOS();
+  const sidebarVisible = !artifactPreviewOpen && !previewExpanded && !sidebarCollapsed;
+  const titlebarLayout = resolveTitlebarLayout({
+    isMac: mac,
+    isFullScreen: windowFullScreen,
+    sidebarCollapsed,
+    sidebarVisible,
+  });
+  const shellTransitionDelay = artifactPreviewOpen || previewExpanded ? '0ms' : '180ms';
 
   if (!settingsHydrated) {
     return <div className="h-full w-full bg-[#fbfaf7]" />;
   }
 
-  // Keep the whole window (sidebar included) out of reach until the local
-  // gateway is ready — clicking settings/toolbox before that would surface
-  // "gateway not ready" errors. The UI unlocks once the connection is open.
-  if (!gatewayUnlocked) {
-    return (
-      <div className="flex h-full w-full items-center justify-center bg-[#fbfaf7]">
-        <div className="flex flex-col items-center gap-4" role="status" aria-live="polite">
-          <ThinkingOrb state="connecting" size={64} aria-label="" />
-          <p className="text-[14px] font-medium text-[#88857b] dark:text-[#aaa69e]">
-            {t.chat.gatewayStarting}
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <ErrorBoundary>
       <TooltipProvider delayDuration={200}>
-        {!guideShown && <FirstRunWelcome onContinue={() => setGuideShown(true)} />}
+        {(!guideShown || guideOpen) && (
+          <FirstRunWelcome
+            onContinue={() => {
+              setGuideShown(true);
+              closeGuide();
+            }}
+          />
+        )}
         {mac && (
           <div
             data-window-titlebar
-            className="window-titlebar-drag fixed left-0 right-0 top-0 z-40 h-9"
+            className="window-titlebar-drag fixed left-0 right-0 top-0 z-40 h-12"
           />
         )}
 
         <div
           className={cn(
-            'pointer-events-none fixed left-0 right-0 top-0 z-50 transition-opacity duration-150',
+            'pointer-events-none fixed left-0 right-0 top-0 z-[60] transition-opacity duration-150',
             previewExpanded && 'opacity-0 [&_button]:pointer-events-none',
-            mac ? 'h-9' : 'h-8',
+            mac ? 'h-12' : 'h-8',
           )}
-          style={{ transitionDelay: previewExpanded ? '0ms' : '180ms' }}
+          style={{ transitionDelay: shellTransitionDelay }}
         >
           <div
-            className="window-titlebar-no-drag pointer-events-auto absolute flex items-center gap-1 transition-[left] duration-200"
+            className="window-titlebar-no-drag pointer-events-auto absolute flex items-center gap-1 transition-[left] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)]"
             style={{
-                top: 4,
-                left: windowFullScreen
-                  ? 12
-                  : mac ? 92 : sidebarCollapsed ? 70 : 232,
+                top: mac ? 10 : 4,
+                left: titlebarLayout.navigationLeft,
+                transitionDelay: shellTransitionDelay,
               }}
             >
             <Tooltip>
@@ -704,7 +726,7 @@ function App() {
             style={{
               width: artifactPreviewOpen || previewExpanded ? 0 : sidebarCollapsed ? 0 : 260,
               opacity: artifactPreviewOpen || previewExpanded ? 0 : 1,
-              transitionDelay: artifactPreviewOpen || previewExpanded ? '0ms' : '180ms',
+              transitionDelay: shellTransitionDelay,
             }}
           >
             <Sidebar />
@@ -715,9 +737,13 @@ function App() {
             className={cn(
               'flex-1 min-w-0 bg-[#fbfaf7] transition-opacity duration-150',
               previewExpanded && 'pointer-events-none overflow-hidden opacity-0',
-              mac && 'pt-9',
+              mac && 'pt-12',
             )}
-            style={{ transitionDelay: previewExpanded ? '0ms' : '180ms' }}
+            style={{
+              transitionDelay: shellTransitionDelay,
+              '--conversation-header-leading-inset': `${titlebarLayout.conversationLeadingInset}px`,
+              '--conversation-header-transition-delay': shellTransitionDelay,
+            } as CSSProperties}
           >
             <Suspense fallback={<DeferredViewFallback />}>
               {viewMode === 'schedule' && <ScheduleView />}
@@ -725,28 +751,24 @@ function App() {
               {viewMode === 'settings' && <SystemSettingsView />}
             </Suspense>
             {(viewMode === 'chat' || !viewMode) && (
-              <ChatView
-                workspaceScope={activeWorkspaceScope}
-                workspaceDefaultScope={workspaces?.default_scope ?? null}
-                workspaceControls={workspaces?.controls ?? null}
-                workspaceError={workspaceError}
-                onWorkspaceScopeChange={applyWorkspaceScope}
-              />
+              <Suspense fallback={<DeferredChatFallback label={t.chat.appLoading} />}>
+                <ChatView
+                  workspaceScope={activeWorkspaceScope}
+                  workspaceDefaultScope={workspaces?.default_scope ?? null}
+                  workspaceControls={workspaces?.controls ?? null}
+                  workspaceError={workspaceError}
+                  onWorkspaceScopeChange={applyWorkspaceScope}
+                />
+              </Suspense>
             )}
           </main>
 
           {/* Right panel */}
-          <RightPanel />
+          <Suspense fallback={null}>
+            <RightPanel />
+          </Suspense>
 
           <ToastContainer />
-
-          <CloseDialog
-            open={showCloseDialog}
-            onQuit={handleQuit}
-            onMinimize={handleMinimize}
-            onCancel={() => setShowCloseDialog(false)}
-            onCloseActionChange={useSettingsStore.getState().setCloseAction}
-          />
         </div>
       </TooltipProvider>
     </ErrorBoundary>

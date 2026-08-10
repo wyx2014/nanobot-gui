@@ -27,14 +27,14 @@ export function Toggle({ checked, onChange, size = 'sm', disabled, className }: 
       className={cn(
         'relative inline-flex items-center rounded-full transition-colors shrink-0',
         s.track,
-        checked ? 'bg-[#d97757]' : 'bg-[#d4d1c9]',
+        checked ? 'bg-[#d97757]' : 'bg-[#d4d1c9] dark:bg-[#4a4a4a]',
         disabled && 'opacity-50 cursor-not-allowed',
         className
       )}
     >
       <span
         className={cn(
-          'absolute top-0.5 inline-block rounded-full bg-white shadow-sm transition-transform',
+          'absolute top-0.5 inline-block rounded-full bg-white shadow-sm transition-transform dark:bg-[#e5e1d9]',
           s.thumb,
           checked ? s.on : s.off
         )}

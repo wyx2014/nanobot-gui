@@ -129,6 +129,28 @@ describe('projectGatewayMessagesForHistory', () => {
 });
 
 describe('mapWebuiThreadToGuiMessages artifacts', () => {
+  it('renders legacy local file context as a file card and clean user prompt', () => {
+    const messages = mapWebuiThreadToGuiMessages([{
+      id: 'user-with-local-file',
+      role: 'user',
+      content: [
+        '本地文件引用（请按路径读取这些文件；如果路径超出当前工作区权限，请先说明无法访问）：',
+        '- skill-card.md: /Users/wyx/Desktop/skill-card.md',
+        '这个 skill 写得怎么样',
+      ].join('\n'),
+      createdAt: 1,
+    }]);
+
+    expect(messages[0].content).toBe('这个 skill 写得怎么样');
+    expect(messages[0].mediaAttachments).toEqual([{
+      id: 'local-file:/Users/wyx/Desktop/skill-card.md',
+      path: '/Users/wyx/Desktop/skill-card.md',
+      localPath: '/Users/wyx/Desktop/skill-card.md',
+      name: 'skill-card.md',
+      kind: 'file',
+    }]);
+  });
+
   it('hides a legacy MCP mention prefix while preserving the connector attachment', () => {
     const messages = mapWebuiThreadToGuiMessages([{
       id: 'user-with-connector',

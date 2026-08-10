@@ -95,6 +95,12 @@
   app-region: no-drag;
 }
 
+.conversation-header-titlebar-inset {
+  padding-left: var(--conversation-header-leading-inset, 0.75rem);
+  transition-delay: var(--conversation-header-transition-delay, 0ms);
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 /* While a theme switch is in flight, suppress transitions so buttons and
    surfaces flip to the new palette in the same frame as the page background
    instead of lagging behind with an animated light->dark fade. This class is
@@ -1498,11 +1504,9 @@ input[type="range"].slider-filled::-moz-range-thumb {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
-.dark [data-welcome-shortcut="write"] svg { color: #3b9eff; }
-.dark [data-welcome-shortcut="learn"] svg { color: #a970ff; }
-.dark [data-welcome-shortcut="code"] svg { color: #35c77a; }
-.dark [data-welcome-shortcut="life"] svg { color: #ff7a3d; }
-.dark [data-welcome-shortcut="ruyi"] svg { color: #e5ad45; }
+.dark [data-welcome-shortcut="research"] svg { color: #3b9eff; }
+.dark [data-welcome-shortcut="portfolio-risk"] svg { color: #ff7a3d; }
+.dark [data-welcome-shortcut="office"] svg { color: #e5ad45; }
 
 .dark [data-welcome-shortcut-panel] {
   color: #ecece8;

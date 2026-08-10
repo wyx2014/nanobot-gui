@@ -246,7 +246,7 @@ export async function readArtifactBytes(artifact: ArtifactRef): Promise<Uint8Arr
     const gatewayOrigin = new URL(getGatewayBaseUrl()).origin;
     const artifactOrigin = new URL(url, getGatewayBaseUrl()).origin;
     if (artifactOrigin !== gatewayOrigin) {
-      throw new Error('受保护文件地址不属于当前 nanobot gateway');
+      throw new Error('受保护文件地址不属于当前本地服务');
     }
     response = await fetchGatewayResponse(url, getNanobotToken());
   } else {

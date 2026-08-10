@@ -40,24 +40,8 @@
         "to": "python/",
         "filter": [
           "**/*",
-          "!**/__pycache__/**",
-          "!**/*.pyc",
           "!**/*.pyo",
           "!**/test/**",
-          "!**/tests/**"
-        ]
-      },
-      {
-        "from": "../nanobot/",
-        "to": "nanobot-src/",
-        "filter": [
-          "nanobot/**/*.py",
-          "nanobot/templates/**/*.md",
-          "nanobot/skills/**/*",
-          "pyproject.toml",
-          "!**/__pycache__/**",
-          "!**/venv/**",
-          "!**/.git/**",
           "!**/tests/**"
         ]
       },

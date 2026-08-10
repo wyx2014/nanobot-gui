@@ -256,8 +256,6 @@ interface SettingsState {
   networkIsolationEnabled: boolean;
   networkWhitelist: string[];
   allowPrivateNetworks: boolean;
-  // Window close behavior
-  closeAction: 'ask' | 'minimize' | 'quit';
   fontSize: FontSizeSetting;
   defaultWorkspacePath: string;
   desktopNotificationsEnabled: boolean;
@@ -270,7 +268,8 @@ interface SettingsState {
   userNickname: string;
   userAvatar: string; // data URI or empty
   // Guide
-  guideShown: boolean; // true after user has dismissed the guide
+  guideShown: boolean; // persisted: true after the first-run guide is completed
+  guideOpen: boolean; // ephemeral: manually replay the guide from Help
   // Behavior sensor
   behaviorSensorEnabled: boolean;
   // Computer Use (screenshot + keyboard/mouse simulation)
@@ -335,8 +334,6 @@ interface SettingsActions {
   setNetworkIsolationEnabled: (enabled: boolean) => void;
   setNetworkWhitelist: (whitelist: string[]) => void;
   setAllowPrivateNetworks: (allow: boolean) => void;
-  // Window close behavior
-  setCloseAction: (action: 'ask' | 'minimize' | 'quit') => void;
   setFontSize: (size: FontSizeSetting) => void;
   setDefaultWorkspacePath: (path: string) => void;
   setDesktopNotificationsEnabled: (enabled: boolean) => void;
@@ -350,6 +347,8 @@ interface SettingsActions {
   setUserNickname: (nickname: string) => void;
   setUserAvatar: (avatar: string) => void;
   setGuideShown: (shown: boolean) => void;
+  openGuide: () => void;
+  closeGuide: () => void;
   setBehaviorSensorEnabled: (enabled: boolean) => void;
   setComputerUseEnabled: (enabled: boolean) => void;
   // New embedding actions
@@ -440,7 +439,6 @@ export const useSettingsStore = create<SettingsStore>()(
       networkIsolationEnabled: false,
       networkWhitelist: [],
       allowPrivateNetworks: true,
-      closeAction: 'ask' as 'ask' | 'minimize' | 'quit',
       fontSize: 'default' as FontSizeSetting,
       defaultWorkspacePath: '',
       desktopNotificationsEnabled: true,
@@ -453,6 +451,7 @@ export const useSettingsStore = create<SettingsStore>()(
       userNickname: '',
       userAvatar: '',
       guideShown: false,
+      guideOpen: false,
       behaviorSensorEnabled: false,
       computerUseEnabled: false,
       // Embedding settings
@@ -525,7 +524,6 @@ export const useSettingsStore = create<SettingsStore>()(
       setNetworkIsolationEnabled: (networkIsolationEnabled) => set({ networkIsolationEnabled }),
       setNetworkWhitelist: (networkWhitelist) => set({ networkWhitelist }),
       setAllowPrivateNetworks: (allowPrivateNetworks) => set({ allowPrivateNetworks }),
-      setCloseAction: (closeAction) => set({ closeAction }),
       setFontSize: (fontSize) => {
         applyFontSize(fontSize);
         set({ fontSize });
@@ -542,6 +540,8 @@ export const useSettingsStore = create<SettingsStore>()(
       setUserNickname: (userNickname) => set({ userNickname }),
       setUserAvatar: (userAvatar) => set({ userAvatar }),
       setGuideShown: (guideShown) => set({ guideShown }),
+      openGuide: () => set({ guideOpen: true }),
+      closeGuide: () => set({ guideOpen: false }),
       setBehaviorSensorEnabled: (behaviorSensorEnabled) => set({ behaviorSensorEnabled }),
       setComputerUseEnabled: (computerUseEnabled) => set({ computerUseEnabled }),
       setEmbeddingProvider: (embeddingProvider) => set({ embeddingProvider }),
@@ -599,7 +599,6 @@ export const useSettingsStore = create<SettingsStore>()(
 
           // Ensure new fields have defaults (defensive — shallow merge handles this too)
           if (state.sandboxEnabled === undefined) state.sandboxEnabled = false;
-          if (state.closeAction === undefined) state.closeAction = 'ask';
           if (state.lastUpdateCheck === undefined) state.lastUpdateCheck = 0;
         }
         return state;
@@ -634,7 +633,6 @@ export const useSettingsStore = create<SettingsStore>()(
         networkIsolationEnabled: state.networkIsolationEnabled,
         networkWhitelist: state.networkWhitelist,
         allowPrivateNetworks: state.allowPrivateNetworks,
-        closeAction: state.closeAction,
         fontSize: state.fontSize,
         defaultWorkspacePath: state.defaultWorkspacePath,
         desktopNotificationsEnabled: state.desktopNotificationsEnabled,

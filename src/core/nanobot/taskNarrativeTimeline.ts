@@ -306,10 +306,19 @@ interface ExpertTeamProjection {
 
 function buildExpertTeamProjection(messages: Message[]): ExpertTeamProjection {
   const projection: ExpertTeamProjection = {};
+  const runtimeOwnedWorkflow = messages.some((message) => (
+    isExpertTeamProgressMessage(message)
+    && message.agentUI?.kind === 'task_progress'
+    && message.agentUI.plan_kind === 'workflow'
+  ));
   for (const message of messages) {
     const snapshots: Array<{ steps: TaskProgressStep[]; note?: string }> = [];
     const directSteps = taskProgressSteps(message.agentUI);
-    if (directSteps.length && !isExpertTeamProgressMessage(message)) {
+    if (
+      !runtimeOwnedWorkflow
+      && directSteps.length
+      && !isExpertTeamProgressMessage(message)
+    ) {
       snapshots.push({ steps: directSteps, note: taskProgressNote(message.agentUI) });
     }
     const toolEvents = orderedToolEvents(message.toolEvents ?? []);
@@ -317,11 +326,17 @@ function buildExpertTeamProjection(messages: Message[]): ExpertTeamProjection {
       const name = toolEventName(event);
       const input = toolEventArgs(event);
       if (name === 'update_task_progress') {
-        const steps = taskProgressStepsFromInput(input);
-        if (steps.length) snapshots.push({ steps, note: cleanString(input.note) });
+        if (!runtimeOwnedWorkflow) {
+          const steps = taskProgressStepsFromInput(input);
+          if (steps.length) snapshots.push({ steps, note: cleanString(input.note) });
+        }
         continue;
       }
       if (name === 'spawn') {
+        // Schema-v2 workflow snapshots are runtime-owned. A model-authored or
+        // stale transcript spawn must not activate a branch in the UI; live
+        // member state arrives through the gateway's canonical plan snapshot.
+        if (runtimeOwnedWorkflow) continue;
         const memberId = cleanString(input.label);
         if (memberId) {
           const status = toolEventStatus(event);

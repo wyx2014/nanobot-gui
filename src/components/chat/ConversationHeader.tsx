@@ -1,17 +1,17 @@
 import {
   Folder,
   ListTodo,
-  PanelBottom,
-  PanelRight,
+  Terminal,
 } from 'lucide-react';
 
 import { useI18n } from '@/i18n';
 import { cn } from '@/lib/utils';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useSettingsStore } from '@/stores/settingsStore';
 
 interface ConversationHeaderProps {
   conversationTitle: string;
-  onScrollToBottom: () => void;
+  onOpenTerminal: () => void;
 }
 
 const iconButtonClassName =
@@ -19,13 +19,11 @@ const iconButtonClassName =
 
 export default function ConversationHeader({
   conversationTitle,
-  onScrollToBottom,
+  onOpenTerminal,
 }: ConversationHeaderProps) {
   const { locale, t } = useI18n();
   const summaryCollapsed = useSettingsStore((state) => state.rightPanelCollapsed);
   const toggleSummary = useSettingsStore((state) => state.toggleRightPanel);
-  const sidebarCollapsed = useSettingsStore((state) => state.sidebarCollapsed);
-  const toggleSidebar = useSettingsStore((state) => state.toggleSidebar);
   const isZh = locale.startsWith('zh');
   const titleLabel = conversationTitle.trim() || (isZh ? '新会话' : 'New conversation');
   const titleCharacters = Array.from(titleLabel);
@@ -36,7 +34,7 @@ export default function ConversationHeader({
   return (
     <header
       data-conversation-header
-      className="window-titlebar-drag relative z-[45] flex h-12 shrink-0 items-center justify-between gap-4 border-b border-[#e8e6e1] bg-[#fbfaf7]/96 px-3 backdrop-blur-xl dark:border-white/10 dark:bg-[#1f1f1f]/96"
+      className="conversation-header-titlebar-inset relative z-[45] flex h-12 shrink-0 items-center justify-between gap-4 border-b border-[#e8e6e1] bg-[#fbfaf7]/96 px-3 backdrop-blur-xl transition-[padding-left] duration-200 dark:border-white/10 dark:bg-[#1f1f1f]/96"
     >
       <div className="flex min-w-0 items-center gap-2">
         <Folder
@@ -52,46 +50,52 @@ export default function ConversationHeader({
       </div>
 
       <div className="ml-auto flex shrink-0 items-center justify-end gap-1">
-        <button
-          type="button"
-          data-pinned-summary-toggle
-          onClick={toggleSummary}
-          aria-expanded={!summaryCollapsed}
-          aria-controls="conversation-pinned-summary"
-          aria-label={t.panel.pinnedSummary}
-          title={t.panel.pinnedSummary}
-          className={cn(
-            iconButtonClassName,
-            !summaryCollapsed && 'bg-[#ecebe7] text-[#29261b] dark:bg-white/10 dark:text-white',
-          )}
-        >
-          <ListTodo className="h-[18px] w-[18px]" strokeWidth={1.8} />
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              data-pinned-summary-toggle
+              onClick={toggleSummary}
+              aria-expanded={!summaryCollapsed}
+              aria-controls="conversation-pinned-summary"
+              aria-label={t.panel.pinnedSummary}
+              className={cn(
+                iconButtonClassName,
+                !summaryCollapsed && 'bg-[#ecebe7] text-[#29261b] dark:bg-white/10 dark:text-white',
+              )}
+            >
+              <ListTodo className="h-[18px] w-[18px]" strokeWidth={1.8} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent
+            side="bottom"
+            sideOffset={8}
+            className="border border-white/10 bg-[#292824] px-2.5 py-1 text-[12px] font-medium text-white shadow-lg [&>svg]:hidden"
+          >
+            {t.panel.pinnedSummary}
+          </TooltipContent>
+        </Tooltip>
 
-        <button
-          type="button"
-          data-conversation-header-scroll-bottom
-          onClick={onScrollToBottom}
-          className={iconButtonClassName}
-          aria-label={t.chat.scrollToBottom}
-          title={t.chat.scrollToBottom}
-        >
-          <PanelBottom className="h-[18px] w-[18px]" strokeWidth={1.8} />
-        </button>
-
-        <button
-          type="button"
-          data-conversation-header-sidebar
-          onClick={toggleSidebar}
-          className={cn(
-            iconButtonClassName,
-            !sidebarCollapsed && 'text-[#5f5c54] dark:text-[#c8c4bc]',
-          )}
-          aria-label={sidebarCollapsed ? t.sidebar.showSidebar : t.sidebar.hideSidebar}
-          title={sidebarCollapsed ? t.sidebar.showSidebar : t.sidebar.hideSidebar}
-        >
-          <PanelRight className="h-[18px] w-[18px]" strokeWidth={1.8} />
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              data-conversation-header-open-terminal
+              onClick={onOpenTerminal}
+              className={iconButtonClassName}
+              aria-label={t.chat.openTerminal}
+            >
+              <Terminal className="h-[18px] w-[18px]" strokeWidth={1.8} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent
+            side="bottom"
+            sideOffset={8}
+            className="border border-white/10 bg-[#292824] px-2.5 py-1 text-[12px] font-medium text-white shadow-lg [&>svg]:hidden"
+          >
+            {t.chat.openTerminal}
+          </TooltipContent>
+        </Tooltip>
       </div>
     </header>
   );

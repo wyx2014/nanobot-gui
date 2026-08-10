@@ -6,6 +6,18 @@ import { useBrowserStore } from '@/stores/browserStore';
 import PreviewPanel from './PreviewPanel';
 import ConversationWorkbench from './ConversationWorkbench';
 import BrowserPanel from './BrowserPanel';
+import {
+  PINNED_SUMMARY_RIGHT,
+  PINNED_SUMMARY_WIDTH,
+} from './layout';
+
+export {
+  PINNED_SUMMARY_CONTENT_INSET,
+  PINNED_SUMMARY_CONTENT_MAX_WIDTH,
+  PINNED_SUMMARY_GAP,
+  PINNED_SUMMARY_RIGHT,
+  PINNED_SUMMARY_WIDTH,
+} from './layout';
 
 // Match OpenWorker's two rail modes: a compact inspector and a wide reading
 // surface that leaves the conversation visible beside the artifact.
@@ -14,16 +26,6 @@ const BROWSER_WIDTH = 'min(42vw, 560px)';
 
 // Pinned summary overlay geometry, shared with ChatView so the conversation
 // content can reserve room on the right without moving its scrollbar.
-export const PINNED_SUMMARY_WIDTH = 288;
-export const PINNED_SUMMARY_RIGHT = 8;
-// Extra breathing room between the reserved content edge and the summary card.
-export const PINNED_SUMMARY_GAP = 8;
-/** Right inset ChatView applies to its content while the summary is open. */
-export const PINNED_SUMMARY_CONTENT_INSET =
-  PINNED_SUMMARY_WIDTH + PINNED_SUMMARY_RIGHT + PINNED_SUMMARY_GAP;
-/** Max width of the content column while the summary is open (max-w-3xl). */
-export const PINNED_SUMMARY_CONTENT_MAX_WIDTH = 768;
-
 export default function RightPanel() {
   const viewMode = useSettingsStore((s) => s.viewMode);
   const summaryCollapsed = useSettingsStore((s) => s.rightPanelCollapsed);

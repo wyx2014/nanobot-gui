@@ -30,7 +30,7 @@ function openSearchDialog() {
 
 beforeEach(() => {
   useSettingsStore.getState().setLanguage('zh-CN');
-  useSettingsStore.setState({ viewMode: 'chat' });
+  useSettingsStore.setState({ viewMode: 'chat', guideShown: true, guideOpen: false });
   useScheduleStore.setState({ tasks: {} });
   useWorkspaceStore.setState({
     currentPath: null,
@@ -109,5 +109,18 @@ describe('Sidebar conversation search', () => {
 
     expect(useChatStore.getState().activeConversationId).toBe('beta');
     expect(document.body.querySelector('[data-testid="conversation-search-dialog"]')).toBeNull();
+  });
+});
+
+describe('Sidebar help', () => {
+  it('reopens the first-run guide without resetting its completion flag', () => {
+    const view = renderSidebar();
+    const helpButton = view.querySelector<HTMLButtonElement>('button[title="帮助"]');
+
+    expect(helpButton).not.toBeNull();
+    act(() => helpButton?.click());
+
+    expect(useSettingsStore.getState().guideOpen).toBe(true);
+    expect(useSettingsStore.getState().guideShown).toBe(true);
   });
 });

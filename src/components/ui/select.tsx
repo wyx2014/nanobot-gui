@@ -52,18 +52,19 @@ export function Select({ value, onChange, options, placeholder, variant = 'defau
           'flex items-center gap-2 rounded-lg border border-[#e8e4dd] text-sm text-left transition-all',
           'focus:outline-none focus:ring-2 focus:ring-[#d97757]/30 focus:border-[#d97757]',
           'hover:border-[#d0cdc6]',
+          'dark:border-[#3a3a3a] dark:hover:border-[#555]',
           open && 'ring-2 ring-[#d97757]/30 border-[#d97757]',
           isInline
-            ? 'px-3 py-1.5 bg-[#faf9f5]'
-            : 'w-full h-9 px-3 justify-between bg-[#faf9f7]',
+            ? 'px-3 py-1.5 bg-[#faf9f5] dark:bg-[#262624]'
+            : 'w-full h-9 px-3 justify-between bg-[#faf9f7] dark:bg-[#262624]',
         )}
       >
-        <span className={cn(!selectedOption ? 'text-[#b8b5ab]' : 'text-[#29261b]')}>
+        <span className={cn(!selectedOption ? 'text-[#b8b5ab] dark:text-[#77746d]' : 'text-[#29261b] dark:text-[#ece8e1]')}>
           {selectedOption?.label ?? placeholder ?? '...'}
         </span>
         <ChevronDown
           className={cn(
-            'h-3.5 w-3.5 text-[#888579] transition-transform shrink-0',
+            'h-3.5 w-3.5 text-[#888579] transition-transform shrink-0 dark:text-[#8a867c]',
             open && 'rotate-180'
           )}
         />
@@ -73,6 +74,7 @@ export function Select({ value, onChange, options, placeholder, variant = 'defau
       {open && (
         <div className={cn(
           'absolute z-50 top-full mt-1 py-1 bg-white border border-[#e8e4dd] rounded-xl shadow-lg max-h-60 overflow-auto',
+          'dark:bg-[#262624] dark:border-[#3a3a3a] dark:shadow-[0_8px_28px_rgba(0,0,0,0.5)]',
           isInline ? 'right-0 min-w-[140px]' : 'left-0 right-0',
         )}>
           {options.map((opt) => (
@@ -85,10 +87,10 @@ export function Select({ value, onChange, options, placeholder, variant = 'defau
               }}
               className={cn(
                 'w-full px-3 py-2 text-sm text-left transition-colors',
-                'hover:bg-[#f5f3ee]',
+                'hover:bg-[#f5f3ee] dark:hover:bg-[#2d2d2c]',
                 opt.value === value
                   ? 'text-[#d97757] bg-[#d97757]/5'
-                  : 'text-[#29261b]'
+                  : 'text-[#29261b] dark:text-[#e5e1d9]'
               )}
             >
               {isInline ? (

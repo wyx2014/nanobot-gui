@@ -17,7 +17,7 @@ export const MAIN_WINDOW_BOUNDS = Object.freeze({
 });
 
 export const MAIN_WINDOW_BACKGROUND = '#fbfaf7';
-export const MACOS_TITLE_BAR_HEIGHT = 36;
+export const MACOS_TITLE_BAR_HEIGHT = 48;
 
 const MACOS_WINDOW_CHROME = Object.freeze({
   titleBarStyle: 'hidden' as const,
@@ -26,7 +26,7 @@ const MACOS_WINDOW_CHROME = Object.freeze({
   }),
   trafficLightPosition: Object.freeze({
     x: 16,
-    y: 12,
+    y: 17,
   }),
 });
 

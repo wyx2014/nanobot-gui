@@ -64,7 +64,7 @@ export default function ScheduleView() {
       {/* Task list or empty state */}
       {loading && sortedTasks.length === 0 ? (
         <div className="flex-1 flex items-center justify-center text-[13px] text-[#656358]">
-          正在从 nanobot 加载自动化...
+          正在加载自动化...
         </div>
       ) : error ? (
         <div className="mx-6 mt-4 rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">

@@ -178,7 +178,7 @@ export default function MCPSection({ showAddForm: externalShowAddForm, onAddForm
     setPayload(next);
     notifyMcpPresetsChanged(next);
     if (next.requires_restart) {
-      setMessage(isEnglish ? 'MCP configuration updated. Restart nanobot to connect the new tools.' : 'MCP 配置已更新，需要重启 nanobot 后连接新工具。');
+      setMessage(isEnglish ? 'MCP configuration updated. Restart the app to connect the new tools.' : 'MCP 配置已更新，需要重启后连接新工具。');
     } else if (next.hot_reload?.message) {
       setMessage(next.hot_reload.message);
     }

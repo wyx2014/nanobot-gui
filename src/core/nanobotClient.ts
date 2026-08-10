@@ -25,6 +25,8 @@ export async function getNanobotStatus(): Promise<NanobotStatus> {
 
 export interface NanobotSyncResult {
   ok: boolean;
+  changed?: boolean;
+  restarted?: boolean;
   error?: string;
 }
 
@@ -378,6 +380,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { normalizeFileEditToolTraces } from './nanobot/toolTraceMerge';
 import { scrubSubagentUiMessages } from './nanobot/subagent-channel-display';
 import { normalizeLegacyLongTaskMessages } from './nanobot/thread-display-compat';
+import { projectLegacyLocalFileContext } from './nanobot/localFileContext';
 import { projectThreadResource } from './nanobot/threadResourceProjection';
 import { useThreadResourceStore } from '@/stores/threadResourceStore';
 
@@ -543,9 +546,13 @@ export function mapWebuiThreadToGuiMessages(webuiMessages: UIMessage[]): Message
     if (msg.role === 'user') {
       currentLoopId = timestamp.toString(36) + Math.random().toString(36).substring(2, 6);
       
-      // MCP attachments already render as chips. Older transcripts may also
-      // contain the composer-generated @preset prefix; hide that duplicate.
-      const visibleContent = stripRedundantMcpMentionPrefix(msg.content, msg.mcpPresets);
+      // Local files and MCP connectors already render as structured chips.
+      // Hide their old composer-generated transport prefixes from the bubble.
+      const localFileContext = projectLegacyLocalFileContext(msg.content);
+      const visibleContent = stripRedundantMcpMentionPrefix(
+        localFileContext.visibleContent,
+        msg.mcpPresets,
+      );
       let content: string | MessageContent[] = visibleContent;
       if (msg.images && msg.images.length > 0) {
         const imageContent: MessageContent[] = msg.images.map(img => ({
@@ -572,6 +579,16 @@ export function mapWebuiThreadToGuiMessages(webuiMessages: UIMessage[]): Message
         cliApps: msg.cliApps,
         mcpPresets: msg.mcpPresets,
         skills: msg.skills,
+        mediaAttachments: [
+          ...mediaAttachmentsFromUiMessage(msg),
+          ...localFileContext.files.map((file) => ({
+            id: `local-file:${file.path}`,
+            path: file.path,
+            localPath: file.path,
+            name: file.name,
+            kind: 'file' as const,
+          })),
+        ],
       });
     } 
     

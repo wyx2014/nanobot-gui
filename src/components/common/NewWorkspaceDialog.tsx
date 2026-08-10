@@ -57,27 +57,29 @@ export default function NewWorkspaceDialog({ open, onClose, onCreated }: NewWork
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-[500px] overflow-hidden rounded-[20px] border border-[#e6e1d8] bg-white shadow-[0_16px_48px_rgba(0,0,0,0.16)] dark:border-[#3a3a3a] dark:bg-[#262626] dark:shadow-[0_16px_48px_rgba(0,0,0,0.5)]">
-        <div className="flex items-start justify-between px-7 pb-4 pt-6">
+      <div className="flex w-[480px] max-h-[85vh] flex-col bg-white rounded-2xl shadow-xl overflow-hidden dark:border dark:border-[#3a3a3a] dark:bg-[#262626]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100 shrink-0 dark:border-white/10">
           <div>
-            <h2 className="text-[22px] font-semibold leading-tight text-[#242424] dark:text-[#ece8e1]">
+            <h2 className="text-[16px] font-semibold text-[#29261b] dark:text-[#ece8e1]">
               {t.folder.nameProject}
             </h2>
-            <p className="mt-2.5 whitespace-nowrap text-[15px] font-medium text-[#8d8d8d] dark:text-[#a3a099]">
+            <p className="mt-0.5 text-[12.5px] font-medium text-[#8d8d8d] dark:text-[#a3a099]">
               {t.folder.nameProjectHint}
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg text-[#4b4b4b] transition-colors hover:bg-[#f3f1ed] dark:text-[#b8b5ae] dark:hover:bg-[#333]"
+            className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 transition-colors dark:text-[#b8b5ae] dark:hover:bg-[#333]"
             aria-label={t.common.cancel}
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="px-7 py-4">
+        {/* Content */}
+        <div className="px-6 py-4 space-y-4 overflow-auto flex-1">
           <input
             ref={inputRef}
             value={name}
@@ -86,15 +88,17 @@ export default function NewWorkspaceDialog({ open, onClose, onCreated }: NewWork
               if (event.key === 'Enter') void create();
               else if (event.key === 'Escape') onClose();
             }}
-            className="h-12 w-full rounded-[15px] border border-[#e5e2dc] bg-white px-3.5 text-[17px] font-medium text-[#242424] outline-none focus:border-[#d7d1c7] focus:ring-4 focus:ring-[#e7edf5] dark:border-[#444] dark:bg-[#1f1f1f] dark:text-[#ece8e1] dark:focus:border-[#5a5a5a] dark:focus:ring-[#33445c]"
+            placeholder={t.folder.nameProjectHint}
+            className="w-full h-10 px-3 bg-white border border-[#e8e4dd] rounded-lg text-sm text-[#29261b] focus:outline-none focus:ring-2 focus:ring-[#d97757]/30 focus:border-[#d97757] dark:border-[#444] dark:bg-[#1f1f1f] dark:text-[#ece8e1] dark:focus:border-[#d97757] dark:focus:ring-[#d97757]/30 dark:placeholder:text-[#77746d]"
           />
         </div>
 
-        <div className="flex justify-end gap-3 px-7 pb-6">
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-neutral-100 shrink-0 dark:border-white/10">
           <button
             type="button"
             onClick={onClose}
-            className="h-10 rounded-[12px] border border-[#e8e5df] bg-white px-6 text-[15px] font-semibold text-[#242424] transition-colors hover:bg-[#f8f6f2] dark:border-[#3a3a3a] dark:bg-[#2c2c2c] dark:text-[#ece8e1] dark:hover:bg-[#383838]"
+            className="px-4 py-2 rounded-lg text-[13px] text-[#3d3929] hover:bg-[#f5f3ee] transition-colors dark:text-[#ece8e1] dark:hover:bg-[#333]"
           >
             {t.common.cancel}
           </button>
@@ -102,7 +106,7 @@ export default function NewWorkspaceDialog({ open, onClose, onCreated }: NewWork
             type="button"
             onClick={() => void create()}
             disabled={!name.trim() || saving}
-            className="h-10 rounded-[12px] bg-[#1f2024] px-6 text-[15px] font-semibold text-white transition-colors hover:bg-[#111214] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-[#e8e5de] dark:text-[#242424] dark:hover:bg-[#f2efe9] dark:disabled:opacity-40"
+            className="px-4 py-2 rounded-lg text-[13px] font-medium bg-[#d97757] text-white hover:bg-[#c8664a] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
           >
             {t.common.save}
           </button>

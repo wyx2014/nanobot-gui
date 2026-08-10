@@ -486,7 +486,7 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
                 <h3 className="text-[17px] font-semibold text-[#29261b]">创建技能</h3>
-                <p className="mt-1 text-[13px] text-[#8a867c]">保存后会写入 nanobot 工作区的我的技能。</p>
+                <p className="mt-1 text-[13px] text-[#8a867c]">保存后会写入工作区的我的技能。</p>
               </div>
               <button
                 onClick={() => setCreateOpen(false)}

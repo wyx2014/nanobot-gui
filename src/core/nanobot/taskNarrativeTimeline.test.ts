@@ -593,7 +593,7 @@ describe('buildTaskNarrativeEntries', () => {
     expect(entries).toHaveLength(1);
   });
 
-  it('uses spawn as a member-status fallback and keeps the active team plan after thinking', () => {
+  it('uses spawn as a legacy member-status fallback and keeps the active team plan after thinking', () => {
     const entries = buildTaskNarrativeEntries([
       msg({
         id: 'team-run-fallback',
@@ -601,7 +601,6 @@ describe('buildTaskNarrativeEntries', () => {
         kind: 'trace',
         agentUI: {
           kind: 'task_progress',
-          plan_kind: 'workflow',
           team_id: 'asset-research-team',
           team_run_id: 'run-fallback',
           note: '正在启动四位专家',
@@ -704,6 +703,72 @@ describe('buildTaskNarrativeEntries', () => {
     expect(entries[0]).toMatchObject({
       title: '专家团队研究',
       planSteps: [
+        { id: 'business-analyst', status: 'pending' },
+        { id: 'financial-analyst', status: 'pending' },
+        { id: 'industry-researcher', status: 'pending' },
+        { id: 'risk-assessor', status: 'pending' },
+        { id: 'team-lead', status: 'pending' },
+        { id: 'report-audit', status: 'pending' },
+      ],
+    });
+  });
+
+  it('does not let model progress or spawn events skip a runtime-owned graph node', () => {
+    const entries = buildTaskNarrativeEntries([
+      msg({
+        id: 'team-run-preparation',
+        role: 'tool',
+        kind: 'trace',
+        agentUI: {
+          kind: 'task_progress',
+          plan_kind: 'workflow',
+          team_id: 'asset-research-team',
+          team_run_id: 'run-fixed-graph',
+          note: '正在建立当前标的基础数据包',
+          steps: [
+            { id: 'data-package', title: '建立基础数据包', status: 'running' },
+            { id: 'business-analyst', title: '商业分析师', status: 'pending' },
+            { id: 'financial-analyst', title: '财务分析师', status: 'pending' },
+            { id: 'industry-researcher', title: '行业研究员', status: 'pending' },
+            { id: 'risk-assessor', title: '风险评估师', status: 'pending' },
+            { id: 'team-lead', title: '主笔交叉质证与汇总', status: 'pending' },
+            { id: 'report-audit', title: '报告审校与交付', status: 'pending' },
+          ],
+        },
+      }),
+      msg({
+        id: 'model-authored-skip',
+        role: 'tool',
+        kind: 'trace',
+        toolEvents: [
+          {
+            phase: 'end',
+            call_id: 'fake-progress',
+            name: 'update_task_progress',
+            arguments: {
+              note: '主笔正在汇总',
+              steps: [
+                { id: 'team-lead-summary', title: '主笔交叉质证与汇总', status: 'running' },
+              ],
+            },
+          },
+          {
+            phase: 'end',
+            call_id: 'fake-spawn',
+            name: 'spawn',
+            arguments: { label: 'business-analyst', task: '分析商业模式' },
+            result: 'Subagent [business-analyst] started',
+          },
+        ],
+      }),
+    ]);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      title: '专家团队研究',
+      detail: '正在建立当前标的基础数据包',
+      planSteps: [
+        { id: 'data-package', status: 'running' },
         { id: 'business-analyst', status: 'pending' },
         { id: 'financial-analyst', status: 'pending' },
         { id: 'industry-researcher', status: 'pending' },

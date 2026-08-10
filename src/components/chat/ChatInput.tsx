@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Plus, ArrowUp, ArrowRight, Square, X, ChevronDown, Check, FileText, CornerDownRight, Pencil, Trash2, GraduationCap, Code, Coffee, Lightbulb, Paperclip, ChevronRight, Puzzle, Globe, Search, Users, Mic, Loader2 } from 'lucide-react';
+import { Plus, ArrowUp, ArrowRight, Square, X, ChevronDown, Check, FileText, CornerDownRight, Pencil, Trash2, GraduationCap, Paperclip, ChevronRight, Puzzle, Globe, Search, ShieldCheck, Users, Mic, Loader2 } from 'lucide-react';
 import { ThinkingOrb } from 'thinking-orbs';
 import ExpertTeamIcon from '@/components/common/ExpertTeamIcon';
 import { dialogBridge, fsBridge, mediaBridge } from '@/lib/ipc-factory';
@@ -45,6 +45,7 @@ import FolderSelector from '@/components/common/FolderSelector';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { normalizeProjectPath, visibleProjectPath } from '@/core/workspace';
 import { displaySkillName, filterAvailableSkillNames, stripUnavailableLeadingSkillMentions, usableSkillsForScope } from '@/core/skills/filter';
+import { LEGACY_LOCAL_FILE_CONTEXT_HEADER } from '@/core/nanobot/localFileContext';
 
 export interface ChatInputSendOptions {
   cliApps?: OutboundCliAppMention[];
@@ -64,113 +65,92 @@ interface ShortcutOption {
 interface ShortcutCategory {
   id: string;
   icon: any;
-  labelKey: 'shortcutWrite' | 'shortcutLearn' | 'shortcutCode' | 'shortcutLife' | 'shortcutRuyi';
+  labelKey: 'shortcutResearch' | 'shortcutPortfolioRisk' | 'shortcutOffice';
   options: ShortcutOption[];
 }
 
 const SHORTCUT_CATEGORIES: ShortcutCategory[] = [
   {
-    id: 'write',
-    icon: Pencil,
-    labelKey: 'shortcutWrite',
+    id: 'research',
+    icon: Search,
+    labelKey: 'shortcutResearch',
     options: [
       {
-        key: 'improve_style',
-        labelZh: '改进写作风格',
-        labelEn: 'Improve writing style',
-        promptZh: '嗨，TPACowork！你能帮我改进一下写作风格吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或上传任何资料来帮助你更好地完成工作，也请告诉我。如果对你有帮助，可以使用任何你能访问的工具，比如网络搜索等等。',
-        promptEn: 'Hi TPACowork! Can you help me improve my writing style? If you need more information, please ask one or two key questions right away. If you think I should provide more context or upload any files to help you do a better job, please let me know. If it helps, you can use any tools you have access to, such as web search.',
+        key: 'company_research',
+        labelZh: '上市公司深度分析',
+        labelEn: 'Company deep dive',
+        promptZh: '我想对一家上市公司进行深度投研。请先询问公司名称或股票代码；确认标的后，从商业模式、行业格局、财务质量、估值和主要风险等方面形成结构化结论。',
+        promptEn: 'I want to conduct in-depth research on a listed company. First ask for the company name or ticker, then provide a structured assessment covering its business model, industry position, financial quality, valuation, and key risks.',
       },
       {
-        key: 'write_speech',
-        labelZh: '写演讲稿',
-        labelEn: 'Write speech script',
-        promptZh: '嗨，TPACowork！你能帮我写一下演讲稿吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或者上传一些资料来帮助你更好地完成演讲，也请告诉我。你可以使用任何你能访问的工具，比如网络搜索等等，只要它们对你有帮助。',
-        promptEn: 'Hi TPACowork! Can you help me write a speech? If you need more information, please ask one or two key questions right away. If you think I should provide more context or upload some files to help you do a better job, please let me know. You can use any tools you have access to, such as web search, as long as they help.',
+        key: 'industry_research',
+        labelZh: '行业与产业链研究',
+        labelEn: 'Industry research',
+        promptZh: '我想研究一个行业或产业链。请先询问具体行业、研究范围和时间区间，再梳理市场空间、竞争格局、产业链结构、关键驱动因素和主要风险。',
+        promptEn: 'I want to research an industry or value chain. First ask for the sector, scope, and time horizon, then analyze market size, competition, value-chain structure, key drivers, and major risks.',
       },
       {
-        key: 'project_proposal',
-        labelZh: '撰写项目申请书',
-        labelEn: 'Draft project proposal',
-        promptZh: '嗨，TPACowork！你能帮我写项目申请书吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或上传任何资料来帮助你更好地完成申请，请告诉我。如果对你有帮助，你可以使用任何你能访问的工具，比如网络搜索等等。',
-        promptEn: 'Hi TPACowork! Can you help me write a project proposal? If you need more information, please ask one or two key questions right away. If you think I should provide more context or upload any files to help you do a better job, please let me know. If it helps, you can use any tools you have access to, such as web search.',
+        key: 'macro_market',
+        labelZh: '宏观与市场研判',
+        labelEn: 'Macro and market outlook',
+        promptZh: '我想研判宏观经济和资本市场。请先询问关注的地区、市场和时间范围，再基于可靠数据梳理核心变量、市场影响、可能情景和需要持续跟踪的指标。',
+        promptEn: 'I want a macroeconomic and capital-markets assessment. First ask for the region, market, and time horizon, then use reliable data to identify key variables, market implications, scenarios, and indicators to monitor.',
       },
     ],
   },
   {
-    id: 'learn',
-    icon: GraduationCap,
-    labelKey: 'shortcutLearn',
+    id: 'portfolio-risk',
+    icon: ShieldCheck,
+    labelKey: 'shortcutPortfolioRisk',
     options: [
       {
-        key: 'study_schedule',
-        labelZh: '规划学习时间表',
-        labelEn: 'Plan study schedule',
-        promptZh: '嗨，TPACowork！你能帮我制作学习时间表吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或上传任何资料来帮助你更好地完成工作，请告诉我。你可以使用任何你能访问的工具，例如网络搜索等等，只要它们对你有帮助。',
-        promptEn: 'Hi TPACowork! Can you help me create a study schedule? If you need more information from me, please ask one or two key questions right away. If you think I should provide more context or upload any files to help you do a better job, please let me know. You can use any tools you have access to, such as web search, as long as they help.',
+        key: 'portfolio_risk_review',
+        labelZh: '组合风险诊断',
+        labelEn: 'Portfolio risk review',
+        promptZh: '请帮我诊断投资组合风险。先提醒我上传持仓明细，并询问组合基准、风险预算和分析区间；再从波动、回撤、相关性、行业与风格暴露等方面识别主要风险。',
+        promptEn: 'Help me review portfolio risk. First ask me to upload the holdings and confirm the benchmark, risk budget, and analysis period, then identify key risks across volatility, drawdown, correlations, and sector and style exposures.',
+      },
+      {
+        key: 'stress_test',
+        labelZh: '压力测试与情景分析',
+        labelEn: 'Stress testing and scenarios',
+        promptZh: '请帮我对投资组合做压力测试和情景分析。先询问或读取持仓、基准和关注的风险情景，再评估不同冲击下的潜在损失、敏感资产和风险传导路径。',
+        promptEn: 'Help me run stress tests and scenario analysis on a portfolio. First obtain the holdings, benchmark, and risk scenarios, then assess potential losses, sensitive positions, and risk transmission paths under each shock.',
+      },
+      {
+        key: 'concentration_exposure',
+        labelZh: '持仓集中度与暴露分析',
+        labelEn: 'Concentration and exposure analysis',
+        promptZh: '请帮我分析投资组合的持仓集中度与风险暴露。先提醒我上传持仓明细，再检查单一证券、行业、主题、风格和流动性集中风险，并给出需要重点监控的项目。',
+        promptEn: 'Help me analyze portfolio concentration and exposures. First ask me to upload the holdings, then assess concentration by security, sector, theme, style, and liquidity, and highlight the items that require close monitoring.',
       },
     ],
   },
   {
-    id: 'code',
-    icon: Code,
-    labelKey: 'shortcutCode',
+    id: 'office',
+    icon: FileText,
+    labelKey: 'shortcutOffice',
     options: [
       {
-        key: 'write_code',
-        labelZh: '编写算法/代码',
-        labelEn: 'Write code / algorithm',
-        promptZh: '嗨，TPACowork！你能帮我编写一段代码吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或上传任何资料来帮助你更好地完成，请告诉我。如果对你有帮助，可以使用任何你能访问的工具，比如网络搜索等等。',
-        promptEn: 'Hi TPACowork! Can you help me write some code? If you need more information, please ask one or two key questions right away. If you think I should provide more context or upload any files, please let me know. If it helps, you can use any tools you have access to, such as web search.',
+        key: 'draft_material',
+        labelZh: '撰写与润色材料',
+        labelEn: 'Draft and polish materials',
+        promptZh: '请帮我撰写或润色一份工作材料。先询问材料用途、受众、篇幅和语气；如果我已有草稿或参考资料，请提醒我上传或粘贴。',
+        promptEn: 'Help me draft or polish a business document. First ask about its purpose, audience, length, and tone, and remind me to provide any draft or reference files I already have.',
       },
       {
-        key: 'refactor_code',
-        labelZh: '解释/重构代码',
-        labelEn: 'Explain or refactor code',
-        promptZh: '嗨，TPACowork！你能帮我解释或重构一段代码吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或上传任何资料来帮助你，请告诉我。可以使用任何你能访问的工具，比如网络搜索等等。',
-        promptEn: 'Hi TPACowork! Can you help me explain or refactor some code? If you need more information, please ask one or two key questions right away. If you think I should provide more context or upload any files, please let me know. If it helps, you can use any tools you have access to, such as web search.',
+        key: 'meeting_minutes',
+        labelZh: '整理会议纪要',
+        labelEn: 'Prepare meeting minutes',
+        promptZh: '请帮我整理会议纪要。提醒我上传或粘贴会议记录，并按议题、核心观点、决策事项、负责人和后续行动形成清晰纪要。',
+        promptEn: 'Help me prepare meeting minutes. Ask me to upload or paste the meeting record, then organize it by agenda item, key points, decisions, owners, and follow-up actions.',
       },
       {
-        key: 'debug_code',
-        labelZh: '排查 Bug',
-        labelEn: 'Debug and fix bugs',
-        promptZh: '嗨，TPACowork！你能帮我排查代码中的 Bug 吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或上传任何资料来帮助你更好地完成，请告诉我。如果对你有帮助，可以使用网络搜索等工具。',
-        promptEn: 'Hi TPACowork! Can you help me find and fix a bug in my code? If you need more information, please ask one or two key questions right away. If you think I should provide more context or upload any files, please let me know. If it helps, you can use any tools you have access to, such as web search.',
-      },
-    ],
-  },
-  {
-    id: 'life',
-    icon: Coffee,
-    labelKey: 'shortcutLife',
-    options: [
-      {
-        key: 'improve_habits',
-        labelZh: '改进习惯',
-        labelEn: 'Improve habits',
-        promptZh: '嗨，TPACowork！你能帮我改进一下习惯吗？如果你需要我提供更多信息，请立即问我一两个关键问题。如果你觉得我应该提供更多背景信息或上传任何资料来帮助你更好地完成工作，请告诉我。如果有什么工具能帮到你，比如网络搜索等等，都可以用。',
-        promptEn: 'Hi TPACowork! Can you help me improve my habits? If you need more information, please ask one or two key questions right away. If you think I should provide more context or upload any files to help you do a better job, please let me know. If any tools can help, such as web search, feel free to use them.',
-      },
-    ],
-  },
-  {
-    id: 'ruyi',
-    icon: Lightbulb,
-    labelKey: 'shortcutRuyi',
-    options: [
-      {
-        key: 'casual_chat',
-        labelZh: '日常闲聊/咨询',
-        labelEn: 'Casual chat / consultation',
-        promptZh: '嗨，TPACowork！我想找你随便聊聊，或者问你一些问题。如果你需要我提供更多背景信息，请告诉我。',
-        promptEn: 'Hi TPACowork! I want to have a casual chat with you or ask you some questions. If you need more context, please let me know.',
-      },
-      {
-        key: 'brainstorming',
-        labelZh: 'TPACowork推荐的创意启发',
-        labelEn: 'Creative brainstorming',
-        promptZh: '嗨，TPACowork！你能帮我提供一些有创意的想法或灵感吗？如果你需要我提供更多背景，请告诉我。如果有什么工具能帮到你，都可以使用。',
-        promptEn: 'Hi TPACowork! Can you help me brainstorm some creative ideas or inspiration? If you need more context, please let me know. Feel free to use any tools, such as web search.',
+        key: 'analyze_spreadsheet',
+        labelZh: '分析表格与数据',
+        labelEn: 'Analyze spreadsheets and data',
+        promptZh: '请帮我分析一份表格或数据文件。先提醒我上传文件并说明分析目标，再检查数据质量、提炼关键结论，并用适合业务汇报的方式呈现结果。',
+        promptEn: 'Help me analyze a spreadsheet or data file. First ask me to upload it and explain the objective, then check data quality, identify key findings, and present the results for a business audience.',
       },
     ],
   },
@@ -889,7 +869,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     // Build file context prefix
     const fileContext = draft.files?.length
       ? [
-        '本地文件引用（请按路径读取这些文件；如果路径超出当前工作区权限，请先说明无法访问）：',
+        LEGACY_LOCAL_FILE_CONTEXT_HEADER,
         ...draft.files.map((f) => `- ${f.name}: ${f.path}`),
       ].join('\n')
       : '';
@@ -1979,22 +1959,22 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
         data-welcome-input-root={isWelcome ? 'true' : undefined}
       >
         {queuedPrompts.length > 0 && (
-          <div className="mb-2 rounded-2xl border border-[#dedbd3] bg-white/90 p-1.5 shadow-sm">
+          <div className="mb-2 rounded-2xl border border-[#dedbd3] bg-white/90 p-1.5 shadow-sm dark:border-[#3a3a38] dark:bg-[#262624]/95">
             <div className="max-h-48 overflow-y-auto">
               {queuedPrompts.map((prompt) => (
                 <div
                   key={prompt.id}
-                  className="group flex min-h-8 items-center gap-1.5 rounded-xl px-2 py-1 text-[13px] transition-colors hover:bg-[#f5f3ee]"
+                  className="group flex min-h-8 items-center gap-1.5 rounded-xl px-2 py-1 text-[13px] transition-colors hover:bg-[#f5f3ee] dark:hover:bg-[#2d2d2c]"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="line-clamp-2 whitespace-pre-wrap break-words font-medium leading-snug text-[#29261b]">
+                    <p className="line-clamp-2 whitespace-pre-wrap break-words font-medium leading-snug text-[#29261b] dark:text-[#d6d2ca]">
                       {queuedPromptLabel(prompt)}
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={() => sendQueuedPrompt(prompt)}
-                    className="inline-flex h-7 shrink-0 items-center gap-1 rounded-full px-2 text-[11.5px] font-medium text-[#656358] transition-colors hover:bg-[#e8e5de] hover:text-[#29261b]"
+                    className="inline-flex h-7 shrink-0 items-center gap-1 rounded-full px-2 text-[11.5px] font-medium text-[#656358] transition-colors hover:bg-[#e8e5de] hover:text-[#29261b] dark:text-[#8a867c] dark:hover:bg-[#3a3835] dark:hover:text-[#d6d2ca]"
                     title="立即发送"
                   >
                     <CornerDownRight className="h-3 w-3" />
@@ -2003,7 +1983,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                   <button
                     type="button"
                     onClick={() => editQueuedPrompt(prompt)}
-                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[#656358] transition-colors hover:bg-[#e8e5de] hover:text-[#29261b]"
+                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[#656358] transition-colors hover:bg-[#e8e5de] hover:text-[#29261b] dark:text-[#8a867c] dark:hover:bg-[#3a3835] dark:hover:text-[#d6d2ca]"
                     title="编辑"
                   >
                     <Pencil className="h-3.5 w-3.5" />
@@ -2011,7 +1991,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                   <button
                     type="button"
                     onClick={() => deleteQueuedPrompt(prompt.id)}
-                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[#656358] transition-colors hover:bg-[#e8e5de] hover:text-red-600"
+                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[#656358] transition-colors hover:bg-[#e8e5de] hover:text-red-600 dark:text-[#8a867c] dark:hover:bg-[#3a3835] dark:hover:text-red-400"
                     title="删除"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -2419,51 +2399,21 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
 
         {isWelcome && (
           <div data-welcome-shortcuts className="mt-3 flex flex-wrap items-center justify-center gap-2">
-            <button
-              data-welcome-shortcut="write"
-              data-active={activeCategory === 'write' ? 'true' : 'false'}
-              onClick={() => handleShortcut('write')}
-              className="flex h-9 items-center gap-1.5 rounded-lg border border-[#dedbd3]/80 bg-[#fffefa] px-3 text-[13px] font-medium text-[#29261b] shadow-[0_1px_2px_rgba(41,38,27,0.08)] transition-colors hover:bg-[#f5f3ee]"
-            >
-              <Pencil className="h-3.5 w-3.5 text-[#656358]" />
-              <span>{t.chat.shortcutWrite}</span>
-            </button>
-            <button
-              data-welcome-shortcut="learn"
-              data-active={activeCategory === 'learn' ? 'true' : 'false'}
-              onClick={() => handleShortcut('learn')}
-              className="flex h-9 items-center gap-1.5 rounded-lg border border-[#dedbd3]/80 bg-[#fffefa] px-3 text-[13px] font-medium text-[#29261b] shadow-[0_1px_2px_rgba(41,38,27,0.08)] transition-colors hover:bg-[#f5f3ee]"
-            >
-              <GraduationCap className="h-3.5 w-3.5 text-[#656358]" />
-              <span>{t.chat.shortcutLearn}</span>
-            </button>
-            <button
-              data-welcome-shortcut="code"
-              data-active={activeCategory === 'code' ? 'true' : 'false'}
-              onClick={() => handleShortcut('code')}
-              className="flex h-9 items-center gap-1.5 rounded-lg border border-[#dedbd3]/80 bg-[#fffefa] px-3 text-[13px] font-medium text-[#29261b] shadow-[0_1px_2px_rgba(41,38,27,0.08)] transition-colors hover:bg-[#f5f3ee]"
-            >
-              <Code className="h-3.5 w-3.5 text-[#656358]" />
-              <span>{t.chat.shortcutCode}</span>
-            </button>
-            <button
-              data-welcome-shortcut="life"
-              data-active={activeCategory === 'life' ? 'true' : 'false'}
-              onClick={() => handleShortcut('life')}
-              className="flex h-9 items-center gap-1.5 rounded-lg border border-[#dedbd3]/80 bg-[#fffefa] px-3 text-[13px] font-medium text-[#29261b] shadow-[0_1px_2px_rgba(41,38,27,0.08)] transition-colors hover:bg-[#f5f3ee]"
-            >
-              <Coffee className="h-3.5 w-3.5 text-[#656358]" />
-              <span>{t.chat.shortcutLife}</span>
-            </button>
-            <button
-              data-welcome-shortcut="ruyi"
-              data-active={activeCategory === 'ruyi' ? 'true' : 'false'}
-              onClick={() => handleShortcut('ruyi')}
-              className="flex h-9 items-center gap-1.5 rounded-lg border border-[#dedbd3]/80 bg-[#fffefa] px-3 text-[13px] font-medium text-[#29261b] shadow-[0_1px_2px_rgba(41,38,27,0.08)] transition-colors hover:bg-[#f5f3ee]"
-            >
-              <Lightbulb className="h-3.5 w-3.5 text-[#656358]" />
-              <span>{t.chat.shortcutRuyi}</span>
-            </button>
+            {SHORTCUT_CATEGORIES.map((category) => {
+              const Icon = category.icon;
+              return (
+                <button
+                  key={category.id}
+                  data-welcome-shortcut={category.id}
+                  data-active={activeCategory === category.id ? 'true' : 'false'}
+                  onClick={() => handleShortcut(category.id)}
+                  className="flex h-9 items-center gap-1.5 rounded-lg border border-[#dedbd3]/80 bg-[#fffefa] px-3 text-[13px] font-medium text-[#29261b] shadow-[0_1px_2px_rgba(41,38,27,0.08)] transition-colors hover:bg-[#f5f3ee]"
+                >
+                  <Icon className="h-3.5 w-3.5 text-[#656358]" />
+                  <span>{t.chat[category.labelKey]}</span>
+                </button>
+              );
+            })}
           </div>
         )}
       </div>

@@ -98,14 +98,13 @@ export default function Sidebar() {
   const promptHubIsLoggingIn = usePromptHubStore((s) => s.isLoggingIn);
   const promptHubOpen = usePromptHubStore((s) => s.loginOpen);
   const promptHubError = usePromptHubStore((s) => s.error);
-  const promptHubBaseUrl = usePromptHubStore((s) => s.baseUrl);
-  const setPromptHubBaseUrl = usePromptHubStore((s) => s.setBaseUrl);
   const loginPromptHub = usePromptHubStore((s) => s.login);
   const logoutPromptHub = usePromptHubStore((s) => s.logout);
   const openPromptHubLogin = usePromptHubStore((s) => s.openLogin);
   const closePromptHubLogin = usePromptHubStore((s) => s.closeLogin);
   const { t, locale, format } = useI18n();
   const isEnglish = locale === 'en-US';
+  const windows = isWindows();
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; convId: string } | null>(null);
@@ -122,7 +121,6 @@ export default function Sidebar() {
   const [draftSkillBindings, setDraftSkillBindings] = useState<string[]>([]);
   const [promptHubUsername, setPromptHubUsername] = useState('');
   const [promptHubPassword, setPromptHubPassword] = useState('');
-  const [promptHubServerUrl, setPromptHubServerUrl] = useState('');
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const conversationSearchRef = useRef<HTMLInputElement>(null);
 
@@ -522,14 +520,11 @@ export default function Sidebar() {
   useEffect(() => {
     if (!promptHubOpen) return;
     setPromptHubUsername(promptHubUser?.username ?? '');
-    setPromptHubServerUrl(promptHubBaseUrl);
-  }, [promptHubBaseUrl, promptHubOpen, promptHubUser?.username]);
+  }, [promptHubOpen, promptHubUser?.username]);
 
   const submitPromptHubLogin = async () => {
-    const serverUrl = promptHubServerUrl.trim().replace(/\/+$/, '');
-    if (!promptHubUsername.trim() || !promptHubPassword || !/^https?:\/\//i.test(serverUrl)) return;
+    if (!promptHubUsername.trim() || !promptHubPassword) return;
     try {
-      setPromptHubBaseUrl(serverUrl);
       await loginPromptHub(promptHubUsername, promptHubPassword);
       setPromptHubPassword('');
     } catch {
@@ -649,8 +644,11 @@ export default function Sidebar() {
   return (
     <div className="flex flex-col h-full w-[260px] bg-[#f7f6f2] border-r border-[#e5e2db] dark:bg-[#242424] dark:border-[#3d3d3d]">
       {/* The overlay title bar is part of the renderer on macOS and Windows. */}
-      {(isMacOS() || isWindows()) && (
-        <div data-sidebar-titlebar-spacer className="h-12 shrink-0" />
+      {(isMacOS() || windows) && (
+        <div
+          data-sidebar-titlebar-spacer
+          className={cn('shrink-0', windows ? 'h-10' : 'h-12')}
+        />
       )}
       <header className="shrink-0 px-3 pb-2.5 pt-2.5">
         <div className="flex h-9 items-center justify-between gap-2">
@@ -907,17 +905,25 @@ export default function Sidebar() {
 
       {conversationSearchOpen && createPortal(
         <div
-          className="fixed inset-0 z-[10000] flex items-start justify-center bg-black/20 px-6 pt-[9vh] backdrop-blur-[1px] animate-in fade-in duration-150"
+          className="fixed inset-0 z-[10000] flex items-start justify-center px-6 pt-[9vh] animate-in fade-in duration-150"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) closeConversationSearch();
           }}
         >
           <div
+            data-testid="conversation-search-backdrop"
+            aria-hidden="true"
+            className={cn(
+              'pointer-events-none absolute bottom-0 left-0 right-0 bg-black/20 backdrop-blur-[1px]',
+              windows ? 'top-10' : 'top-0',
+            )}
+          />
+          <div
             role="dialog"
             aria-modal="true"
             aria-label={t.sidebar.searchConversations}
             data-testid="conversation-search-dialog"
-            className="flex max-h-[min(720px,82vh)] w-full max-w-[760px] flex-col overflow-hidden rounded-[28px] border border-black/5 bg-[#fbfbfa] shadow-[0_24px_70px_rgba(0,0,0,0.22)] dark:border-white/10 dark:bg-[#272727]"
+            className="relative flex max-h-[min(720px,82vh)] w-full max-w-[760px] flex-col overflow-hidden rounded-[28px] border border-black/5 bg-[#fbfbfa] shadow-[0_24px_70px_rgba(0,0,0,0.22)] dark:border-white/10 dark:bg-[#272727]"
           >
             <div className="shrink-0 px-7 pb-4 pt-5">
               <input
@@ -1237,21 +1243,21 @@ export default function Sidebar() {
             if (event.target === event.currentTarget && !promptHubIsLoggingIn) closePromptHubLogin();
           }}
         >
-          <div className="w-[380px] rounded-2xl bg-white p-5 shadow-xl">
+          <div data-testid="prompthub-login-dialog" className="w-[380px] rounded-2xl bg-white p-5 shadow-xl">
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
                 <h3 className="text-[17px] font-semibold text-[#29261b]">
-                  {promptHubUser ? '账号' : '登录'}
+                  {promptHubUser ? t.sidebar.account : t.sidebar.login}
                 </h3>
                 <p className="mt-1 text-[13px] text-[#8a867c]">
-                  {promptHubUser ? '当前账号已登录。' : '输入用户名和密码。'}
+                  {promptHubUser ? t.sidebar.accountSignedIn : t.sidebar.enterCredentials}
                 </p>
               </div>
               <button
                 onClick={closePromptHubLogin}
                 disabled={promptHubIsLoggingIn}
                 className="rounded-lg p-1.5 text-[#656358] hover:bg-[#f5f3ee] hover:text-[#29261b] disabled:opacity-50"
-                title="关闭"
+                title={t.common.close}
               >
                 <X className="h-4 w-4" />
               </button>
@@ -1259,26 +1265,13 @@ export default function Sidebar() {
 
             {promptHubUser ? (
               <div className="rounded-xl border border-[#e8e4dd] bg-[#faf9f7] px-3 py-3">
-                <div className="text-[12px] text-[#8a867c]">当前账号</div>
+                <div className="text-[12px] text-[#8a867c]">{t.sidebar.currentAccount}</div>
                 <div className="mt-1 text-[14px] font-semibold text-[#29261b]">{promptHubUser.username}</div>
               </div>
             ) : (
               <div className="space-y-3">
                 <label className="block">
-                  <span className="mb-1 block text-[12px] font-medium text-[#656358]">服务器地址</span>
-                  <input
-                    type="url"
-                    value={promptHubServerUrl}
-                    onChange={(event) => setPromptHubServerUrl(event.target.value)}
-                    placeholder="https://hub.example.com"
-                    className="h-9 w-full rounded-lg border border-[#e8e4dd] bg-[#faf9f7] px-3 text-sm text-[#29261b] outline-none focus:border-[#d97757] focus:ring-2 focus:ring-[#d97757]/30"
-                  />
-                  <span className="mt-1 block text-[11px] text-[#9a958b]">
-                    手机端和桌面端必须使用同一个 PromptHub 地址。
-                  </span>
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-[12px] font-medium text-[#656358]">用户名</span>
+                  <span className="mb-1 block text-[12px] font-medium text-[#656358]">{t.sidebar.username}</span>
                   <input
                     value={promptHubUsername}
                     onChange={(event) => setPromptHubUsername(event.target.value)}
@@ -1287,7 +1280,7 @@ export default function Sidebar() {
                   />
                 </label>
                 <label className="block">
-                  <span className="mb-1 block text-[12px] font-medium text-[#656358]">密码</span>
+                  <span className="mb-1 block text-[12px] font-medium text-[#656358]">{t.sidebar.password}</span>
                   <input
                     type="password"
                     value={promptHubPassword}
@@ -1317,7 +1310,7 @@ export default function Sidebar() {
                   className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-[#656358] hover:bg-[#f5f3ee] hover:text-red-500"
                 >
                   <LogOut className="h-3.5 w-3.5" />
-                  退出登录
+                  {t.sidebar.signOut}
                 </button>
               ) : <span />}
               <div className="flex items-center gap-2">
@@ -1326,7 +1319,7 @@ export default function Sidebar() {
                   disabled={promptHubIsLoggingIn}
                   className="rounded-lg px-3.5 py-2 text-[13px] font-medium text-[#656358] hover:bg-[#f5f3ee] disabled:opacity-50"
                 >
-                  {promptHubUser ? '关闭' : '取消'}
+                  {promptHubUser ? t.common.close : t.common.cancel}
                 </button>
                 {!promptHubUser && (
                   <button
@@ -1335,11 +1328,10 @@ export default function Sidebar() {
                       promptHubIsLoggingIn
                       || !promptHubUsername.trim()
                       || !promptHubPassword
-                      || !/^https?:\/\//i.test(promptHubServerUrl.trim())
                     }
                     className="rounded-lg bg-[#29261b] px-4 py-2 text-[13px] font-medium text-white hover:bg-[#3a3628] disabled:opacity-60"
                   >
-                    {promptHubIsLoggingIn ? '登录中...' : '登录'}
+                    {promptHubIsLoggingIn ? t.sidebar.signingIn : t.sidebar.login}
                   </button>
                 )}
               </div>

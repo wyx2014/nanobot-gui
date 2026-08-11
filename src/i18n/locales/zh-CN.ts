@@ -60,6 +60,14 @@ const zhCN: TranslationDict = {
     resetProfile: '恢复默认',
     login: '登录',
     loggedInAs: '已登录：{name}',
+    account: '账号',
+    currentAccount: '当前账号',
+    accountSignedIn: '当前账号已登录。',
+    enterCredentials: '输入用户名和密码。',
+    username: '用户名',
+    password: '密码',
+    signOut: '退出登录',
+    signingIn: '登录中...',
   },
 
   chat: {

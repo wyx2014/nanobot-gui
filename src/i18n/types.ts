@@ -72,6 +72,14 @@ export interface TranslationDict {
     resetProfile: string;
     login: string;
     loggedInAs: string;
+    account: string;
+    currentAccount: string;
+    accountSignedIn: string;
+    enterCredentials: string;
+    username: string;
+    password: string;
+    signOut: string;
+    signingIn: string;
   };
 
   // Chat/Welcome

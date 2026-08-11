@@ -60,6 +60,14 @@ const enUS: TranslationDict = {
     resetProfile: 'Reset to Default',
     login: 'Login',
     loggedInAs: 'Signed in as {name}',
+    account: 'Account',
+    currentAccount: 'Current account',
+    accountSignedIn: 'You are signed in to your account.',
+    enterCredentials: 'Enter your username and password.',
+    username: 'Username',
+    password: 'Password',
+    signOut: 'Sign Out',
+    signingIn: 'Signing in...',
   },
 
   chat: {

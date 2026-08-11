@@ -301,7 +301,7 @@ export default function HelpManual({ onClose }: { onClose: () => void }) {
 
           <div ref={articleRef} data-help-article className="min-h-0 flex-1 overflow-y-auto">
             {activeBody && bodyReady ? (
-              <article className="mx-auto w-full max-w-[820px] px-8 pb-12 pt-7">
+              <article className="help-manual-article mx-auto w-full max-w-[820px] px-8 pb-12 pt-7">
                 {activeBody}
               </article>
             ) : (

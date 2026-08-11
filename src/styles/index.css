@@ -433,6 +433,40 @@
   margin-bottom: 1.25rem;
 }
 
+/* User manual: the reading column reuses the chat renderer, whose 18px
+ * body and 30px headings dwarf the 12.5px chapter list on the left. Keep
+ * the article type scale in proportion with the sidebar instead. */
+.help-manual-article .claude-markdown {
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.help-manual-article .claude-markdown p,
+.help-manual-article .claude-markdown li {
+  font-size: calc(15px * var(--app-font-scale, 1));
+  line-height: 1.75;
+}
+
+.help-manual-article .claude-markdown h1 {
+  font-size: 24px;
+  line-height: 1.3;
+}
+
+.help-manual-article .claude-markdown h2 {
+  font-size: 20px;
+  line-height: 1.35;
+}
+
+.help-manual-article .claude-markdown h3 {
+  font-size: 17px;
+  line-height: 1.4;
+}
+
+.help-manual-article .claude-markdown table {
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
 /* ToolStep Markdown is a compact system-UI surface, not assistant prose. */
 .hope-thinking-markdown .activity-markdown {
   color: inherit;

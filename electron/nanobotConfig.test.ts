@@ -11,15 +11,40 @@ vi.mock('electron', () => ({
 import { buildDesktopDefaultMcpServers } from './nanobotConfig';
 
 describe('desktop default MCP servers', () => {
-  it('contains only juyuan and playwright without embedding a token', () => {
-    const servers = buildDesktopDefaultMcpServers('/tmp/tparuyi-test/.nanobot', '');
+  const emptyCredentials = {
+    juyuanToken: '',
+    caihuiApiKey: '',
+    ifindApiKey: '',
+    anysearchApiKey: '',
+  };
 
-    expect(Object.keys(servers)).toEqual(['juyuan', 'playwright']);
+  it('contains the built-in finance connectors without embedding keys', () => {
+    const servers = buildDesktopDefaultMcpServers(
+      '/tmp/tparuyi-test/.nanobot',
+      emptyCredentials,
+    );
+
+    expect(Object.keys(servers)).toEqual([
+      'juyuan',
+      'caihui_mcp',
+      'hexin-ifind-ds-stock-mcp',
+      'hexin-ifind-ds-fund-mcp',
+      'hexin-ifind-ds-edb-mcp',
+      'hexin-ifind-ds-news-mcp',
+      'hexin-ifind-ds-bond-mcp',
+      'hexin-ifind-ds-global-stock-mcp',
+      'hexin-ifind-ds-index-mcp',
+      'anysearch',
+      'playwright',
+    ]);
     expect(servers.juyuan).toMatchObject({
       type: 'streamableHttp',
       url: '',
       connectTimeout: 10,
     });
+    expect(servers.caihui_mcp).toMatchObject({ url: '', headers: {} });
+    expect(servers['hexin-ifind-ds-stock-mcp']).toMatchObject({ url: '', headers: {} });
+    expect(servers.anysearch).toMatchObject({ url: '', headers: {} });
     expect(servers.playwright).toMatchObject({
       type: 'stdio',
       command: 'npx',
@@ -28,11 +53,28 @@ describe('desktop default MCP servers', () => {
     });
   });
 
-  it('uses an explicitly provisioned juyuan token', () => {
-    const servers = buildDesktopDefaultMcpServers('/tmp/tparuyi-test/.nanobot', 'token with spaces');
+  it('uses explicitly provisioned connector keys', () => {
+    const servers = buildDesktopDefaultMcpServers('/tmp/tparuyi-test/.nanobot', {
+      juyuanToken: 'token with spaces',
+      caihuiApiKey: 'caihui-key',
+      ifindApiKey: 'ifind-key',
+      anysearchApiKey: 'anysearch-key',
+    });
 
     expect(servers.juyuan.url).toBe(
       'https://api.gildata.com/mcp-servers/aidata-assistant-srv-api?token=token%20with%20spaces',
     );
+    expect(servers.caihui_mcp).toMatchObject({
+      url: 'https://mcp.finchina.com/finchina-data-mcp-server/mcp',
+      headers: { 'x-api-key': 'caihui-key' },
+    });
+    expect(servers['hexin-ifind-ds-index-mcp']).toMatchObject({
+      url: 'https://api-mcp.51ifind.com:8643/ds-mcp-servers/hexin-ifind-ds-index-mcp',
+      headers: { Authorization: 'ifind-key' },
+    });
+    expect(servers.anysearch).toMatchObject({
+      url: 'https://api.anysearch.com/mcp',
+      headers: { Authorization: 'Bearer anysearch-key' },
+    });
   });
 });

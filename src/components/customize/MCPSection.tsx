@@ -398,13 +398,10 @@ function McpPresetRow({
   const toolsBusy = actionKey === `tools:${preset.name}`;
   const connection = preset.connection;
   const settingValue = (key: string, fallback = '') => values[key] ?? fallback;
-  const visibleFields = preset.required_fields.filter((field) => field.name !== 'juyuan_token');
-  const urlIncludesJuyuanToken = /[?&]token=[^&]+/i.test(settingValue('url', connection?.url));
-  const canEnable = preset.install_supported && (!needsSetup || missingFields.every((field) => (
-    field.name === 'juyuan_token'
-      ? urlIncludesJuyuanToken
-      : Boolean(values[field.name]?.trim())
-  )));
+  const visibleFields = preset.required_fields;
+  const canEnable = preset.install_supported && (
+    !needsSetup || missingFields.every((field) => Boolean(values[field.name]?.trim()))
+  );
   const description = preset.description || preset.note || preset.requires || preset.connection_summary;
 
   const enable = () => {

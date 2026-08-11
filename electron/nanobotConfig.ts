@@ -14,11 +14,71 @@ import { app } from 'electron';
 
 const PLAYWRIGHT_MCP_PACKAGE = '@playwright/mcp@0.0.78';
 const JUYUAN_MCP_URL = 'https://api.gildata.com/mcp-servers/aidata-assistant-srv-api';
+const CAIHUI_MCP_URL = 'https://mcp.finchina.com/finchina-data-mcp-server/mcp';
+const ANYSEARCH_MCP_URL = 'https://api.anysearch.com/mcp';
+const IFIND_MCP_BASE_URL = 'https://api-mcp.51ifind.com:8643/ds-mcp-servers';
+const IFIND_MCP_NAMES = [
+  'hexin-ifind-ds-stock-mcp',
+  'hexin-ifind-ds-fund-mcp',
+  'hexin-ifind-ds-edb-mcp',
+  'hexin-ifind-ds-news-mcp',
+  'hexin-ifind-ds-bond-mcp',
+  'hexin-ifind-ds-global-stock-mcp',
+  'hexin-ifind-ds-index-mcp',
+] as const;
+
+export interface DesktopMcpCredentials {
+  juyuanToken: string;
+  caihuiApiKey: string;
+  ifindApiKey: string;
+  anysearchApiKey: string;
+}
+
+function remoteMcpServer(
+  url: string,
+  headers: Record<string, string>,
+  connectTimeout: number,
+  toolTimeout: number,
+) {
+  const configured = Object.values(headers).some(Boolean);
+  return {
+    type: 'streamableHttp',
+    // Keep credential-free presets installed in the toolbox without making
+    // nanobot connect to unauthenticated endpoints during startup.
+    url: configured ? url : '',
+    headers: configured ? headers : {},
+    connectTimeout,
+    toolTimeout,
+    enabledTools: ['*'],
+  };
+}
 
 export function buildDesktopDefaultMcpServers(
   nanobotDir: string,
-  juyuanToken = process.env.JUYUAN_MCP_TOKEN?.trim(),
+  credentials: DesktopMcpCredentials = {
+    juyuanToken: process.env.JUYUAN_MCP_TOKEN?.trim() ?? '',
+    caihuiApiKey: process.env.CAIHUI_MCP_API_KEY?.trim() ?? '',
+    ifindApiKey: process.env.IFIND_MCP_API_KEY?.trim() ?? '',
+    anysearchApiKey: process.env.ANYSEARCH_API_KEY?.trim() ?? '',
+  },
 ) {
+  const juyuanToken = credentials.juyuanToken.trim();
+  const caihuiApiKey = credentials.caihuiApiKey.trim();
+  const ifindApiKey = credentials.ifindApiKey.trim();
+  const anysearchApiKey = credentials.anysearchApiKey.trim();
+  const anysearchAuthorization = anysearchApiKey
+    ? (/^Bearer\s+/i.test(anysearchApiKey) ? anysearchApiKey : `Bearer ${anysearchApiKey}`)
+    : '';
+  const ifindServers = Object.fromEntries(IFIND_MCP_NAMES.map((name) => [
+    name,
+    remoteMcpServer(
+      `${IFIND_MCP_BASE_URL}/${name}`,
+      { Authorization: ifindApiKey },
+      15,
+      30,
+    ),
+  ]));
+
   return {
     juyuan: {
       type: 'streamableHttp',
@@ -29,6 +89,19 @@ export function buildDesktopDefaultMcpServers(
       toolTimeout: 60,
       enabledTools: ['*'],
     },
+    caihui_mcp: remoteMcpServer(
+      CAIHUI_MCP_URL,
+      { 'x-api-key': caihuiApiKey },
+      15,
+      30,
+    ),
+    ...ifindServers,
+    anysearch: remoteMcpServer(
+      ANYSEARCH_MCP_URL,
+      { Authorization: anysearchAuthorization },
+      15,
+      30,
+    ),
     playwright: {
       type: 'stdio',
       command: 'npx',

@@ -50,4 +50,13 @@ describe('cross-platform Python runtime packaging', () => {
     expect(workflow).toContain('gh release upload');
     expect(workflow).toContain('--clobber');
   });
+
+  it('does not build nanobot browser assets for the native desktop gateway', () => {
+    const preparationScript = fs.readFileSync(
+      path.join(process.cwd(), 'scripts', 'download-python.mjs'),
+      'utf8',
+    );
+
+    expect(preparationScript).toContain("NANOBOT_SKIP_WEBUI_BUILD: '1'");
+  });
 });

@@ -173,7 +173,17 @@ function installNanobot({ includeDependencies }) {
   const args = ['install', '--quiet', '--no-compile', '--no-cache-dir'];
   if (!includeDependencies) args.push('--no-deps', '--force-reinstall');
   args.push(includeDependencies ? `${nanobotSrc}[desktop]` : nanobotSrc);
-  execFileSync(pythonBin, ['-m', 'pip', ...args], { stdio: 'inherit' });
+  // TPACowork launches `nanobot desktop-gateway`, which deliberately does not
+  // serve nanobot's browser WebUI (`webui_static_dist=False`). Skipping that
+  // unrelated Hatch hook also avoids invoking npm/npm.cmd while assembling a
+  // relocatable Windows runtime.
+  execFileSync(pythonBin, ['-m', 'pip', ...args], {
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      NANOBOT_SKIP_WEBUI_BUILD: '1',
+    },
+  });
   if (!fs.existsSync(installedNanobotDir)) {
     throw new Error(`Installed nanobot package not found: ${installedNanobotDir}`);
   }

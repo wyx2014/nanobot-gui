@@ -88,7 +88,8 @@ function EditInput({
   }, [text]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    // IME composition Enter confirms a candidate; only a real Enter saves.
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) {
       e.preventDefault();
       onSave(text);
     } else if (e.key === 'Escape') {

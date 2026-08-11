@@ -85,8 +85,13 @@ export default function NewWorkspaceDialog({ open, onClose, onCreated }: NewWork
             value={name}
             onChange={(event) => setName(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === 'Enter') void create();
-              else if (event.key === 'Escape') onClose();
+              // Confirming an IME candidate with Enter must not submit the
+              // form; only a real Enter should create the workspace.
+              if (event.key === 'Enter' && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+                void create();
+              } else if (event.key === 'Escape') {
+                onClose();
+              }
             }}
             placeholder={t.folder.nameProjectHint}
             className="w-full h-10 px-3 bg-white border border-[#e8e4dd] rounded-lg text-sm text-[#29261b] focus:outline-none focus:ring-2 focus:ring-[#d97757]/30 focus:border-[#d97757] dark:border-[#444] dark:bg-[#1f1f1f] dark:text-[#ece8e1] dark:focus:border-[#d97757] dark:focus:ring-[#d97757]/30 dark:placeholder:text-[#77746d]"

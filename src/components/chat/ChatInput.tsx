@@ -1031,7 +1031,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
         setSelectedIndex((prev) => (prev + 1) % suggestions.length);
         return;
       }
-      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && !(e.nativeEvent as any).isComposing && e.keyCode !== 229)) {
         e.preventDefault();
         applySuggestion(suggestions[selectedIndex]);
         return;

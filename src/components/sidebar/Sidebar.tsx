@@ -545,6 +545,9 @@ export default function Sidebar() {
   };
 
   const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    // Ignore Enter while an IME (Chinese, Japanese, Korean) is composing:
+    // confirming a candidate must not jump into a conversation.
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
     const selectableCount = searchResults.length + 1;
     const currentIndex = Math.min(selectedSearchIndex, selectableCount - 1);
 
@@ -616,7 +619,9 @@ export default function Sidebar() {
             setEditingId(null);
           }}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) {
+              (e.target as HTMLInputElement).blur();
+            }
             if (e.key === 'Escape') setEditingId(null);
           }}
         />
@@ -1286,7 +1291,9 @@ export default function Sidebar() {
                     value={promptHubPassword}
                     onChange={(event) => setPromptHubPassword(event.target.value)}
                     onKeyDown={(event) => {
-                      if (event.key === 'Enter') void submitPromptHubLogin();
+                      if (event.key === 'Enter' && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+                        void submitPromptHubLogin();
+                      }
                     }}
                     className="h-9 w-full rounded-lg border border-[#e8e4dd] bg-[#faf9f7] px-3 text-sm text-[#29261b] outline-none focus:border-[#d97757] focus:ring-2 focus:ring-[#d97757]/30"
                   />

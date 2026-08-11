@@ -138,7 +138,7 @@ export default function HelpManual({ onClose }: { onClose: () => void }) {
         aria-label={isEnglish ? 'TPACowork User Manual' : 'TPACowork 使用手册'}
         className="flex h-[min(820px,calc(100vh-48px))] w-[min(1180px,calc(100vw-48px))] overflow-hidden rounded-[22px] border border-black/5 bg-[#fbfaf7] shadow-[0_28px_90px_rgba(0,0,0,0.24)] dark:border-white/10 dark:bg-[#232323]"
       >
-        <aside className="flex w-[282px] shrink-0 flex-col border-r border-[#e6e0d7] bg-[#f5f3ee] dark:border-white/10 dark:bg-[#292929]">
+        <aside className="flex w-[248px] shrink-0 flex-col border-r border-[#e6e0d7] bg-[#f5f3ee] dark:border-white/10 dark:bg-[#292929]">
           <div className="border-b border-[#e6e0d7] px-4 pb-4 pt-5 dark:border-white/10">
             <div className="flex items-center gap-3 px-1">
               <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#d97757]/14 text-[#b96346] dark:bg-[#d97757]/20 dark:text-[#e18a68]">
@@ -301,7 +301,7 @@ export default function HelpManual({ onClose }: { onClose: () => void }) {
 
           <div ref={articleRef} data-help-article className="min-h-0 flex-1 overflow-y-auto">
             {activeBody && bodyReady ? (
-              <article className="mx-auto w-full max-w-[780px] px-10 pb-12 pt-7">
+              <article className="mx-auto w-full max-w-[820px] px-8 pb-12 pt-7">
                 {activeBody}
               </article>
             ) : (

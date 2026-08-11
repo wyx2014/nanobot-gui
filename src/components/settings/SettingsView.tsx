@@ -1594,12 +1594,7 @@ function ModelManagerSection({
                         <h4 className="truncate text-base font-semibold text-[#202020]">
                           {provider.label}
                         </h4>
-                        {provider.configured ? (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                            {copy?.configured ?? "已配置"}
-                          </span>
-                        ) : (
+                        {!provider.configured && (
                           <span className="inline-flex items-center gap-1 rounded-full bg-[#f4f4f5] px-2 py-0.5 text-xs font-medium text-[#71717a]">
                             <span className="h-1.5 w-1.5 rounded-full bg-[#d4d4d8]" />
                             {copy?.pending ?? "待配置"}

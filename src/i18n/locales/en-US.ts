@@ -36,7 +36,7 @@ const enUS: TranslationDict = {
     renameProject: 'Rename workspace',
     removeProject: 'Remove',
     removeProjectTitle: 'Remove {name}?',
-    removeProjectDesc: 'This will remove the workspace from TPACowork. Files on disk will not be deleted.',
+    removeProjectDesc: 'Removes the workspace from TPACowork. Files on disk are not deleted.',
     noSessionsYet: 'No sessions yet',
     hideSidebar: 'Hide sidebar',
     showSidebar: 'Show sidebar',

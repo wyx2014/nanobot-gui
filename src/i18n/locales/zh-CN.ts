@@ -36,7 +36,7 @@ const zhCN: TranslationDict = {
     renameProject: '重命名工作空间',
     removeProject: '移除',
     removeProjectTitle: '移除 {name}？',
-    removeProjectDesc: '这将从 TPACowork 中移除该工作空间。磁盘上的文件不会被删除。',
+    removeProjectDesc: '将从 TPACowork 移除该工作空间，磁盘文件不会被删除。',
     noSessionsYet: '暂无会话',
     hideSidebar: '隐藏侧栏',
     showSidebar: '显示侧栏',

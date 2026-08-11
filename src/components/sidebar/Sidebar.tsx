@@ -1206,7 +1206,7 @@ export default function Sidebar() {
                 <h2 className="text-[22px] font-semibold leading-tight text-[#242424] dark:text-[#ece8e1]">
                   {t.sidebar.removeProjectTitle.replace('{name}', pendingRemoveProject.name)}
                 </h2>
-                <p className="mt-2.5 text-[15px] font-medium leading-snug text-[#8d8d8d] whitespace-nowrap dark:text-[#a3a099]">
+                <p className="mt-2.5 text-[15px] font-medium leading-snug text-[#8d8d8d] dark:text-[#a3a099]">
                   {t.sidebar.removeProjectDesc}
                 </p>
               </div>

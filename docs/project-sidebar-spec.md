@@ -32,7 +32,7 @@
 - **项目**：一个本地目录路径在 GUI 中的展示实体。
 - **项目会话**：绑定了项目路径的会话。
 - **当前项目上下文**：用户当前在边栏选中的项目，或当前会话所属项目。
-- **默认工作目录**：nanobot 自动使用的 fallback 工作目录，例如 `nanobot-workspace`。它不是用户主动选择的项目。
+- **默认工作目录**：nanobot 自动使用的 fallback 工作目录，例如 `workspace`。它不是用户主动选择的项目。
 
 ## 数据模型
 
@@ -65,7 +65,7 @@ projectName = conversation.workspaceScope?.project_name ?? basename(projectPath)
 默认工作目录不视为项目：
 
 - 如果会话绑定的是 nanobot 默认工作目录，归入“对话”。
-- 第一版可以用目录名 `nanobot-workspace` 识别默认工作目录。
+- 第一版可以用目录名 `workspace` 识别默认工作目录。
 - 后续更稳的方式是从 gateway 的 `workspaces.default_scope.project_path` 读取默认路径并排除。
 
 路径归一化：
@@ -275,13 +275,13 @@ projectName = conversation.workspaceScope?.project_name ?? basename(projectPath)
 默认项目根目录：
 
 ```text
-Documents/TpaRuyi Projects/
+Documents/TPACowork Projects/
 ```
 
 最终项目路径：
 
 ```text
-Documents/TpaRuyi Projects/<项目名>
+Documents/TPACowork Projects/<项目名>
 ```
 
 目录名中的非法路径字符需要做最小清理，例如替换 `/ \ : * ? " < > |`。
@@ -444,7 +444,7 @@ selectedSkills?: Array<{
 - 有 `workspaceScope.project_path`：归入对应项目；如果该项目不在 `recentPaths`，也临时显示为项目。
 - 没有 `workspaceScope.project_path` 但有 `workspacePath`：归入对应项目；如果该项目不在 `recentPaths`，也临时显示为项目。
 - 两者都没有：归入“对话”。
-- 如果路径是默认工作目录，例如 `nanobot-workspace`：归入“对话”。
+- 如果路径是默认工作目录，例如 `workspace`：归入“对话”。
 
 无需数据迁移脚本，边栏渲染时派生即可。
 
@@ -512,7 +512,7 @@ src/components/sidebar/projectGrouping.ts
 6. 项目会话打开后输入框不显示项目选择器。
 7. 无项目会话打开后输入框显示项目选择器。
 8. `recentPaths` 中的空项目仍显示，并在展开时显示“暂无对话”。
-9. `nanobot-workspace` 不进入项目列表。
+9. `workspace` 不进入项目列表。
 10. “不使用项目”能清空 draft project。
 
 ## 验收标准
@@ -521,7 +521,7 @@ src/components/sidebar/projectGrouping.ts
 2. “项目”分组显示在“对话”分组上方。
 3. 无项目会话显示在“对话”分组。
 4. 有项目路径的会话显示在“项目”分组对应项目下。
-5. 默认工作目录 `nanobot-workspace` 下的会话显示在“对话”，不显示为项目。
+5. 默认工作目录 `workspace` 下的会话显示在“对话”，不显示为项目。
 6. 每个项目默认最多显示 5 个会话。
 7. 超过 5 个的项目有展开/收起行为。
 8. 打开项目会话后，输入框底部不显示选择项目控件。
@@ -531,6 +531,6 @@ src/components/sidebar/projectGrouping.ts
 12. `...` 菜单支持打开位置、重命名项目、移除项目。
 13. 点击项目行编辑按钮后回到首页，输入框默认选择该项目，首页标题显示“我们应该在 xxx 中构建什么？”。
 14. 项目选择器保留“新建项目”的二级菜单。
-15. “新建空白项目”弹出命名对话框，并在 `Documents/TpaRuyi Projects/<项目名>` 创建目录。
+15. “新建空白项目”弹出命名对话框，并在 `Documents/TPACowork Projects/<项目名>` 创建目录。
 16. 鼠标从“新建项目”移动到右侧二级菜单时，菜单不应闪退。
 17. `npm run build` 通过。

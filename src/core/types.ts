@@ -643,6 +643,7 @@ export interface ProviderModelInfo {
   label?: string | null;
   owned_by?: string | null;
   context_window?: number | null;
+  capabilities?: ModelCapability[];
 }
 
 export interface ProviderModelsPayload {
@@ -663,7 +664,8 @@ export interface ProviderModelsPayload {
 
 export type ModelCapability =
   | "text"
-  | "speech_to_text";
+  | "speech_to_text"
+  | "text_to_speech";
 
 export interface SettingsPayload {
   surface?: RuntimeSurface;
@@ -703,6 +705,10 @@ export interface SettingsPayload {
     capabilities: ModelCapability[];
   }>;
   model_defaults: Record<ModelCapability, string | null>;
+  provider_mutation?: {
+    name: string;
+    created: boolean;
+  };
   providers: Array<{
     name: string;
     label: string;

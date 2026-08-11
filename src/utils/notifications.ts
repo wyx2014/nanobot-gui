@@ -34,21 +34,20 @@ export async function initNotifications(): Promise<boolean> {
 /**
  * Send a task completion notification
  */
-export async function notifyTaskCompleted(conversationTitle: string): Promise<void> {
-  console.log('[Notification] Attempting to send completion notification, permission:', permissionGranted);
-
-  if (!canSendNotification()) {
-    console.log('[Notification] Skipping - no permission');
-    return;
-  }
+export async function notifyTaskCompleted(
+  conversationTitle: string,
+  conversationId?: string,
+): Promise<void> {
+  if (!canSendNotification()) return;
 
   try {
-    console.log('[Notification] Sending notification for:', conversationTitle);
     await notificationBridge.sendNotification({
-      title: 'TPACowork完成啦！',
-      body: `「${conversationTitle}」已完成 ✨`,
+      title: 'TPACowork · 任务完成',
+      body: conversationTitle.trim()
+        ? `「${conversationTitle.trim()}」已完成，可以查看结果。`
+        : '任务已完成，可以查看结果。',
+      ...(conversationId ? { conversationId } : {}),
     });
-    console.log('[Notification] Notification sent successfully');
   } catch (err) {
     console.warn('[Notification] Failed to send:', err);
   }

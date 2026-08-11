@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { authorizeWorkspace, revokeWorkspace } from '../core/safety/pathSafety';
 import { getBaseName } from '../utils/pathUtils';
-import { normalizeProjectPath, visibleProjectPath } from '@/core/workspace';
+import { normalizeProjectPath, sameWorkspacePath, visibleProjectPath } from '@/core/workspace';
 import type { ProjectPayload } from '@/core/types';
 
 interface WorkspaceState {
@@ -11,6 +11,8 @@ interface WorkspaceState {
   recentPaths: string[];
   /** Gateway-owned project registry. recentPaths remains migration/UI fallback only. */
   projects: ProjectPayload[];
+  /** True after the gateway project registry has completed its first sync. */
+  projectsHydrated: boolean;
   projectNames: Record<string, string>;
   projectSkillBindings: Record<string, string[]>;
 }
@@ -33,6 +35,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       currentPath: null,
       recentPaths: [],
       projects: [],
+      projectsHydrated: false,
       projectNames: {},
       projectSkillBindings: {},
 
@@ -59,7 +62,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
           return;
         }
         // Add to recent paths, removing duplicates
-        const filtered = recentPaths.filter((p) => normalizeProjectPath(p) !== visiblePath);
+        const filtered = recentPaths.filter((p) => !sameWorkspacePath(p, visiblePath));
         const updated = [visiblePath, ...filtered];
 
         set({
@@ -74,7 +77,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
           if (!project?.id) continue;
           unique.set(project.id, project);
         }
-        set({ projects: [...unique.values()] });
+        set({ projects: [...unique.values()], projectsHydrated: true });
       },
 
       clearWorkspace: () => {
@@ -86,13 +89,16 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       },
 
       removeRecentPath: (path) => {
-        const normalized = normalizeProjectPath(path);
         set((state) => {
-          const { [normalized]: _removed, ...projectNames } = state.projectNames;
-          const { [normalized]: _removedSkills, ...projectSkillBindings } = state.projectSkillBindings;
+          const projectNames = Object.fromEntries(
+            Object.entries(state.projectNames).filter(([key]) => !sameWorkspacePath(key, path)),
+          );
+          const projectSkillBindings = Object.fromEntries(
+            Object.entries(state.projectSkillBindings).filter(([key]) => !sameWorkspacePath(key, path)),
+          );
           return {
-            currentPath: state.currentPath && normalizeProjectPath(state.currentPath) === normalized ? null : state.currentPath,
-            recentPaths: state.recentPaths.filter((p) => normalizeProjectPath(p) !== normalized),
+            currentPath: sameWorkspacePath(state.currentPath, path) ? null : state.currentPath,
+            recentPaths: state.recentPaths.filter((p) => !sameWorkspacePath(p, path)),
             projectNames,
             projectSkillBindings,
           };

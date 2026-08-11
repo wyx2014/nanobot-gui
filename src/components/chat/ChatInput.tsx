@@ -43,7 +43,7 @@ import { generateAttachmentId, readFileAsBase64, SUPPORTED_IMAGE_TYPES } from '@
 import PermissionDialog from '@/components/common/PermissionDialog';
 import FolderSelector from '@/components/common/FolderSelector';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
-import { normalizeProjectPath, visibleProjectPath } from '@/core/workspace';
+import { normalizeProjectPath, projectNameFromPath, visibleProjectPath } from '@/core/workspace';
 import { displaySkillName, filterAvailableSkillNames, stripUnavailableLeadingSkillMentions, usableSkillsForScope } from '@/core/skills/filter';
 import { LEGACY_LOCAL_FILE_CONTEXT_HEADER } from '@/core/nanobot/localFileContext';
 
@@ -436,10 +436,12 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   const provider = useSettingsStore((s) => s.provider);
   const setModel = useSettingsStore((s) => s.setModel);
   const openSystemSettings = useSettingsStore((s) => s.openSystemSettings);
+  const voiceInputAvailable = useSettingsStore((s) => s.voiceInputAvailable);
   const voiceMaxDurationSec = useSettingsStore((s) => s.voiceMaxDurationSec);
   const recentPaths = useWorkspaceStore((s) => s.recentPaths);
+  const gatewayProjects = useWorkspaceStore((s) => s.projects);
+  const projectsHydrated = useWorkspaceStore((s) => s.projectsHydrated);
   const projectSkillBindings = useWorkspaceStore((s) => s.projectSkillBindings);
-  const conversations = useChatStore((s) => s.conversations);
   const grantPermission = usePermissionStore((s) => s.grantPermission);
   const hasPermission = usePermissionStore((s) => s.hasPermission);
   const { t } = useI18n();
@@ -646,12 +648,11 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   // Welcome-only: folder & permission handlers
   const handleSelectFolder = (folderPath: string) => {
     if (onWorkspaceScopeChange) {
-      const parts = folderPath.split('/').filter(Boolean);
       const base = workspaceScope ?? { access_mode: 'full' as const, restrict_to_workspace: false };
       onWorkspaceScopeChange({
         ...base,
         project_path: folderPath,
-        project_name: parts[parts.length - 1] || folderPath,
+        project_name: projectNameFromPath(folderPath),
         access_mode: 'full',
         restrict_to_workspace: false,
       });
@@ -1273,6 +1274,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   };
 
   const toggleVoiceRecording = async () => {
+    if (!voiceInputAvailable) return;
     if (voiceState === 'recording') {
       await stopVoiceRecording();
       return;
@@ -1836,11 +1838,12 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       paths.push(visible);
     };
     recentPaths.forEach(add);
-    Object.values(conversations)
+    gatewayProjects
+      .filter((project) => project.kind === 'workspace' && project.status !== 'archived')
       .sort((a, b) => b.updatedAt - a.updatedAt)
-      .forEach((conv) => add(conv.workspaceScope?.project_path ?? conv.workspacePath));
+      .forEach((project) => add(project.rootPath));
     return paths;
-  }, [conversations, recentPaths]);
+  }, [gatewayProjects, recentPaths]);
 
   // Determine placeholder based on selected command
   const placeholder = hoverPrompt
@@ -2186,7 +2189,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                   </Button>
                   {showPlusMenu && renderPlusMenu()}
                 </div>
-                {renderVoiceControl()}
+                {voiceInputAvailable ? renderVoiceControl() : null}
                 {renderSelectedExpertTeam()}
                 <div className="flex-1" />
 
@@ -2229,7 +2232,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                     </Button>
                     {showPlusMenu && renderPlusMenu()}
                   </div>
-                  {renderVoiceControl()}
+                  {voiceInputAvailable ? renderVoiceControl() : null}
                   {renderSelectedExpertTeam()}
                 </div>
 
@@ -2332,6 +2335,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                 variant="pill"
                 currentPath={workspaceScope?.project_path ?? localWorkspace}
                 recentPaths={projectSelectorPaths}
+                projectsHydrated={projectsHydrated}
                 onSelect={handleSelectFolder}
                 onClear={handleClearWorkspace}
               />

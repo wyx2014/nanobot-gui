@@ -643,7 +643,7 @@ const zhCN: TranslationDict = {
     searchProject: '搜索工作空间',
     noProjectsFound: '未找到工作空间',
     createBlankProject: '新建空白工作空间',
-    useExistingFolder: '使用现有文件夹',
+    useExistingFolder: '使用现有项目',
     dontUseProject: '不使用工作空间',
     selectNewProjectLocation: '选择新工作空间的保存位置',
     enterNewProjectName: '请输入新工作空间名称:',

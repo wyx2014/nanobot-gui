@@ -1,6 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain, systemPreferences, Tray, Menu, nativeImage } from 'electron'
 import { join } from 'path'
 import fs from 'fs/promises'
+import { mkdirSync } from 'fs'
 import { exec, spawn } from 'child_process'
 import os from 'os'
 import { pythonBridge } from './pythonBridge'
@@ -16,10 +17,40 @@ import {
 } from './mainWindowConfig'
 import { getOpenDialogProperties } from './dialogOptions'
 import { deviceLinkBridge } from './deviceLinkBridge'
+import { acquireSingleInstanceLock, restoreAndFocusWindow } from './singleInstance'
+import { createWindowsTerminalLaunchSpec } from './terminalLauncher'
+import { showDesktopNotification, type DesktopNotificationInput } from './desktopNotification'
+import {
+  applicationUserDataPath,
+  migrateLegacyApplicationData,
+  migrateLegacyDefaultWorkspace,
+  migrateLegacyUserProjects,
+  type DirectoryMigrationResult,
+} from './appDataMigration'
+import { DEFAULT_WORKSPACE_DIRECTORY_NAME } from '../src/config/appDirectories'
 
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 
 const isDev = typeof app !== 'undefined' ? !app.isPackaged : (process.env.NODE_ENV === 'development')
+
+function reportDirectoryMigration(label: string, result: DirectoryMigrationResult): void {
+  if (result.status === 'not-found') return;
+  console.log(`[Main] ${label} migration ${result.status}:`, {
+    from: result.source,
+    to: result.target,
+    conflicts: result.conflictsDirectory,
+  });
+}
+
+const appDataRoot = app.getPath('appData');
+const configuredUserDataPath = applicationUserDataPath(appDataRoot);
+try {
+  reportDirectoryMigration('Application data', migrateLegacyApplicationData(appDataRoot));
+} catch (error) {
+  console.error('[Main] Failed to migrate legacy application data:', error);
+}
+mkdirSync(configuredUserDataPath, { recursive: true });
+app.setPath('userData', configuredUserDataPath);
 
 // Keep GPU acceleration enabled by default. Individual deployments can opt
 // into the conservative software-rendering path if a device/driver proves
@@ -34,6 +65,8 @@ if (process.env.TPARUYI_DISABLE_GPU === '1') {
 
 let isQuitting = false;
 let mainWindow: BrowserWindow | null = null;
+let mainWindowReady = false;
+let pendingInstanceActivation = false;
 let appTray: Tray | null = null;
 
 function applicationIconPath(): string {
@@ -45,6 +78,7 @@ function applicationIconPath(): string {
 
 function createWindow(): void {
   const windowStartedAt = Date.now();
+  mainWindowReady = false;
   const win = new BrowserWindow({
     ...MAIN_WINDOW_BOUNDS,
     ...getMainWindowChrome(process.platform),
@@ -62,8 +96,20 @@ function createWindow(): void {
 
   win.on('ready-to-show', () => {
     console.log(`[Main] Window ready to show in ${Date.now() - windowStartedAt}ms`);
+    mainWindowReady = true;
     win.show()
+    if (pendingInstanceActivation) {
+      pendingInstanceActivation = false;
+      win.focus();
+    }
   })
+
+  win.on('closed', () => {
+    if (mainWindow === win) {
+      mainWindow = null;
+      mainWindowReady = false;
+    }
+  });
 
   win.on('close', (e) => {
     if (!isQuitting) {
@@ -92,13 +138,19 @@ function createWindow(): void {
 }
 
 function showMainWindow(): void {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    createWindow();
+  if (restoreAndFocusWindow(mainWindow)) return;
+  createWindow();
+}
+
+function activatePrimaryInstance(): void {
+  // A second launch can arrive while the primary process is still preparing
+  // the gateway and its first BrowserWindow. Defer activation until the
+  // existing window is ready instead of creating a competing window.
+  if (!mainWindowReady || !mainWindow || mainWindow.isDestroyed()) {
+    pendingInstanceActivation = true;
     return;
   }
-  if (mainWindow.isMinimized()) mainWindow.restore();
-  mainWindow.show();
-  mainWindow.focus();
+  showMainWindow();
 }
 
 function createTray(): void {
@@ -119,8 +171,28 @@ function createTray(): void {
   ]));
 }
 
-app.whenReady().then(async () => {
+const isPrimaryInstance = acquireSingleInstanceLock(app, activatePrimaryInstance);
+
+if (isPrimaryInstance) {
+  try {
+    reportDirectoryMigration(
+      'Default workspace',
+      migrateLegacyDefaultWorkspace(configuredUserDataPath),
+    );
+  } catch (error) {
+    console.error('[Main] Failed to migrate legacy default workspace:', error);
+  }
+}
+
+async function startApplication(): Promise<void> {
+  await app.whenReady();
   console.log('[Main] app.whenReady fired');
+
+  try {
+    reportDirectoryMigration('User projects', migrateLegacyUserProjects(app.getPath('documents')));
+  } catch (error) {
+    console.error('[Main] Failed to migrate legacy user projects:', error);
+  }
 
   if (process.platform === 'darwin' && isDev) {
     app.dock.setIcon(applicationIconPath());
@@ -149,7 +221,12 @@ app.whenReady().then(async () => {
   // Start the Python runtime as soon as its renderer endpoints are known.
   // IPC registration and BrowserWindow loading continue in parallel, so the
   // renderer no longer has to begin the expensive Python cold start itself.
-  const earlyConfigPath = join(userData, 'nanobot-workspace', '.nanobot', 'config.json');
+  const earlyConfigPath = join(
+    userData,
+    DEFAULT_WORKSPACE_DIRECTORY_NAME,
+    '.nanobot',
+    'config.json',
+  );
   void fs.access(earlyConfigPath).then(() => {
     console.log('[Main] Config found — pre-starting nanobot bridge...');
     return pythonBridge.start();
@@ -344,7 +421,12 @@ app.whenReady().then(async () => {
       throw new Error('skill package must include SKILL.md');
     }
     const pathMod = await import('path');
-    const root = pathMod.join(app.getPath('userData'), 'nanobot-workspace', 'skills', name);
+    const root = pathMod.join(
+      app.getPath('userData'),
+      DEFAULT_WORKSPACE_DIRECTORY_NAME,
+      'skills',
+      name,
+    );
     await fs.rm(root, { recursive: true, force: true });
     for (const file of files) {
       const rel = String(file?.path ?? '').replace(/\\/g, '/');
@@ -382,11 +464,8 @@ app.whenReady().then(async () => {
       const appName = await terminal;
       spawn('open', ['-a', appName, dir], { stdio: 'ignore', detached: true }).unref();
     } else if (process.platform === 'win32') {
-      spawn('cmd.exe', ['/c', 'start', 'cmd', '/K', `cd /d "${dir}"`], {
-        stdio: 'ignore',
-        detached: true,
-        windowsHide: false,
-      }).unref();
+      const launch = createWindowsTerminalLaunchSpec(dir);
+      spawn(launch.command, launch.args, launch.options).unref();
     } else {
       // Linux: try common terminal emulators with a working-directory flag.
       const launchers: Array<[string, string[]]> = [
@@ -412,11 +491,31 @@ app.whenReady().then(async () => {
     shell.showItemInFolder(path)
   })
 
-  ipcMain.handle('notification:send', async (_, options: string | { title: string; body?: string }) => {
+  ipcMain.handle('notification:is-supported', async () => {
     const { Notification } = await import('electron')
-    const title = typeof options === 'string' ? options : options.title
-    const body = typeof options === 'object' ? options.body : undefined
-    new Notification({ title, body }).show()
+    return Notification.isSupported()
+  })
+
+  ipcMain.handle('notification:send', async (event, options: string | DesktopNotificationInput) => {
+    const { Notification } = await import('electron')
+    const sourceWindow = BrowserWindow.fromWebContents(event.sender) ?? mainWindow
+    return showDesktopNotification(options, {
+      supported: Notification.isSupported(),
+      create: ({ title, body }) => new Notification({
+        title,
+        body,
+        icon: applicationIconPath(),
+      }),
+      activate: (conversationId) => {
+        const targetWindow = sourceWindow && !sourceWindow.isDestroyed()
+          ? sourceWindow
+          : mainWindow
+        restoreAndFocusWindow(targetWindow)
+        if (conversationId && targetWindow && !targetWindow.isDestroyed()) {
+          targetWindow.webContents.send('notification:open-conversation', { conversationId })
+        }
+      },
+    })
   })
 
   ipcMain.handle('clipboard:writeText', async (_, text: string) => {
@@ -670,7 +769,11 @@ app.whenReady().then(async () => {
     showMainWindow()
   })
 
-})
+}
+
+if (isPrimaryInstance) {
+  void startApplication();
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

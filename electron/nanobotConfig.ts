@@ -4,13 +4,19 @@
  * the Python process. GUI is the single source of truth; nanobot is consumer.
  *
  * Config format follows nanobot's Config schema (schema.py):
- *   providers.custom.apiKey / apiBase   (camelCase — matches nanobot's to_camel serializer)
+ *   providers.custom.apiKey / apiBase   (nested fields use camelCase)
+ *   model_presets / model_defaults      (root schema fields remain snake_case)
  *   agents.defaults.model / provider
  */
 
 import path from 'path';
 import fs from 'fs/promises';
 import { app } from 'electron';
+import {
+  DEFAULT_DESKTOP_MODEL_SERVICE,
+  type DesktopDefaultModelServiceConfig,
+} from '../src/config/defaultModelService';
+import { DEFAULT_WORKSPACE_DIRECTORY_NAME } from '../src/config/appDirectories';
 
 const PLAYWRIGHT_MCP_PACKAGE = '@playwright/mcp@0.0.78';
 const JUYUAN_MCP_URL = 'https://api.gildata.com/mcp-servers/aidata-assistant-srv-api';
@@ -26,6 +32,13 @@ const IFIND_MCP_NAMES = [
   'hexin-ifind-ds-global-stock-mcp',
   'hexin-ifind-ds-index-mcp',
 ] as const;
+
+// Older GUI builds silently installed this ASR model even though the desktop
+// deployment only provisions a text provider. Keep the signature narrowly
+// scoped so a voice service explicitly configured by the user is preserved.
+const LEGACY_DESKTOP_ASR_PRESET = 'stepfun-stepaudio-2-5-asr-speech_to_text';
+const LEGACY_DESKTOP_ASR_PROVIDER = 'stepfun';
+const LEGACY_DESKTOP_ASR_MODEL = 'stepaudio-2.5-asr';
 
 export interface DesktopMcpCredentials {
   juyuanToken: string;
@@ -157,6 +170,219 @@ export interface NanobotConfigInput {
   allowPrivateNetworks?: boolean;
 }
 
+export function buildDesktopDefaultModelConfig(
+  service: DesktopDefaultModelServiceConfig = DEFAULT_DESKTOP_MODEL_SERVICE,
+) {
+  const required: Array<[string, string]> = [
+    ['providerId', service.providerId],
+    ['providerLabel', service.providerLabel],
+    ['apiKey', service.apiKey],
+    ['apiBase', service.apiBase],
+    ['model', service.model],
+    ['presetId', service.presetId],
+  ];
+  const missing = required.find(([, value]) => !value.trim());
+  if (missing) {
+    throw new Error(`Default desktop model service is missing ${missing[0]}`);
+  }
+
+  return {
+    providers: {
+      [service.providerId]: {
+        label: service.providerLabel,
+        apiKey: service.apiKey,
+        apiBase: service.apiBase.replace(/\/+$/, ''),
+        apiType: service.apiType,
+      },
+    },
+    model_presets: {
+      [service.presetId]: {
+        label: `${service.providerLabel} / ${service.model}`,
+        provider: service.providerId,
+        model: service.model,
+        capabilities: ['text'],
+      },
+    },
+    model_defaults: {
+      text: service.presetId,
+    },
+    agents: {
+      defaults: {
+        modelPreset: service.presetId,
+        model: service.model,
+        provider: service.providerId,
+      },
+    },
+  };
+}
+
+function hasProviderConnection(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const provider = value as Record<string, unknown>;
+  return [
+    provider.apiKey,
+    provider.api_key,
+    provider.apiBase,
+    provider.api_base,
+    provider.accessToken,
+    provider.access_token,
+  ].some((item) => typeof item === 'string' && item.trim().length > 0);
+}
+
+/**
+ * Keep the deployment-managed provider and its model channel present in every
+ * profile. The first version that introduces the provider also selects it as
+ * the text default; once present, a user's later default-model choice remains
+ * untouched.
+ */
+export function buildDesktopManagedModelPatch(
+  existing: Record<string, unknown>,
+  service: DesktopDefaultModelServiceConfig = DEFAULT_DESKTOP_MODEL_SERVICE,
+) {
+  const managed = buildDesktopDefaultModelConfig(service);
+  const existingProviders = (existing.providers ?? {}) as Record<string, unknown>;
+  const camelPresets = (existing.modelPresets ?? {}) as Record<string, unknown>;
+  const snakePresets = (existing.model_presets ?? {}) as Record<string, unknown>;
+  const existingPresets = { ...camelPresets, ...snakePresets };
+  const camelDefaults = (existing.modelDefaults ?? {}) as Record<string, unknown>;
+  const snakeDefaults = (existing.model_defaults ?? {}) as Record<string, unknown>;
+  const existingDefaults = { ...camelDefaults, ...snakeDefaults };
+  const existingAgents = existing.agents as {
+    defaults?: { model?: unknown; provider?: unknown };
+  } | undefined;
+  const textDefault = existingDefaults.text;
+  const hasManagedProvider = Boolean(existingProviders[service.providerId]);
+  const hasManagedPreset = Boolean(existingPresets[service.presetId]);
+  const implicitProvider = existingAgents?.defaults?.provider;
+  const implicitProviderConfig = typeof implicitProvider === 'string'
+    ? existingProviders[implicitProvider] as Record<string, unknown> | undefined
+    : undefined;
+  const implicitProviderConfigured = hasProviderConnection(implicitProviderConfig);
+  const namedDefaultPreset = typeof textDefault === 'string'
+    ? existingPresets[textDefault] as Record<string, unknown> | undefined
+    : undefined;
+  const namedDefaultProvider = namedDefaultPreset?.provider;
+  const namedDefaultConfigured = typeof namedDefaultProvider === 'string'
+    && namedDefaultProvider !== 'auto'
+    && hasProviderConnection(existingProviders[namedDefaultProvider]);
+  const hasUsableTextDefault = textDefault === 'default'
+    ? Boolean(
+        existingAgents?.defaults?.model
+        && typeof implicitProvider === 'string'
+        && implicitProvider !== 'auto'
+        && implicitProviderConfigured
+      )
+    : Boolean(namedDefaultPreset && namedDefaultConfigured);
+  // Adding the built-in service to an existing profile must not replace a
+  // working user-selected model. Empty or invalid profiles still receive the
+  // deployment default.
+  const shouldActivateManagedDefault = !hasUsableTextDefault;
+  const migratedPresets = Object.fromEntries(
+    Object.entries(camelPresets).filter(([name]) => !(name in snakePresets)),
+  );
+  const migratedDefaults = Object.fromEntries(
+    Object.entries(camelDefaults).filter(([name]) => !(name in snakeDefaults)),
+  );
+
+  return {
+    // Existing user edits are preserved. A missing provider or channel is
+    // restored, making the built-in service durable without resetting it.
+    providers: hasManagedProvider ? {} : managed.providers,
+    model_presets: {
+      ...migratedPresets,
+      ...(hasManagedPreset ? {} : managed.model_presets),
+    },
+    // Remove legacy duplicate aliases after migrating their values. Pydantic's
+    // AliasChoices prefers modelPresets when both keys exist, which otherwise
+    // hides canonical model_presets entries and can make startup validation fail.
+    ...('modelPresets' in existing ? { modelPresets: undefined } : {}),
+    ...('modelDefaults' in existing ? { modelDefaults: undefined } : {}),
+    ...(shouldActivateManagedDefault
+      ? {
+          model_defaults: {
+            ...migratedDefaults,
+            ...managed.model_defaults,
+          },
+          agents: managed.agents,
+        }
+      : Object.keys(migratedDefaults).length > 0
+        ? { model_defaults: migratedDefaults }
+        : {}),
+  };
+}
+
+function hasConfiguredProviderCredential(
+  existing: Record<string, unknown>,
+  providerName: string,
+): boolean {
+  const providers = (existing.providers ?? {}) as Record<string, unknown>;
+  const provider = providers[providerName] as Record<string, unknown> | undefined;
+  const apiKey = provider?.apiKey ?? provider?.api_key;
+  return typeof apiKey === 'string' && apiKey.trim().length > 0;
+}
+
+function isLegacyDesktopAsrPreset(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const preset = value as Record<string, unknown>;
+  const capabilities = Array.isArray(preset.capabilities) ? preset.capabilities : [];
+  return preset.provider === LEGACY_DESKTOP_ASR_PROVIDER
+    && preset.model === LEGACY_DESKTOP_ASR_MODEL
+    && capabilities.length === 1
+    && capabilities[0] === 'speech_to_text';
+}
+
+/**
+ * Remove the voice model that older GUI builds added automatically.
+ *
+ * This migration only matches the exact uncredentialed StepFun preset that
+ * TPACowork used to create. Any user-configured voice provider (including a
+ * credentialed StepFun setup) remains untouched. Profiles without a voice
+ * provider are explicitly disabled so nanobot does not synthesize a fallback
+ * ASR model while loading settings.
+ */
+export function buildDesktopVoiceCleanupPatch(existing: Record<string, unknown>) {
+  const transcription = (existing.transcription ?? {}) as Record<string, unknown>;
+  const camelPresets = (existing.modelPresets ?? {}) as Record<string, unknown>;
+  const snakePresets = (existing.model_presets ?? {}) as Record<string, unknown>;
+  const presets = { ...camelPresets, ...snakePresets };
+  const camelDefaults = (existing.modelDefaults ?? {}) as Record<string, unknown>;
+  const snakeDefaults = (existing.model_defaults ?? {}) as Record<string, unknown>;
+  const defaults = { ...camelDefaults, ...snakeDefaults };
+  const hasStepFunCredential = hasConfiguredProviderCredential(
+    existing,
+    LEGACY_DESKTOP_ASR_PROVIDER,
+  );
+  const hasExplicitVoiceProvider = typeof transcription.provider === 'string'
+    && transcription.provider.trim().length > 0;
+  const isAutoTranscription = !hasStepFunCredential
+    && transcription.provider === LEGACY_DESKTOP_ASR_PROVIDER
+    && transcription.model === LEGACY_DESKTOP_ASR_MODEL;
+  const removeAutoPreset = !hasStepFunCredential
+    && isLegacyDesktopAsrPreset(presets[LEGACY_DESKTOP_ASR_PRESET]);
+  const speechDefault = defaults.speechToText ?? defaults.speech_to_text;
+
+  const patch: Record<string, unknown> = {};
+  if (!hasExplicitVoiceProvider || isAutoTranscription) {
+    patch.transcription = {
+      enabled: false,
+      provider: null,
+      model: null,
+      language: null,
+    };
+  }
+  if (removeAutoPreset) {
+    patch.model_presets = {
+      [LEGACY_DESKTOP_ASR_PRESET]: undefined,
+    };
+  }
+  if (!hasStepFunCredential && speechDefault === LEGACY_DESKTOP_ASR_PRESET) {
+    patch.model_defaults = {
+      speechToText: null,
+    };
+  }
+  return patch;
+}
+
 function mapProvider(cfg: NanobotConfigInput): string {
   if (cfg.apiFormat === 'anthropic') {
     return cfg.provider === 'minimax' ? 'minimax_anthropic' : 'anthropic';
@@ -237,12 +463,11 @@ function hasLogicalChanges(existing: any, patch: any): boolean {
  * then write back. This preserves nanobot's internal settings (channels,
  * gateway port, api config, model_presets, etc.) that we don't manage.
  *
- * nanobot serializes its config using camelCase keys (via pydantic to_camel),
- * so we write camelCase here to avoid format-mismatch false positives that
- * would cause spurious restarts every time App.tsx syncs settings.
+ * Nanobot serializes most nested config fields with camelCase aliases, while
+ * the root model_presets/model_defaults fields remain snake_case.
  */
 export async function syncNanobotConfig(cfg: NanobotConfigInput): Promise<boolean> {
-  const workspaceDir = path.join(app.getPath('userData'), 'nanobot-workspace');
+  const workspaceDir = path.join(app.getPath('userData'), DEFAULT_WORKSPACE_DIRECTORY_NAME);
   const nanobotDir = path.join(workspaceDir, '.nanobot');
   await fs.mkdir(nanobotDir, { recursive: true });
 
@@ -260,14 +485,17 @@ export async function syncNanobotConfig(cfg: NanobotConfigInput): Promise<boolea
     // First launch: config does not exist yet — start from empty object.
   }
   const firstLaunch = existingContent.length === 0;
-  const hasGatewayModelPresets =
-    Object.keys(existing.modelPresets ?? existing.model_presets ?? {}).length > 0;
+  const hasGatewayModelPresets = Object.keys({
+    ...(existing.modelPresets ?? {}),
+    ...(existing.model_presets ?? {}),
+  }).length > 0;
 
   // ── Resolve actual apiKey (never write the '********' placeholder) ──────
   // When syncGatewaySettingsToStore() reads the key back from nanobot, it
   // sets apiKey = '********' to avoid logging the real secret.
   // We must preserve the real key from existing config in that case.
   let resolvedApiKey = cfg.apiKey;
+  let canSyncGuiProvider = true;
   if (resolvedApiKey === '********') {
     // nanobot stores in camelCase; fall back to snake_case for older configs.
     const existingKey =
@@ -275,10 +503,10 @@ export async function syncNanobotConfig(cfg: NanobotConfigInput): Promise<boolea
       existing?.providers?.[providerName]?.api_key;
     if (existingKey && existingKey !== '********') {
       resolvedApiKey = existingKey;
-    } else if (!hasGatewayModelPresets) {
-      // We don't have the real key yet — skip writing to avoid a restart loop.
-      console.log('[nanobotConfig] Skipping sync: apiKey is placeholder and no existing key found');
-      return false;
+    } else if (!hasGatewayModelPresets && !firstLaunch) {
+      // The renderer does not have the real legacy provider key. Skip only
+      // that provider patch; the managed desktop service must still be healed.
+      canSyncGuiProvider = false;
     }
   }
 
@@ -298,20 +526,34 @@ export async function syncNanobotConfig(cfg: NanobotConfigInput): Promise<boolea
       },
     },
   };
-  if (!existing?.transcription?.provider) {
-    patch.transcription = {
-      enabled: true,
-      provider: 'stepfun',
-      model: 'stepaudio-2.5-asr',
-      language: 'zh',
-    };
-  }
+  const managedModelPatch = buildDesktopManagedModelPatch(existing);
+  const activatesManagedDefault = 'agents' in managedModelPatch;
+  Object.assign(
+    patch,
+    deepMerge(managedModelPatch, buildDesktopVoiceCleanupPatch(existing)),
+  );
+
   if (firstLaunch) {
     const playwrightCwd = path.join(nanobotDir, 'mcp', 'playwright');
     await fs.mkdir(playwrightCwd, { recursive: true });
     patch.tools.mcpServers = buildDesktopDefaultMcpServers(nanobotDir);
+  } else if (
+    existing?.tools?.mcpServers?.playwright
+    || existing?.tools?.mcp_servers?.playwright
+  ) {
+    // Heal the bundled Playwright server after the workspace directory moves.
+    const playwrightCwd = path.join(nanobotDir, 'mcp', 'playwright');
+    await fs.mkdir(playwrightCwd, { recursive: true });
+    patch.tools.mcpServers = deepMerge(patch.tools.mcpServers ?? {}, {
+      playwright: { cwd: playwrightCwd },
+    });
   }
-  if (!hasGatewayModelPresets) {
+  if (
+    !activatesManagedDefault &&
+    !firstLaunch &&
+    !hasGatewayModelPresets &&
+    canSyncGuiProvider
+  ) {
     patch.agents = {
       defaults: {
         model: cfg.model,
@@ -320,13 +562,19 @@ export async function syncNanobotConfig(cfg: NanobotConfigInput): Promise<boolea
         reasoningEffort: cfg.enableThinking ? 'medium' : 'none',
       },
     };
-    patch.providers = {
+    patch.providers = deepMerge(patch.providers ?? {}, {
       [providerName]: {
         apiKey: resolvedApiKey,
         apiBase: apiBase ?? null,
       },
-    };
+    });
   }
+
+  // The CLI also receives this workspace path, but persisting it keeps the
+  // config and every later gateway restart aligned with the desktop default.
+  patch.agents = deepMerge(patch.agents ?? {}, {
+    defaults: { workspace: workspaceDir },
+  });
 
   // Check if there are any logical changes between existing config and our new patch
   const hasChanges = hasLogicalChanges(existing, patch);

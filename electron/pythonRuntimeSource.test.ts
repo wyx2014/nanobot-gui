@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -6,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   canonicalFileSha256,
+  fileSha256,
   nanobotSourceSha256,
 } from '../scripts/python-runtime-source.mjs';
 
@@ -55,5 +57,15 @@ describe('Python runtime source digest', () => {
     fs.writeFileSync(path.join(root, 'nanobot', 'report.html'), '<main>changed</main>\n');
 
     expect(nanobotSourceSha256(root)).not.toBe(originalDigest);
+  });
+
+  it('streams SHA-256 checksums for downloaded runtime archives', async () => {
+    const root = createNanobotFixture('\n');
+    const archivePath = path.join(root, 'runtime.zip');
+    const contents = Buffer.from('runtime archive fixture');
+    fs.writeFileSync(archivePath, contents);
+
+    const expected = createHash('sha256').update(contents).digest('hex');
+    await expect(fileSha256(archivePath)).resolves.toBe(expected);
   });
 });

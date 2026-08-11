@@ -1,5 +1,4 @@
 import { execFileSync } from 'child_process';
-import { createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -13,6 +12,7 @@ import {
 } from './python-runtime-config.mjs';
 import {
   canonicalFileSha256,
+  fileSha256,
   nanobotSourceSha256,
 } from './python-runtime-source.mjs';
 
@@ -34,12 +34,6 @@ function readJson(filePath) {
   } catch {
     return null;
   }
-}
-
-async function sha256File(filePath) {
-  const hash = createHash('sha256');
-  for await (const chunk of fs.createReadStream(filePath)) hash.update(chunk);
-  return hash.digest('hex');
 }
 
 const target = optionValue('--target') || WINDOWS_RUNTIME_TARGET;
@@ -130,7 +124,7 @@ execFileSync(
   ['-a', '-c', '-f', archivePath, '-C', runtimeDir, '.'],
   { stdio: 'inherit' },
 );
-const archiveSha256 = await sha256File(archivePath);
+const archiveSha256 = await fileSha256(archivePath);
 fs.writeFileSync(checksumPath, `${archiveSha256}  ${metadata.archive}\n`, 'utf8');
 fs.writeFileSync(manifestPath, `${JSON.stringify({
   ...metadata,

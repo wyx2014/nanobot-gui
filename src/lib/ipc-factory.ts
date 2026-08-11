@@ -131,14 +131,15 @@ export const shellBridge = {
 };
 
 export const notificationBridge = {
-  sendNotification: async (options: string | { title: string; body?: string }): Promise<void> => {
+  sendNotification: async (options: string | { title: string; body?: string; conversationId?: string }): Promise<{ shown: boolean; reason?: string }> => {
     return window.ipc.invoke('notification:send', options);
   },
   isPermissionGranted: async (): Promise<boolean> => {
-    return true; // Electron usually doesn't need this check in the same way
+    return window.ipc.invoke('notification:is-supported');
   },
   requestPermission: async (): Promise<string> => {
-    return 'granted';
+    const supported = await window.ipc.invoke<boolean>('notification:is-supported');
+    return supported ? 'granted' : 'denied';
   }
 };
 

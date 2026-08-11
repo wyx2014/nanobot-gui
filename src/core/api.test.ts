@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  deleteModelConfiguration,
+  deleteProviderSettings,
   fetchThreadResource,
   fetchWebuiThread,
   registerTokenProvider,
@@ -62,5 +64,42 @@ describe("canonical thread history limits", () => {
     const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
     expect(url.searchParams.get("message_limit")).toBe("37");
     expect(url.searchParams.get("before_message_event_seq")).toBe("100");
+  });
+});
+
+describe("provider settings", () => {
+  it("deletes a custom provider through the gateway", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ providers: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await deleteProviderSettings(
+      "gateway-token",
+      "my-company-api",
+      "http://127.0.0.1:8900",
+    );
+
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.pathname).toBe("/api/settings/provider/delete");
+    expect(url.searchParams.get("provider")).toBe("my-company-api");
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      headers: { Authorization: "Bearer gateway-token" },
+    });
+  });
+
+  it("blocks deletion of the desktop-managed provider and model channel", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(deleteProviderSettings(
+      "gateway-token",
+      "asset-deepseek",
+      "http://127.0.0.1:8900",
+    )).rejects.toThrow("系统内置模型服务不能删除");
+    await expect(deleteModelConfiguration(
+      "gateway-token",
+      "asset-deepseek-r1",
+      "http://127.0.0.1:8900",
+    )).rejects.toThrow("系统内置模型通道不能删除");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

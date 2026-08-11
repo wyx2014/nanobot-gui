@@ -9,7 +9,7 @@ const PERSISTED_STORES = [
   { key: 'ruyi-permissions', minVersion: 1 },
   { key: 'ruyi-workspace', minVersion: 1 },
   { key: 'ruyi-schedule', minVersion: 1 },
-  { key: 'ruyi-prompthub', minVersion: 1 },
+  { key: 'ruyi-prompthub', minVersion: 2 },
 ] as const;
 
 // Import all stores to trigger persist initialization

@@ -20,6 +20,7 @@ import {
   Save,
   SlidersHorizontal,
   Sparkles,
+  Trash2,
   UserRound,
   X,
 } from "lucide-react";
@@ -30,6 +31,7 @@ import {
   createModelConfiguration,
   createProviderSettings,
   deleteModelConfiguration,
+  deleteProviderSettings,
   fetchProviderModels,
   fetchSettings,
   fetchPersonalization,
@@ -60,7 +62,12 @@ import { usePromptHubStore } from "@/stores/promptHubStore";
 import { submitPromptHubFeedback } from "@/core/prompthubApi";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useToastStore } from "@/stores/toastStore";
+import {
+  ASSET_DEEPSEEK_MODEL_SERVICE,
+  isProtectedBuiltinModelProvider,
+} from "@/config/builtinModelServices";
 import { Button } from "@/components/ui/button";
+import ConfirmDialog from "@/components/common/ConfirmDialog";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Toggle } from "@/components/ui/toggle";
@@ -109,6 +116,15 @@ type SafetyForm = {
 };
 
 type ActionKey = string;
+
+const SETTINGS_GATEWAY_READY_TIMEOUT_MS = 15_000;
+const SETTINGS_GATEWAY_POLL_INTERVAL_MS = 300;
+
+function waitForSettingsGatewayPoll(): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, SETTINGS_GATEWAY_POLL_INTERVAL_MS);
+  });
+}
 
 const tabs: Array<{ key: TabKey; label: string; description: string; icon: typeof Cpu }> = [
   { key: "general", label: "系统设置", description: "语言、关闭行为、助手信息", icon: SlidersHorizontal },
@@ -349,15 +365,21 @@ export function SettingsView({
       setSelectedProvider(provider.name);
     }
 
-    const voiceProvider = payload.transcription.providers.find(
-      (provider) => provider.name === payload.transcription.provider,
-    );
+    const speechDefault = payload.model_defaults.speech_to_text;
+    const speechPreset = speechDefault
+      ? payload.model_presets.find((preset) => preset.name === speechDefault)
+      : undefined;
+    const voiceProvider = speechPreset
+      ? payload.transcription.providers.find((provider) => provider.name === speechPreset.provider)
+      : undefined;
     setVoiceForm({
-      enabled: payload.transcription.enabled,
+      enabled: Boolean(speechPreset && payload.transcription.enabled),
       language: payload.transcription.language || "zh",
       maxDurationSec: payload.transcription.max_duration_sec,
       apiKey: "",
-      apiBase: voiceProvider?.api_base || voiceProvider?.default_api_base || "",
+      apiBase: speechPreset
+        ? voiceProvider?.api_base || voiceProvider?.default_api_base || ""
+        : "",
     });
   }, []);
 
@@ -421,15 +443,33 @@ export function SettingsView({
     setLoading(true);
     setError("");
     try {
+      const deadline = Date.now() + SETTINGS_GATEWAY_READY_TIMEOUT_MS;
       let status = await getNanobotStatus();
       let currentToken = getNanobotToken();
-      if (!currentToken) {
-        await bootstrapNanobotGateway();
-        currentToken = getNanobotToken();
+      let lastBootstrapError: unknown;
+
+      while (Date.now() < deadline) {
+        if (status.ready) {
+          if (!currentToken) {
+            try {
+              await bootstrapNanobotGateway();
+              currentToken = getNanobotToken();
+            } catch (err) {
+              lastBootstrapError = err;
+            }
+          }
+          if (currentToken) break;
+        }
+
+        await waitForSettingsGatewayPoll();
         status = await getNanobotStatus();
+        currentToken = getNanobotToken();
       }
+
       if (!status.ready || !currentToken) {
-        throw new Error("Nanobot 网关还没有准备好，请稍后重试。");
+        throw lastBootstrapError instanceof Error
+          ? lastBootstrapError
+          : new Error(isEnglish ? "Settings service is temporarily unavailable." : "设置服务暂时不可用。");
       }
       const base = gatewayBase(status.port);
       setApiBase(base);
@@ -439,7 +479,7 @@ export function SettingsView({
       setError(toErrorMessage(err));
       setLoading(false);
     }
-  }, [loadSettings]);
+  }, [isEnglish, loadSettings]);
 
   useEffect(() => {
     void initializeGateway();
@@ -454,56 +494,81 @@ export function SettingsView({
     [applyPayload, onModelNameChange],
   );
 
-  const createModelService = (data: {
+  const createModelService = async (data: {
     providerName: string;
     apiBase: string;
     apiKey: string;
     apiType: ProviderForm["apiType"];
     models: string[];
-  }) =>
-    withAction(
+  }) => {
+    let completed = false;
+    await withAction(
       "provider-create",
       async () => {
         const previousCustomProviders = new Set(settings?.providers.filter((provider) => provider.custom).map((provider) => provider.name) ?? []);
-        let payload = await withGatewayAuth((authToken, base) =>
-          createProviderSettings(
-            authToken,
-            {
-              name: data.providerName,
-              apiBase: data.apiBase,
-              apiKey: data.apiKey,
-              apiType: data.apiType,
-            },
-            base,
-          ),
+        const previousConfiguredProviders = new Set(
+          settings?.providers.filter((provider) => provider.configured).map((provider) => provider.name) ?? [],
         );
-        const providerKey =
-          payload.providers.find((provider) => provider.custom && !previousCustomProviders.has(provider.name))?.name ??
-          data.providerName.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
-        for (const model of data.models) {
-          payload = await withGatewayAuth((authToken, base) =>
-            createModelConfiguration(
+        let providerKey = "";
+        let shouldRollbackProvider = false;
+        try {
+          let payload = await withGatewayAuth((authToken, base) =>
+            createProviderSettings(
               authToken,
               {
-                label: `${data.providerName} / ${model}`,
-                provider: providerKey,
-                model,
+                name: data.providerName,
+                apiBase: data.apiBase,
+                apiKey: data.apiKey,
+                apiType: data.apiType,
               },
               base,
             ),
           );
+          providerKey =
+            payload.provider_mutation?.name ??
+            payload.providers.find((provider) => provider.custom && !previousCustomProviders.has(provider.name))?.name ??
+            data.providerName.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
+          shouldRollbackProvider =
+            payload.provider_mutation?.created ?? !previousConfiguredProviders.has(providerKey);
+          for (const model of data.models) {
+            payload = await withGatewayAuth((authToken, base) =>
+              createModelConfiguration(
+                authToken,
+                {
+                  label: `${data.providerName} / ${model}`,
+                  provider: providerKey,
+                  model,
+                },
+                base,
+              ),
+            );
+          }
+          payload.providers = payload.providers.map((provider) =>
+            provider.name === providerKey ? { ...provider, label: data.providerName } : provider,
+          );
+          payload.model_presets = payload.model_presets.map((preset) =>
+            preset.provider === providerKey && !preset.is_default ? { ...preset, label: `${data.providerName} / ${preset.model}` } : preset,
+          );
+          await replaceSettings(payload);
+          setSelectedProvider(providerKey);
+          completed = true;
+        } catch (error) {
+          if (providerKey && shouldRollbackProvider) {
+            try {
+              await withGatewayAuth((authToken, base) =>
+                deleteProviderSettings(authToken, providerKey, base),
+              );
+            } catch (rollbackError) {
+              console.error("[Settings] failed to roll back partially created provider", rollbackError);
+            }
+          }
+          throw error;
         }
-        payload.providers = payload.providers.map((provider) =>
-          provider.name === providerKey ? { ...provider, label: data.providerName } : provider,
-        );
-        payload.model_presets = payload.model_presets.map((preset) =>
-          preset.provider === providerKey && !preset.is_default ? { ...preset, label: `${data.providerName} / ${preset.model}` } : preset,
-        );
-        await replaceSettings(payload);
-        setSelectedProvider(providerKey);
       },
       "模型服务已添加",
     );
+    return completed;
+  };
 
   const updateModelService = (data: {
     provider: string;
@@ -518,6 +583,12 @@ export function SettingsView({
       async () => {
         const existingPresets = settings?.model_presets.filter((preset) => !preset.is_default && preset.provider === data.provider) ?? [];
         const targetModels = Array.from(new Set(data.models.map((model) => model.trim()).filter(Boolean)));
+        if (
+          isProtectedBuiltinModelProvider(data.provider) &&
+          !targetModels.includes(ASSET_DEEPSEEK_MODEL_SERVICE.model)
+        ) {
+          targetModels.unshift(ASSET_DEEPSEEK_MODEL_SERVICE.model);
+        }
         let payload = await withGatewayAuth((authToken, base) =>
           updateProviderSettings(
             authToken,
@@ -580,6 +651,19 @@ export function SettingsView({
         setSelectedProvider(data.provider);
       },
       "模型服务已保存",
+    );
+
+  const deleteModelService = (provider: string) =>
+    withAction(
+      `provider-delete:${provider}`,
+      async () => {
+        const payload = await withGatewayAuth((authToken, base) =>
+          deleteProviderSettings(authToken, provider, base),
+        );
+        await replaceSettings(payload);
+        setSelectedProvider("");
+      },
+      "模型服务已删除",
     );
 
   const probeModelService = async (data: {
@@ -725,24 +809,6 @@ export function SettingsView({
     );
   }
 
-  if (error && !settings) {
-    return (
-      <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/20 p-6 backdrop-blur-[1px] animate-in fade-in duration-150">
-        <div className="max-w-xl rounded-xl border border-red-100 bg-white p-6 shadow-sm">
-          <div className="flex items-center gap-3 text-red-700">
-            <AlertCircle className="h-5 w-5" />
-            <h2 className="font-semibold">设置服务加载失败</h2>
-          </div>
-          <p className="mt-3 text-sm leading-6 text-[#665f53]">{error}</p>
-          <Button className="mt-5 bg-[#d97757] text-white hover:bg-[#c86647]" onClick={initializeGateway}>
-            <RefreshCw className="h-4 w-4" />
-            重试
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div data-settings-surface className="fixed inset-0 z-[70] flex items-center justify-center bg-black/20 p-8 text-[#202020] backdrop-blur-[1px] animate-in fade-in duration-150">
       <div data-settings-dialog className="flex h-[min(720px,calc(100vh-64px))] w-[min(1040px,calc(100vw-96px))] overflow-hidden rounded-xl bg-white shadow-2xl">
@@ -826,7 +892,19 @@ export function SettingsView({
 
             <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-10 py-6">
               {error ? (
-                <div className="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  <span>{error}</span>
+                  {!settings ? (
+                    <button
+                      type="button"
+                      onClick={() => void initializeGateway()}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 font-medium hover:bg-amber-100"
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      {isEnglish ? "Retry" : "重试"}
+                    </button>
+                  ) : null}
+                </div>
               ) : null}
 
               {activeTab === "account" && (
@@ -841,6 +919,7 @@ export function SettingsView({
                   saving={saving}
                   onCreateModelService={createModelService}
                   onUpdateModelService={updateModelService}
+                  onDeleteModelService={deleteModelService}
                   onProbeModelService={probeModelService}
                   onSelectDefault={(capability, presetName) => void setCapabilityDefault(capability, presetName)}
                   initialCapability="text"
@@ -1174,6 +1253,7 @@ function ModelManagerSection({
   saving,
   onCreateModelService,
   onUpdateModelService,
+  onDeleteModelService,
   onProbeModelService,
   onSelectDefault,
   initialCapability,
@@ -1189,7 +1269,7 @@ function ModelManagerSection({
     apiKey: string;
     apiType: ProviderForm["apiType"];
     models: string[];
-  }) => Promise<void>;
+  }) => Promise<boolean>;
   onUpdateModelService: (data: {
     provider: string;
     providerName: string;
@@ -1198,6 +1278,7 @@ function ModelManagerSection({
     apiType: ProviderForm["apiType"];
     models: string[];
   }) => Promise<void>;
+  onDeleteModelService: (provider: string) => Promise<void>;
   onProbeModelService: (data: {
     apiBase: string;
     apiKey: string;
@@ -1211,11 +1292,11 @@ function ModelManagerSection({
     use: "Use", connect: "Connect", add: "Add Model Service", back: "Back to List",
     current: "Automatically selected", setDefault: "Set as Default", addToCategory: "Add to This Category",
     empty: "No model configuration is available for this purpose. Add a model service from Connect first.",
-    addCustom: "Add Custom Model Service", editCustom: "Configure Custom Model Service", customHint: "Connect another model API provider using the OpenAI-compatible protocol.",
+    addCustom: "Add Custom Model Service", editCustom: "Configure Model Service", customHint: "Connect another model API provider using the OpenAI-compatible protocol.",
     providerName: "Provider Name", protocol: "Connection Protocol", protocolHint: "OpenAI-compatible custom services are currently supported.",
     apiAddress: "API Base URL", apiHint: "Enter base_url, for example https://api.example.com/v1.", key: "API Key", keyPlaceholder: "Enter API key (saved globally)",
     models: "Models", modelsHint: "Separate models with commas or line breaks.", probe: "Test and Fetch Models", saveConnection: "Save Connection", save: "Save Configuration", cancel: "Cancel", leaveBlank: "Leave blank to keep unchanged",
-    customServices: "Custom Model Services", customServicesHint: "Connect third-party model APIs and set their models as defaults on the Use tab.", none: "No Model Services Connected", noneHint: "Add a provider such as OpenAI or DeepSeek to create and manage its model connections.", configured: "Configured", pending: "Pending", apiType: "API type:", notConfigured: "Not set", channels: "Model channels", configure: "Configure",
+    customServices: "Connected Model Services", customServicesHint: "Manage connected model APIs. Fetched models are classified automatically by capability.", none: "No Model Services Connected", noneHint: "Add a provider such as OpenAI or DeepSeek to create and manage its model connections.", configured: "Configured", pending: "Pending", apiType: "API type:", notConfigured: "Not set", channels: "Model channels", configure: "Configure", delete: "Delete", deleteTitle: "Delete model service?", deleteConfirm: "Delete Service",
   } : null;
   const [subTab, setSubTab] = useState<"use" | "access">("use");
   const [selectedCapability, setSelectedCapability] = useState<ModelCapability>(initialCapability);
@@ -1234,11 +1315,21 @@ function ModelManagerSection({
     apiType: "auto" as ProviderForm["apiType"],
     models: "",
   });
-  const localizedCapabilities = useMemo(() => modelCapabilityOptions.map((capability) => (
-    !isEnglish ? capability : capability.value === "text"
-      ? { ...capability, label: "Text", description: "New chats and ordinary text tasks" }
-      : { ...capability, label: "Speech Recognition", description: "Transcribe microphone recordings (ASR)" }
-  )), [isEnglish]);
+  const [pendingDeleteProvider, setPendingDeleteProvider] = useState<{
+    name: string;
+    label: string;
+    modelCount: number;
+  } | null>(null);
+  const localizedCapabilities = useMemo(() => modelCapabilityOptions.map((capability) => {
+    if (!isEnglish) return capability;
+    if (capability.value === "text") {
+      return { ...capability, label: "Text", description: "New chats and ordinary text tasks" };
+    }
+    if (capability.value === "speech_to_text") {
+      return { ...capability, label: "Speech Recognition", description: "Transcribe microphone recordings (ASR)" };
+    }
+    return capability;
+  }), [isEnglish]);
   const localizedApiTypeOptions = isEnglish
     ? [
       { value: "auto", label: "Automatic" },
@@ -1247,22 +1338,43 @@ function ModelManagerSection({
     ]
     : apiTypeOptions;
 
-  const customProviders = useMemo(
-    () => settings.providers.filter((provider) => provider.custom),
+  const connectedProviders = useMemo(
+    () => settings.providers.filter(
+      (provider) => provider.custom || (provider.configured && provider.auth_type !== "oauth"),
+    ),
     [settings.providers],
   );
   const selectedProviderInfo = useMemo(
-    () => customProviders.find((provider) => provider.name === selectedProvider) ?? null,
-    [selectedProvider, customProviders],
+    () => connectedProviders.find((provider) => provider.name === selectedProvider) ?? null,
+    [selectedProvider, connectedProviders],
   );
+  const selectedProviderIsProtected = selectedProviderInfo
+    ? isProtectedBuiltinModelProvider(selectedProviderInfo.name)
+    : false;
   const visiblePresets = useMemo(
-    () =>
-      uniqueModelPresets(
-        settings.model_presets.filter(
-          (preset) => preset.capabilities.includes(selectedCapability),
-        ),
-      ),
-    [selectedCapability, settings.model_presets],
+    () => {
+      const configuredProviders = new Set(
+        settings.providers.filter((provider) => provider.configured).map((provider) => provider.name),
+      );
+      return uniqueModelPresets(
+        settings.model_presets.filter((preset) => {
+          if (!preset.capabilities.includes(selectedCapability)) return false;
+          const providerName = preset.provider === "auto" && preset.active
+            ? settings.agent.resolved_provider
+            : preset.provider;
+          if (!providerName || !configuredProviders.has(providerName)) return false;
+          if (!preset.is_default) return true;
+          return !settings.model_presets.some(
+            (candidate) =>
+              !candidate.is_default
+              && candidate.provider === providerName
+              && candidate.model === preset.model
+              && candidate.capabilities.includes(selectedCapability),
+          );
+        }),
+      );
+    },
+    [selectedCapability, settings.agent.resolved_provider, settings.model_presets, settings.providers],
   );
   const providerPresets = useMemo(
     () =>
@@ -1299,7 +1411,8 @@ function ModelManagerSection({
       apiKey: addForm.apiKey,
       apiType: addForm.apiType,
       models,
-    }).then(() => {
+    }).then((saved) => {
+      if (!saved) return;
       setAddOpen(false);
       setSelectedProvider("");
       setAddForm({ providerName: "", apiBase: "", apiKey: "", apiType: "auto", models: "" });
@@ -1344,6 +1457,18 @@ function ModelManagerSection({
         setEditForm((form) => ({ ...form, models: models.join("\n") }));
       }
     });
+  };
+
+  const confirmDeleteProvider = () => {
+    if (!pendingDeleteProvider) return;
+    const providerName = pendingDeleteProvider.name;
+    if (isProtectedBuiltinModelProvider(providerName)) {
+      setPendingDeleteProvider(null);
+      return;
+    }
+    setPendingDeleteProvider(null);
+    setSelectedProvider("");
+    void onDeleteModelService(providerName);
   };
 
   return (
@@ -1414,7 +1539,7 @@ function ModelManagerSection({
                       active ? "border-[#202020] shadow-sm" : "border-[#e6e6e8]",
                     )}
                   >
-                    {supportsCapability ? (
+                    {supportsCapability && selectedCapability !== "text_to_speech" ? (
                       <button
                         type="button"
                         onClick={() => onSelectDefault(selectedCapability, preset.name)}
@@ -1440,7 +1565,6 @@ function ModelManagerSection({
                         <div className="truncate text-sm font-semibold text-[#202020]">{preset.label}</div>
                         <div className="mt-1 truncate text-xs text-[#6f6f73]">{provider?.label || preset.provider}</div>
                       </div>
-                      {active ? <StatusPill ok>{copy?.current ?? "当前默认"}</StatusPill> : null}
                     </div>
                     <div className="mt-3 truncate text-[13px] text-[#444]">{preset.model}</div>
                     <div className="mt-2 flex flex-wrap gap-1">
@@ -1518,7 +1642,7 @@ function ModelManagerSection({
               <ArrowLeft className="h-4 w-4" />
             </button>
             <div>
-              <h3 className="text-lg font-semibold text-[#202020]">{copy?.editCustom ?? "配置自定义模型服务"}</h3>
+              <h3 className="text-lg font-semibold text-[#202020]">{copy?.editCustom ?? "配置模型服务"}</h3>
               <p className="text-xs text-[#6f6f73]">{isEnglish ? "Update provider details, API base URL, credentials, and models." : "修改供应商信息、API 地址、密钥和模型列表。"}</p>
             </div>
           </div>
@@ -1551,19 +1675,38 @@ function ModelManagerSection({
               <Button variant="outline" className="border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]" onClick={() => setSelectedProvider("")}>
                 {copy?.cancel ?? "取消"}
               </Button>
+              {selectedProviderIsProtected ? (
+                <span className="ml-auto inline-flex items-center rounded-full bg-[#f1eee8] px-3 py-1.5 text-xs font-medium text-[#6f6758]">
+                  {isEnglish ? "Built-in · Cannot delete" : "系统内置 · 不可删除"}
+                </span>
+              ) : (
+                <Button
+                  variant="outline"
+                  className="ml-auto border-red-200 bg-white text-red-600 hover:bg-red-50 hover:text-red-700"
+                  onClick={() => setPendingDeleteProvider({
+                    name: selectedProviderInfo.name,
+                    label: selectedProviderInfo.label,
+                    modelCount: providerPresets.length,
+                  })}
+                  disabled={saving[`provider-delete:${selectedProviderInfo.name}`]}
+                >
+                  {saving[`provider-delete:${selectedProviderInfo.name}`] ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  {copy?.delete ?? "删除"}
+                </Button>
+              )}
             </div>
           </div>
         </div>
       ) : (
         <div className="space-y-4">
           <div className="rounded-lg bg-[#f7f7f8] p-4">
-            <div className="text-[15px] font-semibold text-[#202020]">{copy?.customServices ?? "自定义模型服务"}</div>
+            <div className="text-[15px] font-semibold text-[#202020]">{copy?.customServices ?? "已接入模型服务"}</div>
             <div className="mt-1 text-[13px] text-[#6f6f73]">
-              {copy?.customServicesHint ?? "接入并配置第三方大模型 API，保存后会自动识别模型用途并配置默认模型。"}
+              {copy?.customServicesHint ?? "管理已接入的模型 API；获取到的模型会按文字、语音识别和语音合成自动分类。"}
             </div>
           </div>
 
-          {!customProviders.length ? (
+          {!connectedProviders.length ? (
             <div className="rounded-xl border border-dashed border-[#e6e6e8] bg-white p-12 text-center">
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#fafafa] text-[#6f6f73]">
                 <Cpu className="h-6 w-6" />
@@ -1580,10 +1723,11 @@ function ModelManagerSection({
             </div>
           ) : (
             <div className="space-y-3">
-              {customProviders.map((provider) => {
+              {connectedProviders.map((provider) => {
                 const presets = uniqueModelPresets(settings.model_presets.filter(
                   (preset) => !preset.is_default && preset.provider === provider.name
                 ));
+                const protectedProvider = isProtectedBuiltinModelProvider(provider.name);
                 return (
                   <div
                     key={provider.name}
@@ -1594,6 +1738,11 @@ function ModelManagerSection({
                         <h4 className="truncate text-base font-semibold text-[#202020]">
                           {provider.label}
                         </h4>
+                        {protectedProvider ? (
+                          <span className="inline-flex shrink-0 rounded-full bg-[#f1eee8] px-2 py-0.5 text-xs font-medium text-[#6f6758]">
+                            {isEnglish ? "Built-in" : "系统内置"}
+                          </span>
+                        ) : null}
                         {provider.configured ? (
                           <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
                             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
@@ -1637,7 +1786,22 @@ function ModelManagerSection({
                       )}
                     </div>
 
-                    <div className="flex shrink-0 items-center justify-end border-t border-[#f4f4f5] pt-3 sm:border-0 sm:pt-0">
+                    <div className="flex shrink-0 items-center justify-end gap-2 border-t border-[#f4f4f5] pt-3 sm:border-0 sm:pt-0">
+                      {!protectedProvider ? (
+                        <button
+                          type="button"
+                          onClick={() => setPendingDeleteProvider({
+                            name: provider.name,
+                            label: provider.label,
+                            modelCount: presets.length,
+                          })}
+                          disabled={saving[`provider-delete:${provider.name}`]}
+                          className="flex items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50 disabled:cursor-wait disabled:opacity-60"
+                        >
+                          {saving[`provider-delete:${provider.name}`] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                          {copy?.delete ?? "删除"}
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => {
@@ -1656,6 +1820,20 @@ function ModelManagerSection({
           )}
         </div>
       )}
+      <ConfirmDialog
+        open={pendingDeleteProvider !== null}
+        title={copy?.deleteTitle ?? "删除模型服务？"}
+        message={pendingDeleteProvider
+          ? isEnglish
+            ? `This will permanently remove “${pendingDeleteProvider.label}”, its credentials, and ${pendingDeleteProvider.modelCount} model channel${pendingDeleteProvider.modelCount === 1 ? "" : "s"}. Defaults that use this service will be reset.`
+            : `将永久删除“${pendingDeleteProvider.label}”的接入配置、密钥及其 ${pendingDeleteProvider.modelCount} 个模型通道；使用该服务的默认模型会自动重置。`
+          : ""}
+        confirmText={copy?.deleteConfirm ?? "确认删除"}
+        cancelText={copy?.cancel ?? "取消"}
+        onConfirm={confirmDeleteProvider}
+        onCancel={() => setPendingDeleteProvider(null)}
+        variant="danger"
+      />
     </div>
   );
 }
@@ -1699,6 +1877,43 @@ function VoiceSection({
     preset?.provider === "stepfun"
     && normalizedVoiceModel === "stepaudio-2.5-realtime"
   );
+
+  if (!preset) {
+    return (
+      <div className="space-y-4">
+        <SettingsCard
+          title={copy?.title ?? "语音输入"}
+          description={copy?.description ?? "配置语音识别服务后，才会在聊天输入框中显示麦克风。"}
+          actions={
+            <StatusPill ok={false}>
+              {copy?.notReady ?? "ASR 服务未配置"}
+            </StatusPill>
+          }
+        >
+          <div data-voice-empty-state className="rounded-xl border border-dashed border-[#dedbd3] bg-[#faf9f7] px-6 py-8 text-center">
+            <Mic className="mx-auto h-7 w-7 text-[#aaa59a]" />
+            <div className="mt-3 text-sm font-semibold text-[#29261b]">
+              {isEnglish ? "No speech recognition service configured" : "尚未配置语音识别服务"}
+            </div>
+            <div className="mx-auto mt-1 max-w-xl text-xs leading-5 text-[#777267]">
+              {isEnglish
+                ? "Add a speech-capable model service first. Until it is configured and enabled, voice settings stay empty and the chat microphone remains hidden."
+                : "请先在“接入模型服务”中添加支持语音识别的服务和模型。配置并启用前，这里保持为空，聊天输入框也不会显示麦克风。"}
+            </div>
+            {speechPresets.length > 0 ? (
+              <div className="mx-auto mt-5 w-64 text-left">
+                <Select
+                  value=""
+                  onChange={onSelectSpeechModel}
+                  options={speechPresets.map((item) => ({ value: item.name, label: item.model }))}
+                />
+              </div>
+            ) : null}
+          </div>
+        </SettingsCard>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -1806,11 +2021,7 @@ function VoiceSection({
           </Field>
         </div>
 
-        {!preset ? (
-          <div className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            {copy?.noDefaultWarning ?? "还没有默认 ASR 模型。请到“模型配置 → 使用 → 语音识别”中选择。"}
-          </div>
-        ) : isStepfunConversationModel ? (
+        {isStepfunConversationModel ? (
           <div className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
             stepaudio-2.5-realtime 是双向语音通话模型，不适合作为输入框听写模型。
             请选择 stepaudio-2.5-asr；桌面端会自动使用 stepaudio-2.5-asr-stream
@@ -1827,7 +2038,7 @@ function VoiceSection({
         <Button
           className="mt-5 bg-[#d97757] text-white hover:bg-[#c86647]"
           onClick={onSave}
-          disabled={saving || !preset}
+          disabled={saving}
         >
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           {copy?.save ?? "保存语音设置"}
@@ -2198,14 +2409,14 @@ function GeneralSection({
       appearance: "Appearance", appearanceDescription: "Choose automatic, light, or dark appearance.",
       fontSize: "Font Size",
       workspace: "Default Workspace Location", workspaceDescription: "New tasks and workspaces are stored in this location.", notSet: "Not set", view: "View",
-      notifications: "Notifications", desktopNotifications: "Desktop Notifications", desktopNotificationsDescription: "Show a system notification when a task completes or a new message arrives.",
+      notifications: "Notifications", desktopNotifications: "Desktop Notifications", desktopNotificationsDescription: "Show a system notification when an AI task completes.",
     }
     : {
       displayLanguage: "显示语言", languageDescription: "设置应用程序界面的显示语言。",
       appearance: "外观主题", appearanceDescription: "选择外观模式：自动、亮色或暗色。",
       fontSize: "字体大小",
       workspace: "默认工作空间存储路径", workspaceDescription: "新建任务、工作空间时将自动存放在该路径下。", notSet: "未设置", view: "查看",
-      notifications: "通知", desktopNotifications: "桌面通知", desktopNotificationsDescription: "允许发送系统桌面通知，任务完成或有新消息时即时提醒。",
+      notifications: "通知", desktopNotifications: "桌面通知", desktopNotificationsDescription: "AI 任务完成时发送系统桌面通知。",
     };
   const revealWorkspacePath = async () => {
     if (!workspacePath) return;

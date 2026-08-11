@@ -12,6 +12,8 @@ import type {
   ConnectionStatus,
   ThreadRuntimeSnapshot,
 } from './types';
+import { notifyTaskCompleted } from '@/utils/notifications';
+import { CompletedTurnNotificationTracker } from './nanobot/taskCompletionNotification';
 
 export interface NanobotStatus {
   ready: boolean;
@@ -42,6 +44,7 @@ let globalCanonicalEventUnsubscribe: (() => void) | null = null;
 let globalMcpStatus: NonNullable<BootstrapResponse['mcp_status']> = 'unknown';
 const globalConnectionListeners = new Set<() => void>();
 const canonicalRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const completedTurnNotificationTracker = new CompletedTurnNotificationTracker();
 
 function canonicalEventFinalizesAnswer(event: CanonicalSessionEvent): boolean {
   if (event.event !== 'message') return false;
@@ -116,7 +119,7 @@ export async function refreshNanobotAuth(): Promise<{ token: string; baseUrl: st
   const baseUrl = `http://127.0.0.1:${status.port}`;
   const boot = await fetchBootstrap(baseUrl, status.tokenSecret);
   if (boot.agent_ready === false) {
-    throw new Error('Nanobot agent loop is not ready yet.');
+    console.log('[nanobotClient] Gateway transport ready; agent loop is still warming');
   }
   currentToken = boot.token;
 
@@ -207,6 +210,14 @@ export async function bootstrapNanobotGateway(): Promise<NanobotClient> {
         projectId: event.project_id,
       });
       return;
+    }
+    const completion = completedTurnNotificationTracker.consume(event);
+    if (completion) {
+      const conversation = useChatStore.getState().conversations[completion.chatId];
+      const title = conversation?.title?.trim() && conversation.title !== '新对话'
+        ? conversation.title
+        : '当前任务';
+      void notifyTaskCompleted(title, completion.chatId);
     }
     if (
       result === 'gap'
@@ -363,7 +374,7 @@ export async function getNanobotSessionInfo(conversationId: string): Promise<{
 
 // ─── Session Synchronization ────────────────────────────────────────────────
 
-import type { ChatSummary, UIMessage, ToolProgressEvent } from './types';
+import type { ChatSummary, SettingsPayload, UIMessage, ToolProgressEvent } from './types';
 import type { Conversation, Message, MessageContent, MessageMediaAttachment, ToolCall } from '@/types';
 import { useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -937,8 +948,10 @@ export async function syncSessionsFromGateway(): Promise<void> {
     chatStore.upsertConversations(conversations);
 
     // Only active turns need a process-local runtime snapshot at startup.
-    // Completed conversations are hydrated lazily by ChatView.
+    // Keep the WebSocket subscribed as well: completion notifications must
+    // still arrive when a restored task is not the currently open chat.
     await Promise.allSettled(runningSessions.map(async ({ chatId, key }) => {
+      globalClient?.attach(chatId);
       const runtimeSnapshot = await fetchSessionRuntimeSnapshot(token, key, baseUrl);
       if (!runtimeSnapshot) return;
       globalClient?.applyRuntimeSnapshot(chatId, runtimeSnapshot);
@@ -962,6 +975,30 @@ export async function syncProjectsFromGateway(): Promise<void> {
   }
 }
 
+export function mapGatewayProviderNameForGui(
+  providerName: string,
+  providers: Array<{ name: string; custom?: boolean }>,
+): string {
+  if (providers.find((provider) => provider.name === providerName)?.custom) {
+    return 'custom';
+  }
+  return providerName === 'dashscope' ? 'bailian' : providerName;
+}
+
+export function isGatewayVoiceInputAvailable(payload: SettingsPayload): boolean {
+  const defaultName = payload.model_defaults.speech_to_text;
+  const preset = defaultName
+    ? payload.model_presets.find((item) => item.name === defaultName)
+    : undefined;
+  return Boolean(
+    payload.transcription.enabled
+    && payload.transcription.provider_configured
+    && preset?.capabilities.includes('speech_to_text')
+    && preset.provider === payload.transcription.provider
+    && preset.model === payload.transcription.model
+  );
+}
+
 export async function syncGatewaySettingsToStore(): Promise<void> {
   try {
     const status = await getNanobotStatus();
@@ -972,9 +1009,12 @@ export async function syncGatewaySettingsToStore(): Promise<void> {
     const payload = await fetchSettings(token, baseUrl);
     const store = useSettingsStore.getState();
 
-    // Map provider name
-    let guiProvider = payload.agent.provider;
-    if (guiProvider === 'dashscope') guiProvider = 'bailian';
+    // Dynamic OpenAI-compatible services are represented by "custom" in the
+    // renderer store. The gateway keeps the real provider id as its authority.
+    const guiProvider = mapGatewayProviderNameForGui(
+      payload.agent.provider,
+      payload.providers,
+    );
 
     store.setProvider(guiProvider as unknown as Parameters<typeof store.setProvider>[0]);
     store.setModel(payload.agent.model);
@@ -996,6 +1036,7 @@ export async function syncGatewaySettingsToStore(): Promise<void> {
     store.setUseBuiltinWebSearch(payload.web.enable);
     store.setWebSearchProvider(payload.web_search.provider as unknown as Parameters<typeof store.setWebSearchProvider>[0]);
     store.setWebSearchBaseUrl(payload.web_search.base_url || '');
+    store.setVoiceInputAvailable(isGatewayVoiceInputAvailable(payload));
     store.setVoiceMaxDurationSec(payload.transcription.max_duration_sec);
 
     store.setSandboxEnabled(payload.advanced.restrict_to_workspace);

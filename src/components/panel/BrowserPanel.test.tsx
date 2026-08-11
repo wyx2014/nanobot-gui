@@ -96,7 +96,7 @@ describe('BrowserPanel mirror refresh', () => {
     const closeButton = container?.querySelector(
       `button[aria-label="${getI18n().panel.browserClose}"]`,
     );
-    expect(header?.classList.contains(isWindows() ? 'mt-12' : 'mt-7')).toBe(true);
+    expect(header?.classList.contains(isWindows() ? 'mt-10' : 'mt-7')).toBe(true);
     expect(closeButton).not.toBeNull();
 
     act(() => closeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })));

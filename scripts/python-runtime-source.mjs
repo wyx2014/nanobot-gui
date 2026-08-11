@@ -35,6 +35,12 @@ export function canonicalFileSha256(filePath) {
     .digest('hex');
 }
 
+export async function fileSha256(filePath) {
+  const hash = createHash('sha256');
+  for await (const chunk of fs.createReadStream(filePath)) hash.update(chunk);
+  return hash.digest('hex');
+}
+
 export function nanobotSourceSha256(nanobotSourceDir) {
   const hash = createHash('sha256');
 

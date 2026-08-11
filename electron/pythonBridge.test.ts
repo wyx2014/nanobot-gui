@@ -19,7 +19,7 @@ vi.mock('electron', () => ({
     get isPackaged() {
       return appIsPackaged;
     },
-    getPath: vi.fn(() => '/tmp/tparuyi-test'),
+    getPath: vi.fn(() => '/tmp/tpacowork-test'),
   },
   BrowserWindow: { getAllWindows: vi.fn(() => []) },
 }));
@@ -86,15 +86,10 @@ describe('PythonBridge lifecycle', () => {
     expect(bridge.isReady).toBe(false);
   });
 
-  it('waits for the agent loop readiness contract instead of the HTTP port alone', async () => {
+  it('accepts the authenticated gateway while the agent loop is still warming', async () => {
     const child = processStub();
     spawn.mockReturnValue(child);
     fetchMock
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: vi.fn().mockResolvedValue({ agent_ready: false }),
-      })
       .mockResolvedValueOnce({
         ok: false,
         status: 503,
@@ -103,14 +98,14 @@ describe('PythonBridge lifecycle', () => {
       .mockResolvedValue({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({ agent_ready: true }),
+        json: vi.fn().mockResolvedValue({ agent_ready: false }),
       });
     const { PythonBridge } = await import('./pythonBridge');
     const bridge = new PythonBridge();
 
     await bridge.start();
 
-    expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(3);
+    expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
     expect(bridge.isReady).toBe(true);
   });
 
@@ -148,7 +143,7 @@ describe('PythonBridge lifecycle', () => {
       await bridge.start();
 
       expect(spawn.mock.calls[0][2]).toMatchObject({
-        cwd: '/tmp/tparuyi-test/nanobot-workspace',
+        cwd: '/tmp/tpacowork-test/workspace',
       });
       expect(spawn.mock.calls[0][2]?.env?.PYTHONPATH).toBeUndefined();
       expect(spawn.mock.calls[0][0]).toBe('/tmp/resources/python/bin/python3');

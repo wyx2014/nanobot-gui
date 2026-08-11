@@ -16,7 +16,12 @@ import { cn } from '@/lib/utils';
 import type { ConversationStatus } from '@/types';
 import { dialogBridge, fsBridge, shellBridge } from '@/lib/ipc-factory';
 import { isMacOS, isWindows } from '@/utils/platform';
-import { normalizeProjectPath, projectNameFromPath, visibleProjectPath } from '@/core/workspace';
+import {
+  conversationBelongsToProject,
+  normalizeProjectPath,
+  projectNameFromPath,
+  visibleProjectPath,
+} from '@/core/workspace';
 import type { Conversation } from '@/types';
 import {
   archiveProject,
@@ -496,14 +501,20 @@ export default function Sidebar() {
 
   const confirmRemoveProject = async () => {
     if (!pendingRemoveProject) return;
-    const project = conversationGroups.projects.find((item) => item.path === pendingRemoveProject.path);
     try {
       if (pendingRemoveProject.id) {
         const auth = await getProjectSkillsAuth();
         await archiveProject(auth.token, pendingRemoveProject.id, auth.baseUrl);
         await syncProjectsFromGateway();
       }
-      const projectConversations = project?.conversations ?? [];
+      // Clear every cached reference, including empty or stale conversations
+      // that are intentionally omitted from the visible sidebar grouping.
+      const projectConversations = Object.values(useChatStore.getState().conversations)
+        .filter((conversation) => conversationBelongsToProject(
+          conversation,
+          pendingRemoveProject.path,
+          pendingRemoveProject.id,
+        ));
       for (const conv of projectConversations) {
         deleteConversation(conv.id);
       }

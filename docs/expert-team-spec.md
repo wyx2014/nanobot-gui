@@ -248,7 +248,7 @@ workflows:
 推荐每次运行创建隔离目录：
 
 ```text
-<nanobot-workspace>/team-runs/<run-id>/
+<workspace>/team-runs/<run-id>/
   source/       # 指向或只读复制团队源文件
   reports/      # 最终报告
   working/      # 临时研究文件

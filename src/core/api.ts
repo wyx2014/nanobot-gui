@@ -34,6 +34,10 @@ import type {
   PersonalizationPayload,
 } from "./types";
 import type { ScheduleConfig } from "@/types/schedule";
+import {
+  isProtectedBuiltinModelPreset,
+  isProtectedBuiltinModelProvider,
+} from "@/config/builtinModelServices";
 import { fetchWithTimeout } from "./bootstrap";
 
 const API_READ_TIMEOUT_MS = 20_000;
@@ -1116,10 +1120,29 @@ export async function deleteModelConfiguration(
   name: string,
   base: string = "",
 ): Promise<SettingsPayload> {
+  if (isProtectedBuiltinModelPreset(name)) {
+    throw new Error("系统内置模型通道不能删除");
+  }
   const query = new URLSearchParams();
   query.set("name", name);
   return request<SettingsPayload>(
     `${base}/api/settings/model-configurations/delete?${query}`,
+    token,
+  );
+}
+
+export async function deleteProviderSettings(
+  token: string,
+  provider: string,
+  base: string = "",
+): Promise<SettingsPayload> {
+  if (isProtectedBuiltinModelProvider(provider)) {
+    throw new Error("系统内置模型服务不能删除");
+  }
+  const query = new URLSearchParams();
+  query.set("provider", provider);
+  return request<SettingsPayload>(
+    `${base}/api/settings/provider/delete?${query}`,
     token,
   );
 }

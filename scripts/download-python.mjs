@@ -16,6 +16,7 @@ import {
 } from './python-runtime-config.mjs';
 import {
   canonicalFileSha256,
+  fileSha256,
   nanobotSourceSha256,
 } from './python-runtime-source.mjs';
 
@@ -272,12 +273,6 @@ async function downloadRuntimeAsset({ assetName, destination, explicitUrl, url }
   });
 }
 
-async function sha256File(filePath) {
-  const hash = createHash('sha256');
-  for await (const chunk of fs.createReadStream(filePath)) hash.update(chunk);
-  return hash.digest('hex');
-}
-
 async function installPrebuiltWindowsRuntime() {
   if (targetKey !== WINDOWS_RUNTIME_TARGET) {
     throw new Error(
@@ -315,7 +310,7 @@ async function installPrebuiltWindowsRuntime() {
     });
     const checksumMatch = fs.readFileSync(checksumPath, 'utf8').match(/\b([a-f0-9]{64})\b/i);
     if (!checksumMatch) throw new Error(`Invalid SHA-256 file: ${runtimeChecksumUrl}`);
-    const actualChecksum = await sha256File(archivePath);
+    const actualChecksum = await fileSha256(archivePath);
     if (actualChecksum !== checksumMatch[1].toLowerCase()) {
       throw new Error(`Runtime SHA-256 mismatch: expected ${checksumMatch[1]}, received ${actualChecksum}`);
     }

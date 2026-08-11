@@ -66,12 +66,12 @@ export default function RightPanel() {
       <div
         data-pinned-summary-host
         className="window-titlebar-no-drag fixed z-[55] flex flex-col items-end"
-        style={{ top: isWindows() ? 104 : 56, right: PINNED_SUMMARY_RIGHT }}
+        style={{ top: isWindows() ? 96 : 56, right: PINNED_SUMMARY_RIGHT }}
       >
         <div
           id="conversation-pinned-summary"
           data-pinned-summary
-          className="origin-top-right motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95"
+          className="origin-top-right motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-right-2 motion-safe:duration-200"
           style={{
             width: PINNED_SUMMARY_WIDTH,
             // Hard safety cap so an extremely narrow window never overflows.

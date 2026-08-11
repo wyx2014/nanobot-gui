@@ -37,11 +37,17 @@ import ErrorBoundary from '@/components/common/ErrorBoundary';
 import { syncNanobotSettings, bootstrapNanobotGateway, syncProjectsFromGateway, syncSessionsFromGateway, syncGatewaySettingsToStore } from '@/core/nanobotClient';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { usePreviewStore } from '@/stores/previewStore';
+import { useBrowserStore } from '@/stores/browserStore';
 import { renderMermaidPng } from '@/core/mermaid';
 import { usePromptHubStore } from '@/stores/promptHubStore';
 import FirstRunWelcome from '@/components/onboarding/FirstRunWelcome';
 import { useAppNavigationHistory } from '@/hooks/useAppNavigationHistory';
 import { resolveTitlebarLayout } from '@/core/navigation/titlebarLayout';
+import {
+  CONVERSATION_SIDEBAR_WIDTH,
+  PINNED_SUMMARY_COMPACT_MEDIA_QUERY,
+  shouldAutoHideSidebarForPinnedSummary,
+} from '@/components/panel/layout';
 
 // These views are only needed after explicit navigation. Keeping them out of
 // the initial chat bundle reduces startup work on the common path.
@@ -83,6 +89,23 @@ function scheduleStartupTask(task: () => void | Promise<void>, delayMs: number):
   }, delayMs);
 }
 
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() => (
+    typeof window.matchMedia === 'function' && window.matchMedia(query).matches
+  ));
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return undefined;
+    const mediaQuery = window.matchMedia(query);
+    const update = () => setMatches(mediaQuery.matches);
+    update();
+    mediaQuery.addEventListener('change', update);
+    return () => mediaQuery.removeEventListener('change', update);
+  }, [query]);
+
+  return matches;
+}
+
 function normalizeWorkspaceScope(scope: WorkspaceScopePayload): WorkspaceScopePayload {
   return {
     ...scope,
@@ -95,6 +118,8 @@ function normalizeWorkspaceScope(scope: WorkspaceScopePayload): WorkspaceScopePa
 function App() {
   const refreshDiscovery = useDiscoveryStore((s) => s.refresh);
   const sidebarCollapsed = useSettingsStore((s) => s.sidebarCollapsed);
+  const summaryCollapsed = useSettingsStore((s) => s.rightPanelCollapsed);
+  const setSummaryCollapsed = useSettingsStore((s) => s.setRightPanelCollapsed);
   const previewArtifact = usePreviewStore((s) => s.previewArtifact);
   const previewExpanded = usePreviewStore((s) => s.isExpanded);
   const toggleSidebar = useSettingsStore((s) => s.toggleSidebar);
@@ -111,6 +136,7 @@ function App() {
   const closeGuide = useSettingsStore((s) => s.closeGuide);
   const theme = useSettingsStore((s) => s.theme);
   const keyboardShortcuts = useSettingsStore((s) => s.keyboardShortcuts);
+  const compactSummaryViewport = useMediaQuery(PINNED_SUMMARY_COMPACT_MEDIA_QUERY);
   const [settingsHydrated, setSettingsHydrated] = useState(() => useSettingsStore.persist.hasHydrated());
   const [windowFullScreen, setWindowFullScreen] = useState(false);
   const {
@@ -231,7 +257,11 @@ function App() {
         document.querySelector<HTMLTextAreaElement>('textarea')?.focus();
       } else if (matches(event, shortcut.toggleSidebar)) {
         event.preventDefault();
-        useSettingsStore.getState().toggleSidebar();
+        const titlebarToggle = document.querySelector<HTMLButtonElement>(
+          '[data-sidebar-titlebar-toggle]',
+        );
+        if (titlebarToggle) titlebarToggle.click();
+        else useSettingsStore.getState().toggleSidebar();
       } else if (matches(event, shortcut.openToolbox)) {
         event.preventDefault();
         useSettingsStore.getState().openToolbox();
@@ -265,6 +295,25 @@ function App() {
     }
   }), []);
 
+  useEffect(() => ipc.on(
+    'notification:open-conversation',
+    ({ conversationId }: { conversationId?: string }) => {
+      if (!conversationId) return;
+      const chat = useChatStore.getState();
+      if (chat.conversations[conversationId]) {
+        chat.switchConversation(conversationId);
+      } else {
+        void syncSessionsFromGateway().then(() => {
+          const refreshed = useChatStore.getState();
+          if (refreshed.conversations[conversationId]) {
+            refreshed.switchConversation(conversationId);
+          }
+        });
+      }
+      useSettingsStore.getState().setViewMode('chat');
+    },
+  ), []);
+
   // Workspace state — synced from nanobot gateway
   const [workspaces, setWorkspaces] = useState<WorkspacesPayload | null>(null);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
@@ -272,6 +321,9 @@ function App() {
   const [workspaceOverrides, setWorkspaceOverrides] = useState<Record<string, WorkspaceScopePayload | null>>({});
 
   const activeConvId = useChatStore((s) => s.activeConversationId);
+  const browserOpen = useBrowserStore((s) => (
+    activeConvId ? s.sessions[activeConvId]?.open === true : false
+  ));
   const activeConvWorkspacePath = useChatStore((s) =>
     s.activeConversationId ? s.conversations[s.activeConversationId]?.workspacePath ?? null : null
   );
@@ -287,10 +339,9 @@ function App() {
       return normalizeWorkspaceScope(activeConvWorkspaceScope);
     }
     if (activeConvWorkspacePath) {
-      const parts = activeConvWorkspacePath.split('/').filter(Boolean);
       return {
         project_path: activeConvWorkspacePath,
-        project_name: parts[parts.length - 1] || activeConvWorkspacePath,
+        project_name: projectNameFromPath(activeConvWorkspacePath),
         access_mode: 'full',
         restrict_to_workspace: false,
       };
@@ -609,15 +660,35 @@ function App() {
   const mac = isMacOS();
   const windows = isWindows();
   const customTitlebar = mac || windows;
-  const sidebarVisible = !artifactPreviewOpen && !previewExpanded && !sidebarCollapsed;
+  const autoHideSidebarForSummary = shouldAutoHideSidebarForPinnedSummary({
+    windows,
+    compactViewport: compactSummaryViewport,
+    chatVisible: viewMode === 'chat' || !viewMode,
+    hasActiveConversation: !!activeConvId,
+    summaryCollapsed,
+    previewOpen: artifactPreviewOpen,
+    browserOpen,
+  });
+  const effectiveSidebarCollapsed = sidebarCollapsed || autoHideSidebarForSummary;
+  const sidebarVisible = !artifactPreviewOpen && !previewExpanded && !effectiveSidebarCollapsed;
   const titlebarLayout = resolveTitlebarLayout({
     isMac: mac,
     isWindows: windows,
     isFullScreen: windowFullScreen,
-    sidebarCollapsed,
+    sidebarCollapsed: effectiveSidebarCollapsed,
     sidebarVisible,
   });
-  const shellTransitionDelay = artifactPreviewOpen || previewExpanded ? '0ms' : '180ms';
+  const shellTransitionDelay = artifactPreviewOpen || previewExpanded || autoHideSidebarForSummary
+    ? '0ms'
+    : '180ms';
+  const handleSidebarToggle = () => {
+    if (autoHideSidebarForSummary) {
+      setSummaryCollapsed(true);
+      if (sidebarCollapsed) toggleSidebar();
+      return;
+    }
+    toggleSidebar();
+  };
 
   if (!settingsHydrated) {
     return <div className="h-full w-full bg-[#fbfaf7]" />;
@@ -639,7 +710,8 @@ function App() {
             data-window-titlebar
             data-window-titlebar-platform={windows ? 'windows' : 'macos'}
             className={cn(
-              'window-titlebar-drag fixed left-0 right-0 top-0 z-40 h-12',
+              'window-titlebar-drag fixed left-0 right-0 top-0 z-40',
+              windows ? 'h-10' : 'h-12',
               windows && 'border-b border-[#e5e2db] bg-[#f7f6f2] dark:border-[#3d3d3d] dark:bg-[#242424]',
             )}
           />
@@ -649,14 +721,14 @@ function App() {
           className={cn(
             'pointer-events-none fixed left-0 right-0 top-0 z-[60] transition-opacity duration-150',
             previewExpanded && 'opacity-0 [&_button]:pointer-events-none',
-            customTitlebar ? 'h-12' : 'h-8',
+            windows ? 'h-10' : customTitlebar ? 'h-12' : 'h-8',
           )}
           style={{ transitionDelay: shellTransitionDelay }}
         >
           <div
             className="window-titlebar-no-drag pointer-events-auto absolute flex items-center gap-1 transition-[left] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)]"
             style={{
-              top: customTitlebar ? (windows ? 8 : 10) : 4,
+              top: customTitlebar ? (windows ? 4 : 10) : 4,
               left: titlebarLayout.navigationLeft,
               transitionDelay: shellTransitionDelay,
             }}
@@ -665,13 +737,13 @@ function App() {
               <TooltipTrigger asChild>
                 <button
                   type="button"
-                  onClick={toggleSidebar}
+                  onClick={handleSidebarToggle}
                   data-sidebar-titlebar-toggle
                   className={cn(
                     'flex items-center justify-center rounded-lg text-[#656358] transition-colors hover:bg-[#ded9cf] hover:text-[#29261b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d97757]/40 dark:text-[#d8d5ce] dark:hover:bg-[#57534d] dark:hover:text-white',
                     windows ? 'mr-2 h-8 w-8' : 'h-7 w-7',
                   )}
-                  aria-label={sidebarCollapsed ? t.sidebar.showSidebar : t.sidebar.hideSidebar}
+                  aria-label={effectiveSidebarCollapsed ? t.sidebar.showSidebar : t.sidebar.hideSidebar}
                 >
                   <PanelLeft className={windows ? 'h-[18px] w-[18px]' : 'h-[17px] w-[17px]'} strokeWidth={1.8} />
                 </button>
@@ -681,7 +753,7 @@ function App() {
                 sideOffset={8}
                 className="border border-white/10 bg-[#292824] px-2.5 py-1 text-[12px] font-medium text-white shadow-lg [&>svg]:hidden"
               >
-                {sidebarCollapsed ? t.sidebar.showSidebar : t.sidebar.hideSidebar}
+                {effectiveSidebarCollapsed ? t.sidebar.showSidebar : t.sidebar.hideSidebar}
               </TooltipContent>
             </Tooltip>
 
@@ -740,13 +812,16 @@ function App() {
         <div className="flex h-full w-full">
           {/* Sidebar */}
           <div
+            data-sidebar-auto-hidden={autoHideSidebarForSummary ? 'true' : 'false'}
             className={cn(
               'sidebar-transition shrink-0 overflow-hidden transition-opacity duration-150',
               (artifactPreviewOpen || previewExpanded) && 'pointer-events-none',
             )}
             style={{
-              width: artifactPreviewOpen || previewExpanded ? 0 : sidebarCollapsed ? 0 : 260,
-              opacity: artifactPreviewOpen || previewExpanded ? 0 : 1,
+              width: artifactPreviewOpen || previewExpanded || effectiveSidebarCollapsed
+                ? 0
+                : CONVERSATION_SIDEBAR_WIDTH,
+              opacity: artifactPreviewOpen || previewExpanded || effectiveSidebarCollapsed ? 0 : 1,
               transitionDelay: shellTransitionDelay,
             }}
           >
@@ -758,7 +833,7 @@ function App() {
             className={cn(
               'flex-1 min-w-0 bg-[#fbfaf7] transition-opacity duration-150',
               previewExpanded && 'pointer-events-none overflow-hidden opacity-0',
-              customTitlebar && 'pt-12',
+              mac ? 'pt-12' : windows && 'pt-10',
             )}
             style={{
               transitionDelay: shellTransitionDelay,

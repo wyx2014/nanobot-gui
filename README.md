@@ -275,6 +275,7 @@ dist/installers/          # electron-builder 输出
 
 ```bash
 npm run test
+TPACOWORK_RUNTIME_TOKEN=YOUR_GITHUB_TOKEN npm run build:win
 ```
 
 重点测试：

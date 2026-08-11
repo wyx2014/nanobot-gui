@@ -6,6 +6,8 @@ import { useChatStore } from '@/stores/chatStore';
 import { useScheduleStore } from '@/stores/scheduleStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { isWindows } from '@/utils/platform';
+import { usePromptHubStore } from '@/stores/promptHubStore';
 
 let container: HTMLDivElement | undefined;
 let root: Root | undefined;
@@ -32,6 +34,13 @@ beforeEach(() => {
   useSettingsStore.getState().setLanguage('zh-CN');
   useSettingsStore.setState({ viewMode: 'chat', guideShown: true, guideOpen: false });
   useScheduleStore.setState({ tasks: {} });
+  usePromptHubStore.setState({
+    token: null,
+    user: null,
+    isLoggingIn: false,
+    loginOpen: false,
+    error: null,
+  });
   useWorkspaceStore.setState({
     currentPath: null,
     recentPaths: ['/Users/test/nanobot-gui'],
@@ -82,7 +91,9 @@ describe('Sidebar conversation search', () => {
     expect(view.querySelector('input[placeholder="搜索聊天"]')).toBeNull();
 
     const dialog = openSearchDialog();
+    const backdrop = document.body.querySelector<HTMLElement>('[data-testid="conversation-search-backdrop"]');
     expect(dialog).not.toBeNull();
+    expect(backdrop?.classList.contains(isWindows() ? 'top-10' : 'top-0')).toBe(true);
     expect(dialog?.querySelector('input[placeholder="搜索聊天"]')).not.toBeNull();
     expect(dialog?.textContent).toContain('Alpha 方案');
     expect(dialog?.textContent).toContain('Beta 报告');
@@ -122,5 +133,19 @@ describe('Sidebar help', () => {
 
     expect(useSettingsStore.getState().guideOpen).toBe(true);
     expect(useSettingsStore.getState().guideShown).toBe(true);
+  });
+});
+
+describe('PromptHub login', () => {
+  it('keeps the deployment server address out of the user-facing dialog', () => {
+    usePromptHubStore.setState({ loginOpen: true });
+    const view = renderSidebar();
+    const dialog = view.querySelector<HTMLElement>('[data-testid="prompthub-login-dialog"]');
+
+    expect(dialog).not.toBeNull();
+    expect(dialog?.textContent).toContain('用户名');
+    expect(dialog?.textContent).toContain('密码');
+    expect(dialog?.textContent).not.toContain('服务器地址');
+    expect(dialog?.querySelector('input[type="url"]')).toBeNull();
   });
 });

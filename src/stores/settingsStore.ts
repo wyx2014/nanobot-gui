@@ -239,6 +239,7 @@ interface SettingsState {
   webSearchApiKey: string;
   webSearchBaseUrl: string;
   // Gateway-mirrored voice input settings
+  voiceInputAvailable: boolean;
   voiceMaxDurationSec: number;
   // New: Language setting
   language: LanguageSetting;
@@ -311,6 +312,7 @@ interface SettingsActions {
   setWebSearchProvider: (provider: WebSearchProviderType) => void;
   setWebSearchApiKey: (key: string) => void;
   setWebSearchBaseUrl: (url: string) => void;
+  setVoiceInputAvailable: (available: boolean) => void;
   setVoiceMaxDurationSec: (seconds: number) => void;
   // Language action
   setLanguage: (lang: LanguageSetting) => void;
@@ -425,6 +427,7 @@ export const useSettingsStore = create<SettingsStore>()(
       webSearchProvider: 'duckduckgo' as WebSearchProviderType,
       webSearchApiKey: '',
       webSearchBaseUrl: '',
+      voiceInputAvailable: false,
       voiceMaxDurationSec: 120,
       // Language default
       language: 'system' as LanguageSetting,
@@ -488,6 +491,7 @@ export const useSettingsStore = create<SettingsStore>()(
       setWebSearchProvider: (webSearchProvider) => set({ webSearchProvider }),
       setWebSearchApiKey: (webSearchApiKey) => set({ webSearchApiKey }),
       setWebSearchBaseUrl: (webSearchBaseUrl) => set({ webSearchBaseUrl }),
+      setVoiceInputAvailable: (voiceInputAvailable) => set({ voiceInputAvailable }),
       setVoiceMaxDurationSec: (voiceMaxDurationSec) => set({ voiceMaxDurationSec }),
       // Language action - updates both store and i18n module
       setLanguage: (lang) => {

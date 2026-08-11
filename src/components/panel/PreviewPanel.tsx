@@ -189,7 +189,7 @@ export default function PreviewPanel() {
       {/* OpenWorker-style viewer header: back to the rail, breadcrumb, path, then native actions. */}
       <div className={cn(
         'flex min-h-[58px] shrink-0 items-center gap-3 border-b border-[#e5e2db] bg-[#fbfaf7]/95 px-4 py-2.5 dark:border-[#3d3d3d] dark:bg-[#262626]/95',
-        isWindows() ? 'mt-12' : 'mt-7',
+        isWindows() ? 'mt-10' : 'mt-7',
       )}>
         <Button
           variant="ghost"

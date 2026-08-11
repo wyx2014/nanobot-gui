@@ -44,7 +44,7 @@ describe('Markdown PDF document', () => {
   });
 
   it('embeds only report-local raster images as self-contained data', () => {
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'tparuyi-report-'));
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'tpacowork-report-'));
     const assets = path.join(directory, 'assets');
     fs.mkdirSync(assets);
     fs.writeFileSync(

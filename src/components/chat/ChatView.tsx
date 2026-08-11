@@ -42,7 +42,7 @@ import StreamErrorNotice from './StreamErrorNotice';
 import { normalizeLegacyLongTaskMessages } from '@/core/nanobot/thread-display-compat';
 import { scrubSubagentUiMessages } from '@/core/nanobot/subagent-channel-display';
 import { projectUsableSkills, stripUnavailableLeadingSkillMentions } from '@/core/skills/filter';
-import { normalizeProjectPath, visibleProjectPath } from '@/core/workspace';
+import { normalizeProjectPath, projectNameFromPath, visibleProjectPath } from '@/core/workspace';
 import {
   projectLegacyLocalFileContext,
   replaceVisibleLocalFileContent,
@@ -482,10 +482,9 @@ export default function ChatView({
     // Use gateway-provided scope; fall back to welcome path if provided
     let effectiveScope: WorkspaceScopePayload | null = workspaceScope ?? null;
     if (!effectiveScope && welcomeWorkspacePath) {
-      const parts = welcomeWorkspacePath.split('/').filter(Boolean);
       effectiveScope = {
         project_path: welcomeWorkspacePath,
-        project_name: parts[parts.length - 1] || welcomeWorkspacePath,
+        project_name: projectNameFromPath(welcomeWorkspacePath),
         access_mode: 'full',
         restrict_to_workspace: false,
       };
@@ -730,7 +729,8 @@ export default function ChatView({
   // Welcome screen - new conversation state (activeConversationId is null)
   const apiKey = useSettingsStore((s) => s.apiKey);
   const needsSetup = !apiKey?.trim();
-  const welcomeProjectName = workspaceScope?.project_name || workspaceScope?.project_path?.split(/[\\/]/).filter(Boolean).pop();
+  const welcomeProjectName = workspaceScope?.project_name
+    || (workspaceScope?.project_path ? projectNameFromPath(workspaceScope.project_path) : undefined);
 
   // Keep the application shell visible while the local runtime starts, and
   // use the chat surface itself for a calm, contextual readiness indicator.
@@ -836,12 +836,11 @@ export default function ChatView({
         >
           <div className={cn(
             "w-full py-8 overflow-hidden",
-            // Summary open: drop the horizontal padding and cap the column at a
-            // comfortable reading width, right-aligned against the summary card
-            // (never stretching edge-to-edge or hugging the sidebar).
-            // Summary closed: keep the original centered padded layout.
+            // Keep the same full reading measure when the summary opens. On a
+            // compact Windows viewport App temporarily reclaims the navigation
+            // sidebar width, so this column no longer has to collapse to 3xl.
             summaryContentInset
-              ? 'max-w-3xl ml-auto mr-0'
+              ? 'max-w-4xl ml-auto mr-0 px-6 md:px-10'
               : 'max-w-4xl mx-auto px-6 md:px-10',
           )}>
             <div>
@@ -933,7 +932,7 @@ export default function ChatView({
         style={summaryContentInset ? { paddingRight: summaryContentInset } : undefined}
       >
         <div className={cn(
-          summaryContentInset ? 'max-w-3xl ml-auto mr-0' : 'max-w-4xl mx-auto',
+          summaryContentInset ? 'max-w-4xl ml-auto mr-0' : 'max-w-4xl mx-auto',
         )}>
           <ActiveSkillsBar />
           {scheduleReturnTarget && (

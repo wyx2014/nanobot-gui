@@ -2,6 +2,8 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useChatStore } from '@/stores/chatStore';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useSettingsStore } from '@/stores/settingsStore';
 import { VoiceStreamError } from '@/core/nanobot-client';
 import ChatInput from './ChatInput';
 
@@ -19,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   cancelPcmVoiceRecorder: vi.fn(),
   requestMicrophoneAccess: vi.fn(),
   openMicrophoneSettings: vi.fn(),
+  openFolderDialog: vi.fn(),
 }));
 
 vi.mock('@/core/nanobotClient', async () => {
@@ -49,6 +52,9 @@ vi.mock('@/lib/ipc-factory', async () => {
     mediaBridge: {
       requestMicrophoneAccess: mocks.requestMicrophoneAccess,
       openMicrophoneSettings: mocks.openMicrophoneSettings,
+    },
+    dialogBridge: {
+      open: mocks.openFolderDialog,
     },
   };
 });
@@ -83,6 +89,18 @@ let root: Root | undefined;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 beforeEach(() => {
+  useSettingsStore.setState({
+    voiceInputAvailable: true,
+    voiceMaxDurationSec: 120,
+  });
+  useWorkspaceStore.setState({
+    currentPath: null,
+    recentPaths: [],
+    projects: [],
+    projectsHydrated: true,
+    projectNames: {},
+    projectSkillBindings: {},
+  });
   mocks.fetchExpertTeams.mockResolvedValue({ teams: [investmentTeam] });
   mocks.fetchMcpPresets.mockResolvedValue({
     presets: [{
@@ -122,6 +140,7 @@ beforeEach(() => {
     status: 'granted',
   });
   mocks.openMicrophoneSettings.mockResolvedValue(true);
+  mocks.openFolderDialog.mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -136,12 +155,13 @@ afterEach(() => {
 async function renderChatInput(
   variant: 'welcome' | 'chat' = 'chat',
   onSend: Parameters<typeof ChatInput>[0]['onSend'] = () => true,
+  props: Partial<Parameters<typeof ChatInput>[0]> = {},
 ): Promise<HTMLDivElement> {
   container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
   await act(async () => {
-    root?.render(<ChatInput variant={variant} onSend={onSend} />);
+    root?.render(<ChatInput variant={variant} onSend={onSend} {...props} />);
   });
   return container;
 }
@@ -208,6 +228,57 @@ describe('ChatInput welcome layout', () => {
     expect(view.querySelector('[data-codex-composer-toolbar]')).not.toBeNull();
     expect(view.querySelector('[data-codex-model-picker]')).not.toBeNull();
     expect(view.querySelector('[data-codex-submit]')).not.toBeNull();
+  });
+
+  it('does not resurrect a removed workspace from stale cached conversations', async () => {
+    useChatStore.setState({
+      activeConversationId: null,
+      conversations: {
+        stale: {
+          id: 'stale',
+          title: '旧会话',
+          messages: [],
+          createdAt: 1,
+          updatedAt: 1,
+          status: 'idle',
+          workspacePath: 'C:\\Users\\test\\nanobot-workdir',
+        },
+      },
+    });
+    const view = await renderChatInput('welcome');
+    const trigger = view.querySelector<HTMLButtonElement>('[data-welcome-project-selector] button');
+
+    act(() => trigger?.click());
+
+    const popover = view.querySelector<HTMLElement>('[data-workspace-selector-popover]');
+    expect(popover?.dataset.workspaceSelectorEmpty).toBe('true');
+    expect(popover?.textContent).not.toContain('nanobot-workdir');
+  });
+
+  it('uses only the final folder name when selecting a Windows workspace', async () => {
+    const windowsPath = 'C:\\Users\\1\\Documents\\TPACowork Projects\\123123';
+    const onWorkspaceScopeChange = vi.fn();
+    mocks.openFolderDialog.mockResolvedValue(windowsPath);
+    const view = await renderChatInput('welcome', () => true, { onWorkspaceScopeChange });
+    const trigger = view.querySelector<HTMLButtonElement>('[data-welcome-project-selector] button');
+
+    act(() => trigger?.click());
+
+    const newWorkspaceButton = [...view.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => /新建工作空间|New workspace/.test(button.textContent ?? ''));
+    expect(newWorkspaceButton).toBeDefined();
+    act(() => newWorkspaceButton?.click());
+
+    const existingProjectButton = [...view.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => /使用现有项目|Use existing project/.test(button.textContent ?? ''));
+    expect(existingProjectButton).toBeDefined();
+    await act(async () => existingProjectButton?.click());
+
+    expect(mocks.openFolderDialog).toHaveBeenCalledOnce();
+    expect(onWorkspaceScopeChange).toHaveBeenCalledWith(expect.objectContaining({
+      project_path: windowsPath,
+      project_name: '123123',
+    }));
   });
 });
 
@@ -309,6 +380,15 @@ describe('ChatInput expert-team menu', () => {
 });
 
 describe('ChatInput voice input', () => {
+  it('hides the microphone when no voice service is configured', async () => {
+    useSettingsStore.setState({ voiceInputAvailable: false });
+
+    const view = await renderChatInput();
+
+    expect(view.querySelector<HTMLButtonElement>('button[aria-label="语音输入"]')).toBeNull();
+    expect(mocks.requestMicrophoneAccess).not.toHaveBeenCalled();
+  });
+
   it('records, transcribes, and inserts text without sending the message', async () => {
     const onSend = vi.fn(() => true);
     const view = await renderChatInput('chat', onSend);

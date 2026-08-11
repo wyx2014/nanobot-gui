@@ -2,11 +2,74 @@ import { describe, expect, it } from 'vitest';
 import type { Message } from '@/types';
 import {
   conversationFromSessionSummary,
+  isGatewayVoiceInputAvailable,
+  mapGatewayProviderNameForGui,
   mapWebuiThreadToGuiMessages,
   projectGatewayMessagesForHistory,
   shouldPreserveRunningConversation,
   stripRedundantMcpMentionPrefix,
 } from './nanobotClient';
+import type { SettingsPayload } from './types';
+
+describe('mapGatewayProviderNameForGui', () => {
+  it('maps a dynamic gateway provider to the renderer custom provider', () => {
+    expect(mapGatewayProviderNameForGui('asset-deepseek', [
+      { name: 'asset-deepseek', custom: true },
+    ])).toBe('custom');
+  });
+
+  it('keeps built-in mappings compatible with the renderer', () => {
+    expect(mapGatewayProviderNameForGui('dashscope', [
+      { name: 'dashscope', custom: false },
+    ])).toBe('bailian');
+    expect(mapGatewayProviderNameForGui('deepseek', [
+      { name: 'deepseek', custom: false },
+    ])).toBe('deepseek');
+  });
+});
+
+describe('isGatewayVoiceInputAvailable', () => {
+  const payload = {
+    transcription: {
+      enabled: true,
+      provider: 'stepfun',
+      provider_configured: true,
+      model: 'stepaudio-2.5-asr',
+    },
+    model_defaults: {
+      speech_to_text: 'stepfun-asr',
+    },
+    model_presets: [{
+      name: 'stepfun-asr',
+      provider: 'stepfun',
+      model: 'stepaudio-2.5-asr',
+      capabilities: ['speech_to_text'],
+    }],
+  } as unknown as SettingsPayload;
+
+  it('requires an enabled, credentialed, coherent speech model', () => {
+    expect(isGatewayVoiceInputAvailable(payload)).toBe(true);
+    expect(isGatewayVoiceInputAvailable({
+      ...payload,
+      transcription: { ...payload.transcription, provider_configured: false },
+    })).toBe(false);
+    expect(isGatewayVoiceInputAvailable({
+      ...payload,
+      transcription: { ...payload.transcription, enabled: false },
+    })).toBe(false);
+  });
+
+  it('rejects missing and stale speech defaults', () => {
+    expect(isGatewayVoiceInputAvailable({
+      ...payload,
+      model_defaults: { ...payload.model_defaults, speech_to_text: null },
+    })).toBe(false);
+    expect(isGatewayVoiceInputAvailable({
+      ...payload,
+      transcription: { ...payload.transcription, model: 'another-asr-model' },
+    })).toBe(false);
+  });
+});
 
 describe('conversationFromSessionSummary', () => {
   it('hydrates only metadata and preserves already loaded messages', () => {

@@ -643,7 +643,7 @@ const enUS: TranslationDict = {
     searchProject: 'Search workspaces',
     noProjectsFound: 'No workspaces found',
     createBlankProject: 'Create blank workspace',
-    useExistingFolder: 'Use existing folder',
+    useExistingFolder: 'Use existing project',
     dontUseProject: 'Do not use workspace',
     selectNewProjectLocation: 'Select location for the new workspace',
     enterNewProjectName: 'Please enter the new workspace name:',

@@ -36,7 +36,7 @@ describe('main window chrome', () => {
   });
 
   it('uses a Codex-style overlay that keeps native window buttons on Windows', () => {
-    expect(WINDOWS_TITLE_BAR_HEIGHT).toBe(48);
+    expect(WINDOWS_TITLE_BAR_HEIGHT).toBe(40);
     expect(WINDOWS_TITLE_BAR_LIGHT).toEqual({
       color: '#f7f6f2',
       symbolColor: '#29261b',
@@ -50,7 +50,7 @@ describe('main window chrome', () => {
       titleBarOverlay: {
         color: '#f7f6f2',
         symbolColor: '#29261b',
-        height: 48,
+        height: 40,
       },
     });
   });

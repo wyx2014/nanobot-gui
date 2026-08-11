@@ -3,6 +3,7 @@ import { app, BrowserWindow } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
+import { DEFAULT_WORKSPACE_DIRECTORY_NAME } from '../src/config/appDirectories';
 
 const NANOBOT_PORT = 8900;
 const MAX_WAIT_MS = 30_000;  // 30s — Python + asyncio startup on slow systems
@@ -229,7 +230,7 @@ export class PythonBridge {
     configDir: string;
     expertTeamsDir: string;
   } {
-    const workspaceDir = path.join(app.getPath('userData'), 'nanobot-workspace');
+    const workspaceDir = path.join(app.getPath('userData'), DEFAULT_WORKSPACE_DIRECTORY_NAME);
     const configDir = path.join(workspaceDir, '.nanobot');
 
     // Ensure directories exist
@@ -290,9 +291,11 @@ export class PythonBridge {
         method: 'GET',
         headers,
       });
-      if (!resp.ok) return false;
-      const body = await resp.json().catch(() => null) as { agent_ready?: unknown } | null;
-      return body?.agent_ready === true;
+      // Process readiness is the authenticated gateway HTTP surface being
+      // available. The agent loop has its own runtime readiness signal and may
+      // still be warming; treating that as a dead process creates restart
+      // loops whenever model/MCP initialization is slow or temporarily offline.
+      return resp.ok;
     } catch {
       return false;
     }

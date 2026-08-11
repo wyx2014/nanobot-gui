@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Folder, FolderOpen, ChevronDown, Check, X, Notebook, Search, ChevronRight, Plus } from 'lucide-react';
+import { Folder, FolderOpen, ChevronDown, Check, X, Notebook, Search, ChevronRight, Plus, Loader2 } from 'lucide-react';
 import { dialogBridge } from '@/lib/ipc-factory';
 import NewWorkspaceDialog from './NewWorkspaceDialog';
 import { useI18n } from '@/i18n';
@@ -13,6 +13,7 @@ export interface FolderSelectorProps {
   onClear?: () => void;
   className?: string;
   variant?: 'default' | 'pill';
+  projectsHydrated?: boolean;
 }
 
 /** Get the folder name from a full path */
@@ -27,6 +28,7 @@ export default function FolderSelector({
   onClear,
   className,
   variant = 'default',
+  projectsHydrated = true,
 }: FolderSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -119,6 +121,7 @@ export default function FolderSelector({
   const visibleRecentPaths = recentPaths
     .map(visibleProjectPath)
     .filter((path): path is string => !!path);
+  const hasKnownProjects = visibleRecentPaths.length > 0 || !!visibleProjectPath(currentPath);
 
   const filteredPaths = visibleRecentPaths.filter(path => {
     const name = getFolderName(path).toLowerCase();
@@ -132,15 +135,7 @@ export default function FolderSelector({
       {/* Trigger Button */}
       <div className="flex items-center gap-1">
         <button
-          onClick={() => {
-            // First time use: no recent paths and no current path
-            // Directly open folder dialog instead of showing dropdown
-            if (!currentPath && recentPaths.length === 0) {
-              handleOpenDialog();
-            } else {
-              setIsOpen(!isOpen);
-            }
-          }}
+          onClick={() => setIsOpen(!isOpen)}
           className={cn(
             variant === 'pill'
               ? 'flex items-center gap-1.5 py-1 text-[12.5px] text-[#656358] hover:text-[#29261b] transition-colors font-medium cursor-pointer'
@@ -186,59 +181,77 @@ export default function FolderSelector({
 
       {/* Dropdown Menu — opens upward to avoid bottom overflow */}
       {isOpen && (
-        <div className="absolute bottom-full left-0 mb-1.5 w-72 bg-white rounded-2xl border border-[#e8e4dd] shadow-[0_4px_20px_rgba(0,0,0,0.08)] py-1.5 z-50 flex flex-col animate-in fade-in slide-in-from-bottom-1 duration-150">
-          {/* Search bar */}
-          <div className="px-3.5 py-1.5 border-b border-[#f0ede6] flex items-center gap-2">
-            <Search className="h-4 w-4 text-[#8a867c] shrink-0" />
-            <input
-              ref={searchInputRef}
-              type="text"
-              placeholder={t.folder.searchProject}
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="w-full bg-transparent text-[13px] border-none outline-none placeholder:text-[#8a867c] text-[#29261b] font-medium"
-            />
-          </div>
-
-          {/* List area */}
-          <div className="py-1 max-h-[188px] overflow-y-auto">
-            {filteredPaths.length > 0 ? (
-              filteredPaths.map((path) => (
-                <button
-                  key={path}
-                  onClick={() => handleSelectRecent(path)}
-                  className="w-full flex items-center justify-between px-3.5 py-2 text-left hover:bg-[#f5f3ee] transition-colors group cursor-pointer"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                    <Notebook
-                      className={cn(
-                        'h-4 w-4 shrink-0',
-                        path === currentPath ? 'text-[#d97757]' : 'text-[#656358]'
-                      )}
-                    />
-                    <span
-                      className={cn(
-                        'text-[13px] truncate flex-1',
-                        path === currentPath ? 'text-[#29261b] font-medium' : 'text-[#3d3929]'
-                      )}
-                    >
-                      {getFolderName(path)}
-                    </span>
-                  </div>
-                  {path === currentPath && (
-                    <Check className="h-4 w-4 text-[#d97757] shrink-0 ml-2" />
-                  )}
-                </button>
-              ))
-            ) : (
-              <div className="px-3.5 py-4 text-center text-[12.5px] text-[#888579]">
-                {t.folder.noProjectsFound}
+        <div
+          data-workspace-selector-popover
+          data-workspace-selector-empty={projectsHydrated && !hasKnownProjects ? 'true' : undefined}
+          className="absolute bottom-full left-0 mb-1.5 w-72 bg-white rounded-2xl border border-[#e8e4dd] shadow-[0_4px_20px_rgba(0,0,0,0.08)] py-1.5 z-50 flex flex-col animate-in fade-in slide-in-from-bottom-1 duration-150"
+        >
+          {hasKnownProjects && (
+            <>
+              {/* Search bar */}
+              <div data-workspace-search className="px-3.5 py-1.5 border-b border-[#f0ede6] flex items-center gap-2">
+                <Search className="h-4 w-4 text-[#8a867c] shrink-0" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  placeholder={t.folder.searchProject}
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full bg-transparent text-[13px] border-none outline-none placeholder:text-[#8a867c] text-[#29261b] font-medium"
+                />
               </div>
-            )}
-          </div>
 
-          {/* Divider */}
-          <div className="border-t border-[#f0ede6] my-1" />
+              {/* List area */}
+              <div data-workspace-project-list className="py-1 max-h-[188px] overflow-y-auto">
+                {filteredPaths.length > 0 ? (
+                  filteredPaths.map((path) => (
+                    <button
+                      key={path}
+                      onClick={() => handleSelectRecent(path)}
+                      className="w-full flex items-center justify-between px-3.5 py-2 text-left hover:bg-[#f5f3ee] transition-colors group cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <Notebook
+                          className={cn(
+                            'h-4 w-4 shrink-0',
+                            path === currentPath ? 'text-[#d97757]' : 'text-[#656358]'
+                          )}
+                        />
+                        <span
+                          className={cn(
+                            'text-[13px] truncate flex-1',
+                            path === currentPath ? 'text-[#29261b] font-medium' : 'text-[#3d3929]'
+                          )}
+                        >
+                          {getFolderName(path)}
+                        </span>
+                      </div>
+                      {path === currentPath && (
+                        <Check className="h-4 w-4 text-[#d97757] shrink-0 ml-2" />
+                      )}
+                    </button>
+                  ))
+                ) : (
+                  <div className="px-3.5 py-4 text-center text-[12.5px] text-[#888579]">
+                    {t.folder.noProjectsFound}
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-[#f0ede6] my-1" />
+            </>
+          )}
+
+          {!projectsHydrated && !hasKnownProjects && (
+            <div data-workspace-projects-loading className="flex items-center gap-2 px-3.5 py-2 text-[12.5px] text-[#888579]">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <span>{t.common.loading}</span>
+            </div>
+          )}
+
+          {!projectsHydrated && !hasKnownProjects && (
+            <div className="border-t border-[#f0ede6] my-1" />
+          )}
 
           {/* New project option with chevron */}
           <div

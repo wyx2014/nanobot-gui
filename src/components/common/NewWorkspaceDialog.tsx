@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { osBridge, fsBridge } from '@/lib/ipc-factory';
 import { useI18n } from '@/i18n';
+import { USER_PROJECTS_DIRECTORY_NAME } from '@/config/appDirectories';
 
 interface NewWorkspaceDialogProps {
   open: boolean;
@@ -12,7 +13,7 @@ interface NewWorkspaceDialogProps {
 
 /**
  * Shared "create a new workspace" dialog: asks for a name, creates a folder
- * under ~/Documents/TpaRuyi Projects, then reports the path back. Used by the
+ * under ~/Documents/TPACowork Projects, then reports the path back. Used by the
  * composer's folder selector and the sidebar "workspaces" header "+" button so
  * both entries behave identically.
  */
@@ -39,7 +40,7 @@ export default function NewWorkspaceDialog({ open, onClose, onCreated }: NewWork
       const documentsPath = await osBridge.documentDir();
       const sep = documentsPath.includes('\\') ? '\\' : '/';
       const safeName = trimmedName.replace(/[\\/:*?"<>|]/g, '-');
-      const newWorkspacePath = `${documentsPath}${sep}TpaRuyi Projects${sep}${safeName}`;
+      const newWorkspacePath = `${documentsPath}${sep}${USER_PROJECTS_DIRECTORY_NAME}${sep}${safeName}`;
       await fsBridge.mkdir(newWorkspacePath, { recursive: true });
       onCreated(newWorkspacePath);
       onClose();

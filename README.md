@@ -117,6 +117,9 @@ npm run build:mac
 # Windows
 npm run build:win
 
+# Windows 免安装版
+npm run build:win:portable
+
 # Linux 当前脚本还未配置 standalone Python target，需补齐后再用
 npm run build:linux
 ```
@@ -127,13 +130,37 @@ npm run build:linux
 dist/installers/
 ```
 
-打包脚本会执行：
+Python runtime 固定为 Python 3.12.9。打包脚本会执行：
 
-1. `npm run prepare-python`
-2. 下载 standalone Python 到 `embedded-python/runtime/`
-3. 将 `../nanobot[desktop]` 安装进这个 Python runtime
-4. `electron-vite build`
-5. `electron-builder`
+1. 按目标平台准备 `embedded-python/runtime/`
+2. 将 `../nanobot[desktop]` 安装进目标 Python runtime
+3. `electron-vite build`
+4. `electron-builder`
+
+Windows 打包分为两种模式：
+
+- 在 Windows x64 上运行：本机下载 Python 3.12.9 standalone，并安装 nanobot 及 Windows 依赖。
+- 在 macOS 上运行：从 GitHub Release 下载 Windows CI 预制的完整 `win32-x64` runtime，校验 SHA-256、目标平台、Python 版本、依赖摘要和 nanobot 源码摘要后只负责组装。任何一项不匹配都会终止打包，不会回退使用 Mac Python。
+
+首次从 Mac 打 Windows 包前，在 GitHub Actions 手动运行 `Build Windows Python runtime`，并填写要嵌入的 nanobot 分支、标签或提交。工作流会发布一个不参与应用自动更新的 prerelease，并写入以下稳定资产：
+
+```text
+tpacowork-python-3.12.9-win32-x64-desktop-v2-bytecode.zip
+tpacowork-python-3.12.9-win32-x64-desktop-v2-bytecode.zip.sha256
+tpacowork-python-3.12.9-win32-x64-desktop-v2-bytecode.zip.json
+```
+
+默认从 `wyx2014/nanobot-gui` Release 下载；仓库或下载地址不同时可覆盖：
+
+```bash
+TPACOWORK_RUNTIME_REPOSITORY=owner/repository npm run build:win
+
+# 私有/镜像资产也可以直接指定
+TPACOWORK_WINDOWS_RUNTIME_URL=https://example.com/runtime.zip \
+TPACOWORK_WINDOWS_RUNTIME_SHA256_URL=https://example.com/runtime.zip.sha256 \
+TPACOWORK_RUNTIME_TOKEN=token \
+npm run build:win
+```
 
 打包配置会把这些资源放入安装包：
 

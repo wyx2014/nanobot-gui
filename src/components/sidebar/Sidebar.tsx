@@ -15,7 +15,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import type { ConversationStatus } from '@/types';
 import { dialogBridge, fsBridge, shellBridge } from '@/lib/ipc-factory';
-import { isMacOS } from '@/utils/platform';
+import { isMacOS, isWindows } from '@/utils/platform';
 import { normalizeProjectPath, projectNameFromPath, visibleProjectPath } from '@/core/workspace';
 import type { Conversation } from '@/types';
 import {
@@ -648,10 +648,9 @@ export default function Sidebar() {
 
   return (
     <div className="flex flex-col h-full w-[260px] bg-[#f7f6f2] border-r border-[#e5e2db] dark:bg-[#242424] dark:border-[#3d3d3d]">
-      {/* Layout spacer for the macOS title-bar overlay. The shared App drag
-          region starts after the traffic lights and sidebar toggle. */}
-      {isMacOS() && (
-        <div className="h-12 shrink-0" />
+      {/* The overlay title bar is part of the renderer on macOS and Windows. */}
+      {(isMacOS() || isWindows()) && (
+        <div data-sidebar-titlebar-spacer className="h-12 shrink-0" />
       )}
       <header className="shrink-0 px-3 pb-2.5 pt-2.5">
         <div className="flex h-9 items-center justify-between gap-2">

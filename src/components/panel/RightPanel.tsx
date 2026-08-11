@@ -3,6 +3,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { usePreviewStore } from '@/stores/previewStore';
 import { useChatStore } from '@/stores/chatStore';
 import { useBrowserStore } from '@/stores/browserStore';
+import { isWindows } from '@/utils/platform';
 import PreviewPanel from './PreviewPanel';
 import ConversationWorkbench from './ConversationWorkbench';
 import BrowserPanel from './BrowserPanel';
@@ -65,7 +66,7 @@ export default function RightPanel() {
       <div
         data-pinned-summary-host
         className="window-titlebar-no-drag fixed z-[55] flex flex-col items-end"
-        style={{ top: 56, right: PINNED_SUMMARY_RIGHT }}
+        style={{ top: isWindows() ? 104 : 56, right: PINNED_SUMMARY_RIGHT }}
       >
         <div
           id="conversation-pinned-summary"

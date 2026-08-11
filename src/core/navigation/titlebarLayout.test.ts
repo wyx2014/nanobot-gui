@@ -6,6 +6,7 @@ describe('resolveTitlebarLayout', () => {
   it('places a collapsed macOS conversation after the title-bar navigation', () => {
     expect(resolveTitlebarLayout({
       isMac: true,
+      isWindows: false,
       isFullScreen: false,
       sidebarCollapsed: true,
       sidebarVisible: false,
@@ -18,6 +19,7 @@ describe('resolveTitlebarLayout', () => {
   it('keeps the normal conversation padding when the macOS sidebar is visible', () => {
     expect(resolveTitlebarLayout({
       isMac: true,
+      isWindows: false,
       isFullScreen: false,
       sidebarCollapsed: false,
       sidebarVisible: true,
@@ -27,6 +29,7 @@ describe('resolveTitlebarLayout', () => {
   it('accounts for fullscreen and native-titlebar layouts', () => {
     expect(resolveTitlebarLayout({
       isMac: true,
+      isWindows: false,
       isFullScreen: true,
       sidebarCollapsed: true,
       sidebarVisible: false,
@@ -37,12 +40,37 @@ describe('resolveTitlebarLayout', () => {
 
     expect(resolveTitlebarLayout({
       isMac: false,
+      isWindows: false,
       isFullScreen: false,
       sidebarCollapsed: false,
       sidebarVisible: true,
     })).toEqual({
       navigationLeft: 232,
       conversationLeadingInset: 76,
+    });
+  });
+
+  it('keeps Windows controls in the upper-left overlay without shifting content headers', () => {
+    expect(resolveTitlebarLayout({
+      isMac: false,
+      isWindows: true,
+      isFullScreen: false,
+      sidebarCollapsed: false,
+      sidebarVisible: true,
+    })).toEqual({
+      navigationLeft: 12,
+      conversationLeadingInset: 12,
+    });
+
+    expect(resolveTitlebarLayout({
+      isMac: false,
+      isWindows: true,
+      isFullScreen: false,
+      sidebarCollapsed: true,
+      sidebarVisible: false,
+    })).toEqual({
+      navigationLeft: 12,
+      conversationLeadingInset: 12,
     });
   });
 });

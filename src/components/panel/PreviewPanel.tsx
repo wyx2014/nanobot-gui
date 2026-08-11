@@ -2,6 +2,8 @@ import { useState, useEffect, lazy, Suspense } from 'react';
 import { clipboardBridge, shellBridge } from '@/lib/ipc-factory';
 import { usePreviewStore } from '@/stores/previewStore';
 import { useI18n } from '@/i18n';
+import { isWindows } from '@/utils/platform';
+import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import MarkdownRenderer from '@/components/chat/MarkdownRenderer';
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -185,7 +187,10 @@ export default function PreviewPanel() {
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#f5f3ee] dark:bg-[#202020]">
       {/* OpenWorker-style viewer header: back to the rail, breadcrumb, path, then native actions. */}
-      <div className="mt-7 flex min-h-[58px] shrink-0 items-center gap-3 border-b border-[#e5e2db] bg-[#fbfaf7]/95 px-4 py-2.5 dark:border-[#3d3d3d] dark:bg-[#262626]/95">
+      <div className={cn(
+        'flex min-h-[58px] shrink-0 items-center gap-3 border-b border-[#e5e2db] bg-[#fbfaf7]/95 px-4 py-2.5 dark:border-[#3d3d3d] dark:bg-[#262626]/95',
+        isWindows() ? 'mt-12' : 'mt-7',
+      )}>
         <Button
           variant="ghost"
           size="icon"

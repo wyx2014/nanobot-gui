@@ -1,0 +1,97 @@
+name: Build Windows Python runtime
+
+on:
+  workflow_dispatch:
+    inputs:
+      nanobot_repository:
+        description: Repository containing the nanobot runtime
+        required: true
+        default: wyx2014/nanobot
+        type: string
+      nanobot_ref:
+        description: Branch, tag, or commit to embed
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-python-3.12.9-win32-x64
+  cancel-in-progress: false
+
+jobs:
+  build-runtime:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout TPACowork GUI
+        uses: actions/checkout@v4
+        with:
+          path: nanobot-gui
+
+      - name: Checkout nanobot
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.nanobot_repository }}
+          ref: ${{ inputs.nanobot_ref }}
+          path: nanobot
+          token: ${{ secrets.NANOBOT_REPO_TOKEN || github.token }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build complete win32-x64 runtime
+        working-directory: nanobot-gui
+        shell: pwsh
+        run: node scripts/download-python.mjs --target win32-x64
+
+      - name: Smoke-test and archive runtime
+        working-directory: nanobot-gui
+        shell: pwsh
+        run: node scripts/package-python-runtime.mjs --target win32-x64
+
+      - name: Read release metadata
+        id: runtime
+        working-directory: nanobot-gui
+        shell: pwsh
+        run: |
+          $metadata = node scripts/download-python.mjs --target win32-x64 --print-config | ConvertFrom-Json
+          "tag=$($metadata.releaseTag)" >> $env:GITHUB_OUTPUT
+          "archive=$($metadata.archive)" >> $env:GITHUB_OUTPUT
+          "checksum=$($metadata.checksum)" >> $env:GITHUB_OUTPUT
+          "manifest=$($metadata.manifest)" >> $env:GITHUB_OUTPUT
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.runtime.outputs.archive }}
+          path: nanobot-gui/dist/python-runtime/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish stable runtime release assets
+        working-directory: nanobot-gui
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUNTIME_TAG: ${{ steps.runtime.outputs.tag }}
+          RUNTIME_ARCHIVE: ${{ steps.runtime.outputs.archive }}
+          RUNTIME_CHECKSUM: ${{ steps.runtime.outputs.checksum }}
+          RUNTIME_MANIFEST: ${{ steps.runtime.outputs.manifest }}
+          NANOBOT_REF: ${{ inputs.nanobot_ref }}
+        run: |
+          gh release view $env:RUNTIME_TAG 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $env:RUNTIME_TAG --prerelease --target $env:GITHUB_SHA --title "TPACowork Windows Python 3.12.9 runtime" --notes "Prebuilt win32-x64 desktop runtime. Embedded nanobot ref: $env:NANOBOT_REF"
+          } else {
+            gh release edit $env:RUNTIME_TAG --prerelease
+          }
+          gh release upload $env:RUNTIME_TAG `
+            "dist/python-runtime/$env:RUNTIME_ARCHIVE" `
+            "dist/python-runtime/$env:RUNTIME_CHECKSUM" `
+            "dist/python-runtime/$env:RUNTIME_MANIFEST" `
+            --clobber

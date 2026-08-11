@@ -158,6 +158,9 @@ export const windowBridge = {
   setBackgroundColor: async (color: string): Promise<void> => {
     return window.ipc.invoke('window:setBackgroundColor', color);
   },
+  setTitleBarOverlayTheme: async (dark: boolean): Promise<boolean> => {
+    return window.ipc.invoke('window:setTitleBarOverlayTheme', dark);
+  },
   isFullScreen: async (): Promise<boolean> => {
     return window.ipc.invoke('window:isFullScreen');
   },

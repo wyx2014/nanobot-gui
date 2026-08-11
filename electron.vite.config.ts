@@ -4,19 +4,14 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   main: {
-    plugins: [
-      externalizeDepsPlugin({
-        include: ['node-llama-cpp'],
-        exclude: ['react', 'react-dom', 'react-markdown', 'remark-breaks', 'remark-gfm']
-      })
-    ],
+    plugins: [externalizeDepsPlugin()],
     build: {
       lib: {
         entry: resolve(__dirname, 'electron/main.ts'),
         formats: ['cjs']
       },
       rollupOptions: {
-        external: ['electron', 'node-llama-cpp'],
+        external: ['electron'],
         output: {
           entryFileNames: 'index.cjs'
         },

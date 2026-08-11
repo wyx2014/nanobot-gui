@@ -4,6 +4,9 @@ import {
   MACOS_TITLE_BAR_HEIGHT,
   MAIN_WINDOW_BACKGROUND,
   MAIN_WINDOW_BOUNDS,
+  WINDOWS_TITLE_BAR_DARK,
+  WINDOWS_TITLE_BAR_HEIGHT,
+  WINDOWS_TITLE_BAR_LIGHT,
 } from './mainWindowConfig';
 
 describe('main window bounds', () => {
@@ -32,8 +35,27 @@ describe('main window chrome', () => {
     });
   });
 
-  it('keeps native window chrome on Windows and Linux', () => {
-    expect(getMainWindowChrome('win32')).toEqual({});
+  it('uses a Codex-style overlay that keeps native window buttons on Windows', () => {
+    expect(WINDOWS_TITLE_BAR_HEIGHT).toBe(48);
+    expect(WINDOWS_TITLE_BAR_LIGHT).toEqual({
+      color: '#f7f6f2',
+      symbolColor: '#29261b',
+    });
+    expect(WINDOWS_TITLE_BAR_DARK).toEqual({
+      color: '#242424',
+      symbolColor: '#f3f0e8',
+    });
+    expect(getMainWindowChrome('win32')).toEqual({
+      titleBarStyle: 'hidden',
+      titleBarOverlay: {
+        color: '#f7f6f2',
+        symbolColor: '#29261b',
+        height: 48,
+      },
+    });
+  });
+
+  it('keeps native window chrome on Linux', () => {
     expect(getMainWindowChrome('linux')).toEqual({});
   });
 });

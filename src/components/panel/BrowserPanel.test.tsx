@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getI18n } from '@/i18n';
 import { useBrowserStore } from '@/stores/browserStore';
+import { isWindows } from '@/utils/platform';
 import BrowserPanel from './BrowserPanel';
 
 const { browserControl } = vi.hoisted(() => ({
@@ -95,7 +96,7 @@ describe('BrowserPanel mirror refresh', () => {
     const closeButton = container?.querySelector(
       `button[aria-label="${getI18n().panel.browserClose}"]`,
     );
-    expect(header?.classList.contains('mt-7')).toBe(true);
+    expect(header?.classList.contains(isWindows() ? 'mt-12' : 'mt-7')).toBe(true);
     expect(closeButton).not.toBeNull();
 
     act(() => closeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })));

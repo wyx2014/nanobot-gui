@@ -10,6 +10,9 @@ import {
   getMainWindowChrome,
   MAIN_WINDOW_BACKGROUND,
   MAIN_WINDOW_BOUNDS,
+  WINDOWS_TITLE_BAR_DARK,
+  WINDOWS_TITLE_BAR_HEIGHT,
+  WINDOWS_TITLE_BAR_LIGHT,
 } from './mainWindowConfig'
 import { getOpenDialogProperties } from './dialogOptions'
 import { deviceLinkBridge } from './deviceLinkBridge'
@@ -531,6 +534,15 @@ app.whenReady().then(async () => {
     if (win && typeof color === 'string' && /^#[0-9a-fA-F]{6}$/.test(color)) {
       win.setBackgroundColor(color)
     }
+  })
+
+  ipcMain.handle('window:setTitleBarOverlayTheme', (event, dark: boolean) => {
+    if (process.platform !== 'win32') return false
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || typeof dark !== 'boolean') return false
+    const colors = dark ? WINDOWS_TITLE_BAR_DARK : WINDOWS_TITLE_BAR_LIGHT
+    win.setTitleBarOverlay({ ...colors, height: WINDOWS_TITLE_BAR_HEIGHT })
+    return true
   })
 
   ipcMain.handle('window:isFullScreen', (event) => {

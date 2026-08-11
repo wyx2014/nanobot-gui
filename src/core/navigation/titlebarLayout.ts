@@ -6,6 +6,7 @@ const SIDEBAR_WIDTH = 260;
 
 export interface TitlebarLayoutInput {
   isMac: boolean;
+  isWindows: boolean;
   isFullScreen: boolean;
   sidebarCollapsed: boolean;
   sidebarVisible: boolean;
@@ -23,6 +24,7 @@ export interface TitlebarLayout {
  */
 export function resolveTitlebarLayout({
   isMac,
+  isWindows,
   isFullScreen,
   sidebarCollapsed,
   sidebarVisible,
@@ -31,18 +33,22 @@ export function resolveTitlebarLayout({
     ? TITLEBAR_EDGE_GAP
     : isMac
       ? 92
-      : sidebarCollapsed
-        ? 70
-        : 232;
+      : isWindows
+        ? TITLEBAR_EDGE_GAP
+        : sidebarCollapsed
+          ? 70
+          : 232;
   const navigationWidth = (
     TITLEBAR_CONTROL_COUNT * TITLEBAR_CONTROL_SIZE
     + (TITLEBAR_CONTROL_COUNT - 1) * TITLEBAR_CONTROL_GAP
   );
   const mainContentLeft = sidebarVisible ? SIDEBAR_WIDTH : 0;
-  const conversationLeadingInset = Math.max(
-    TITLEBAR_EDGE_GAP,
-    navigationLeft + navigationWidth + TITLEBAR_EDGE_GAP - mainContentLeft,
-  );
+  const conversationLeadingInset = isWindows
+    ? TITLEBAR_EDGE_GAP
+    : Math.max(
+      TITLEBAR_EDGE_GAP,
+      navigationLeft + navigationWidth + TITLEBAR_EDGE_GAP - mainContentLeft,
+    );
 
   return { navigationLeft, conversationLeadingInset };
 }

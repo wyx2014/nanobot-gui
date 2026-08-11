@@ -27,7 +27,7 @@ import { useSettingsStore, getEffectiveModel } from '@/stores/settingsStore';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ArrowLeft, ArrowRight, PanelLeft } from 'lucide-react';
 import { ThinkingOrb } from 'thinking-orbs';
-import { isMacOS } from '@/utils/platform';
+import { isMacOS, isWindows } from '@/utils/platform';
 import { cn } from '@/lib/utils';
 import { initNotifications } from '@/utils/notifications';
 import { startBehaviorSensor, stopBehaviorSensor } from '@/core/runtime/behaviorSensor';
@@ -154,6 +154,13 @@ function App() {
       const root = document.documentElement;
       const isDark = theme === 'dark' || (theme === 'system' && mediaQuery.matches);
       const currentlyDark = root.classList.contains('dark');
+      // Keep Electron-owned chrome in lockstep with the renderer. Windows uses
+      // native caption buttons over our custom title bar, so their background
+      // and glyph colors must follow the active theme as well.
+      void windowBridge.setBackgroundColor(isDark ? '#171717' : '#fbfaf7');
+      if (isWindows()) {
+        void windowBridge.setTitleBarOverlayTheme(isDark);
+      }
       // No-op switch (e.g. "system" -> "light" while the OS is already light)
       // must not touch the DOM at all: even toggling the suppression class
       // makes backdrop-filter overlays flicker for a frame.
@@ -164,9 +171,6 @@ function App() {
       root.classList.add('theme-transitioning');
       root.classList.toggle('dark', isDark);
       root.style.colorScheme = isDark ? 'dark' : 'light';
-      // Keep the native window background in sync so the composited window
-      // layer never flashes the light palette during an OS-triggered flip.
-      void windowBridge.setBackgroundColor(isDark ? '#171717' : '#fbfaf7');
       requestAnimationFrame(() => {
         requestAnimationFrame(() => root.classList.remove('theme-transitioning'));
       });
@@ -599,12 +603,16 @@ function App() {
     refreshDiscovery,
   ]);
 
-  // macOS uses a full-size hidden title bar so renderer controls can sit beside
-  // the native traffic lights. Windows and Linux keep their native title bars.
+  // macOS shares this row with the traffic lights. Windows uses Electron's
+  // title-bar overlay so the native caption buttons stay on the right while
+  // our sidebar and history controls occupy the upper-left, like Codex.
   const mac = isMacOS();
+  const windows = isWindows();
+  const customTitlebar = mac || windows;
   const sidebarVisible = !artifactPreviewOpen && !previewExpanded && !sidebarCollapsed;
   const titlebarLayout = resolveTitlebarLayout({
     isMac: mac,
+    isWindows: windows,
     isFullScreen: windowFullScreen,
     sidebarCollapsed,
     sidebarVisible,
@@ -626,10 +634,14 @@ function App() {
             }}
           />
         )}
-        {mac && (
+        {customTitlebar && (
           <div
             data-window-titlebar
-            className="window-titlebar-drag fixed left-0 right-0 top-0 z-40 h-12"
+            data-window-titlebar-platform={windows ? 'windows' : 'macos'}
+            className={cn(
+              'window-titlebar-drag fixed left-0 right-0 top-0 z-40 h-12',
+              windows && 'border-b border-[#e5e2db] bg-[#f7f6f2] dark:border-[#3d3d3d] dark:bg-[#242424]',
+            )}
           />
         )}
 
@@ -637,28 +649,31 @@ function App() {
           className={cn(
             'pointer-events-none fixed left-0 right-0 top-0 z-[60] transition-opacity duration-150',
             previewExpanded && 'opacity-0 [&_button]:pointer-events-none',
-            mac ? 'h-12' : 'h-8',
+            customTitlebar ? 'h-12' : 'h-8',
           )}
           style={{ transitionDelay: shellTransitionDelay }}
         >
           <div
             className="window-titlebar-no-drag pointer-events-auto absolute flex items-center gap-1 transition-[left] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)]"
             style={{
-                top: mac ? 10 : 4,
-                left: titlebarLayout.navigationLeft,
-                transitionDelay: shellTransitionDelay,
-              }}
-            >
+              top: customTitlebar ? (windows ? 8 : 10) : 4,
+              left: titlebarLayout.navigationLeft,
+              transitionDelay: shellTransitionDelay,
+            }}
+          >
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
                   type="button"
                   onClick={toggleSidebar}
                   data-sidebar-titlebar-toggle
-                  className="flex h-7 w-7 items-center justify-center rounded-lg text-[#656358] transition-colors hover:bg-[#ded9cf] hover:text-[#29261b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d97757]/40 dark:text-[#d8d5ce] dark:hover:bg-[#57534d] dark:hover:text-white"
+                  className={cn(
+                    'flex items-center justify-center rounded-lg text-[#656358] transition-colors hover:bg-[#ded9cf] hover:text-[#29261b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d97757]/40 dark:text-[#d8d5ce] dark:hover:bg-[#57534d] dark:hover:text-white',
+                    windows ? 'mr-2 h-8 w-8' : 'h-7 w-7',
+                  )}
                   aria-label={sidebarCollapsed ? t.sidebar.showSidebar : t.sidebar.hideSidebar}
                 >
-                  <PanelLeft className="h-[17px] w-[17px]" strokeWidth={1.8} />
+                  <PanelLeft className={windows ? 'h-[18px] w-[18px]' : 'h-[17px] w-[17px]'} strokeWidth={1.8} />
                 </button>
               </TooltipTrigger>
               <TooltipContent
@@ -677,10 +692,13 @@ function App() {
                   onClick={goBack}
                   disabled={!canGoBack}
                   data-titlebar-back
-                  className="flex h-7 w-7 items-center justify-center rounded-lg text-[#656358] transition-colors hover:bg-[#ded9cf] hover:text-[#29261b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d97757]/40 disabled:cursor-default disabled:text-[#b8b5ae] disabled:hover:bg-transparent dark:text-[#d8d5ce] dark:hover:bg-[#57534d] dark:hover:text-white dark:disabled:text-[#67645f]"
+                  className={cn(
+                    'flex items-center justify-center rounded-lg text-[#656358] transition-colors hover:bg-[#ded9cf] hover:text-[#29261b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d97757]/40 disabled:cursor-default disabled:text-[#b8b5ae] disabled:hover:bg-transparent dark:text-[#d8d5ce] dark:hover:bg-[#57534d] dark:hover:text-white dark:disabled:text-[#67645f]',
+                    windows ? 'h-8 w-8' : 'h-7 w-7',
+                  )}
                   aria-label={t.sidebar.goBack}
                 >
-                  <ArrowLeft className="h-[17px] w-[17px]" strokeWidth={1.8} />
+                  <ArrowLeft className={windows ? 'h-[18px] w-[18px]' : 'h-[17px] w-[17px]'} strokeWidth={1.8} />
                 </button>
               </TooltipTrigger>
               <TooltipContent
@@ -699,10 +717,13 @@ function App() {
                   onClick={goForward}
                   disabled={!canGoForward}
                   data-titlebar-forward
-                  className="flex h-7 w-7 items-center justify-center rounded-lg text-[#656358] transition-colors hover:bg-[#ded9cf] hover:text-[#29261b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d97757]/40 disabled:cursor-default disabled:text-[#b8b5ae] disabled:hover:bg-transparent dark:text-[#d8d5ce] dark:hover:bg-[#57534d] dark:hover:text-white dark:disabled:text-[#67645f]"
+                  className={cn(
+                    'flex items-center justify-center rounded-lg text-[#656358] transition-colors hover:bg-[#ded9cf] hover:text-[#29261b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d97757]/40 disabled:cursor-default disabled:text-[#b8b5ae] disabled:hover:bg-transparent dark:text-[#d8d5ce] dark:hover:bg-[#57534d] dark:hover:text-white dark:disabled:text-[#67645f]',
+                    windows ? 'h-8 w-8' : 'h-7 w-7',
+                  )}
                   aria-label={t.sidebar.goForward}
                 >
-                  <ArrowRight className="h-[17px] w-[17px]" strokeWidth={1.8} />
+                  <ArrowRight className={windows ? 'h-[18px] w-[18px]' : 'h-[17px] w-[17px]'} strokeWidth={1.8} />
                 </button>
               </TooltipTrigger>
               <TooltipContent
@@ -732,12 +753,12 @@ function App() {
             <Sidebar />
           </div>
 
-          {/* Main clears the custom macOS title bar; native title bars consume their own space. */}
+          {/* Custom title bars live inside the renderer, so content starts below them. */}
           <main
             className={cn(
               'flex-1 min-w-0 bg-[#fbfaf7] transition-opacity duration-150',
               previewExpanded && 'pointer-events-none overflow-hidden opacity-0',
-              mac && 'pt-12',
+              customTitlebar && 'pt-12',
             )}
             style={{
               transitionDelay: shellTransitionDelay,

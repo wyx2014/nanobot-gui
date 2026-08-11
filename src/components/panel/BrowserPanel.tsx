@@ -13,6 +13,7 @@ import { getNanobotClient } from '@/core/nanobotClient';
 import { useI18n } from '@/i18n';
 import { shellBridge } from '@/lib/ipc-factory';
 import { cn } from '@/lib/utils';
+import { isWindows } from '@/utils/platform';
 import { useBrowserStore } from '@/stores/browserStore';
 import { Button } from '@/components/ui/button';
 
@@ -71,7 +72,10 @@ export default function BrowserPanel({ chatId }: BrowserPanelProps) {
 
   return (
     <section className="flex h-full min-h-0 flex-col bg-[#f5f3ee]" aria-label={t.panel.browserTitle}>
-      <header className="mt-7 flex h-12 shrink-0 items-center gap-2 border-b border-[#e5e2db] px-3">
+      <header className={cn(
+        'flex h-12 shrink-0 items-center gap-2 border-b border-[#e5e2db] px-3',
+        isWindows() ? 'mt-12' : 'mt-7',
+      )}>
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white text-[#625f55] shadow-sm ring-1 ring-[#e5e2db]">
             <Globe2 className="h-3.5 w-3.5" />

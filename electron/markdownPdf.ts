@@ -9,6 +9,7 @@ import remarkGfm from 'remark-gfm';
 
 export type MermaidImage = { png: string; width: number; height: number };
 export type MermaidImageRenderer = (code: string) => Promise<MermaidImage>;
+export type MarkdownRenderTemplate = 'simple' | 'research_report';
 
 const remarkPlugins = [remarkGfm, remarkBreaks];
 const MAX_EMBEDDED_LOCAL_IMAGE_BYTES = 8 * 1024 * 1024;
@@ -133,7 +134,7 @@ export function renderMarkdownDocument(
   title: string,
   mermaidFigures: Map<string, MermaidImage> = new Map(),
   sourcePath?: string,
-  template = 'simple',
+  template: MarkdownRenderTemplate = 'simple',
 ): string {
   const font = readNewsreaderFont();
   const fontFace = font
@@ -278,6 +279,7 @@ function renderRichMarkdownHtml(
   title: string,
   mermaidFigures: Map<string, MermaidImage>,
   sourcePath?: string,
+  template: MarkdownRenderTemplate = 'simple',
 ): string {
   let body = markdownBody(markdown, sourcePath);
   for (const [token, image] of mermaidFigures) {
@@ -287,11 +289,21 @@ function renderRichMarkdownHtml(
   // The web report owns a dedicated hero, so avoid rendering the Markdown H1 twice.
   body = body.replace(/^\s*<h1>[^]*?<\/h1>\s*/i, '');
   const meta = reportMeta(markdown);
+  const isResearchReport = template === 'research_report';
   const metaItems = [
     meta.date ? `<span>数据截止 · ${escapeHtml(meta.date)}</span>` : '',
     meta.richness ? `<span>信息评级 · ${escapeHtml(meta.richness)}</span>` : '',
-    '<span>AI 多角色交叉研究</span>',
+    isResearchReport ? '<span>AI 多角色交叉研究</span>' : '',
   ].filter(Boolean).join('');
+  const eyebrow = isResearchReport
+    ? '<div class="eyebrow">TPACOWORK · EXPERT RESEARCH</div>'
+    : '';
+  const subtitle = isResearchReport
+    ? '<p class="hero-subtitle">专家团队 · 多角色研究、交叉质证与数据审计</p>'
+    : '';
+  const footer = isResearchReport
+    ? '本报告由 TPACowork 专家团队基于可用资料生成，仅作研究辅助，不构成投资建议。'
+    : '本文档由 TPACowork 根据当前任务内容生成。';
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -408,17 +420,17 @@ figure.mermaid img { width: auto; max-width: 100%; height: auto; max-height: 600
 <body>
 <header class="report-hero">
   <div class="hero-inner">
-    <div class="eyebrow">TPACOWORK · EXPERT RESEARCH</div>
+    ${eyebrow}
     <h1>${escapeHtml(title)}</h1>
-    <p class="hero-subtitle">专家团队 · 多角色研究、交叉质证与数据审计</p>
-    <div class="hero-meta">${metaItems}</div>
+    ${subtitle}
+    ${metaItems ? `<div class="hero-meta">${metaItems}</div>` : ''}
   </div>
 </header>
 <main class="report-shell">
   <nav class="report-toc" aria-label="报告目录"><span class="toc-label">报告目录</span><div class="toc-links"></div></nav>
   <div id="dashboard"></div>
   <article id="report-content">${body}</article>
-  <footer class="report-footer">本报告由TPACowork专家团队基于可用资料生成，仅作研究辅助，不构成投资建议。</footer>
+  <footer class="report-footer">${footer}</footer>
 </main>
 <script>
 (function () {
@@ -721,7 +733,7 @@ export async function renderMarkdownPdf(
   title: string,
   mermaidRenderer?: MermaidImageRenderer,
   sourcePath?: string,
-  template = 'simple',
+  template: MarkdownRenderTemplate = 'simple',
 ): Promise<Buffer> {
   const prepared = await prepareMermaid(markdown, mermaidRenderer);
   const document = renderMarkdownDocument(prepared.markdown, title, prepared.figures, sourcePath, template);
@@ -755,6 +767,7 @@ export async function renderMarkdownHtml(
   title: string,
   mermaidRenderer?: MermaidImageRenderer,
   sourcePath?: string,
+  template: MarkdownRenderTemplate = 'simple',
 ): Promise<string> {
   const prepared = await prepareMermaid(markdown, mermaidRenderer);
   return `<!-- Generated from Markdown by TPACowork -->\n${renderRichMarkdownHtml(
@@ -762,5 +775,6 @@ export async function renderMarkdownHtml(
     title,
     prepared.figures,
     sourcePath,
+    template,
   )}`;
 }

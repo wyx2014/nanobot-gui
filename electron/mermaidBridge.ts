@@ -53,7 +53,13 @@ export class MermaidBridge {
           const sourcePath = typeof payload.source_path === 'string' ? payload.source_path : undefined;
           const template = payload.template === 'research_report' ? 'research_report' : 'simple';
           if (request.url === '/render-html') {
-            const html = await renderMarkdownHtml(payload.markdown, title, (code) => this.render(code), sourcePath);
+            const html = await renderMarkdownHtml(
+              payload.markdown,
+              title,
+              (code) => this.render(code),
+              sourcePath,
+              template,
+            );
             response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ html }));
           } else {
             const pdf = await renderMarkdownPdf(payload.markdown, title, (code) => this.render(code), sourcePath, template);

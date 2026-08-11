@@ -6,6 +6,7 @@ import { useActiveConversation } from '@/stores/chatStore';
 import { useI18n } from '@/i18n';
 import { displaySkillName } from '@/core/skills/filter';
 import { cn } from '@/lib/utils';
+import { stripDuplicateHtmlArtifactReference } from '@/core/nanobot/htmlArtifactDedup';
 import { MessageMedia, UserImageGrid } from './MessageMedia';
 
 function getTextContent(content: string | MessageContent[]): string {
@@ -232,6 +233,9 @@ export default function MessageBubble({
   const textContent = getTextContent(message.content);
   const imageBlocks = getImageBlocks(message.content);
   const mediaAttachments = message.mediaAttachments ?? [];
+  const visibleTextContent = isUser
+    ? textContent
+    : stripDuplicateHtmlArtifactReference(textContent, mediaAttachments);
   const mcpPresets = message.mcpPresets ?? [];
   const primaryMcpPreset = mcpPresets[0];
   const hiddenMcpPresets = mcpPresets.slice(1);
@@ -264,14 +268,14 @@ export default function MessageBubble({
   }, [contextMenu]);
 
   const copyText = useCallback(async () => {
-    await navigator.clipboard.writeText(textContent);
+    await navigator.clipboard.writeText(visibleTextContent);
     setCopied(true);
     if (copyResetRef.current !== null) window.clearTimeout(copyResetRef.current);
     copyResetRef.current = window.setTimeout(() => {
       setCopied(false);
       copyResetRef.current = null;
     }, 1500);
-  }, [textContent]);
+  }, [visibleTextContent]);
 
   const handleSaveEdit = async (newContent: string) => {
     setIsEditing(false);
@@ -384,7 +388,7 @@ export default function MessageBubble({
     );
   }
 
-  const empty = textContent.trim().length === 0;
+  const empty = visibleTextContent.trim().length === 0;
   const showAssistantActions = message.role === 'assistant' && !message.isStreaming && !empty;
   const completedAt = formatAssistantCompletedAt(message.completedAt ?? message.timestamp);
   const showFooter = showAssistantCopyAction && showAssistantActions;
@@ -404,9 +408,9 @@ export default function MessageBubble({
         <TypingDots />
       ) : (
         <>
-          {textContent ? (
+          {visibleTextContent ? (
             <div className="text-[#29261b] break-words">
-              <MarkdownRenderer content={textContent} />
+              <MarkdownRenderer content={visibleTextContent} />
             </div>
           ) : null}
           {mediaAttachments.length > 0 ? (
@@ -416,7 +420,7 @@ export default function MessageBubble({
               visibility="html-only"
             />
           ) : null}
-          {message.isStreaming && textContent ? <span className="streaming-cursor" /> : null}
+          {message.isStreaming && visibleTextContent ? <span className="streaming-cursor" /> : null}
           {showFooter ? (
             <div
               data-testid="assistant-reply-actions"

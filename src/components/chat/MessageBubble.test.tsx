@@ -2,6 +2,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Message } from '@/types';
+import { stripDuplicateHtmlArtifactReference } from '@/core/nanobot/htmlArtifactDedup';
 import MessageBubble, { formatAssistantCompletedAt } from './MessageBubble';
 
 let container: HTMLDivElement;
@@ -85,6 +86,39 @@ describe('MessageBubble assistant reply actions', () => {
     const live = container.querySelector<HTMLElement>('[data-message-bubble]');
     expect(live?.className).toContain('motion-safe:animate-in');
     expect(live?.getAttribute('data-streaming')).toBe('true');
+  });
+});
+
+describe('MessageBubble generated HTML delivery', () => {
+  const reportPath = '/Users/test/reports/青岛啤酒-投资研究报告.html';
+  const reportAttachment = {
+    localPath: reportPath,
+    name: '青岛啤酒-投资研究报告.html',
+    mimeType: 'text/html',
+    kind: 'file' as const,
+  };
+
+  it('removes a duplicate inline HTML reference while preserving the summary', () => {
+    expect(stripDuplicateHtmlArtifactReference(
+      `核心结论：经营稳健。完整 HTML 报告：\`${reportPath}\``,
+      [reportAttachment],
+    )).toBe('核心结论：经营稳健。');
+  });
+
+  it('shows the generated HTML only as the attachment card', () => {
+    const message: Message = {
+      id: 'assistant-with-html',
+      role: 'assistant',
+      content: `核心结论：经营稳健。\n\n完整 HTML 报告：\`${reportPath}\``,
+      timestamp: Date.now(),
+      mediaAttachments: [reportAttachment],
+    };
+
+    act(() => root.render(<MessageBubble message={message} />));
+
+    expect(container.textContent).toContain('核心结论：经营稳健。');
+    expect(container.textContent).not.toContain('完整 HTML 报告');
+    expect(container.textContent?.match(/青岛啤酒-投资研究报告\.html/g)).toHaveLength(1);
   });
 });
 

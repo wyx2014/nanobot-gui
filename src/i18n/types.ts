@@ -70,6 +70,8 @@ export interface TranslationDict {
     changeAvatar: string;
     defaultNickname: string;
     resetProfile: string;
+    login: string;
+    loggedInAs: string;
   };
 
   // Chat/Welcome

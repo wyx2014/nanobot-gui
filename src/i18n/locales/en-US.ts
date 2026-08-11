@@ -58,6 +58,8 @@ const enUS: TranslationDict = {
     changeAvatar: 'Change Avatar',
     defaultNickname: 'TPACowork',
     resetProfile: 'Reset to Default',
+    login: 'Login',
+    loggedInAs: 'Signed in as {name}',
   },
 
   chat: {

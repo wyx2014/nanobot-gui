@@ -104,7 +104,7 @@ export default function Sidebar() {
   const logoutPromptHub = usePromptHubStore((s) => s.logout);
   const openPromptHubLogin = usePromptHubStore((s) => s.openLogin);
   const closePromptHubLogin = usePromptHubStore((s) => s.closeLogin);
-  const { t, locale } = useI18n();
+  const { t, locale, format } = useI18n();
   const isEnglish = locale === 'en-US';
 
   // Context menu state
@@ -866,7 +866,7 @@ export default function Sidebar() {
           <button
             onClick={openPromptHubLogin}
             className="group flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-0.5 text-left transition-colors hover:bg-[#ebe9e4]"
-            title={promptHubUser ? `已登录：${promptHubUser.username}` : '连接使用'}
+            title={promptHubUser ? format(t.sidebar.loggedInAs, { name: promptHubUser.username }) : t.sidebar.login}
           >
             <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#d8d5ce] bg-[#f7f6f3] text-[#29261b]">
               {promptHubUser ? (
@@ -877,7 +877,7 @@ export default function Sidebar() {
             </div>
             <div className="flex min-w-0 flex-1 items-center">
               <div className="truncate text-[14px] font-semibold leading-5 text-[#29261b]">
-                {promptHubUser?.username || '连接使用'}
+                {promptHubUser?.username || t.sidebar.login}
               </div>
             </div>
           </button>

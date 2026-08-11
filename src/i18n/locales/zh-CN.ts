@@ -58,6 +58,8 @@ const zhCN: TranslationDict = {
     changeAvatar: '更换头像',
     defaultNickname: 'TPACowork',
     resetProfile: '恢复默认',
+    login: '登录',
+    loggedInAs: '已登录：{name}',
   },
 
   chat: {

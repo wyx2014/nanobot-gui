@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import {
   createScheduleTask,
+  deleteScheduleRun,
   deleteScheduleTask,
   fetchScheduleTasks,
   markScheduleRunViewed,
@@ -20,6 +21,7 @@ import type { ScheduleTasksPayload } from '@/core/types';
 import type {
   ScheduledTask,
   ScheduleConfig,
+  ScheduleTaskDraft,
   ScheduledTaskRun,
 } from '../types/schedule';
 
@@ -61,23 +63,16 @@ interface ScheduleState {
   loading: boolean;
   error: string | null;
   activeTaskId: string | null;
-  returnTarget: { taskId: string; runId?: string } | null;
   selectedTaskId: string | null;
   showEditor: boolean;
   editingTaskId: string | null;
+  editorDraft: ScheduleTaskDraft | null;
 }
 
 interface ScheduleActions {
   loadTasks: () => Promise<void>;
   applyPayload: (payload: ScheduleTasksPayload) => void;
-  createTask: (data: {
-    name: string;
-    description?: string;
-    prompt: string;
-    schedule: ScheduleConfig;
-    skillName?: string;
-    workspacePath?: string;
-  }) => Promise<string>;
+  createTask: (data: ScheduleTaskDraft) => Promise<string>;
   updateTask: (
     id: string,
     data: {
@@ -96,10 +91,10 @@ interface ScheduleActions {
   getActiveTaskCount: () => number;
   getUnviewedRunCount: () => number;
   markRunViewed: (taskId: string, run: ScheduledTaskRun) => Promise<void>;
+  deleteRun: (taskId: string, run: ScheduledTaskRun) => Promise<void>;
   setActiveTaskId: (id: string | null) => void;
-  setReturnTarget: (target: { taskId: string; runId?: string } | null) => void;
   setSelectedTaskId: (id: string | null) => void;
-  openEditor: (taskId?: string) => void;
+  openEditor: (taskId?: string, draft?: ScheduleTaskDraft) => void;
   closeEditor: () => void;
 }
 
@@ -111,10 +106,10 @@ export const useScheduleStore = create<ScheduleStore>()(
     loading: false,
     error: null,
     activeTaskId: null,
-    returnTarget: null,
     selectedTaskId: null,
     showEditor: false,
     editingTaskId: null,
+    editorDraft: null,
 
     applyPayload: (payload) => {
       set((state) => {
@@ -197,15 +192,16 @@ export const useScheduleStore = create<ScheduleStore>()(
       get().applyPayload(payload);
     },
 
+    deleteRun: async (taskId, run) => {
+      const runId = run.runId ?? run.id;
+      if (!runId || run.status === 'running') return;
+      const payload = await withScheduleAuth((token, baseUrl) => deleteScheduleRun(token, taskId, runId, baseUrl));
+      get().applyPayload(payload);
+    },
+
     setActiveTaskId: (id) => {
       set((state) => {
         state.activeTaskId = id;
-      });
-    },
-
-    setReturnTarget: (target) => {
-      set((state) => {
-        state.returnTarget = target;
       });
     },
 
@@ -215,10 +211,11 @@ export const useScheduleStore = create<ScheduleStore>()(
       });
     },
 
-    openEditor: (taskId) => {
+    openEditor: (taskId, draft) => {
       set((state) => {
         state.showEditor = true;
         state.editingTaskId = taskId ?? null;
+        state.editorDraft = taskId ? null : draft ?? null;
       });
     },
 
@@ -226,6 +223,7 @@ export const useScheduleStore = create<ScheduleStore>()(
       set((state) => {
         state.showEditor = false;
         state.editingTaskId = null;
+        state.editorDraft = null;
       });
     },
   })),

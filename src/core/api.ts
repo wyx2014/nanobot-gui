@@ -1,4 +1,5 @@
 import type {
+  ArchivedDataPayload,
   ChatSummary,
   CliAppsPayload,
   ExpertTeamDetail,
@@ -518,16 +519,25 @@ export async function fetchTurnPlan(
   return body.plan ?? null;
 }
 
+/** @deprecated Use archiveSession; the gateway does not delete on this action. */
 export async function deleteSession(
   token: string,
   key: string,
   base: string = "",
 ): Promise<boolean> {
-  const body = await request<{ deleted: boolean }>(
-    `${base}/api/sessions/${encodeURIComponent(key)}/delete`,
+  return archiveSession(token, key, base);
+}
+
+export async function archiveSession(
+  token: string,
+  key: string,
+  base: string = "",
+): Promise<boolean> {
+  const body = await request<{ archived: boolean }>(
+    `${base}/api/sessions/${encodeURIComponent(key)}/archive`,
     token,
   );
-  return body.deleted;
+  return body.archived;
 }
 
 export async function restoreSession(
@@ -540,6 +550,96 @@ export async function restoreSession(
     token,
   );
   return body.restored;
+}
+
+export async function purgeSession(
+  token: string,
+  key: string,
+  base: string = "",
+): Promise<boolean> {
+  const body = await request<{ purged: boolean }>(
+    `${base}/api/sessions/${encodeURIComponent(key)}/purge`,
+    token,
+  );
+  return body.purged;
+}
+
+export async function purgeProject(
+  token: string,
+  projectId: string,
+  base: string = "",
+): Promise<boolean> {
+  const body = await request<{ purged: boolean }>(
+    `${base}/api/projects/${encodeURIComponent(projectId)}/purge`,
+    token,
+  );
+  return body.purged;
+}
+
+export async function fetchArchivedData(
+  token: string,
+  base: string = "",
+): Promise<ArchivedDataPayload> {
+  type Body = {
+    schema_version: number;
+    archived_sessions: Array<{
+      session_key: string;
+      session_id?: string;
+      project_id: string;
+      title: string;
+      preview: string;
+      project_name: string;
+      project_root: string;
+      created_at: string | null;
+      updated_at: string | null;
+      archived_at: number;
+    }>;
+    archived_projects: Array<{
+      id: string;
+      kind: import("./types").ProjectPayload["kind"];
+      name: string;
+      root_path: string;
+      status: import("./types").ProjectPayload["status"];
+      created_at: number;
+      updated_at: number;
+      archived_at: number;
+      session_count: number;
+      files_deleted: false;
+    }>;
+  };
+  const body = await request<Body>(
+    `${base}/api/data-management/archives`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
+  );
+  return {
+    schemaVersion: body.schema_version,
+    archivedSessions: body.archived_sessions.map((session) => ({
+      sessionKey: session.session_key,
+      sessionId: session.session_id,
+      projectId: session.project_id,
+      title: session.title,
+      preview: session.preview,
+      projectName: session.project_name,
+      projectRoot: session.project_root,
+      createdAt: session.created_at,
+      updatedAt: session.updated_at,
+      archivedAt: session.archived_at,
+    })),
+    archivedProjects: body.archived_projects.map((project) => ({
+      id: project.id,
+      kind: project.kind,
+      name: project.name,
+      rootPath: project.root_path,
+      status: project.status,
+      createdAt: project.created_at,
+      updatedAt: project.updated_at,
+      archivedAt: project.archived_at,
+      sessionCount: project.session_count,
+      filesDeleted: project.files_deleted,
+    })),
+  };
 }
 
 export async function fetchSettings(
@@ -614,6 +714,9 @@ function appendScheduleParams(
     }
     if (data.schedule.dayOfWeek !== undefined) {
       query.set("day_of_week", String(data.schedule.dayOfWeek));
+    }
+    if (data.schedule.dayOfMonth !== undefined) {
+      query.set("day_of_month", String(data.schedule.dayOfMonth));
     }
   }
 }
@@ -718,6 +821,18 @@ export async function markScheduleRunViewed(
   query.set("task_id", taskId);
   query.set("run_id", runId);
   return request<ScheduleTasksPayload>(`${base}/api/schedule/runs/viewed?${query}`, token);
+}
+
+export async function deleteScheduleRun(
+  token: string,
+  taskId: string,
+  runId: string,
+  base: string = "",
+): Promise<ScheduleTasksPayload> {
+  const query = new URLSearchParams();
+  query.set("task_id", taskId);
+  query.set("run_id", runId);
+  return request<ScheduleTasksPayload>(`${base}/api/schedule/runs/delete?${query}`, token);
 }
 
 export async function fetchCliApps(

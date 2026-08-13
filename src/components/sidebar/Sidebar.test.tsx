@@ -123,6 +123,44 @@ describe('Sidebar conversation search', () => {
   });
 });
 
+describe('Sidebar workspace creation', () => {
+  it('shows a newly created blank workspace before the first message is sent', async () => {
+    const view = renderSidebar();
+    const addWorkspaceButton = view.querySelector<HTMLButtonElement>('button[aria-label="新建工作空间"]');
+
+    expect(addWorkspaceButton).not.toBeNull();
+    act(() => addWorkspaceButton?.click());
+
+    const createBlankButton = [...document.body.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent?.includes('新建空白工作空间'));
+    expect(createBlankButton).not.toBeUndefined();
+    act(() => createBlankButton?.click());
+
+    const nameInput = document.body.querySelector<HTMLInputElement>('input[placeholder="保持简短且易识别"]');
+    expect(nameInput).not.toBeNull();
+    act(() => {
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      valueSetter?.call(nameInput, '季度研究');
+      nameInput?.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    const saveButton = [...document.body.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent?.trim() === '保存');
+    expect(saveButton).not.toBeUndefined();
+    await act(async () => {
+      saveButton?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const createdPath = '/Users/testuser/Documents/TPACowork Projects/季度研究';
+    expect(useWorkspaceStore.getState().currentPath).toBe(createdPath);
+    expect(useWorkspaceStore.getState().recentPaths[0]).toBe(createdPath);
+    expect(view.textContent).toContain('季度研究');
+    expect(useChatStore.getState().activeConversationId).toBeNull();
+  });
+});
+
 describe('Sidebar help', () => {
   it('reopens the first-run guide without resetting its completion flag', () => {
     const view = renderSidebar();
@@ -133,6 +171,24 @@ describe('Sidebar help', () => {
 
     expect(useSettingsStore.getState().guideOpen).toBe(true);
     expect(useSettingsStore.getState().guideShown).toBe(true);
+  });
+});
+
+describe('Sidebar toolbox', () => {
+  it('opens the toolbox on expert teams by default', () => {
+    useSettingsStore.setState({ activeToolboxTab: 'mcp', toolboxSearchQuery: '旧搜索' });
+    const view = renderSidebar();
+    const toolboxButton = [...view.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent?.trim() === '工具箱');
+
+    expect(toolboxButton).not.toBeUndefined();
+    act(() => toolboxButton?.click());
+
+    expect(useSettingsStore.getState()).toMatchObject({
+      viewMode: 'toolbox',
+      activeToolboxTab: 'expert-teams',
+      toolboxSearchQuery: '',
+    });
   });
 });
 

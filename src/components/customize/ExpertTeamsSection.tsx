@@ -2,11 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   ArrowLeft,
+  ArrowRight,
   CheckCircle2,
   ChevronRight,
   Database,
   Loader2,
-  Play,
   ShieldCheck,
   Sparkles,
 } from 'lucide-react';
@@ -21,7 +21,8 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { useI18n } from '@/i18n';
 
 const teamEnglish: Record<string, { name: string; description: string }> = {
-  'asset-research-team': { name: 'Asset Research Team', description: 'Four research specialists analyze business, financials, industry, and risks in parallel. A team lead cross-checks evidence and produces the final report.' },
+  'asset-research-team': { name: 'Asset Research Team · Stock Research', description: 'Four research specialists analyze business, financials, industry, and risks in parallel. A team lead cross-checks evidence and produces the final report.' },
+  'supply-chain-bottleneck-team': { name: 'Asset Research Team · Supply Chain Bottleneck Hunter', description: 'Five specialists validate a supertrend, map the physical supply chain, test bottlenecks, screen listed companies, and challenge the thesis in two research waves.' },
 };
 
 function teamText(team: { id: string; name: string; description: string }, isEnglish: boolean) {
@@ -42,7 +43,7 @@ function mcpPresetText(
   return { name: preset.display_name, description: preset.description };
 }
 
-const assetResearchMemberEnglish: Record<string, { name: string; framework: string; description: string }> = {
+const expertTeamMemberEnglish: Record<string, { name: string; framework: string; description: string }> = {
   'business-analyst': {
     name: 'Business Analyst',
     framework: 'Duan Yongping Perspective',
@@ -68,6 +69,31 @@ const assetResearchMemberEnglish: Record<string, { name: string; framework: stri
     framework: 'Li Lu Perspective',
     description: 'Analyzes management, governance, downside risks, and the probability of permanent loss, prioritizing iFinD announcements and risk news.',
   },
+  'trend-verifier': {
+    name: 'Trend & Demand Verifier',
+    framework: 'Supertrend Validation',
+    description: 'Validates demand, physical capex, persistence, and the time window before deeper supply-chain work begins.',
+  },
+  'chain-mapper': {
+    name: 'Supply Chain Architect',
+    framework: 'Physical Chain Decomposition',
+    description: 'Maps products, components, materials, equipment, infrastructure, suppliers, and geographic dependencies layer by layer.',
+  },
+  'bottleneck-validator': {
+    name: 'Bottleneck Evidence Analyst',
+    framework: 'Six-Dimension Bottleneck Score',
+    description: 'Tests concentration, lead times, substitution, utilization, demand growth, qualification cycles, and the likely release window.',
+  },
+  'company-screener': {
+    name: 'Company Mapping & Valuation Analyst',
+    framework: 'Financial and Pricing Constraints',
+    description: 'Maps validated bottlenecks to listed companies and verifies exposure, financial quality, liquidity, valuation, and implied returns.',
+  },
+  'counter-case-analyst': {
+    name: 'Counter-Case & Risk Analyst',
+    framework: 'Munger-Style Inversion',
+    description: 'Looks for substitutes, capacity responses, demand downside, geopolitical exposure, dilution, and narrative overpricing.',
+  },
 };
 
 function memberText(
@@ -80,13 +106,13 @@ function memberText(
   isEnglish: boolean,
 ) {
   if (!isEnglish) return member;
-  const aliases: Record<string, keyof typeof assetResearchMemberEnglish> = {
+  const aliases: Record<string, keyof typeof expertTeamMemberEnglish> = {
     '商业分析师': 'business-analyst',
     '财务分析师': 'financial-analyst',
     '行业研究员': 'industry-analyst',
     '风险评估师': 'risk-analyst',
   };
-  return assetResearchMemberEnglish[member.id] ?? assetResearchMemberEnglish[aliases[member.name]] ?? member;
+  return expertTeamMemberEnglish[member.id] ?? expertTeamMemberEnglish[aliases[member.name]] ?? member;
 }
 
 async function getAuth(): Promise<{ token: string; baseUrl: string }> {
@@ -124,7 +150,7 @@ export default function ExpertTeamsSection() {
   const isEnglish = locale === 'en-US';
   const query = useSettingsStore((state) => state.toolboxSearchQuery.trim().toLowerCase());
   const closeToolbox = useSettingsStore((state) => state.closeToolbox);
-  const createConversation = useChatStore((state) => state.createConversation);
+  const startNewConversation = useChatStore((state) => state.startNewConversation);
   const [teams, setTeams] = useState<ExpertTeamSummary[]>([]);
   const [detail, setDetail] = useState<ExpertTeamDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -169,9 +195,8 @@ export default function ExpertTeamsSection() {
     }
   };
 
-  const startTeam = (team: ExpertTeamSummary | ExpertTeamDetail) => {
-    createConversation(null, {
-      title: team.name,
+  const useTeam = (team: ExpertTeamSummary | ExpertTeamDetail) => {
+    startNewConversation({
       expertTeam: {
         id: team.id,
         name: team.name,
@@ -180,6 +205,7 @@ export default function ExpertTeamsSection() {
       },
     });
     closeToolbox();
+    window.dispatchEvent(new CustomEvent('nanobot-gui:new-chat'));
   };
 
   if (detail) {
@@ -212,12 +238,12 @@ export default function ExpertTeamsSection() {
               </div>
             </div>
             <button
-              onClick={() => startTeam(detail)}
+              onClick={() => useTeam(detail)}
               disabled={!detail.available}
               className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-[#d97757] px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-[#c96747] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <Play className="h-4 w-4 fill-current" />
-              {isEnglish ? 'Start Team' : '启动团队'}
+              <ArrowRight className="h-4 w-4" />
+              {isEnglish ? 'Use Team' : '使用团队'}
             </button>
           </div>
         </div>
@@ -286,7 +312,7 @@ export default function ExpertTeamsSection() {
                           preset.configured ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700',
                         )}>
                           {preset.configured
-                            ? (isEnglish ? 'Configured · enabled when the team starts' : '已配置 · 启动团队时自动启用')
+                            ? (isEnglish ? 'Configured · enabled when the request is sent' : '已配置 · 发送任务时自动启用')
                             : (isEnglish ? 'Not configured · enabled after setup' : '未配置 · 配置后自动启用')}
                         </span>
                       </div>
@@ -373,12 +399,12 @@ export default function ExpertTeamsSection() {
                     {detailLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ChevronRight className="h-3.5 w-3.5" />}
                   </button>
                   <button
-                    onClick={() => startTeam(team)}
+                    onClick={() => useTeam(team)}
                     disabled={!team.available}
                     className="inline-flex items-center gap-1.5 rounded-lg bg-[#29261b] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#423e31] disabled:opacity-40"
                   >
-                    <Play className="h-3 w-3 fill-current" />
-                    {isEnglish ? 'Start Team' : '启动团队'}
+                    <ArrowRight className="h-3 w-3" />
+                    {isEnglish ? 'Use Team' : '使用团队'}
                   </button>
                 </div>
               </article>

@@ -30,4 +30,22 @@ describe('streamProtocolReducer', () => {
     expect(streaming.streamError).toBe(error);
     expect(streaming.isStreaming).toBe(true);
   });
+
+  it('keeps the turn running while stop is pending and clears it on terminal status', () => {
+    const running = streamProtocolReducer(initialStreamProtocolState, {
+      type: 'streaming',
+      value: true,
+    });
+    const stopping = streamProtocolReducer(running, {
+      type: 'stopping',
+      value: true,
+    });
+    const done = streamProtocolReducer(stopping, {
+      type: 'streaming',
+      value: false,
+    });
+
+    expect(stopping).toMatchObject({ isStreaming: true, isStopping: true });
+    expect(done).toMatchObject({ isStreaming: false, isStopping: false });
+  });
 });

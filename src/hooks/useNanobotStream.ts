@@ -513,7 +513,10 @@ export function reclassifyAssistantStreamAsNarration(
  * remains the authority for elapsed time, so an interrupted placeholder must
  * never turn its age into a fictional completed-turn latency.
  */
-export function finalizeInterruptedTurn(prev: UIMessage[]): UIMessage[] {
+export function finalizeInterruptedTurn(
+  prev: UIMessage[],
+  completedAt: number = Date.now(),
+): UIMessage[] {
   return prev.map((message) => {
     const taskProgress = (
       message.agentUI?.kind === "task_progress"
@@ -539,13 +542,15 @@ export function finalizeInterruptedTurn(prev: UIMessage[]): UIMessage[] {
             }
             : step
         )),
+        status: "interrupted" as const,
+        active_step_ids: [],
         current_step_id: undefined,
         note: "任务已由用户终止",
       }
       : undefined;
     const cancelledToolEvents = message.toolEvents?.map((event) => (
       event.phase === "start"
-        ? { ...event, phase: "error", error: "已由用户终止" }
+        ? { ...event, phase: "error", error: "已由用户终止", occurred_at: completedAt }
         : event
     ));
     const cancelledFileEdits = message.fileEdits?.map((edit) => (
@@ -1314,6 +1319,8 @@ export function useNanobotStream(
    * the newly selected chat. */
   messageConversationId: string | null;
   isStreaming: boolean;
+  /** Stop was requested and the gateway has not confirmed the terminal turn yet. */
+  isStopping: boolean;
   /** Unix epoch seconds when the current user turn started (WebSocket ``goal_status``). */
   runStartedAt: number | null;
   /** Live usage for the active turn; estimates are replaced by provider usage. */
@@ -1350,8 +1357,9 @@ export function useNanobotStream(
     ...initialStreamProtocolState,
     isStreaming: initialStreaming,
   });
-  const { isStreaming, runStartedAt, goalState, streamError } = protocol;
+  const { isStreaming, isStopping, runStartedAt, goalState, streamError } = protocol;
   const setIsStreaming = useCallback((value: boolean) => dispatchProtocol({ type: 'streaming', value }), []);
+  const setIsStopping = useCallback((value: boolean) => dispatchProtocol({ type: 'stopping', value }), []);
   const setGoalState = useCallback((value: GoalStateWsPayload | undefined) => dispatchProtocol({ type: 'goal_state', value }), []);
   const setRunStartedAt = useCallback((value: number | null) => dispatchProtocol({ type: 'goal_status', status: value === null ? 'idle' : 'running', ...(value === null ? {} : { startedAt: value }) }), []);
   const setStreamError = useCallback((value: StreamError | null) => dispatchProtocol({ type: 'error', value }), []);
@@ -1910,16 +1918,20 @@ export function useNanobotStream(
       if (ev.event === "team_run_started") {
         const id = `team-run-${ev.run_id}`;
         const hasDataPackage = ev.team_id === "asset-research-team";
+        const hasScopeBrief = ev.team_id === "supply-chain-bottleneck-team";
+        const hasPreparation = hasDataPackage || hasScopeBrief;
         const stagedMembers = ev.members.filter((member) => member.phase);
         const firstPhase = stagedMembers[0]?.phase;
         const firstPhaseCount = firstPhase
           ? stagedMembers.filter((member) => member.phase === firstPhase).length
           : ev.members.length;
         const steps = [
-          ...(hasDataPackage ? [{
-            id: "data-package",
-            title: "建立基础数据包",
-            detail: "正在统一公司摘要、财务指标、公告新闻和行业数据",
+          ...(hasPreparation ? [{
+            id: hasDataPackage ? "data-package" : "scope-brief",
+            title: hasDataPackage ? "建立基础数据包" : "建立研究主题卡",
+            detail: hasDataPackage
+              ? "正在统一公司摘要、财务指标、公告新闻和行业数据"
+              : "正在明确趋势、地域、时间窗口和第一阶段研究边界",
             status: "running" as const,
           }] : []),
           ...ev.members.map((member) => ({
@@ -1930,7 +1942,7 @@ export function useNanobotStream(
             // members. Showing an active state here keeps the UI truthful to
             // the running team even if a follow-up member frame is delayed.
             status: (
-              hasDataPackage
+              hasPreparation
                 ? "pending"
                 : !firstPhase || member.phase === firstPhase
                   ? "running"
@@ -1963,6 +1975,8 @@ export function useNanobotStream(
               steps,
               note: hasDataPackage
                 ? "Team Lead 正在建立公司基础数据包，完成后启动四位专家"
+                : hasScopeBrief
+                ? "Team Lead 正在建立研究主题卡，完成后启动第一阶段两位专家"
                 : firstPhase && firstPhaseCount < ev.members.length
                 ? `${ev.members.length} 位专家将分阶段协作，首阶段 ${firstPhaseCount} 位并行研究`
                 : `${ev.members.length} 位专家正在并行研究`,
@@ -2101,8 +2115,13 @@ export function useNanobotStream(
           const failed = ev.event === "turn_completed"
             ? ev.turn.status === "failed"
             : ev.finish_reason === "error";
+          const interruptedAt = ev.event === "turn_completed"
+            && typeof ev.turn.completed_at === "number"
+            && Number.isFinite(ev.turn.completed_at)
+            ? ev.turn.completed_at
+            : Date.now();
           let finalized = interrupted
-            ? finalizeInterruptedTurn(prev)
+            ? finalizeInterruptedTurn(prev, interruptedAt)
             : closeOpenStreams(prev);
           if (ev.event === 'turn_completed' && ev.turn.plan) {
             finalized = applyPlanToMessages(finalized, ev.turn.plan);
@@ -2547,6 +2566,7 @@ export function useNanobotStream(
       // Mark streaming immediately so the UI shows the loading indicator
       // right away, before the first delta arrives from the server.
       setTurnUsage(undefined);
+      setIsStopping(false);
       setIsStreaming(true);
       const wireMedia = hasImages ? images!.map((i) => i.media) : undefined;
       if (options) {
@@ -2556,27 +2576,15 @@ export function useNanobotStream(
       }
       return true;
     },
-    [chatId, clearActivitySegment, client, flushPendingStreamEvents, setIsStreaming],
+    [chatId, clearActivitySegment, client, flushPendingStreamEvents, setIsStopping, setIsStreaming],
   );
 
   const stop = useCallback(() => {
-    if (!chatId || !client) return;
+    if (!chatId || !client || !isStreaming || isStopping) return;
     flushPendingStreamEvents();
-    setIsStreaming(false);
-    setRunStartedAt(null);
-    setMessages((prev) => {
-      buffer.current = null;
-      activeAssistantRef.current = null;
-      activeTurnIdRef.current = null;
-      lastAnswerStreamRef.current = null;
-      closedAssistantStreamIdsRef.current.clear();
-      clearActivitySegment();
-      return finalizeInterruptedTurn(prev);
-    });
-    suppressStreamUntilTurnEndRef.current = false;
-    lifecycleTerminalHandledRef.current = false;
+    setIsStopping(true);
     client.sendMessage(chatId, "/stop");
-  }, [chatId, clearActivitySegment, client, flushPendingStreamEvents, setIsStreaming]);
+  }, [chatId, client, flushPendingStreamEvents, isStopping, isStreaming, setIsStopping]);
 
   return {
     messages: visibleMessages,
@@ -2584,6 +2592,7 @@ export function useNanobotStream(
       ? messageConversationId
       : null,
     isStreaming,
+    isStopping,
     runStartedAt,
     turnUsage,
     goalState,

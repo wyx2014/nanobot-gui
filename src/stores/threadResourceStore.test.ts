@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CanonicalSessionEvent, ThreadResource } from '@/core/types';
+import { projectThreadResource } from '@/core/nanobot/threadResourceProjection';
 import { useThreadResourceStore } from './threadResourceStore';
 
 function resource(overrides: Partial<ThreadResource> = {}): ThreadResource {
@@ -68,6 +69,15 @@ describe('threadResourceStore', () => {
       useThreadResourceStore.getState().resourcesBySession['websocket:chat-a']
         .snapshot_revision,
     ).toBe(4_000_000);
+  });
+
+  it('rejects a snapshot requested for another conversation', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(projectThreadResource('chat-b', resource())).toBeNull();
+    expect(useThreadResourceStore.getState().resourcesBySession).toEqual({});
+
+    error.mockRestore();
   });
 
   it('applies a consecutive event and rejects duplicates', () => {

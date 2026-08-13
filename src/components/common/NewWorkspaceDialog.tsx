@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import { osBridge, fsBridge } from '@/lib/ipc-factory';
 import { useI18n } from '@/i18n';
 import { USER_PROJECTS_DIRECTORY_NAME } from '@/config/appDirectories';
+import WindowModalBackdrop from './WindowModalBackdrop';
 
 interface NewWorkspaceDialogProps {
   open: boolean;
@@ -53,12 +54,13 @@ export default function NewWorkspaceDialog({ open, onClose, onCreated }: NewWork
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/20 px-4 backdrop-blur-[1px] animate-in fade-in duration-150 dark:bg-black/45"
+      className="fixed inset-0 z-[200] flex items-center justify-center px-4 animate-in fade-in duration-150"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="flex w-[480px] max-h-[85vh] flex-col bg-white rounded-2xl shadow-xl overflow-hidden dark:border dark:border-[#3a3a3a] dark:bg-[#262626]">
+      <WindowModalBackdrop className="dark:bg-black/45" />
+      <div className="relative flex w-[480px] max-h-[85vh] flex-col bg-white rounded-2xl shadow-xl overflow-hidden dark:border dark:border-[#3a3a3a] dark:bg-[#262626]">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100 shrink-0 dark:border-white/10">
           <div>

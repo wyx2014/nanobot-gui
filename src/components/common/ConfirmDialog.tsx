@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { cn } from '@/lib/utils';
+import WindowModalBackdrop from './WindowModalBackdrop';
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -35,24 +36,26 @@ export default function ConfirmDialog({
 
   return (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/20 backdrop-blur-[1px] animate-in fade-in duration-150"
+      className="fixed inset-0 z-[9999] flex items-center justify-center animate-in fade-in duration-150"
       onClick={(e) => {
         if (e.target === e.currentTarget) onCancel();
       }}
     >
+      <WindowModalBackdrop />
       <div
-        className="bg-white rounded-2xl shadow-xl w-[360px] p-6 animate-in zoom-in-95 duration-150"
+        data-confirm-dialog
+        className="relative w-[360px] rounded-2xl bg-white p-6 shadow-xl animate-in zoom-in-95 duration-150 dark:border dark:border-white/10 dark:bg-[#242424]"
       >
-        <h3 className="text-[16px] font-semibold text-[#29261b] mb-2">
+        <h3 className="mb-2 text-[16px] font-semibold text-[#29261b] dark:text-[#f1ede5]">
           {title}
         </h3>
-        <p className="text-[14px] text-[#656358] leading-relaxed mb-6">
+        <p className="mb-6 text-[14px] leading-relaxed text-[#656358] dark:text-[#aaa59c]">
           {message}
         </p>
         <div className="flex items-center justify-end gap-3">
           <button
             onClick={onCancel}
-            className="px-4 py-2 rounded-lg text-[13px] font-medium text-[#656358] hover:bg-[#f5f3ee] transition-colors"
+            className="rounded-lg px-4 py-2 text-[13px] font-medium text-[#656358] transition-colors hover:bg-[#f5f3ee] dark:text-[#c7c2b9] dark:hover:bg-[#33322f]"
           >
             {cancelText}
           </button>

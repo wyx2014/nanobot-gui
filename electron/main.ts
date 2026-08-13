@@ -22,12 +22,20 @@ import { createWindowsTerminalLaunchSpec } from './terminalLauncher'
 import { showDesktopNotification, type DesktopNotificationInput } from './desktopNotification'
 import {
   applicationUserDataPath,
+  defaultWorkspacePath,
   migrateLegacyApplicationData,
   migrateLegacyDefaultWorkspace,
   migrateLegacyUserProjects,
+  migratePersistedWorkspaceReferences,
   type DirectoryMigrationResult,
 } from './appDataMigration'
-import { DEFAULT_WORKSPACE_DIRECTORY_NAME } from '../src/config/appDirectories'
+import {
+  DEFAULT_WORKSPACE_DIRECTORY_NAME,
+  LEGACY_APPLICATION_DATA_DIRECTORY_NAME,
+  LEGACY_DEFAULT_WORKSPACE_DIRECTORY_NAME,
+  LEGACY_USER_PROJECTS_DIRECTORY_NAME,
+  USER_PROJECTS_DIRECTORY_NAME,
+} from '../src/config/appDirectories'
 
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 
@@ -192,6 +200,33 @@ async function startApplication(): Promise<void> {
     reportDirectoryMigration('User projects', migrateLegacyUserProjects(app.getPath('documents')));
   } catch (error) {
     console.error('[Main] Failed to migrate legacy user projects:', error);
+  }
+
+  try {
+    const workspace = defaultWorkspacePath(configuredUserDataPath);
+    const pathMigration = migratePersistedWorkspaceReferences(workspace, [
+      {
+        source: join(
+          appDataRoot,
+          LEGACY_APPLICATION_DATA_DIRECTORY_NAME,
+          LEGACY_DEFAULT_WORKSPACE_DIRECTORY_NAME,
+        ),
+        target: workspace,
+      },
+      {
+        source: join(configuredUserDataPath, LEGACY_DEFAULT_WORKSPACE_DIRECTORY_NAME),
+        target: workspace,
+      },
+      {
+        source: join(app.getPath('documents'), LEGACY_USER_PROJECTS_DIRECTORY_NAME),
+        target: join(app.getPath('documents'), USER_PROJECTS_DIRECTORY_NAME),
+      },
+    ]);
+    if (pathMigration.updatedFiles > 0) {
+      console.log('[Main] Persisted workspace path migration completed:', pathMigration);
+    }
+  } catch (error) {
+    console.error('[Main] Failed to migrate persisted workspace paths:', error);
   }
 
   if (process.platform === 'darwin' && isDev) {

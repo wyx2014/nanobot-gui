@@ -21,8 +21,11 @@ import { projectThreadResource } from '@/core/nanobot/threadResourceProjection';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { usePreviewStore } from '@/stores/previewStore';
 import { useBrowserStore } from '@/stores/browserStore';
-import { PINNED_SUMMARY_CONTENT_INSET, PINNED_SUMMARY_CONTENT_MAX_WIDTH } from '@/components/panel/layout';
-import { useScheduleStore } from '@/stores/scheduleStore';
+import {
+  getConversationColumnClasses,
+  PINNED_SUMMARY_CONTENT_INSET,
+  PINNED_SUMMARY_CONTENT_MAX_WIDTH,
+} from '@/components/panel/layout';
 import { usePromptHubStore } from '@/stores/promptHubStore';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -35,7 +38,7 @@ import ThreadMessages from './ThreadMessages';
 import InteractivePromptCard, { type InteractivePromptSubmitPayload } from './InteractivePromptCard';
 import ChatInput, { type ChatInputSendOptions } from './ChatInput';
 import ActiveSkillsBar from './ActiveSkillsBar';
-import { ArrowLeft, ChevronDown, Settings } from 'lucide-react';
+import { ChevronDown, Settings } from 'lucide-react';
 import { osBridge } from '@/lib/ipc-factory';
 import { extractUsername } from '@/utils/pathUtils';
 import StreamErrorNotice from './StreamErrorNotice';
@@ -57,6 +60,7 @@ import { loadConversationHistory } from '@/core/nanobot/conversationHistory';
 import { normalizeTaskTimestamp } from '@/utils/taskDuration';
 import { cn } from '@/lib/utils';
 import { isMacOS } from '@/utils/platform';
+import { useConversationSearch } from './useConversationSearch';
 
 interface PendingFirstMessage {
   text: string;
@@ -127,11 +131,8 @@ export default function ChatView({
   const summaryContentInset = activeConvId && !summaryCollapsed && !previewArtifact && !browserOpen
     ? PINNED_SUMMARY_CONTENT_INSET
     : 0;
+  const conversationColumnClasses = getConversationColumnClasses(summaryContentInset > 0);
   const { createConversation } = useChatStore();
-  const scheduleReturnTarget = useScheduleStore((s) => s.returnTarget);
-  const setScheduleActiveTaskId = useScheduleStore((s) => s.setActiveTaskId);
-  const setScheduleReturnTarget = useScheduleStore((s) => s.setReturnTarget);
-  const setViewMode = useSettingsStore((s) => s.setViewMode);
   const promptHubUsername = usePromptHubStore((s) => s.user?.username);
   const skills = useDiscoveryStore((s) => s.skills);
   const projectSkillBindings = useWorkspaceStore((s) => s.projectSkillBindings);
@@ -156,6 +157,8 @@ export default function ChatView({
   const [historyLoadFailed, setHistoryLoadFailed] = useState(false);
   const [historyReloadRevision, setHistoryReloadRevision] = useState(0);
   const [historyVersion, setHistoryVersion] = useState(0);
+  const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
+  const [conversationSearchQuery, setConversationSearchQuery] = useState('');
   const [promptSubmitState, setPromptSubmitState] = useState<{
     promptId: string;
     status: 'submitting' | 'error';
@@ -200,15 +203,36 @@ export default function ChatView({
       .catch((err) => console.error('Failed to get home dir:', err));
   }, [activeConvId]);
 
-  const { containerRef, isAtBottom, scrollToBottom } = useAutoScroll();
+  const { containerRef, scrollElement, isAtBottom, scrollToBottom } = useAutoScroll();
+  const composerDockRef = useRef<HTMLDivElement>(null);
+  const [composerDockHeight, setComposerDockHeight] = useState(0);
 
-  const returnToSchedule = useCallback(() => {
-    if (scheduleReturnTarget?.taskId) {
-      setScheduleActiveTaskId(scheduleReturnTarget.taskId);
+  useLayoutEffect(() => {
+    const dock = composerDockRef.current;
+    if (!activeConvId || !dock) {
+      setComposerDockHeight(0);
+      return;
     }
-    setScheduleReturnTarget(null);
-    setViewMode('schedule');
-  }, [scheduleReturnTarget, setScheduleActiveTaskId, setScheduleReturnTarget, setViewMode]);
+
+    const measure = () => {
+      const nextHeight = Math.ceil(dock.getBoundingClientRect().height);
+      setComposerDockHeight((current) => (current === nextHeight ? current : nextHeight));
+    };
+    measure();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure);
+      return () => window.removeEventListener('resize', measure);
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(dock);
+    return () => observer.disconnect();
+  }, [activeConvId]);
+
+  useLayoutEffect(() => {
+    if (!activeConvId || historyLoading || composerDockHeight <= 0) return;
+    scrollToBottom({ force: false });
+  }, [activeConvId, composerDockHeight, historyLoading, scrollToBottom]);
 
   useEffect(() => {
     if (!activeConvId) {
@@ -276,10 +300,14 @@ export default function ChatView({
         setHistoryVersion((value) => value + 1);
       } catch (error) {
         if (!cancelled) {
-          console.error('[ChatView] Failed to load conversation history:', error);
+          const waitingForScheduledRun = activeConv?.scheduledTaskId
+            && activeConv.status === 'running';
+          if (!waitingForScheduledRun) {
+            console.error('[ChatView] Failed to load conversation history:', error);
+          }
           setHistoryMessages([]);
           setHistoryConversationId(activeConvId);
-          setHistoryLoadFailed(true);
+          setHistoryLoadFailed(!waitingForScheduledRun);
           setHistoryVersion((value) => value + 1);
         }
       } finally {
@@ -289,7 +317,7 @@ export default function ChatView({
     return () => {
       cancelled = true;
     };
-  }, [activeConvId, gatewayReady, historyReloadRevision]);
+  }, [activeConv?.scheduledTaskId, activeConv?.status, activeConvId, gatewayReady, historyReloadRevision]);
 
   const handleTurnEnd = useCallback(() => {
     void syncSessionsFromGateway();
@@ -372,6 +400,24 @@ export default function ChatView({
     () => displayMessages.filter((message) => !message.interactivePrompt),
     [displayMessages],
   );
+  const conversationSearch = useConversationSearch({
+    root: scrollElement,
+    open: conversationSearchOpen,
+    query: conversationSearchQuery,
+    contentRevision: timelineMessages,
+  });
+  const openConversationSearch = useCallback(() => {
+    setConversationSearchOpen(true);
+  }, []);
+  const closeConversationSearch = useCallback(() => {
+    setConversationSearchOpen(false);
+    setConversationSearchQuery('');
+  }, []);
+
+  useEffect(() => {
+    setConversationSearchOpen(false);
+    setConversationSearchQuery('');
+  }, [activeConvId]);
   const latestTurnMessages = useMemo(() => {
     let lastUserIndex = -1;
     for (let index = timelineMessages.length - 1; index >= 0; index -= 1) {
@@ -737,9 +783,9 @@ export default function ChatView({
   if (!gatewayReady) {
     return (
       <div className="flex h-full min-h-[45vh] w-full items-center justify-center bg-[#fbfaf7] dark:bg-[#1f1f1f]">
-        <div className="flex flex-col items-center gap-3" role="status" aria-live="polite">
-          <ThinkingOrb state="solving" size={64} style={{ width: 32, height: 32 }} aria-label="" />
-          <p className="text-[13px] font-medium text-[#88857b] dark:text-[#aaa69e]">
+        <div className="flex flex-col items-center gap-4" role="status" aria-live="polite">
+          <ThinkingOrb state="solving" size={64} style={{ width: 44, height: 44 }} aria-label="" />
+          <p className="text-[15px] font-medium leading-6 text-[#88857b] dark:text-[#aaa69e]">
             {t.chat.gatewayStarting}
           </p>
         </div>
@@ -816,32 +862,39 @@ export default function ChatView({
   return (
     <div
       className={cn(
-        'flex min-h-0 min-w-0 flex-col bg-[#fbfaf7] dark:bg-[#1f1f1f]',
+        'relative flex min-h-0 min-w-0 flex-col bg-[#fbfaf7] dark:bg-[#1f1f1f]',
         isMacOS() ? '-mt-12 h-[calc(100%+3rem)]' : 'h-full',
       )}
     >
       <ConversationHeader
         conversationTitle={activeConv.title}
         onOpenTerminal={() => osBridge.openTerminal(activeProjectPath ?? undefined)}
+        searchOpen={conversationSearchOpen}
+        searchQuery={conversationSearchQuery}
+        searchMatchCount={conversationSearch.matchCount}
+        activeSearchMatchIndex={conversationSearch.activeMatchIndex}
+        onOpenSearch={openConversationSearch}
+        onCloseSearch={closeConversationSearch}
+        onSearchQueryChange={setConversationSearchQuery}
+        onPreviousSearchMatch={conversationSearch.selectPrevious}
+        onNextSearchMatch={conversationSearch.selectNext}
       />
 
       {/* Messages Area */}
       <div className="relative flex-1 min-h-0">
         <div
           key={activeConvId}
-          className="h-full overflow-y-auto"
+          className="conversation-search-scope h-full overflow-y-auto"
           ref={containerRef}
           style={summaryContentInset ? { paddingRight: summaryContentInset } : undefined}
           aria-busy={isConversationLoading}
         >
           <div className={cn(
-            "w-full py-8 overflow-hidden",
+            'py-8 overflow-hidden px-6 md:px-10',
+            conversationColumnClasses.outer,
             // Keep the same full reading measure when the summary opens. On a
             // compact Windows viewport App temporarily reclaims the navigation
             // sidebar width, so this column no longer has to collapse to 3xl.
-            summaryContentInset
-              ? 'max-w-4xl ml-auto mr-0 px-6 md:px-10'
-              : 'max-w-4xl mx-auto px-6 md:px-10',
           )}>
             <div>
               {isConversationLoading ? (
@@ -894,6 +947,12 @@ export default function ChatView({
               )}
             </div>
 
+            <div
+              aria-hidden="true"
+              data-chat-composer-spacer
+              style={{ height: composerDockHeight }}
+            />
+
           </div>
         </div>
 
@@ -904,16 +963,18 @@ export default function ChatView({
             title={t.chat.scrollToBottom}
             aria-label={t.chat.scrollToBottom}
             style={{
+              bottom: composerDockHeight + 12,
               left: summaryContentInset
-                // Center on the conversation content column (right-aligned
-                // max-w-3xl with the summary inset), never over the summary.
+                // Center on the shared outer conversation column (right-aligned
+                // max-w-4xl with the summary inset), never over the summary.
+                // The compact composer is centered inside this same column.
                 // min() keeps the center correct when the window is too narrow
-                // for the full 768px column.
+                // for the full 896px column.
                 ? `calc(100% - ${PINNED_SUMMARY_CONTENT_INSET}px - min(${PINNED_SUMMARY_CONTENT_MAX_WIDTH}px, calc(100% - ${PINNED_SUMMARY_CONTENT_INSET}px)) / 2)`
                 : '50%',
               transform: 'translateX(-50%)',
             }}
-            className="absolute bottom-3 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-[#706b5730] bg-white/90 text-[#656358] shadow-md backdrop-blur-sm transition-all hover:bg-white hover:text-[#29261b] dark:border-white/15 dark:bg-[#2b2b2b]/95 dark:text-[#d9d5cd] dark:shadow-[0_4px_16px_rgba(0,0,0,0.45)] dark:hover:bg-[#3a3a3a] dark:hover:text-white"
+            className="absolute z-10 flex h-8 w-8 items-center justify-center rounded-full border border-[#706b5730] bg-white/90 text-[#656358] shadow-md backdrop-blur-sm transition-all hover:bg-white hover:text-[#29261b] dark:border-white/15 dark:bg-[#2b2b2b]/95 dark:text-[#d9d5cd] dark:shadow-[0_4px_16px_rgba(0,0,0,0.45)] dark:hover:bg-[#3a3a3a] dark:hover:text-white"
           >
             <ChevronDown className="h-4 w-4" />
           </button>
@@ -922,9 +983,10 @@ export default function ChatView({
 
       {/* Bottom Input */}
       <div
+        ref={composerDockRef}
         data-chat-composer-dock
         className={cn(
-          'shrink-0 bg-gradient-to-t from-[#fbfaf7] via-[#fbfaf7]/95 to-transparent pb-4 pt-2',
+          'pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-transparent pb-4 pt-2',
           // Summary open: drop the dock's horizontal padding so the composer
           // column shares the exact same box as the message content above.
           summaryContentInset ? 'px-0' : 'px-6 md:px-10',
@@ -932,64 +994,62 @@ export default function ChatView({
         style={summaryContentInset ? { paddingRight: summaryContentInset } : undefined}
       >
         <div className={cn(
-          summaryContentInset ? 'max-w-4xl ml-auto mr-0' : 'max-w-4xl mx-auto',
+          'pointer-events-auto',
+          conversationColumnClasses.outer,
         )}>
-          <ActiveSkillsBar />
-          {scheduleReturnTarget && (
-            <button
-              onClick={returnToSchedule}
-              className="mb-2 inline-flex items-center gap-1.5 rounded-lg border border-[#e5e2db] bg-white/85 px-3 py-1.5 text-[12.5px] font-medium text-[#656358] shadow-sm hover:bg-white hover:text-[#29261b]"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              返回自动化
-            </button>
-          )}
-          {generationPhase ? (
-            <GenerationStatusBar
-              phase={generationPhase}
-              startedAt={runStartedAt}
-              elapsedMs={activeTurnElapsedMs}
-              tokenCount={generationTokenCount}
-              tokenCountEstimated={stream.turnUsage?.estimated ?? false}
-            />
-          ) : null}
-          {stream.streamError ? (
-            <StreamErrorNotice
-              error={stream.streamError}
-              canUseFullAccess={workspaceControls?.can_use_full_access ?? true}
-              onDismiss={stream.dismissStreamError}
-              onAllowFullAccess={handleAllowFullAccessAndRetry}
-            />
-          ) : null}
-          {pendingPromptMessage?.interactivePrompt ? (
-            <div className="mb-3">
-              <InteractivePromptCard
-                prompt={pendingPromptMessage.interactivePrompt}
-                compact
-                submitting={
-                  promptSubmitState?.promptId === pendingPromptMessage.interactivePrompt.promptId
-                  && promptSubmitState.status === 'submitting'
-                }
-                error={
-                  promptSubmitState?.promptId === pendingPromptMessage.interactivePrompt.promptId
-                    && promptSubmitState.status === 'error'
-                    ? promptSubmitState.error ?? '提交失败，请重试'
-                    : null
-                }
-                onSubmit={(payload) => handleSubmitInteractivePromptAnswer(pendingPromptMessage, payload)}
+          <div
+            data-chat-composer-column
+            className={conversationColumnClasses.composer}
+          >
+            <ActiveSkillsBar />
+            {generationPhase ? (
+              <GenerationStatusBar
+                phase={generationPhase}
+                startedAt={runStartedAt}
+                elapsedMs={activeTurnElapsedMs}
+                tokenCount={generationTokenCount}
+                tokenCountEstimated={stream.turnUsage?.estimated ?? false}
               />
-            </div>
-          ) : null}
-          <ChatInput
-            variant="chat"
-            onSend={handleSend}
-            onStop={stream.stop}
-            isStreaming={stream.isStreaming}
-            disabled={!!pendingPromptMessage}
-            sendDisabled={!gatewayReady}
-            workspaceScope={workspaceScope}
-            onWorkspaceScopeChange={_onWorkspaceScopeChange}
-          />
+            ) : null}
+            {stream.streamError ? (
+              <StreamErrorNotice
+                error={stream.streamError}
+                canUseFullAccess={workspaceControls?.can_use_full_access ?? true}
+                onDismiss={stream.dismissStreamError}
+                onAllowFullAccess={handleAllowFullAccessAndRetry}
+              />
+            ) : null}
+            {pendingPromptMessage?.interactivePrompt ? (
+              <div className="mb-3">
+                <InteractivePromptCard
+                  prompt={pendingPromptMessage.interactivePrompt}
+                  compact
+                  submitting={
+                    promptSubmitState?.promptId === pendingPromptMessage.interactivePrompt.promptId
+                    && promptSubmitState.status === 'submitting'
+                  }
+                  error={
+                    promptSubmitState?.promptId === pendingPromptMessage.interactivePrompt.promptId
+                      && promptSubmitState.status === 'error'
+                      ? promptSubmitState.error ?? '提交失败，请重试'
+                      : null
+                  }
+                  onSubmit={(payload) => handleSubmitInteractivePromptAnswer(pendingPromptMessage, payload)}
+                />
+              </div>
+            ) : null}
+            <ChatInput
+              variant="chat"
+              onSend={handleSend}
+              onStop={stream.stop}
+              isStreaming={stream.isStreaming}
+              isStopping={stream.isStopping}
+              disabled={!!pendingPromptMessage}
+              sendDisabled={!gatewayReady}
+              workspaceScope={workspaceScope}
+              onWorkspaceScopeChange={_onWorkspaceScopeChange}
+            />
+          </div>
 
         </div>
       </div>

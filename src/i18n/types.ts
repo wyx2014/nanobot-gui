@@ -57,8 +57,8 @@ export interface TranslationDict {
     scheduled: string;
     noScheduledRuns: string;
     exportConversation: string;
-    deleteConversation: string;
-    conversationDeleted: string;
+    archiveConversation: string;
+    conversationArchived: string;
     renameConversation: string;
     viewScheduledTask: string;
     archiveRun: string;
@@ -94,7 +94,9 @@ export interface TranslationDict {
     mcpWarming: string;
     mcpUnavailable: string;
     start: string;
+    send: string;
     stop: string;
+    stopping: string;
     welcomeTitle: string;
     welcomeSubtitle: string;
     thinking: string;
@@ -109,6 +111,11 @@ export interface TranslationDict {
     collapseSources: string;
     scrollToBottom: string;
     openTerminal: string;
+    searchConversation: string;
+    searchConversationPlaceholder: string;
+    previousSearchMatch: string;
+    nextSearchMatch: string;
+    closeConversationSearch: string;
     loadingConversation: string;
     conversationLoadFailed: string;
     conversationLoadFailedDesc: string;
@@ -683,11 +690,15 @@ export interface TranslationDict {
     frequencyHourly: string;
     frequencyDaily: string;
     frequencyWeekly: string;
+    frequencyMonthly: string;
     frequencyWeekdays: string;
     frequencyManual: string;
     executionTime: string;
     minuteOfHour: string;
     dayOfWeek: string;
+    dayOfMonth: string;
+    monthDay: string;
+    monthDayHint: string;
     sunday: string;
     monday: string;
     tuesday: string;
@@ -707,6 +718,9 @@ export interface TranslationDict {
     edit: string;
     delete: string;
     deleteConfirm: string;
+    deleteRun: string;
+    deleteRunConfirm: string;
+    deleteRunFailed: string;
     lastRun: string;
     nextRun: string;
     never: string;
@@ -738,6 +752,29 @@ export interface TranslationDict {
     unreadRuns: string;
     askRuyiToCreate: string;
     askAbuCreatePrompt: string;
+    tasksTab: string;
+    addAutomation: string;
+    loadingTasks: string;
+    retry: string;
+    startFirstAutomation: string;
+    startFirstAutomationHint: string;
+    myAutomations: string;
+    automationSummary: string;
+    templateTitle: string;
+    templateHint: string;
+    templateCount: string;
+    useTemplate: string;
+    runCount: string;
+    filterAll: string;
+    filterUnread: string;
+    searchRuns: string;
+    clearSearch: string;
+    noRunsHint: string;
+    noMatchingRuns: string;
+    clearFilters: string;
+    today: string;
+    yesterday: string;
+    runCompletedSummary: string;
   };
 
   // Updates

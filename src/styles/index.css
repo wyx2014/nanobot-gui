@@ -800,6 +800,354 @@ input[type="range"].slider-filled::-moz-range-thumb {
   color: #85817a;
 }
 
+/* Personalization is an editor, not a stack of light setting cards. Give it
+ * a quieter dark canvas with a clear active tab and a focused writing area. */
+.dark [data-personalization-loading] {
+  color: #aaa69d;
+}
+
+.dark [data-personalization-surface] [data-settings-card] {
+  background: #232322;
+  border-color: rgba(255, 255, 255, 0.075);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+.dark [data-personalization-alert="error"] {
+  color: #f3b7b3;
+  background: rgba(126, 42, 38, 0.22);
+  border-color: rgba(231, 112, 104, 0.24);
+}
+
+.dark [data-personalization-alert="error"] button:hover {
+  background: rgba(231, 112, 104, 0.12);
+}
+
+.dark [data-personalization-alert="success"] {
+  color: #a4d8b6;
+  background: rgba(38, 105, 66, 0.2);
+  border-color: rgba(93, 181, 125, 0.22);
+}
+
+.dark [data-personalization-tablist] {
+  background: #1c1c1b;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.065);
+}
+
+.dark [data-personalization-tab] {
+  color: #9f9b93;
+  background: transparent;
+  box-shadow: none;
+}
+
+.dark [data-personalization-tab]:not([data-active="true"]):hover {
+  color: #ded9d0;
+  background: #292826;
+}
+
+.dark [data-personalization-tab][data-active="true"] {
+  color: #fffaf1;
+  background:
+    linear-gradient(135deg, rgba(217, 119, 87, 0.1), transparent 68%),
+    #302f2c;
+  box-shadow:
+    inset 0 0 0 1px rgba(217, 119, 87, 0.2),
+    0 3px 10px rgba(0, 0, 0, 0.24);
+}
+
+.dark [data-personalization-tab-icon] {
+  color: #8f8b84;
+  background: #292826;
+}
+
+.dark [data-personalization-tab][data-active="true"] [data-personalization-tab-icon] {
+  color: #e69a7c;
+  background: rgba(217, 119, 87, 0.15);
+  box-shadow: inset 0 0 0 1px rgba(217, 119, 87, 0.12);
+}
+
+.dark [data-personalization-file] {
+  color: #77736c;
+}
+
+.dark [data-personalization-tab][data-active="true"] [data-personalization-file] {
+  color: #aaa59c;
+}
+
+.dark [data-personalization-dirty] {
+  color: #f0aa8e;
+  background: rgba(217, 119, 87, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(217, 119, 87, 0.16);
+}
+
+.dark [data-personalization-panel] {
+  color: #e9e4dc;
+  background: #1d1d1c;
+  border-color: #3a3834;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.025),
+    0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.dark [data-personalization-editor-icon] {
+  color: #e69a7c;
+  background: rgba(217, 119, 87, 0.13);
+  box-shadow: inset 0 0 0 1px rgba(217, 119, 87, 0.1);
+}
+
+.dark [data-personalization-editor-title] {
+  color: #f3efe7;
+}
+
+.dark [data-personalization-editor-hint] {
+  color: #aaa69d;
+}
+
+.dark [data-personalization-restore] {
+  color: #d5d0c7;
+  background: #292826;
+  border-color: #45423d;
+  box-shadow: none;
+}
+
+.dark [data-personalization-restore]:hover {
+  color: #fffaf2;
+  background: #353330;
+  border-color: #5b554e;
+}
+
+.dark [data-settings-surface] [data-personalization-editor] {
+  color: #e8e3db;
+  caret-color: #e69a7c;
+  background: #171716;
+  border-color: #393733;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.24);
+}
+
+.dark [data-settings-surface] [data-personalization-editor]:focus {
+  background: #191918;
+  border-color: #d97757;
+  box-shadow:
+    0 0 0 3px rgba(217, 119, 87, 0.12),
+    inset 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.dark [data-personalization-count] {
+  color: #77736c;
+}
+
+.dark [data-personalization-footer] {
+  border-color: rgba(255, 255, 255, 0.085);
+}
+
+.dark [data-personalization-status] {
+  color: #9f9b93;
+}
+
+.dark [data-personalization-status] svg {
+  color: #83c99e;
+}
+
+.dark [data-personalization-status][data-dirty="true"],
+.dark [data-personalization-status][data-dirty="true"] svg {
+  color: #e69a7c;
+}
+
+.dark [data-personalization-save] {
+  color: #fff8f3;
+  background: #cf704f;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.32);
+}
+
+.dark [data-personalization-save]:hover {
+  color: #ffffff;
+  background: #df7d5b;
+}
+
+.dark [data-personalization-save]:focus-visible {
+  box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.2);
+}
+
+.dark [data-personalization-save]:disabled {
+  color: #8f8a82;
+  background: #34322f;
+  box-shadow: none;
+}
+
+/* Model configuration has denser, more interactive content than the other
+ * settings pages. Give it its own dark hierarchy instead of letting the
+ * light cards, chips and actions float on the dark settings canvas. */
+.dark [data-model-segmented] {
+  background: #242422;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.075);
+}
+
+.dark [data-model-segment] {
+  color: #9f9b93;
+}
+
+.dark [data-model-segment]:not([data-active="true"]):hover {
+  color: #e6e1d8;
+  background: #2e2d2a;
+}
+
+.dark [data-model-segment][data-active="true"] {
+  color: #fffaf1;
+  background: #3b3935;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 1px 3px rgba(0, 0, 0, 0.34);
+}
+
+.dark [data-model-preset-card],
+.dark [data-model-provider-card],
+.dark [data-model-form-card] {
+  color: #e9e4dc;
+  background: #242423;
+  border-color: #3d3b37;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+.dark [data-model-preset-card]:hover,
+.dark [data-model-provider-card]:hover {
+  background: #292825;
+  border-color: #57524b;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.dark [data-model-preset-card][data-active="true"] {
+  background:
+    linear-gradient(145deg, rgba(217, 119, 87, 0.11), transparent 58%),
+    #282624;
+  border-color: rgba(217, 119, 87, 0.66);
+  box-shadow:
+    inset 0 0 0 1px rgba(217, 119, 87, 0.08),
+    0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+.dark [data-model-default-action] {
+  color: #d7d2c9;
+  background: #2e2d2a;
+  border-color: #48453f;
+}
+
+.dark [data-model-default-action]:not([data-active="true"]):hover {
+  color: #fffaf2;
+  background: #373532;
+  border-color: #625c54;
+}
+
+.dark [data-model-default-action][data-active="true"] {
+  color: #ffd8c8;
+  background: rgba(217, 119, 87, 0.17);
+  border-color: rgba(217, 119, 87, 0.62);
+}
+
+.dark [data-model-default-action][data-active="true"]:hover {
+  background: rgba(217, 119, 87, 0.23);
+}
+
+.dark [data-model-title],
+.dark [data-model-heading] {
+  color: #f2eee6;
+}
+
+.dark [data-model-secondary],
+.dark [data-model-meta] {
+  color: #aaa69d;
+}
+
+.dark [data-model-meta-label] {
+  color: #77736c;
+}
+
+.dark [data-model-id] {
+  color: #d0cbc2;
+}
+
+.dark [data-model-capability],
+.dark [data-model-channel] {
+  color: #c3beb5;
+  background: #343230;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.045);
+}
+
+.dark [data-model-access-summary] {
+  background: #242423;
+  border: 1px solid rgba(255, 255, 255, 0.065);
+}
+
+.dark [data-model-empty] {
+  color: #aaa69d;
+  background: #20201f;
+  border-color: #494640;
+}
+
+.dark [data-model-empty-icon] {
+  color: #aaa69d;
+  background: #2d2c2a;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.055);
+}
+
+.dark [data-model-back-button],
+.dark [data-model-secondary-action] {
+  color: #ddd8cf;
+  background: #2c2b29;
+  border-color: #48453f;
+}
+
+.dark [data-model-back-button]:hover,
+.dark [data-model-secondary-action]:hover {
+  color: #fffaf2;
+  background: #383633;
+  border-color: #5d5851;
+}
+
+.dark [data-model-primary-action] {
+  color: #211f1c;
+  background: #eee9df;
+  border-color: #eee9df;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
+}
+
+.dark [data-model-primary-action]:hover {
+  color: #171614;
+  background: #fffaf2;
+}
+
+.dark [data-model-delete-action] {
+  color: #f1a4a4;
+  background: #2b2222;
+  border-color: rgba(220, 94, 94, 0.32);
+}
+
+.dark [data-model-delete-action]:hover {
+  color: #ffc0c0;
+  background: #3a2626;
+  border-color: rgba(232, 112, 112, 0.48);
+}
+
+.dark [data-model-builtin-badge] {
+  color: #c7b99e;
+  background: #353129;
+  box-shadow: inset 0 0 0 1px rgba(199, 185, 158, 0.12);
+}
+
+.dark [data-model-status="configured"] {
+  color: #8fdbad;
+  background: rgba(53, 153, 96, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(73, 176, 118, 0.17);
+}
+
+.dark [data-model-status="pending"] {
+  color: #aaa69d;
+  background: #333230;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.055);
+}
+
+.dark [data-model-provider-actions] {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
 .dark [data-font-size-track] {
   background: #77736d;
 }
@@ -1423,8 +1771,8 @@ input[type="range"].slider-filled::-moz-range-thumb {
   box-shadow: none;
 }
 
-/* The bottom dock and live status should merge into the conversation canvas,
-   like Codex: only the rounded composer remains an opaque surface. */
+/* The bottom dock and live status merge into the conversation canvas. The
+   rounded composer is the only elevated surface. */
 .dark [data-chat-composer-dock],
 .dark [data-generation-status] {
   background-color: transparent;
@@ -1454,6 +1802,23 @@ input[type="range"].slider-filled::-moz-range-thumb {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.018),
     0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+.dark [data-codex-composer-shell][data-composer-variant="chat"] [data-codex-composer-card] {
+  background: rgba(42, 42, 42, 0.84);
+  border-color: rgba(255, 255, 255, 0.12);
+  -webkit-backdrop-filter: blur(24px) saturate(1.18);
+  backdrop-filter: blur(24px) saturate(1.18);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.025),
+    0 16px 48px rgba(0, 0, 0, 0.34),
+    0 2px 10px rgba(0, 0, 0, 0.2);
+}
+
+.dark [data-codex-composer-shell][data-composer-variant="chat"] [data-codex-project-selector] {
+  color: #929292;
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.075);
 }
 
 .dark [data-codex-composer-input] {
@@ -1505,16 +1870,103 @@ input[type="range"].slider-filled::-moz-range-thumb {
   background: #2d2d2d;
 }
 
-.dark [data-codex-submit]:not(:disabled) {
+.composer-send-button {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(137, 72, 48, 0.2);
+  border-radius: 10px;
+  color: #fffaf6;
+  background: #d97757;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 5px 14px rgba(161, 75, 47, 0.22);
+  transition:
+    transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    color 140ms ease,
+    background-color 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.composer-send-button:not(:disabled):hover {
+  color: #ffffff;
+  background: #c8664a;
+  border-color: rgba(120, 55, 34, 0.25);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 7px 18px rgba(161, 75, 47, 0.28);
+  transform: translateY(-1px);
+}
+
+.composer-send-button:not(:disabled):active {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 3px 9px rgba(161, 75, 47, 0.22);
+  transform: scale(0.96);
+}
+
+.composer-send-button:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 3px rgba(217, 119, 87, 0.24),
+    0 5px 14px rgba(161, 75, 47, 0.24);
+}
+
+.composer-send-button:disabled {
+  pointer-events: auto;
+  cursor: not-allowed;
+  opacity: 1;
+  color: #aaa59d;
+  background: #e7e3dc;
+  border-color: #ddd8cf;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+
+.dark .composer-send-button:not(:disabled) {
+  color: #fffaf7;
+  background: #d46f50;
+  border-color: rgba(255, 255, 255, 0.09);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 6px 16px rgba(0, 0, 0, 0.32);
+}
+
+.dark .composer-send-button:not(:disabled):hover {
+  color: #ffffff;
+  background: #df795a;
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 8px 20px rgba(0, 0, 0, 0.38);
+}
+
+.dark .composer-send-button:focus-visible {
+  box-shadow:
+    0 0 0 3px rgba(223, 121, 90, 0.28),
+    0 6px 16px rgba(0, 0, 0, 0.34);
+}
+
+.dark .composer-send-button:disabled {
+  color: #77736e;
+  background: #393836;
+  border-color: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.dark [data-codex-queue-submit]:not(:disabled) {
   color: #1d1d1d;
   background: #f3f3f1;
 }
 
-.dark [data-codex-submit]:not(:disabled):hover {
+.dark [data-codex-queue-submit]:not(:disabled):hover {
   background: #ffffff;
 }
 
-.dark [data-codex-submit]:disabled {
+.dark [data-codex-queue-submit]:disabled {
   color: #777773;
   background: #383838;
 }

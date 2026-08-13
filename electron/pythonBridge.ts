@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import { DEFAULT_WORKSPACE_DIRECTORY_NAME } from '../src/config/appDirectories';
+import { desktopMcpGatewayEnvironment } from './builtinMcpCredentials';
 
 const NANOBOT_PORT = 8900;
 const MAX_WAIT_MS = 30_000;  // 30s — Python + asyncio startup on slow systems
@@ -124,6 +125,10 @@ export class PythonBridge {
         // Write nanobot's own logs to a file so they don't pollute Electron's stdout
         NANOBOT_LOG_FILE: path.join(app.getPath('userData'), 'nanobot.log'),
         NANOBOT_EXPERT_TEAMS_DIR: expertTeamsDir,
+        // Built-in shared MCP credentials are main-process-only. Config uses
+        // ${ENV_VAR} references, while a literal key saved by the user takes
+        // precedence and no longer depends on these defaults.
+        ...desktopMcpGatewayEnvironment(),
         ...(this._mermaidRenderer && {
           NANOBOT_MERMAID_RENDER_URL: this._mermaidRenderer.url,
           NANOBOT_MERMAID_RENDER_TOKEN: this._mermaidRenderer.token,

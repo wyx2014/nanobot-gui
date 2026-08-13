@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { useI18n } from '@/i18n';
 import { cn } from '@/lib/utils';
 import type { PermissionDuration } from '@/stores/permissionStore';
+import WindowModalBackdrop from './WindowModalBackdrop';
 
 export interface PermissionRequest {
   type: 'workspace' | 'shell' | 'file-write' | 'file-read' | 'folder-select';
@@ -59,7 +60,8 @@ export default function PermissionDialog({ request, onAllow, onDeny, onChooseFol
   // Cowork-style folder selection variant
   if (request.type === 'folder-select') {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-[1px] animate-in fade-in duration-150">
+      <div className="fixed inset-0 z-50 flex items-center justify-center animate-in fade-in duration-150">
+        <WindowModalBackdrop />
         <div className="relative w-full max-w-sm mx-4 bg-white rounded-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
           {/* Close button */}
           <button
@@ -147,8 +149,9 @@ export default function PermissionDialog({ request, onAllow, onDeny, onChooseFol
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-[1px] animate-in fade-in duration-150">
-      <div className="w-full max-w-md mx-4 bg-white rounded-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center animate-in fade-in duration-150">
+      <WindowModalBackdrop />
+      <div className="relative w-full max-w-md mx-4 bg-white rounded-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         {/* Header */}
         <div className="relative px-6 pt-6 pb-4">
           <button

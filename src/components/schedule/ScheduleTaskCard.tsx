@@ -1,11 +1,10 @@
 import { useState } from 'react';
 import { useScheduleStore } from '@/stores/scheduleStore';
 import { useI18n } from '@/i18n';
-import { ChevronRight, Clock, Pencil, Play, RotateCw, Trash2 } from 'lucide-react';
+import { Clock, Pencil, Play, RotateCw, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ScheduledTask, ScheduleFrequency } from '@/types/schedule';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
-import ScheduleRunHistory from './ScheduleRunHistory';
 
 function formatTimeAgo(timestamp: number, agoTemplate: string): string {
   const diff = Date.now() - timestamp;
@@ -30,6 +29,7 @@ function getFrequencyLabel(
     hourly: t.schedule.frequencyHourly,
     daily: t.schedule.frequencyDaily,
     weekly: t.schedule.frequencyWeekly,
+    monthly: t.schedule.frequencyMonthly,
     weekdays: t.schedule.frequencyWeekdays,
     manual: t.schedule.frequencyManual,
   };
@@ -57,6 +57,10 @@ function getScheduleDescription(task: ScheduledTask, t: ReturnType<typeof useI18
     return `${freq} ${day} ${timeStr}`;
   }
 
+  if (task.schedule.frequency === 'monthly') {
+    return `${freq} ${t.schedule.monthDay.replace('{day}', String(task.schedule.dayOfMonth ?? 1))} ${timeStr}`;
+  }
+
   return `${freq} ${timeStr}`;
 }
 
@@ -66,11 +70,10 @@ interface Props {
 
 export default function ScheduleTaskCard({ task }: Props) {
   const { t, format } = useI18n();
-  const { activeTaskId, setActiveTaskId, pauseTask, resumeTask, runTaskNow, loadTasks, deleteTask, openEditor } = useScheduleStore();
+  const { pauseTask, resumeTask, runTaskNow, loadTasks, deleteTask, openEditor } = useScheduleStore();
   const [running, setRunning] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  const open = activeTaskId === task.id;
   const isPaused = task.status === 'paused';
   const scheduleDesc = getScheduleDescription(task, t);
   const unreadRunCount = task.runs.filter((run) => (
@@ -89,7 +92,6 @@ export default function ScheduleTaskCard({ task }: Props) {
   const handleRunNow = async (e: React.MouseEvent) => {
     e.stopPropagation();
     setRunning(true);
-    setActiveTaskId(task.id);
     try {
       const request = runTaskNow(task.id);
       for (let i = 0; i < 3; i += 1) {
@@ -108,14 +110,6 @@ export default function ScheduleTaskCard({ task }: Props) {
       <div data-schedule-card className="bg-white rounded-xl border border-[#e8e4dd] hover:border-[#d4d0c8] hover:shadow-sm transition-all group">
         <div className="px-4 py-3">
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => setActiveTaskId(open ? null : task.id)}
-              className="shrink-0 p-1 rounded-md text-[#656358] hover:bg-[#f5f3ee] hover:text-[#29261b]"
-              title={t.schedule.runHistory}
-            >
-              <ChevronRight className={cn('h-4 w-4 transition-transform', open && 'rotate-90')} />
-            </button>
-
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1">
                 <span
@@ -201,11 +195,6 @@ export default function ScheduleTaskCard({ task }: Props) {
           </div>
         </div>
 
-        {open && (
-          <div className="max-h-[320px] overflow-y-auto border-t border-[#e8e4dd] bg-[#fbfaf7] px-2 py-2">
-            <ScheduleRunHistory runs={task.runs} taskName={task.name} />
-          </div>
-        )}
       </div>
 
       <ConfirmDialog

@@ -177,7 +177,17 @@ export async function bootstrapNanobotGateway(): Promise<NanobotClient> {
     setGlobalConnectionStatus(connectionStatus);
     if (connectionStatus !== 'open') return;
     if (hasOpened) {
-      void syncSessionsFromGateway();
+      // A gateway restart may have rebuilt the SQLite projection or reapplied
+      // durable archive tombstones. Refresh both authoritative registries so
+      // stale conversation and workspace rows disappear from the live shell
+      // without requiring a full Electron restart.
+      void Promise.allSettled([
+        syncSessionsFromGateway(),
+        syncProjectsFromGateway(),
+      ]);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('nanobot-gui:gateway-reconnected'));
+      }
     }
     hasOpened = true;
   });
@@ -945,7 +955,10 @@ export async function syncSessionsFromGateway(): Promise<void> {
         runningSessions.push({ chatId, key: session.key });
       }
     }
-    chatStore.upsertConversations(conversations);
+    // A successful gateway list is authoritative for durable history. Remove
+    // archived/purged server conversations from the persisted renderer cache
+    // instead of only upserting and leaving stale sidebar rows forever.
+    chatStore.reconcileGatewayConversations(conversations);
 
     // Only active turns need a process-local runtime snapshot at startup.
     // Keep the WebSocket subscribed as well: completion notifications must

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Plus, ArrowUp, ArrowRight, Square, X, ChevronDown, Check, FileText, CornerDownRight, Pencil, Trash2, GraduationCap, Paperclip, ChevronRight, Puzzle, Globe, Search, ShieldCheck, Users, Mic, Loader2 } from 'lucide-react';
+import { Plus, ArrowUp, Square, X, ChevronDown, Check, FileText, CornerDownRight, Pencil, Trash2, GraduationCap, Paperclip, ChevronRight, Puzzle, Globe, Search, ShieldCheck, Users, Mic, Loader2 } from 'lucide-react';
 import { ThinkingOrb } from 'thinking-orbs';
 import ExpertTeamIcon from '@/components/common/ExpertTeamIcon';
 import { dialogBridge, fsBridge, mediaBridge } from '@/lib/ipc-factory';
@@ -161,6 +161,7 @@ interface ChatInputProps {
   onSend: (message: string, images?: ImageAttachment[], workspacePath?: string | null, options?: ChatInputSendOptions) => boolean | void;
   onStop?: () => void;
   isStreaming?: boolean;
+  isStopping?: boolean;
   disabled?: boolean;
   sendDisabled?: boolean;
   workspaceScope?: WorkspaceScopePayload | null;
@@ -359,7 +360,7 @@ async function processFilePaths(
   }
 }
 
-export default function ChatInput({ variant, onSend, onStop, isStreaming: isStreamingProp, disabled, sendDisabled, workspaceScope, onWorkspaceScopeChange }: ChatInputProps) {
+export default function ChatInput({ variant, onSend, onStop, isStreaming: isStreamingProp, isStopping = false, disabled, sendDisabled, workspaceScope, onWorkspaceScopeChange }: ChatInputProps) {
   const isWelcome = variant === 'welcome';
 
   const [text, setText] = useState('');
@@ -399,7 +400,6 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   const [expertTeams, setExpertTeams] = useState<ExpertTeamSummary[]>([]);
   const [expertTeamsLoading, setExpertTeamsLoading] = useState(true);
   const [expertTeamsError, setExpertTeamsError] = useState<string | null>(null);
-  const [pendingExpertTeam, setPendingExpertTeam] = useState<ExpertTeamBinding | null>(null);
   const [expertTeamUpdating, setExpertTeamUpdating] = useState(false);
   const plusMenuRef = useRef<HTMLDivElement>(null);
   const skills = useDiscoveryStore((s) => s.skills);
@@ -428,8 +428,12 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   const addToast = useToastStore((s) => s.addToast);
   const pendingInput = useChatStore((s) => s.pendingInput);
   const setPendingInput = useChatStore((s) => s.setPendingInput);
+  const pendingExpertTeam = useChatStore((s) => s.pendingExpertTeam);
+  const setPendingExpertTeam = useChatStore((s) => s.setPendingExpertTeam);
   const activeConv = useActiveConversation();
-  const selectedExpertTeam = activeConv?.expertTeam ?? pendingExpertTeam;
+  const selectedExpertTeam = activeConv
+    ? activeConv.expertTeam ?? null
+    : pendingExpertTeam;
   const draftKey = useMemo(() => draftStorageKey(activeConv?.id, variant), [activeConv?.id, variant]);
   const queueKey = useMemo(() => queueStorageKey(activeConv?.id, variant), [activeConv?.id, variant]);
   const currentModel = useSettingsStore((s) => getEffectiveModel(s));
@@ -573,6 +577,12 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   }, [pendingInput, setPendingInput]);
 
   useEffect(() => {
+    if (!isWelcome || !pendingExpertTeam) return;
+    const frame = window.requestAnimationFrame(() => textareaRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [isWelcome, pendingExpertTeam]);
+
+  useEffect(() => {
     if (consumedPendingInputRef.current) {
       consumedPendingInputRef.current = false;
       return;
@@ -623,6 +633,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   }, [queueKey, queuedPrompts]);
 
   const handleStop = () => {
+    if (isStopping) return;
     if (queuedPrompts.length > 0) {
       skipNextQueuedFlushRef.current = true;
     }
@@ -1946,6 +1957,29 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     );
   };
 
+  const projectSelector = showProjectSelector ? (
+    <div
+      data-codex-project-selector
+      data-welcome-project-selector={isWelcome ? 'true' : undefined}
+      data-composer-project-selector-placement={isWelcome ? 'outside' : 'inside'}
+      className={cn(
+        'z-10 flex items-center gap-4 px-4 py-1.5 text-[12.5px] text-[#656358] select-none',
+        isWelcome
+          ? 'rounded-b-[20px]'
+          : 'rounded-b-[24px] border-t border-[#e4e0d8]/70 bg-transparent',
+      )}
+    >
+      <FolderSelector
+        variant="pill"
+        currentPath={workspaceScope?.project_path ?? localWorkspace}
+        recentPaths={projectSelectorPaths}
+        projectsHydrated={projectsHydrated}
+        onSelect={handleSelectFolder}
+        onClear={handleClearWorkspace}
+      />
+    </div>
+  ) : null;
+
   return (
     <>
       {/* Welcome-only: Permission Dialog */}
@@ -2038,21 +2072,22 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
           data-composer-variant={isWelcome ? 'welcome' : 'chat'}
           data-welcome-composer-shell={isWelcome ? 'true' : undefined}
           className={cn(
-            'relative flex flex-col border border-[#e8e4dd] bg-[#faf9f6]',
+            'relative flex flex-col',
             isWelcome
-              ? 'rounded-[20px] shadow-[0_4px_18px_rgba(41,38,27,0.055)]'
-              : 'rounded-[24px] shadow-[0_6px_24px_rgba(0,0,0,0.06)]',
+              ? 'rounded-[20px] border border-[#e8e4dd] bg-[#faf9f6] shadow-[0_4px_18px_rgba(41,38,27,0.055)]'
+              : 'rounded-[24px] border border-transparent bg-transparent shadow-none',
           )}
         >
           {/* Input Card */}
           <div
             data-codex-composer-card
             data-welcome-composer-card={isWelcome ? 'true' : undefined}
+            data-floating-composer={isWelcome ? undefined : 'true'}
             className={cn(
-              'relative border border-[#e8e5de]/60 bg-white transition-all',
+              'relative border transition-[border-color,background-color,box-shadow]',
               isWelcome
-                ? 'rounded-[20px] shadow-[0_2px_8px_rgba(41,38,27,0.025)]'
-                : 'rounded-[24px] shadow-[0_4px_12px_rgba(0,0,0,0.03)]',
+                ? 'rounded-[20px] border-[#e8e5de]/60 bg-white shadow-[0_2px_8px_rgba(41,38,27,0.025)]'
+                : 'rounded-[24px] border-[#d8d4cb]/80 bg-white/[0.86] shadow-[0_14px_42px_rgba(41,38,27,0.13),0_2px_8px_rgba(41,38,27,0.055)] backdrop-blur-xl backdrop-saturate-150',
               !isWelcome && isDragging
                 ? 'border-[#d97757] ring-2 ring-[#d97757]/20'
                 : ''
@@ -2195,18 +2230,15 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
 
                 <button
                   data-codex-submit
+                  data-codex-send-button
                   data-welcome-submit
                   onClick={handleSend}
                   disabled={!hasContent || disabled || sendDisabled}
-                  className={cn(
-                    'btn-claude-primary flex h-9 items-center gap-1.5 rounded-xl px-4 text-[13px] font-medium',
-                    hasContent && !disabled && !sendDisabled
-                      ? 'bg-[#29261b] text-[#faf9f5] shadow-sm'
-                      : 'bg-[#e8e5de] text-[#656358]/50 cursor-not-allowed'
-                  )}
+                  aria-label={t.chat.send}
+                  title={t.chat.send}
+                  className="composer-send-button"
                 >
-                  <span>{t.chat.start}</span>
-                  <ArrowRight className="h-3.5 w-3.5" />
+                  <ArrowUp className="h-3.5 w-3.5" strokeWidth={2.35} />
                 </button>
               </div>
             ) : (
@@ -2276,12 +2308,13 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                     <>
                       <Button
                         data-codex-submit
+                        data-codex-queue-submit
                         size="icon"
                         onClick={handleSend}
                         disabled={!hasContent || disabled || sendDisabled}
                         aria-label="加入队列"
                         className={cn(
-                          'h-8 w-8 rounded-xl transition-colors',
+                          'h-8 w-8 rounded-[10px] transition-colors',
                           hasContent && !disabled && !sendDisabled
                             ? 'bg-[#29261b] hover:bg-[#3d3a2f] text-[#faf9f5] shadow-sm'
                             : 'bg-[#e8e5de] text-[#656358]/50 cursor-not-allowed hover:bg-[#e8e5de]',
@@ -2294,53 +2327,41 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                         data-codex-stop
                         size="icon"
                         onClick={handleStop}
-                        aria-label={t.chat.stop}
-                        className="btn-claude-primary h-8 w-8 rounded-xl bg-red-500 hover:bg-red-600 text-white shadow-sm"
-                        title={t.chat.stop}
+                        disabled={isStopping}
+                        aria-busy={isStopping}
+                        aria-label={isStopping ? t.chat.stopping : t.chat.stop}
+                        className="btn-claude-primary h-8 w-8 rounded-[10px] bg-red-500 hover:bg-red-600 text-white shadow-sm disabled:cursor-wait disabled:opacity-100"
+                        title={isStopping ? t.chat.stopping : t.chat.stop}
                       >
-                        <Square className="h-3 w-3" fill="currentColor" />
+                        {isStopping ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Square className="h-3 w-3" fill="currentColor" />
+                        )}
                       </Button>
                     </>
                   ) : (
                     <Button
                       data-codex-submit
+                      data-codex-send-button
                       size="icon"
                       onClick={handleSend}
                       disabled={!hasContent || disabled || sendDisabled}
-                      className={cn(
-                        'h-8 w-8 rounded-xl transition-colors',
-                        hasContent && !disabled && !sendDisabled
-                          ? 'bg-[#29261b] hover:bg-[#3d3a2f] text-[#faf9f5] shadow-sm'
-                          : 'bg-[#e8e5de] text-[#656358]/50 cursor-not-allowed hover:bg-[#e8e5de]'
-                      )}
+                      aria-label={t.chat.send}
+                      title={t.chat.send}
+                      className="composer-send-button"
                     >
-                      <ArrowUp className="h-3.5 w-3.5" strokeWidth={2.5} />
+                      <ArrowUp className="h-3.5 w-3.5" strokeWidth={2.35} />
                     </Button>
                   )}
                 </div>
               </div>
             )}
+
+            {!isWelcome ? projectSelector : null}
           </div>
 
-          {showProjectSelector && (
-            <div
-              data-codex-project-selector
-              data-welcome-project-selector={isWelcome ? 'true' : undefined}
-              className={cn(
-                'z-10 flex items-center gap-4 px-4 py-1.5 text-[12.5px] text-[#656358] select-none',
-                isWelcome ? 'rounded-b-[20px]' : 'rounded-b-[24px]',
-              )}
-            >
-              <FolderSelector
-                variant="pill"
-                currentPath={workspaceScope?.project_path ?? localWorkspace}
-                recentPaths={projectSelectorPaths}
-                projectsHydrated={projectsHydrated}
-                onSelect={handleSelectFolder}
-                onClear={handleClearWorkspace}
-              />
-            </div>
-          )}
+          {isWelcome ? projectSelector : null}
         </div>
 
 

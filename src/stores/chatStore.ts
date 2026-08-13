@@ -11,7 +11,7 @@ import { useTurnPlanStore } from './turnPlanStore';
 import { clearTodos } from '../core/nanobot/todoManager';
 import { clearInputQueue } from '../core/nanobot/userInputQueue';
 import { getNanobotToken, getNanobotStatus } from '@/core/nanobotClient';
-import { deleteSession } from '@/core/api';
+import { archiveSession } from '@/core/api';
 import { conversationIdToSessionKey } from '@/core/sessionKey';
 
 function generateId(): string {
@@ -102,6 +102,9 @@ interface ChatState {
   currentUsage: TokenUsage | null;
   // Pending input for prefilling the chat input
   pendingInput: string | null;
+  // Expert team preselected for the welcome composer. No gateway session is
+  // created until the user sends the first message.
+  pendingExpertTeam: ExpertTeamBinding | null;
   // Thinking timer
   thinkingStartTime: number | null;
   // Track multiple concurrent active agents
@@ -110,13 +113,14 @@ interface ChatState {
 
 interface ChatActions {
   createConversation: (workspacePath?: string | null, options?: { id?: string; scheduledTaskId?: string; skipActivate?: boolean; workspaceScope?: WorkspaceScopePayload | null; title?: string; expertTeam?: ExpertTeamBinding | null }) => string;
-  startNewConversation: () => void;
+  startNewConversation: (options?: { expertTeam?: ExpertTeamBinding | null }) => void;
   switchConversation: (id: string) => void;
   setConversationWorkspace: (convId: string, path: string | null) => void;
   setConversationWorkspaceScope: (convId: string, scope: WorkspaceScopePayload | null) => void;
   setConversationIdentity: (convId: string, sessionId?: string, projectId?: string) => void;
   setConversationExpertTeam: (convId: string, team: ExpertTeamBinding | null) => void;
-  deleteConversation: (id: string) => void;
+  archiveConversation: (id: string) => Promise<void>;
+  removeConversationLocally: (id: string) => void;
   renameConversation: (id: string, title: string) => void;
 
   addMessage: (convId: string, message: Message) => void;
@@ -151,6 +155,7 @@ interface ChatActions {
   removeActiveAgent: (agentName: string) => void;
   setCurrentUsage: (usage: TokenUsage | null) => void;
   setPendingInput: (text: string | null) => void;
+  setPendingExpertTeam: (team: ExpertTeamBinding | null) => void;
   setConversationStatus: (convId: string, status: ConversationStatus) => void;
   setConversationRuntimeSnapshot: (convId: string, snapshot: ThreadRuntimeSnapshot) => void;
   clearCompletedStatus: (convId: string) => void;
@@ -165,6 +170,7 @@ interface ChatActions {
   addToolCall: (convId: string, messageId: string, toolCall: ToolCall) => void;
   upsertConversation: (id: string, conversation: Conversation) => void;
   upsertConversations: (conversations: Record<string, Conversation>) => void;
+  reconcileGatewayConversations: (conversations: Record<string, Conversation>) => void;
 
   // Export/Import
   exportConversation: (convId: string) => string | null;
@@ -183,6 +189,7 @@ export const useChatStore = create<ChatStore>()(
       currentTool: null,
       currentUsage: null,
       pendingInput: null,
+      pendingExpertTeam: null,
       thinkingStartTime: null,
       activeAgentNames: [],
 
@@ -207,6 +214,9 @@ export const useChatStore = create<ChatStore>()(
           };
           if (!options?.skipActivate) {
             activateConversation(state, id);
+            // The gateway-backed conversation now owns this binding. Clear the
+            // welcome draft so it cannot leak into a later new conversation.
+            state.pendingExpertTeam = null;
           }
         });
         // Sync global workspace to match the new conversation
@@ -216,9 +226,10 @@ export const useChatStore = create<ChatStore>()(
         return id;
       },
 
-      startNewConversation: () => {
+      startNewConversation: (options) => {
         set((state) => {
           activateConversation(state, null);
+          state.pendingExpertTeam = options?.expertTeam ?? null;
         });
         // Clear global workspace so welcome page starts clean
         useWorkspaceStore.getState().clearWorkspace();
@@ -275,18 +286,27 @@ export const useChatStore = create<ChatStore>()(
         });
       },
 
-      deleteConversation: (id) => {
-        // Asynchronously delete from backend gateway
-        getNanobotStatus().then((status) => {
-          if (status.ready) {
-            const token = getNanobotToken();
-            const baseUrl = `http://127.0.0.1:${status.port}`;
-            deleteSession(token, conversationIdToSessionKey(id), baseUrl).catch((err) => {
-              console.warn(`[chatStore] failed to delete session ${id} from gateway:`, err);
-            });
+      archiveConversation: async (id) => {
+        const conversation = get().conversations[id];
+        if (!conversation) return;
+        const isLocalDraft = (
+          !conversation.hasHistory
+          && !conversation.sessionId
+          && conversation.messages.length === 0
+        );
+        if (!isLocalDraft) {
+          const status = await getNanobotStatus();
+          if (!status.ready) {
+            throw new Error('本地服务尚未就绪，暂时无法归档会话');
           }
-        }).catch(() => {});
+          const token = getNanobotToken();
+          const baseUrl = `http://127.0.0.1:${status.port}`;
+          await archiveSession(token, conversationIdToSessionKey(id), baseUrl);
+        }
+        get().removeConversationLocally(id);
+      },
 
+      removeConversationLocally: (id) => {
         // Cancel any ongoing streaming for this conversation
         const controller = abortControllers.get(id);
         if (controller) {
@@ -474,6 +494,60 @@ export const useChatStore = create<ChatStore>()(
             state.conversations[id] = conversation;
           }
         });
+      },
+
+      reconcileGatewayConversations: (conversations) => {
+        const gatewayIds = new Set(Object.keys(conversations));
+        const staleIds = Object.values(get().conversations)
+          .filter((conversation) => (
+            conversation.hasHistory === true
+            && conversation.status !== 'running'
+            && !gatewayIds.has(conversation.id)
+          ))
+          .map((conversation) => conversation.id);
+        const staleIdSet = new Set(staleIds);
+        for (const id of staleIds) {
+          const controller = abortControllers.get(id);
+          if (controller) {
+            controller.abort();
+            abortControllers.delete(id);
+          }
+          clearTodos(id);
+          clearInputQueue(id);
+          useTaskExecutionStore.getState().clearConversation(id);
+          useConversationWorkbenchStore.getState().clearConversation(id);
+          useTurnPlanStore.getState().clearConversation(id);
+        }
+        const activeWasRemoved = staleIdSet.has(get().activeConversationId ?? '');
+        set((state) => {
+          for (const id of staleIds) {
+            delete state.conversations[id];
+          }
+          state.conversationNavigationHistory = state.conversationNavigationHistory.filter(
+            (id) => !staleIdSet.has(id) && state.conversations[id] !== undefined,
+          );
+          if (activeWasRemoved) {
+            let previousId: string | null = null;
+            while (state.conversationNavigationHistory.length > 0) {
+              const candidate = state.conversationNavigationHistory.pop();
+              if (candidate && state.conversations[candidate]) {
+                previousId = candidate;
+                break;
+              }
+            }
+            state.activeConversationId = previousId;
+          }
+          for (const [id, conversation] of Object.entries(conversations)) {
+            state.conversations[id] = conversation;
+          }
+        });
+        if (activeWasRemoved) {
+          const { activeConversationId, conversations: current } = get();
+          const next = activeConversationId ? current[activeConversationId] : null;
+          const workspace = useWorkspaceStore.getState();
+          if (next?.workspacePath) workspace.setWorkspace(next.workspacePath);
+          else workspace.clearWorkspace();
+        }
       },
 
       // New message operations
@@ -690,6 +764,12 @@ export const useChatStore = create<ChatStore>()(
         });
       },
 
+      setPendingExpertTeam: (team) => {
+        set((state) => {
+          state.pendingExpertTeam = team;
+        });
+      },
+
       setConversationStatus: (convId, status) => {
         set((state) => {
           const conv = state.conversations[convId];
@@ -848,7 +928,7 @@ export const useChatStore = create<ChatStore>()(
           for (const [id] of toRemove) {
             delete state.conversations[id];
           }
-          // Fix activeConversationId if deleted (pick last = most recent, consistent with deleteConversation)
+          // Fix activeConversationId if removed (pick last = most recent).
           if (state.activeConversationId && !state.conversations[state.activeConversationId]) {
             const ids = Object.keys(state.conversations);
             state.activeConversationId = ids.length > 0 ? ids[ids.length - 1] : null;

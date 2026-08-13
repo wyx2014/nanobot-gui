@@ -18,6 +18,16 @@ export interface DirectoryMigrationResult {
   conflictsDirectory?: string;
 }
 
+export interface PersistedPathReplacement {
+  source: string;
+  target: string;
+}
+
+export interface PersistedPathMigrationResult {
+  scannedFiles: number;
+  updatedFiles: number;
+}
+
 const MIGRATION_CONFLICTS_DIRECTORY_NAME = '.migration-conflicts';
 
 function movePath(source: string, target: string): void {
@@ -138,4 +148,66 @@ export function migrateLegacyUserProjects(documentsRoot: string): DirectoryMigra
     path.join(documentsRoot, LEGACY_USER_PROJECTS_DIRECTORY_NAME),
     path.join(documentsRoot, USER_PROJECTS_DIRECTORY_NAME),
   );
+}
+
+function persistedReferenceFiles(root: string): string[] {
+  const files: string[] = [];
+  const visit = (candidate: string): void => {
+    if (!fs.existsSync(candidate)) return;
+    const stat = fs.lstatSync(candidate);
+    if (stat.isSymbolicLink()) return;
+    if (stat.isFile()) {
+      if (candidate.endsWith('.json') || candidate.endsWith('.jsonl')) files.push(candidate);
+      return;
+    }
+    if (!stat.isDirectory()) return;
+    for (const entry of fs.readdirSync(candidate)) visit(path.join(candidate, entry));
+  };
+
+  visit(path.join(root, 'sessions'));
+  visit(path.join(root, 'cron'));
+  visit(path.join(root, '.nanobot', 'webui'));
+  visit(path.join(root, '.nanobot', 'session-events'));
+  visit(path.join(root, '.nanobot', 'lifecycle.jsonl'));
+  visit(path.join(root, '.nanobot', 'config.json'));
+  return files;
+}
+
+function replacePersistedPath(raw: string, replacement: PersistedPathReplacement): string {
+  const source = path.resolve(replacement.source);
+  const target = path.resolve(replacement.target);
+  if (source === target) return raw;
+  let updated = raw.split(source).join(target);
+  const escapedSource = JSON.stringify(source).slice(1, -1);
+  const escapedTarget = JSON.stringify(target).slice(1, -1);
+  if (escapedSource !== source) updated = updated.split(escapedSource).join(escapedTarget);
+  return updated;
+}
+
+/** Rewrite durable JSON/JSONL path references after the directories were moved. */
+export function migratePersistedWorkspaceReferences(
+  workspaceRoot: string,
+  replacements: PersistedPathReplacement[],
+): PersistedPathMigrationResult {
+  let scannedFiles = 0;
+  let updatedFiles = 0;
+  for (const file of persistedReferenceFiles(workspaceRoot)) {
+    scannedFiles += 1;
+    const original = fs.readFileSync(file, 'utf8');
+    const updated = replacements.reduce(replacePersistedPath, original);
+    if (updated === original) continue;
+
+    const mode = fs.statSync(file).mode;
+    const temporary = `${file}.workspace-path-migration-${process.pid}.tmp`;
+    const descriptor = fs.openSync(temporary, 'w', mode);
+    try {
+      fs.writeFileSync(descriptor, updated, 'utf8');
+      fs.fsyncSync(descriptor);
+    } finally {
+      fs.closeSync(descriptor);
+    }
+    fs.renameSync(temporary, file);
+    updatedFiles += 1;
+  }
+  return { scannedFiles, updatedFiles };
 }

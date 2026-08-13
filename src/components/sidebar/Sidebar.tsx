@@ -5,10 +5,12 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { useScheduleStore } from '@/stores/scheduleStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
+import { useToastStore } from '@/stores/toastStore';
 import { usePromptHubStore } from '@/stores/promptHubStore';
 import { useI18n } from '@/i18n';
-import { Clock, Wrench, Trash2, Settings, Download, Pencil, Folder, HelpCircle, ChevronRight, MoreHorizontal, Plus, SquarePen, FolderOpen, FolderClosed, X, Search, LogOut, UserRound } from 'lucide-react';
+import { Archive, Clock, Wrench, Settings, Download, Pencil, Folder, HelpCircle, ChevronRight, MoreHorizontal, Plus, SquarePen, FolderOpen, FolderClosed, X, Search, LogOut, UserRound } from 'lucide-react';
 import NewWorkspaceDialog from '@/components/common/NewWorkspaceDialog';
+import WindowModalBackdrop from '@/components/common/WindowModalBackdrop';
 import { matchesConversationSearch, matchesProjectSearch } from '@/components/sidebar/conversationSearch';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -83,7 +85,8 @@ function projectNameForConversation(conv: Conversation, path: string): string {
 }
 
 export default function Sidebar() {
-  const { conversations, activeConversationId, startNewConversation, switchConversation, deleteConversation, renameConversation, clearCompletedStatus, exportConversation } = useChatStore();
+  const { conversations, activeConversationId, startNewConversation, switchConversation, archiveConversation, removeConversationLocally, renameConversation, clearCompletedStatus, exportConversation } = useChatStore();
+  const addToast = useToastStore((state) => state.addToast);
   const openToolbox = useSettingsStore((s) => s.openToolbox);
   const openSystemSettings = useSettingsStore((s) => s.openSystemSettings);
   const openGuide = useSettingsStore((s) => s.openGuide);
@@ -96,6 +99,7 @@ export default function Sidebar() {
   const gatewayProjects = useWorkspaceStore((s) => s.projects);
   const projectNames = useWorkspaceStore((s) => s.projectNames);
   const projectSkillBindings = useWorkspaceStore((s) => s.projectSkillBindings);
+  const setWorkspace = useWorkspaceStore((s) => s.setWorkspace);
   const removeRecentPath = useWorkspaceStore((s) => s.removeRecentPath);
   const setProjectSkillBindings = useWorkspaceStore((s) => s.setProjectSkillBindings);
   const skills = useDiscoveryStore((s) => s.skills);
@@ -129,10 +133,10 @@ export default function Sidebar() {
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const conversationSearchRef = useRef<HTMLInputElement>(null);
 
-  const [showDeleteToast, setShowDeleteToast] = useState(false);
-  const deleteToastTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const [showArchiveToast, setShowArchiveToast] = useState(false);
+  const archiveToastTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  useEffect(() => () => clearTimeout(deleteToastTimerRef.current), []);
+  useEffect(() => () => clearTimeout(archiveToastTimerRef.current), []);
 
   const closeConversationSearch = useCallback(() => {
     setConversationSearch('');
@@ -373,12 +377,21 @@ export default function Sidebar() {
     ));
   }, [skillSearch, workspaceSkills]);
 
-  const handleDeleteConversation = (e: React.MouseEvent, convId: string) => {
+  const handleArchiveConversation = async (e: React.MouseEvent, convId: string) => {
     e.stopPropagation();
-    deleteConversation(convId);
-    clearTimeout(deleteToastTimerRef.current);
-    setShowDeleteToast(true);
-    deleteToastTimerRef.current = setTimeout(() => setShowDeleteToast(false), 5000);
+    try {
+      await archiveConversation(convId);
+      clearTimeout(archiveToastTimerRef.current);
+      setShowArchiveToast(true);
+      archiveToastTimerRef.current = setTimeout(() => setShowArchiveToast(false), 5000);
+    } catch (error) {
+      addToast({
+        type: 'error',
+        title: isEnglish ? 'Could not archive conversation' : '会话归档失败',
+        message: error instanceof Error ? error.message : String(error),
+        duration: 5000,
+      });
+    }
   };
 
   const handleClearCompletedStatus = useCallback((convId: string) => {
@@ -435,6 +448,10 @@ export default function Sidebar() {
 
   const startProjectConversation = (path: string) => {
     startNewConversation();
+    // Keep the sidebar entry in sync with the composer workspace selector:
+    // selecting a workspace must immediately persist it in recentPaths, even
+    // before the first conversation is created by the gateway.
+    setWorkspace(path);
     setViewMode('chat');
     window.dispatchEvent(new CustomEvent('nanobot-gui:new-chat', { detail: { projectPath: path } }));
   };
@@ -516,7 +533,7 @@ export default function Sidebar() {
           pendingRemoveProject.id,
         ));
       for (const conv of projectConversations) {
-        deleteConversation(conv.id);
+        removeConversationLocally(conv.id);
       }
       removeRecentPath(pendingRemoveProject.path);
       window.dispatchEvent(new CustomEvent('nanobot-gui:workspace-settings-changed'));
@@ -649,10 +666,10 @@ export default function Sidebar() {
       <Button
         variant="ghost"
         size="icon"
-        onClick={(e) => handleDeleteConversation(e, conv.id)}
+        onClick={(e) => void handleArchiveConversation(e, conv.id)}
         className="h-5 w-5 opacity-0 group-hover:opacity-100 text-[#656358] hover:text-red-500 hover:bg-transparent shrink-0"
       >
-        <Trash2 className="h-3.5 w-3.5" />
+        <Archive className="h-3.5 w-3.5" />
       </Button>
     </button>
   );
@@ -1069,13 +1086,13 @@ export default function Sidebar() {
           </button>
           <button
             onClick={(e) => {
-              handleDeleteConversation(e, contextMenu.convId);
+              void handleArchiveConversation(e, contextMenu.convId);
               setContextMenu(null);
             }}
             className="flex items-center gap-2 w-full px-3 py-1.5 text-[13px] text-red-500 hover:bg-[#f0ede6]"
           >
-            <Trash2 className="h-3.5 w-3.5" />
-            {t.sidebar.deleteConversation}
+            <Archive className="h-3.5 w-3.5" />
+            {t.sidebar.archiveConversation}
           </button>
         </div>
       )}
@@ -1112,7 +1129,7 @@ export default function Sidebar() {
             }}
             className="flex items-center gap-2 w-full px-3 py-1.5 text-[13px] text-red-500 hover:bg-[#f0ede6]"
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Archive className="h-3.5 w-3.5" />
             {t.sidebar.removeProject}
           </button>
         </div>
@@ -1125,8 +1142,9 @@ export default function Sidebar() {
       />
 
       {skillProject && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/20 px-4 backdrop-blur-[1px] animate-in fade-in duration-150 dark:bg-black/45">
-          <div className="flex w-[480px] max-h-[85vh] flex-col bg-white rounded-2xl shadow-xl overflow-hidden dark:border dark:border-[#3a3a3a] dark:bg-[#262626]">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center px-4 animate-in fade-in duration-150">
+          <WindowModalBackdrop className="dark:bg-black/45" />
+          <div className="relative flex w-[480px] max-h-[85vh] flex-col bg-white rounded-2xl shadow-xl overflow-hidden dark:border dark:border-[#3a3a3a] dark:bg-[#262626]">
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100 shrink-0 dark:border-white/10">
               <div className="min-w-0">
@@ -1215,8 +1233,9 @@ export default function Sidebar() {
       )}
 
       {pendingRemoveProject && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/20 px-4 backdrop-blur-[1px] animate-in fade-in duration-150 dark:bg-black/45">
-          <div className="w-full max-w-[500px] rounded-[20px] border border-[#e6e1d8] bg-white shadow-[0_16px_48px_rgba(0,0,0,0.16)] overflow-hidden dark:border-[#3a3a3a] dark:bg-[#262626] dark:shadow-[0_16px_48px_rgba(0,0,0,0.5)]">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center px-4 animate-in fade-in duration-150">
+          <WindowModalBackdrop className="dark:bg-black/45" />
+          <div className="relative w-full max-w-[500px] rounded-[20px] border border-[#e6e1d8] bg-white shadow-[0_16px_48px_rgba(0,0,0,0.16)] overflow-hidden dark:border-[#3a3a3a] dark:bg-[#262626] dark:shadow-[0_16px_48px_rgba(0,0,0,0.5)]">
             <div className="flex items-start justify-between px-7 pt-6 pb-4">
               <div>
                 <h2 className="text-[22px] font-semibold leading-tight text-[#242424] dark:text-[#ece8e1]">
@@ -1254,12 +1273,13 @@ export default function Sidebar() {
 
       {promptHubOpen && (
         <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/20 backdrop-blur-[1px] animate-in fade-in duration-150"
+          className="fixed inset-0 z-[9999] flex items-center justify-center animate-in fade-in duration-150"
           onClick={(event) => {
             if (event.target === event.currentTarget && !promptHubIsLoggingIn) closePromptHubLogin();
           }}
         >
-          <div data-testid="prompthub-login-dialog" className="w-[380px] rounded-2xl bg-white p-5 shadow-xl">
+          <WindowModalBackdrop />
+          <div data-testid="prompthub-login-dialog" className="relative w-[380px] rounded-2xl bg-white p-5 shadow-xl">
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
                 <h3 className="text-[17px] font-semibold text-[#29261b]">
@@ -1358,9 +1378,9 @@ export default function Sidebar() {
         </div>
       )}
 
-      {showDeleteToast && (
+      {showArchiveToast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 bg-[#29261b] text-white rounded-xl shadow-lg animate-in fade-in slide-in-from-bottom-2 duration-200" role="alert" aria-live="assertive">
-          <span className="text-sm">{t.sidebar.conversationDeleted}</span>
+          <span className="text-sm">{t.sidebar.conversationArchived}</span>
         </div>
       )}
     </div>

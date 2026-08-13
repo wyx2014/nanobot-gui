@@ -10,6 +10,7 @@ vi.mock('electron', () => ({
 
 import {
   buildDesktopDefaultMcpServers,
+  buildDesktopManagedMcpServerPatch,
   buildDesktopDefaultModelConfig,
   buildDesktopManagedModelPatch,
   buildDesktopVoiceCleanupPatch,
@@ -58,7 +59,7 @@ describe('desktop default MCP servers', () => {
     });
   });
 
-  it('uses explicitly provisioned connector keys', () => {
+  it('persists deployment credentials as runtime environment references', () => {
     const servers = buildDesktopDefaultMcpServers('/tmp/tpacowork-test/.nanobot', {
       juyuanToken: 'token with spaces',
       caihuiApiKey: 'caihui-key',
@@ -67,20 +68,102 @@ describe('desktop default MCP servers', () => {
     });
 
     expect(servers.juyuan.url).toBe(
-      'https://api.gildata.com/mcp-servers/aidata-assistant-srv-api?token=token%20with%20spaces',
+      'https://api.gildata.com/mcp-servers/aidata-assistant-srv-api?token=${JUYUAN_MCP_TOKEN}',
     );
     expect(servers.caihui_mcp).toMatchObject({
       url: 'https://mcp.finchina.com/finchina-data-mcp-server/mcp',
-      headers: { 'x-api-key': 'caihui-key' },
+      headers: { 'x-api-key': '${CAIHUI_MCP_API_KEY}' },
     });
     expect(servers['hexin-ifind-ds-index-mcp']).toMatchObject({
       url: 'https://api-mcp.51ifind.com:8643/ds-mcp-servers/hexin-ifind-ds-index-mcp',
-      headers: { Authorization: 'ifind-key' },
+      headers: { Authorization: '${IFIND_MCP_API_KEY}' },
     });
     expect(servers.anysearch).toMatchObject({
       url: 'https://api.anysearch.com/mcp',
-      headers: { Authorization: 'Bearer anysearch-key' },
+      headers: { Authorization: 'Bearer ${ANYSEARCH_API_KEY}' },
     });
+  });
+
+  it('heals old empty placeholders while preserving user-owned keys', () => {
+    const patch = buildDesktopManagedMcpServerPatch(
+      {
+        juyuan: { type: 'streamableHttp', url: '', headers: {} },
+        anysearch: {
+          type: 'streamableHttp',
+          url: 'https://user.example/mcp',
+          headers: { Authorization: 'Bearer personal-key' },
+        },
+      },
+      '/tmp/tpacowork-test/.nanobot',
+      {
+        juyuanToken: 'shared-token',
+        caihuiApiKey: 'shared-caihui',
+        ifindApiKey: 'shared-ifind',
+        anysearchApiKey: 'shared-anysearch',
+      },
+      { installMissing: false },
+    );
+
+    expect(patch.juyuan).toMatchObject({
+      url: expect.stringContaining('${JUYUAN_MCP_TOKEN}'),
+    });
+    expect(patch).not.toHaveProperty('anysearch');
+    expect(patch).not.toHaveProperty('caihui_mcp');
+  });
+
+  it('refreshes bundled references but does not replace them when a build has no key', () => {
+    const existing = {
+      caihui_mcp: {
+        type: 'streamableHttp',
+        url: 'https://old.example/mcp',
+        headers: { 'x-api-key': '${CAIHUI_MCP_API_KEY}' },
+      },
+    };
+    const configured = buildDesktopManagedMcpServerPatch(
+      existing,
+      '/tmp/tpacowork-test/.nanobot',
+      {
+        juyuanToken: '',
+        caihuiApiKey: 'shared-caihui',
+        ifindApiKey: '',
+        anysearchApiKey: '',
+      },
+      { installMissing: false },
+    );
+    const unconfigured = buildDesktopManagedMcpServerPatch(
+      existing,
+      '/tmp/tpacowork-test/.nanobot',
+      emptyCredentials,
+      { installMissing: false },
+    );
+
+    expect(configured.caihui_mcp).toMatchObject({
+      url: 'https://mcp.finchina.com/finchina-data-mcp-server/mcp',
+      headers: { 'x-api-key': '${CAIHUI_MCP_API_KEY}' },
+    });
+    expect(unconfigured).toEqual({});
+  });
+
+  it('installs missing built-ins only during first adoption', () => {
+    const credentials = {
+      juyuanToken: 'shared-token',
+      caihuiApiKey: 'shared-caihui',
+      ifindApiKey: 'shared-ifind',
+      anysearchApiKey: 'shared-anysearch',
+    };
+
+    expect(buildDesktopManagedMcpServerPatch(
+      {},
+      '/tmp/tpacowork-test/.nanobot',
+      credentials,
+      { installMissing: false },
+    )).toEqual({});
+    expect(buildDesktopManagedMcpServerPatch(
+      {},
+      '/tmp/tpacowork-test/.nanobot',
+      credentials,
+      { installMissing: true },
+    )).toHaveProperty('caihui_mcp');
   });
 });
 

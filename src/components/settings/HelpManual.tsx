@@ -23,6 +23,7 @@ import {
 import MarkdownRenderer from '@/components/chat/MarkdownRenderer';
 import { useI18n } from '@/i18n';
 import { cn } from '@/lib/utils';
+import WindowModalBackdrop from '@/components/common/WindowModalBackdrop';
 import { APP_VERSION } from '@/utils/version';
 import {
   HELP_MANUAL_CHAPTERS,
@@ -127,16 +128,17 @@ export default function HelpManual({ onClose }: { onClose: () => void }) {
   return (
     <div
       data-help-manual
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/25 p-6 backdrop-blur-[2px] animate-in fade-in duration-150 dark:bg-black/55"
+      className="fixed inset-0 z-[100] flex items-center justify-center p-6 animate-in fade-in duration-150"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
+      <WindowModalBackdrop className="bg-black/25 backdrop-blur-[2px] dark:bg-black/55" />
       <section
         role="dialog"
         aria-modal="true"
         aria-label={isEnglish ? 'TPACowork User Manual' : 'TPACowork 使用手册'}
-        className="flex h-[min(820px,calc(100vh-48px))] w-[min(1180px,calc(100vw-48px))] overflow-hidden rounded-[22px] border border-black/5 bg-[#fbfaf7] shadow-[0_28px_90px_rgba(0,0,0,0.24)] dark:border-white/10 dark:bg-[#232323]"
+        className="relative flex h-[min(820px,calc(100vh-48px))] w-[min(1180px,calc(100vw-48px))] overflow-hidden rounded-[22px] border border-black/5 bg-[#fbfaf7] shadow-[0_28px_90px_rgba(0,0,0,0.24)] dark:border-white/10 dark:bg-[#232323]"
       >
         <aside className="flex w-[248px] shrink-0 flex-col border-r border-[#e6e0d7] bg-[#f5f3ee] dark:border-white/10 dark:bg-[#292929]">
           <div className="border-b border-[#e6e0d7] px-4 pb-4 pt-5 dark:border-white/10">

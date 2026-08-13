@@ -36,8 +36,9 @@ describe('help manual content', () => {
 
     expect(manual).toContain('普通文件当前不会复制成远端云附件');
     expect(manual).toContain('单个可提取文档上限为 50 MB');
-    expect(manual).toContain('移除项目不会删除磁盘文件');
-    expect(manual).toContain('当前编辑器不提供每月或任意 cron 表达式输入');
+    expect(manual).toContain('归档工作空间会将工作空间及其会话从侧栏隐藏');
+    expect(manual).toContain('每月：选择日期、小时和分钟');
+    expect(manual).toContain('当前编辑器不提供任意 cron 表达式输入');
     expect(manual).toContain('stdio');
     expect(manual).toContain('HTTP');
     expect(manual).toContain('SSE');
@@ -50,5 +51,7 @@ describe('help manual content', () => {
     expect(chapter?.zh.body).toContain('主笔交叉质证与汇总');
     expect(chapter?.zh.body).toContain('报告审校与交付');
     expect(chapter?.zh.body).toContain('同花顺 iFinD、聚源、财汇');
+    expect(chapter?.zh.body).toContain('不会提前创建会话或启动任务');
+    expect(chapter?.zh.body).toContain('填写具体需求并发送后');
   });
 });

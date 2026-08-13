@@ -204,6 +204,7 @@ describe("absorbCompleteAssistantMessage", () => {
   });
 
   it("marks active plan, tool, and file steps as interrupted", () => {
+    const completedAt = 1_785_220_302_866;
     const [result] = finalizeInterruptedTurn([{
       id: "progress",
       role: "tool",
@@ -224,15 +225,21 @@ describe("absorbCompleteAssistantMessage", () => {
         deleted: 0,
         status: "editing",
       }],
-    }]);
+    }], completedAt);
 
     expect(result.agentUI).toMatchObject({
       kind: "task_progress",
+      status: "interrupted",
+      active_step_ids: [],
       current_step_id: undefined,
       note: "任务已由用户终止",
       steps: [{ status: "interrupted", detail: "已由用户终止" }],
     });
-    expect(result.toolEvents?.[0]).toMatchObject({ phase: "error", error: "已由用户终止" });
+    expect(result.toolEvents?.[0]).toMatchObject({
+      phase: "error",
+      error: "已由用户终止",
+      occurred_at: completedAt,
+    });
     expect(result.fileEdits?.[0]).toMatchObject({ status: "error", error: "已由用户终止" });
   });
 

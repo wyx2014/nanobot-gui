@@ -13,6 +13,7 @@ embedded-python/
 # Environment
 .env
 .env.*
+!.env.production.example
 
 # Logs
 *.log

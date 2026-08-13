@@ -1,6 +1,6 @@
 schema_version: 1
 id: asset-research-team
-name: 资产投研团队
+name: 资产投研团队 · 个股研究
 description: 四位研究专家并行完成商业、财务、行业与风险分析，由 Team Lead 交叉质证并输出最终报告。
 version: 1.0.0
 source_root: source/ai-berkshire
@@ -76,7 +76,6 @@ workflows:
   - { id: industry-research, name: 行业深度研究, source: skills/industry-research.md, mode: lead, featured: true }
   - { id: private-company-research, name: 非上市公司研究, source: skills/private-company-research.md, mode: lead, featured: true }
   - { id: portfolio-review, name: 投资组合复盘, source: skills/portfolio-review.md, mode: lead, featured: true }
-  - { id: bottleneck-hunter, name: 产业瓶颈发现, source: skills/bottleneck-hunter.md, mode: lead, featured: false }
   - { id: deep-company-series, name: 公司系列深挖, source: skills/deep-company-series.md, mode: lead, featured: false }
   - { id: dyp-ask, name: 段永平视角问答, source: skills/dyp-ask.md, mode: lead, featured: false }
   - { id: earnings-review, name: 财报复盘, source: skills/earnings-review.md, mode: lead, featured: false }

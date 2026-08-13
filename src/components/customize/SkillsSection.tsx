@@ -16,6 +16,7 @@ import { Toggle } from '@/components/ui/toggle';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { ITEM_NAME_RE } from '@/utils/validation';
+import WindowModalBackdrop from '@/components/common/WindowModalBackdrop';
 import {
   AlertCircle,
   FileText,
@@ -477,12 +478,13 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
 
       {createOpen && (
         <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/20 backdrop-blur-[1px] animate-in fade-in duration-150"
+          className="fixed inset-0 z-[9999] flex items-center justify-center animate-in fade-in duration-150"
           onClick={(event) => {
             if (event.target === event.currentTarget && !creating) setCreateOpen(false);
           }}
         >
-          <div data-skill-create-dialog className="w-[520px] rounded-2xl bg-white p-5 shadow-xl">
+          <WindowModalBackdrop />
+          <div data-skill-create-dialog className="relative w-[520px] rounded-2xl bg-white p-5 shadow-xl">
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
                 <h3 className="text-[17px] font-semibold text-[#29261b]">创建技能</h3>

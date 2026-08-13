@@ -23,6 +23,7 @@ function getFrequencyLabel(
     hourly: t.schedule.frequencyHourly,
     daily: t.schedule.frequencyDaily,
     weekly: t.schedule.frequencyWeekly,
+    monthly: t.schedule.frequencyMonthly,
     weekdays: t.schedule.frequencyWeekdays,
     manual: t.schedule.frequencyManual,
   };
@@ -94,6 +95,8 @@ export default function ScheduleTaskDetail() {
         ];
         const day = days[task.schedule.dayOfWeek ?? 1];
         scheduleDesc = `${freq} ${day} ${timeStr}`;
+      } else if (task.schedule.frequency === 'monthly') {
+        scheduleDesc = `${freq} ${t.schedule.monthDay.replace('{day}', String(task.schedule.dayOfMonth ?? 1))} ${timeStr}`;
       } else {
         scheduleDesc = `${freq} ${timeStr}`;
       }

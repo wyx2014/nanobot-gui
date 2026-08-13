@@ -434,7 +434,7 @@ export const useSettingsStore = create<SettingsStore>()(
       // System settings defaults
       activeSystemTab: 'ai-services' as SystemSettingsTab,
       // Toolbox defaults
-      activeToolboxTab: 'skills' as ToolboxTab,
+      activeToolboxTab: 'expert-teams' as ToolboxTab,
       toolboxSearchQuery: '',
       installingItem: null,
       viewMode: 'chat' as ViewMode,
@@ -511,7 +511,7 @@ export const useSettingsStore = create<SettingsStore>()(
       openToolbox: (tab) =>
         set(() => ({
           viewMode: 'toolbox' as ViewMode,
-          activeToolboxTab: tab ?? 'skills',
+          activeToolboxTab: tab ?? 'expert-teams',
           toolboxSearchQuery: '',
         })),
       closeToolbox: () =>
@@ -692,7 +692,7 @@ export const useSettingsStore = create<SettingsStore>()(
         // Force reset UI state
         state.showSettings = false;
         state.activeSystemTab = 'ai-services';
-        state.activeToolboxTab = 'skills';
+        state.activeToolboxTab = 'expert-teams';
         state.toolboxSearchQuery = '';
         state.installingItem = null;
         state.viewMode = 'chat';

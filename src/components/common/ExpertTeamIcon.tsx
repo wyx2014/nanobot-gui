@@ -1,21 +1,24 @@
 import {
   ChartNoAxesCombined,
+  Network,
   Users,
   type LucideIcon,
 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 
-type ExpertTeamIconKind = 'asset-research' | 'generic-team';
+type ExpertTeamIconKind = 'asset-research' | 'supply-chain-bottleneck' | 'generic-team';
 
 function iconKindForTeam(teamId?: string | null): ExpertTeamIconKind {
   const normalized = (teamId ?? '').trim().toLowerCase();
+  if (normalized === 'supply-chain-bottleneck-team') return 'supply-chain-bottleneck';
   if (normalized.startsWith('asset-research')) return 'asset-research';
   return 'generic-team';
 }
 
 const TEAM_ICONS: Record<ExpertTeamIconKind, LucideIcon> = {
   'asset-research': ChartNoAxesCombined,
+  'supply-chain-bottleneck': Network,
   'generic-team': Users,
 };
 

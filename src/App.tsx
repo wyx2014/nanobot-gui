@@ -64,9 +64,9 @@ function DeferredViewFallback() {
 function DeferredChatFallback({ label }: { label: string }) {
   return (
     <div className="flex h-full min-h-[45vh] w-full items-center justify-center bg-[#fbfaf7] dark:bg-[#1f1f1f]">
-      <div className="flex flex-col items-center gap-3" role="status" aria-live="polite">
-        <ThinkingOrb state="solving" size={64} style={{ width: 32, height: 32 }} aria-label="" />
-        <p className="text-[13px] font-medium text-[#88857b] dark:text-[#aaa69e]">
+      <div className="flex flex-col items-center gap-4" role="status" aria-live="polite">
+        <ThinkingOrb state="solving" size={64} style={{ width: 44, height: 44 }} aria-label="" />
+        <p className="text-[15px] font-medium leading-6 text-[#88857b] dark:text-[#aaa69e]">
           {label}
         </p>
       </div>
@@ -478,6 +478,22 @@ function App() {
     return () => {
       window.removeEventListener('nanobot-gui:new-chat', resetDraftWorkspace);
       window.removeEventListener('nanobot-gui:workspace-settings-changed', resetDraftWorkspace);
+    };
+  }, [refreshWorkspaces]);
+
+  useEffect(() => {
+    const refreshAfterGatewayReconnect = () => {
+      void refreshWorkspaces();
+    };
+    window.addEventListener(
+      'nanobot-gui:gateway-reconnected',
+      refreshAfterGatewayReconnect,
+    );
+    return () => {
+      window.removeEventListener(
+        'nanobot-gui:gateway-reconnected',
+        refreshAfterGatewayReconnect,
+      );
     };
   }, [refreshWorkspaces]);
 

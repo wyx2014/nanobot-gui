@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useI18n } from '@/i18n';
+import WindowModalBackdrop from './WindowModalBackdrop';
 
 interface GuideModalProps {
   open: boolean;
@@ -28,12 +29,13 @@ export default function GuideModal({ open, onClose }: GuideModalProps) {
 
   return (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/20 backdrop-blur-[1px] animate-in fade-in duration-150"
+      className="fixed inset-0 z-[9999] flex items-center justify-center animate-in fade-in duration-150"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-white rounded-2xl shadow-xl w-[420px] p-6 animate-in zoom-in-95 duration-150">
+      <WindowModalBackdrop />
+      <div className="relative bg-white rounded-2xl shadow-xl w-[420px] p-6 animate-in zoom-in-95 duration-150">
         <h3 className="text-[16px] font-semibold text-[#29261b] mb-5">
           {t.guide.title}
         </h3>

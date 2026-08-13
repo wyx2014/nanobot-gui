@@ -1,12 +1,12 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useChatStore } from '@/stores/chatStore';
 import { useScheduleStore } from '@/stores/scheduleStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useI18n } from '@/i18n';
-import { syncSessionFromGateway } from '@/core/nanobotClient';
-import { ChevronRight, Clock } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ScheduledTaskRun } from '@/types/schedule';
+import { useOpenScheduleRun } from '@/components/schedule/useOpenScheduleRun';
 
 const MAX_VISIBLE_RUNS = 5;
 
@@ -37,37 +37,16 @@ export default function ScheduledSection() {
   const { t } = useI18n();
   const tasks = useScheduleStore((s) => s.tasks);
   const loadTasks = useScheduleStore((s) => s.loadTasks);
-  const setSelectedTaskId = useScheduleStore((s) => s.setSelectedTaskId);
-  const markRunViewed = useScheduleStore((s) => s.markRunViewed);
-  const conversations = useChatStore((s) => s.conversations);
   const activeConversationId = useChatStore((s) => s.activeConversationId);
-  const switchConversation = useChatStore((s) => s.switchConversation);
-  const setViewMode = useSettingsStore((s) => s.setViewMode);
   const viewMode = useSettingsStore((s) => s.viewMode);
+  const openScheduleRun = useOpenScheduleRun();
 
   const [sectionOpen, setSectionOpen] = useState(true);
   const [expandedTasks, setExpandedTasks] = useState<Record<string, boolean>>({});
 
-  // Context menu for child runs
-  const [contextMenu, setContextMenu] = useState<{
-    x: number;
-    y: number;
-    taskId: string;
-    run: ScheduledTaskRun;
-  } | null>(null);
-  const contextMenuRef = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
     void loadTasks();
   }, [loadTasks]);
-
-  // Close context menu when clicking outside
-  useEffect(() => {
-    if (!contextMenu) return;
-    const handleClick = () => setContextMenu(null);
-    document.addEventListener('click', handleClick);
-    return () => document.removeEventListener('click', handleClick);
-  }, [contextMenu]);
 
   // Only show tasks that have runs
   const tasksWithRuns = Object.values(tasks).filter((task) => task.runs.length > 0);
@@ -77,50 +56,8 @@ export default function ScheduledSection() {
     setExpandedTasks((prev) => ({ ...prev, [taskId]: !prev[taskId] }));
   };
 
-  const handleParentClick = (taskId: string) => {
-    setSelectedTaskId(taskId);
-    setViewMode('schedule');
-  };
-
   const handleRunClick = async (taskId: string, run: ScheduledTaskRun) => {
-    const sessionKey = run.sessionKey ?? run.conversationId;
-    if (!conversations[sessionKey]) {
-      await syncSessionFromGateway(sessionKey, {
-        scheduledTaskId: taskId,
-        title: `${formatRunDate(run.startedAt)} - ${tasks[taskId]?.name ?? '自动化'}`,
-      });
-    }
-    const conv = useChatStore.getState().conversations[sessionKey];
-    if (conv) {
-      if (conv.scheduledTaskId !== taskId) {
-        useChatStore.getState().upsertConversation(sessionKey, {
-          ...conv,
-          scheduledTaskId: taskId,
-        });
-      }
-      switchConversation(sessionKey);
-      setViewMode('chat');
-      void markRunViewed(taskId, run).catch((err) => {
-        console.warn('Failed to mark schedule run viewed', err);
-      });
-    }
-  };
-
-  const handleRunContextMenu = (
-    e: React.MouseEvent,
-    taskId: string,
-    run: ScheduledTaskRun
-  ) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setContextMenu({ x: e.clientX, y: e.clientY, taskId, run });
-  };
-
-  const handleViewScheduledTask = () => {
-    if (!contextMenu) return;
-    setSelectedTaskId(contextMenu.taskId);
-    setViewMode('schedule');
-    setContextMenu(null);
+    await openScheduleRun(run, tasks[taskId]?.name ?? '自动化');
   };
 
   return (
@@ -146,7 +83,7 @@ export default function ScheduledSection() {
 
             return (
               <div key={task.id}>
-                {/* Parent task row — chevron toggles children, title opens detail */}
+                {/* Parent task row only groups execution records. */}
                 <div className="flex items-center gap-1 px-2">
                   <button
                     onClick={() => toggleTask(task.id)}
@@ -156,15 +93,9 @@ export default function ScheduledSection() {
                       className={cn('h-3 w-3 transition-transform', isExpanded && 'rotate-90')}
                     />
                   </button>
-                  <button
-                    onClick={() => handleParentClick(task.id)}
-                    className={cn(
-                      'flex-1 min-w-0 text-left py-1 rounded-md text-[13px] font-medium tracking-[-0.01em] truncate',
-                      'text-[#3d3929] hover:text-[#29261b]'
-                    )}
-                  >
+                  <div className="min-w-0 flex-1 py-1 text-[13px] font-medium tracking-[-0.01em] text-[#3d3929]">
                     <span className="truncate">{task.name}</span>
-                  </button>
+                  </div>
                 </div>
 
                 {/* Child run items */}
@@ -180,7 +111,6 @@ export default function ScheduledSection() {
                         <button
                           key={run.id}
                           onClick={() => void handleRunClick(task.id, run)}
-                          onContextMenu={(e) => handleRunContextMenu(e, task.id, run)}
                           className={cn(
                             'flex items-center gap-1.5 w-full px-2 py-1 rounded-lg text-[12.5px] font-medium tracking-[-0.01em] truncate transition-colors',
                             isActive
@@ -209,22 +139,6 @@ export default function ScheduledSection() {
         </div>
       )}
 
-      {/* Context menu for child runs */}
-      {contextMenu && (
-        <div
-          ref={contextMenuRef}
-          className="fixed z-50 bg-white rounded-lg shadow-lg border border-[#e8e4dd] py-1 min-w-[160px]"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-        >
-          <button
-            onClick={handleViewScheduledTask}
-            className="flex items-center gap-2 w-full px-3 py-1.5 text-[13px] text-[#3d3929] hover:bg-[#f0ede6]"
-          >
-            <Clock className="h-3.5 w-3.5" />
-            {t.sidebar.viewScheduledTask}
-          </button>
-        </div>
-      )}
     </div>
   );
 }

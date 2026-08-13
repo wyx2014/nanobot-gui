@@ -3,6 +3,7 @@ import { useCustomizeStore } from '@/stores/customizeStore';
 import { APP_VERSION } from '@/utils/version';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { useI18n } from '@/i18n';
+import WindowModalBackdrop from '@/components/common/WindowModalBackdrop';
 import { X, Sparkles, Server, Cpu, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import SkillsSection from './SkillsSection';
@@ -48,8 +49,10 @@ export default function CustomizePanel() {
   return (
     <>
       {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black/20 z-40 backdrop-blur-[1px] animate-in fade-in duration-150"
+      <WindowModalBackdrop
+        position="fixed"
+        interactive
+        className="z-40 animate-in fade-in duration-150"
         onClick={closeCustomize}
       />
 

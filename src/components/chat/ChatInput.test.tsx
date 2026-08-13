@@ -72,7 +72,7 @@ vi.mock('@/core/api', async () => {
 
 const investmentTeam = {
   id: 'asset-research',
-  name: '资产投研团队',
+  name: '资产投研团队 · 个股研究',
   description: '多角色协作完成投资研究',
   version: '1.0.0',
   enabled: true,
@@ -145,7 +145,11 @@ beforeEach(() => {
 
 afterEach(() => {
   act(() => root?.unmount());
-  useChatStore.setState({ activeConversationId: null, conversations: {} });
+  useChatStore.setState({
+    activeConversationId: null,
+    conversations: {},
+    pendingExpertTeam: null,
+  });
   container?.remove();
   container = undefined;
   root = undefined;
@@ -185,6 +189,26 @@ async function openExpertTeamSubmenu(view: HTMLDivElement): Promise<HTMLElement>
   return expertTeamItem as HTMLElement;
 }
 
+describe('ChatInput stop feedback', () => {
+  it('shows a disabled spinner while the gateway is stopping the turn', async () => {
+    const onStop = vi.fn();
+    const view = await renderChatInput('chat', () => true, {
+      isStreaming: true,
+      isStopping: true,
+      onStop,
+    });
+
+    const stopButton = view.querySelector<HTMLButtonElement>('[data-codex-stop]');
+    expect(stopButton).not.toBeNull();
+    expect(stopButton?.disabled).toBe(true);
+    expect(stopButton?.getAttribute('aria-busy')).toBe('true');
+    expect(stopButton?.querySelector('.animate-spin')).not.toBeNull();
+
+    act(() => stopButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect(onStop).not.toHaveBeenCalled();
+  });
+});
+
 describe('ChatInput welcome layout', () => {
   it('keeps the existing compact layout while exposing scoped dark-theme hooks', async () => {
     const view = await renderChatInput('welcome');
@@ -222,12 +246,21 @@ describe('ChatInput welcome layout', () => {
     expect(shell?.dataset.composerVariant).toBe('chat');
     expect(shell?.hasAttribute('data-welcome-composer-shell')).toBe(false);
     expect(composer).not.toBeNull();
+    expect(composer?.dataset.floatingComposer).toBe('true');
+    expect(shell?.className).toContain('bg-transparent');
+    expect(composer?.className).toContain('backdrop-blur-xl');
     expect(Number(textarea?.rows)).toBe(1);
     expect(textarea?.className).toContain('min-h-[28px]');
     expect(textarea?.style.overflowY).toBe('hidden');
     expect(view.querySelector('[data-codex-composer-toolbar]')).not.toBeNull();
     expect(view.querySelector('[data-codex-model-picker]')).not.toBeNull();
-    expect(view.querySelector('[data-codex-submit]')).not.toBeNull();
+    const sendButton = view.querySelector<HTMLButtonElement>('[data-codex-send-button]');
+    expect(sendButton?.classList.contains('composer-send-button')).toBe(true);
+    expect(sendButton?.getAttribute('aria-label')).toMatch(/发送消息|Send message/);
+    expect(sendButton?.querySelector('svg.lucide-arrow-up')).not.toBeNull();
+    const projectSelector = view.querySelector<HTMLElement>('[data-codex-project-selector]');
+    expect(projectSelector?.dataset.composerProjectSelectorPlacement).toBe('inside');
+    expect(composer?.contains(projectSelector ?? null)).toBe(true);
   });
 
   it('does not resurrect a removed workspace from stale cached conversations', async () => {
@@ -283,13 +316,32 @@ describe('ChatInput welcome layout', () => {
 });
 
 describe('ChatInput expert-team menu', () => {
+  it('renders a team preselected by the toolbox without creating a conversation', async () => {
+    useChatStore.getState().startNewConversation({
+      expertTeam: {
+        id: 'asset-research',
+        name: '资产投研团队 · 个股研究',
+        version: '1.0.0',
+        member_count: 5,
+      },
+    });
+
+    const view = await renderChatInput('welcome');
+
+    expect(useChatStore.getState().activeConversationId).toBeNull();
+    expect(Object.keys(useChatStore.getState().conversations)).toHaveLength(0);
+    expect(view.querySelector('[data-selected-expert-team="asset-research"]')?.textContent)
+      .toContain('资产投研团队 · 个股研究');
+    expect(document.activeElement).toBe(view.querySelector('textarea'));
+  });
+
   it('opens a right-side team list and binds the selection to the current conversation', async () => {
     const conversationId = useChatStore.getState().createConversation(null, { title: '当前会话' });
     const view = await renderChatInput();
     await openExpertTeamSubmenu(view);
 
     const teamButton = [...view.querySelectorAll('button')]
-      .find((button) => button.textContent?.includes('资产投研团队'));
+      .find((button) => button.textContent?.includes('资产投研团队 · 个股研究'));
     expect(teamButton).toBeDefined();
     expect(teamButton?.querySelector('[data-expert-team-icon="asset-research"]')).not.toBeNull();
 
@@ -297,21 +349,21 @@ describe('ChatInput expert-team menu', () => {
 
     expect(mocks.setExpertTeam).toHaveBeenCalledWith(conversationId, {
       id: 'asset-research',
-      name: '资产投研团队',
+      name: '资产投研团队 · 个股研究',
       version: '1.0.0',
       member_count: 5,
     });
 
     expect(useChatStore.getState().conversations[conversationId].expertTeam).toEqual({
       id: 'asset-research',
-      name: '资产投研团队',
+      name: '资产投研团队 · 个股研究',
       version: '1.0.0',
       member_count: 5,
     });
     expect(view.querySelector('[data-plus-menu-item="expert-team"]')).toBeNull();
 
     const selectedTeam = view.querySelector<HTMLButtonElement>('[data-selected-expert-team="asset-research"]');
-    expect(selectedTeam?.textContent).toContain('资产投研团队');
+    expect(selectedTeam?.textContent).toContain('资产投研团队 · 个股研究');
     expect(selectedTeam?.querySelector('svg.lucide-chart-no-axes-combined')).not.toBeNull();
     expect(selectedTeam?.querySelector('svg.lucide-x')).not.toBeNull();
 
@@ -326,7 +378,7 @@ describe('ChatInput expert-team menu', () => {
       title: '当前会话',
       expertTeam: {
         id: 'asset-research',
-        name: '资产投研团队',
+        name: '资产投研团队 · 个股研究',
         version: '1.0.0',
         member_count: 5,
       },
@@ -353,13 +405,15 @@ describe('ChatInput expert-team menu', () => {
     const view = await renderChatInput('welcome', onSend);
     await openExpertTeamSubmenu(view);
     const teamButton = [...view.querySelectorAll('button')]
-      .find((button) => button.textContent?.includes('资产投研团队'));
+      .find((button) => button.textContent?.includes('资产投研团队 · 个股研究'));
     act(() => teamButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
 
-    const startButton = [...view.querySelectorAll('button')]
-      .find((button) => /^(开始|Start)$/.test(button.textContent?.trim() ?? ''));
+    const startButton = view.querySelector<HTMLButtonElement>('[data-welcome-submit]');
     expect(view.querySelector('textarea')?.value).toBe('分析青岛啤酒');
-    expect(startButton).toBeDefined();
+    expect(startButton).not.toBeNull();
+    expect(startButton?.classList.contains('composer-send-button')).toBe(true);
+    expect(startButton?.getAttribute('aria-label')).toMatch(/发送消息|Send message/);
+    expect(startButton?.querySelector('svg.lucide-arrow-up')).not.toBeNull();
     expect(startButton?.disabled).toBe(false);
     act(() => startButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
 
@@ -370,7 +424,7 @@ describe('ChatInput expert-team menu', () => {
       expect.objectContaining({
         expertTeam: {
           id: 'asset-research',
-          name: '资产投研团队',
+          name: '资产投研团队 · 个股研究',
           version: '1.0.0',
           member_count: 5,
         },

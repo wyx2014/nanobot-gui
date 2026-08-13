@@ -3,6 +3,7 @@ import { AlertTriangle, ShieldAlert, ShieldX, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/i18n';
 import type { DangerLevel } from '@/core/safety/commandSafety';
+import WindowModalBackdrop from './WindowModalBackdrop';
 
 export interface CommandConfirmRequest {
   command: string;
@@ -74,8 +75,9 @@ export default function CommandConfirmDialog({
   }, [handleKeyDown]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-[1px] animate-in fade-in duration-150">
-      <div className="w-full max-w-3xl mx-4 bg-white rounded-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center animate-in fade-in duration-150">
+      <WindowModalBackdrop />
+      <div className="relative w-full max-w-3xl mx-4 bg-white rounded-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="relative px-6 pt-6 pb-2 shrink-0">
           <button

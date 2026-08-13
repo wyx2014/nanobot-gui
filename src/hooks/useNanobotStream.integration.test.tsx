@@ -7,6 +7,7 @@ import { mapWebuiThreadToGuiMessages } from "@/core/nanobotClient";
 
 const mocks = vi.hoisted(() => ({
   getNanobotClient: vi.fn(),
+  sendMessage: vi.fn(),
 }));
 
 vi.mock("@/core/nanobotClient", async () => {
@@ -68,7 +69,7 @@ beforeEach(() => {
         if (eventHandler === handler) eventHandler = undefined;
       };
     },
-    sendMessage: vi.fn(),
+    sendMessage: mocks.sendMessage,
   });
   container = document.createElement("div");
   document.body.append(container);
@@ -87,6 +88,29 @@ afterEach(() => {
 });
 
 describe("useNanobotStream media progress lifecycle", () => {
+  it("keeps streaming visible while stop waits for gateway confirmation", () => {
+    expect(latest?.isStreaming).toBe(true);
+
+    act(() => latest?.stop());
+
+    expect(mocks.sendMessage).toHaveBeenCalledOnce();
+    expect(mocks.sendMessage).toHaveBeenCalledWith("chat-media-progress", "/stop");
+    expect(latest?.isStreaming).toBe(true);
+    expect(latest?.isStopping).toBe(true);
+
+    act(() => latest?.stop());
+    expect(mocks.sendMessage).toHaveBeenCalledOnce();
+
+    emit({
+      event: "turn_end",
+      chat_id: "chat-media-progress",
+      finish_reason: "cancelled",
+    });
+
+    expect(latest?.isStreaming).toBe(false);
+    expect(latest?.isStopping).toBe(false);
+  });
+
   it("never exposes provisional pre-tool narration in the answer body", () => {
     const narration = "好的，我来为您启动中科曙光四角色并行投研分析。";
     emit({
@@ -224,7 +248,7 @@ describe("useNanobotStream media progress lifecycle", () => {
       chat_id: "chat-media-progress",
       run_id: "asset-run",
       team_id: "asset-research-team",
-      team_name: "资产投研团队",
+      team_name: "资产投研团队 · 个股研究",
       members: [
         {
           id: "business-analyst",
@@ -258,13 +282,62 @@ describe("useNanobotStream media progress lifecycle", () => {
     expect(progress?.note).toContain("基础数据包");
   });
 
+  it("starts bottleneck research with a scope brief before both member waves", () => {
+    emit({
+      event: "team_run_started",
+      chat_id: "chat-media-progress",
+      run_id: "bottleneck-run",
+      team_id: "supply-chain-bottleneck-team",
+      team_name: "资产投研团队 · 供应链瓶颈研究",
+      members: [
+        {
+          id: "trend-verifier",
+          name: "趋势与需求验证师",
+          phase: "discovery",
+          phase_label: "第一阶段 · 发现",
+          description: "验证趋势与需求",
+        },
+        {
+          id: "chain-mapper",
+          name: "产业链架构师",
+          phase: "discovery",
+          phase_label: "第一阶段 · 发现",
+          description: "拆解物理产业链",
+        },
+        {
+          id: "company-screener",
+          name: "标的映射与估值师",
+          phase: "validation",
+          phase_label: "第二阶段 · 验证",
+          description: "映射公司并验证估值",
+        },
+      ],
+    });
+
+    const progress = latest?.messages.find(
+      (message) => message.agentUI?.team_run_id === "bottleneck-run",
+    )?.agentUI;
+    const steps = Array.isArray(progress?.steps)
+      ? progress.steps as TaskProgressStep[]
+      : [];
+    expect(steps.map((step) => [step.id, step.status])).toEqual([
+      ["scope-brief", "running"],
+      ["trend-verifier", "pending"],
+      ["chain-mapper", "pending"],
+      ["company-screener", "pending"],
+      ["team-lead", "pending"],
+      ["report-audit", "pending"],
+    ]);
+    expect(progress?.note).toContain("研究主题卡");
+  });
+
   it("merges live member activity into an existing canonical workflow plan", () => {
     emit({
       event: "team_run_started",
       chat_id: "chat-media-progress",
       run_id: "live-team-run",
       team_id: "asset-research-team",
-      team_name: "资产投研团队",
+      team_name: "资产投研团队 · 个股研究",
       members: [{
         id: "financial-analyst",
         name: "财务分析师",

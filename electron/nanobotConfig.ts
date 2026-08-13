@@ -17,6 +17,12 @@ import {
   type DesktopDefaultModelServiceConfig,
 } from '../src/config/defaultModelService';
 import { DEFAULT_WORKSPACE_DIRECTORY_NAME } from '../src/config/appDirectories';
+import {
+  desktopMcpConfigCredentialReferences,
+  getDesktopMcpCredentials,
+  hasCompleteDesktopMcpCredentials,
+  type DesktopMcpCredentials,
+} from './builtinMcpCredentials';
 
 const PLAYWRIGHT_MCP_PACKAGE = '@playwright/mcp@0.0.78';
 const JUYUAN_MCP_URL = 'https://api.gildata.com/mcp-servers/aidata-assistant-srv-api';
@@ -32,6 +38,14 @@ const IFIND_MCP_NAMES = [
   'hexin-ifind-ds-global-stock-mcp',
   'hexin-ifind-ds-index-mcp',
 ] as const;
+const DESKTOP_MCP_DEFAULTS_STATE_VERSION = 1;
+const DESKTOP_MCP_DEFAULTS_STATE_FILE = 'desktop-mcp-defaults.json';
+
+function encodeMcpUrlCredential(value: string): string {
+  // nanobot resolves ${ENV_VAR} after loading config.json. Encoding the `$`
+  // and braces here would prevent that resolver from ever seeing the token.
+  return /^\$\{[A-Z0-9_]+\}$/.test(value) ? value : encodeURIComponent(value);
+}
 
 // Older GUI builds silently installed this ASR model even though the desktop
 // deployment only provisions a text provider. Keep the signature narrowly
@@ -40,12 +54,7 @@ const LEGACY_DESKTOP_ASR_PRESET = 'stepfun-stepaudio-2-5-asr-speech_to_text';
 const LEGACY_DESKTOP_ASR_PROVIDER = 'stepfun';
 const LEGACY_DESKTOP_ASR_MODEL = 'stepaudio-2.5-asr';
 
-export interface DesktopMcpCredentials {
-  juyuanToken: string;
-  caihuiApiKey: string;
-  ifindApiKey: string;
-  anysearchApiKey: string;
-}
+export type { DesktopMcpCredentials } from './builtinMcpCredentials';
 
 function remoteMcpServer(
   url: string,
@@ -68,17 +77,16 @@ function remoteMcpServer(
 
 export function buildDesktopDefaultMcpServers(
   nanobotDir: string,
-  credentials: DesktopMcpCredentials = {
-    juyuanToken: process.env.JUYUAN_MCP_TOKEN?.trim() ?? '',
-    caihuiApiKey: process.env.CAIHUI_MCP_API_KEY?.trim() ?? '',
-    ifindApiKey: process.env.IFIND_MCP_API_KEY?.trim() ?? '',
-    anysearchApiKey: process.env.ANYSEARCH_API_KEY?.trim() ?? '',
-  },
+  credentials: DesktopMcpCredentials = getDesktopMcpCredentials(),
 ) {
-  const juyuanToken = credentials.juyuanToken.trim();
-  const caihuiApiKey = credentials.caihuiApiKey.trim();
-  const ifindApiKey = credentials.ifindApiKey.trim();
-  const anysearchApiKey = credentials.anysearchApiKey.trim();
+  // Persist environment references instead of deployment secrets. The main
+  // process injects the real values into nanobot; a user-supplied literal key
+  // in config.json naturally overrides the bundled reference.
+  const configCredentials = desktopMcpConfigCredentialReferences(credentials);
+  const juyuanToken = configCredentials.juyuanToken;
+  const caihuiApiKey = configCredentials.caihuiApiKey;
+  const ifindApiKey = configCredentials.ifindApiKey;
+  const anysearchApiKey = configCredentials.anysearchApiKey;
   const anysearchAuthorization = anysearchApiKey
     ? (/^Bearer\s+/i.test(anysearchApiKey) ? anysearchApiKey : `Bearer ${anysearchApiKey}`)
     : '';
@@ -96,7 +104,7 @@ export function buildDesktopDefaultMcpServers(
     juyuan: {
       type: 'streamableHttp',
       url: juyuanToken
-        ? `${JUYUAN_MCP_URL}?token=${encodeURIComponent(juyuanToken)}`
+        ? `${JUYUAN_MCP_URL}?token=${encodeMcpUrlCredential(juyuanToken)}`
         : '',
       connectTimeout: 10,
       toolTimeout: 60,
@@ -125,6 +133,95 @@ export function buildDesktopDefaultMcpServers(
       enabledTools: ['*'],
     },
   };
+}
+
+function isCredentialFreeMcpPlaceholder(server: unknown): boolean {
+  if (!server || typeof server !== 'object') return false;
+  const value = server as Record<string, unknown>;
+  const emptyRecord = (candidate: unknown) => (
+    !candidate
+    || (typeof candidate === 'object' && !Array.isArray(candidate) && Object.keys(candidate).length === 0)
+  );
+  const emptyList = (candidate: unknown) => !candidate || (Array.isArray(candidate) && candidate.length === 0);
+  return !String(value.url ?? '').trim()
+    && !String(value.command ?? '').trim()
+    && emptyRecord(value.headers)
+    && emptyRecord(value.env)
+    && emptyList(value.args);
+}
+
+function isBundledCredentialReferenceMcpServer(server: unknown): boolean {
+  if (!server || typeof server !== 'object') return false;
+  const value = server as Record<string, unknown>;
+  const serializedConnection = JSON.stringify({
+    url: value.url ?? '',
+    headers: value.headers ?? {},
+    env: value.env ?? {},
+    args: value.args ?? [],
+  });
+  return [
+    '${JUYUAN_MCP_TOKEN}',
+    '${CAIHUI_MCP_API_KEY}',
+    '${IFIND_MCP_API_KEY}',
+    '${ANYSEARCH_API_KEY}',
+  ].some((reference) => serializedConnection.includes(reference));
+}
+
+export function buildDesktopManagedMcpServerPatch(
+  existingServers: Record<string, unknown>,
+  nanobotDir: string,
+  credentials: DesktopMcpCredentials,
+  { installMissing }: { installMissing: boolean },
+): Record<string, unknown> {
+  const defaults = buildDesktopDefaultMcpServers(nanobotDir, credentials);
+  const patch: Record<string, unknown> = {};
+  for (const [name, server] of Object.entries(defaults)) {
+    const existing = existingServers[name];
+    const serverUrl = 'url' in server ? server.url : '';
+    if (existing === undefined) {
+      if (installMissing) patch[name] = server;
+      continue;
+    }
+    if (
+      name !== 'playwright'
+      && typeof serverUrl === 'string'
+      && serverUrl.trim()
+      && isBundledCredentialReferenceMcpServer(existing)
+    ) {
+      // Endpoint/timeout corrections in later releases should update only
+      // connectors still using our shared default. Literal user keys and
+      // custom endpoints remain untouched.
+      patch[name] = server;
+      continue;
+    }
+    if (
+      name !== 'playwright'
+      && isCredentialFreeMcpPlaceholder(existing)
+      && typeof serverUrl === 'string'
+      && serverUrl.trim()
+    ) {
+      patch[name] = server;
+    }
+  }
+  return patch;
+}
+
+interface DesktopMcpDefaultsState {
+  version: number;
+  credentialsProvisioned: boolean;
+}
+
+async function readDesktopMcpDefaultsState(pathname: string): Promise<DesktopMcpDefaultsState | null> {
+  try {
+    const parsed = JSON.parse(await fs.readFile(pathname, 'utf-8')) as Partial<DesktopMcpDefaultsState>;
+    if (parsed.version !== DESKTOP_MCP_DEFAULTS_STATE_VERSION) return null;
+    return {
+      version: DESKTOP_MCP_DEFAULTS_STATE_VERSION,
+      credentialsProvisioned: parsed.credentialsProvisioned === true,
+    };
+  } catch {
+    return null;
+  }
 }
 
 type GuiProvider =
@@ -472,6 +569,7 @@ export async function syncNanobotConfig(cfg: NanobotConfigInput): Promise<boolea
   await fs.mkdir(nanobotDir, { recursive: true });
 
   const configPath = path.join(nanobotDir, 'config.json');
+  const mcpDefaultsStatePath = path.join(nanobotDir, DESKTOP_MCP_DEFAULTS_STATE_FILE);
   const providerName = mapProvider(cfg);
   const apiBase = normalizeApiBase(cfg);
 
@@ -485,6 +583,9 @@ export async function syncNanobotConfig(cfg: NanobotConfigInput): Promise<boolea
     // First launch: config does not exist yet — start from empty object.
   }
   const firstLaunch = existingContent.length === 0;
+  const mcpDefaultsState = await readDesktopMcpDefaultsState(mcpDefaultsStatePath);
+  const desktopMcpCredentials = getDesktopMcpCredentials();
+  const credentialsProvisioned = hasCompleteDesktopMcpCredentials(desktopMcpCredentials);
   const hasGatewayModelPresets = Object.keys({
     ...(existing.modelPresets ?? {}),
     ...(existing.model_presets ?? {}),
@@ -533,11 +634,34 @@ export async function syncNanobotConfig(cfg: NanobotConfigInput): Promise<boolea
     deepMerge(managedModelPatch, buildDesktopVoiceCleanupPatch(existing)),
   );
 
-  if (firstLaunch) {
+  const shouldApplyDesktopMcpDefaults = firstLaunch
+    || mcpDefaultsState === null
+    || (!mcpDefaultsState.credentialsProvisioned && credentialsProvisioned);
+  let nextMcpDefaultsState: DesktopMcpDefaultsState | null = null;
+  if (shouldApplyDesktopMcpDefaults) {
     const playwrightCwd = path.join(nanobotDir, 'mcp', 'playwright');
     await fs.mkdir(playwrightCwd, { recursive: true });
-    patch.tools.mcpServers = buildDesktopDefaultMcpServers(nanobotDir);
-  } else if (
+    const existingMcpServers = {
+      ...(existing?.tools?.mcp_servers ?? {}),
+      ...(existing?.tools?.mcpServers ?? {}),
+    } as Record<string, unknown>;
+    const managedMcpPatch = buildDesktopManagedMcpServerPatch(
+      existingMcpServers,
+      nanobotDir,
+      desktopMcpCredentials,
+      // First adoption installs every preset. When credentials are supplied
+      // later, heal placeholders without resurrecting user-removed services.
+      { installMissing: firstLaunch || mcpDefaultsState === null },
+    );
+    if (Object.keys(managedMcpPatch).length > 0) {
+      patch.tools.mcpServers = deepMerge(patch.tools.mcpServers ?? {}, managedMcpPatch);
+    }
+    nextMcpDefaultsState = {
+      version: DESKTOP_MCP_DEFAULTS_STATE_VERSION,
+      credentialsProvisioned,
+    };
+  }
+  if (
     existing?.tools?.mcpServers?.playwright
     || existing?.tools?.mcp_servers?.playwright
   ) {
@@ -579,6 +703,9 @@ export async function syncNanobotConfig(cfg: NanobotConfigInput): Promise<boolea
   // Check if there are any logical changes between existing config and our new patch
   const hasChanges = hasLogicalChanges(existing, patch);
   if (!hasChanges) {
+    if (nextMcpDefaultsState) {
+      await fs.writeFile(mcpDefaultsStatePath, JSON.stringify(nextMcpDefaultsState, null, 2), 'utf-8');
+    }
     console.log('[nanobotConfig] Config logically unchanged at', configPath);
     return false;
   }
@@ -588,6 +715,9 @@ export async function syncNanobotConfig(cfg: NanobotConfigInput): Promise<boolea
   const nextContent = JSON.stringify(merged, null, 2);
 
   await fs.writeFile(configPath, nextContent, 'utf-8');
+  if (nextMcpDefaultsState) {
+    await fs.writeFile(mcpDefaultsStatePath, JSON.stringify(nextMcpDefaultsState, null, 2), 'utf-8');
+  }
   console.log('[nanobotConfig] Synced config to', configPath);
   return true;
 }

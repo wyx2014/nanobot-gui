@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" role="img" aria-labelledby="title desc">
+  <title id="title">供应链瓶颈猎手</title>
+  <desc id="desc">多层供应链在中间收束为瓶颈，再连接到候选公司与研究报告。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#242116"/>
+      <stop offset="1" stop-color="#6e5b43"/>
+    </linearGradient>
+    <linearGradient id="flow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#d8c7a8"/>
+      <stop offset="0.55" stop-color="#e69664"/>
+      <stop offset="1" stop-color="#fff0d2"/>
+    </linearGradient>
+  </defs>
+  <rect width="960" height="540" rx="40" fill="url(#bg)"/>
+  <g fill="none" stroke="url(#flow)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" opacity=".95">
+    <path d="M120 126H310L430 270H540L650 126H840"/>
+    <path d="M120 270H430H540H840"/>
+    <path d="M120 414H310L430 270M540 270L650 414H840"/>
+  </g>
+  <g fill="#fff8ea" stroke="#d9bf91" stroke-width="4">
+    <circle cx="120" cy="126" r="27"/><circle cx="120" cy="270" r="27"/><circle cx="120" cy="414" r="27"/>
+    <circle cx="840" cy="126" r="27"/><circle cx="840" cy="270" r="27"/><circle cx="840" cy="414" r="27"/>
+  </g>
+  <rect x="430" y="218" width="110" height="104" rx="28" fill="#d97757" stroke="#ffe2c4" stroke-width="5"/>
+  <path d="M468 247h34l-10 23h18l-39 39 10-27h-20z" fill="#fff7ea"/>
+  <text x="480" y="490" fill="#fff8ea" font-size="35" font-family="sans-serif" font-weight="600" text-anchor="middle">SUPPLY CHAIN BOTTLENECK</text>
+</svg>

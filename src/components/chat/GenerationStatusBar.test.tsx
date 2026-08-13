@@ -42,8 +42,8 @@ describe('GenerationStatusBar', () => {
     expect(container.textContent).toContain('328 tokens');
     expect(container.querySelector('canvas')).not.toBeNull();
     expect(container.querySelector('[data-generation-status]')).not.toBeNull();
-    expect(container.querySelector('[role="status"]')?.classList.contains('bg-gradient-to-t')).toBe(true);
-    expect(container.querySelector('[role="status"]')?.classList.contains('to-transparent')).toBe(true);
+    expect(container.querySelector('[role="status"]')?.classList.contains('bg-transparent')).toBe(true);
+    expect(container.querySelector('[role="status"]')?.classList.contains('bg-gradient-to-t')).toBe(false);
   });
 
   it('uses the distinct thinking orb and keeps the active breathing state', () => {

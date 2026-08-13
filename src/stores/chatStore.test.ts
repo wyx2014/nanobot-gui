@@ -21,6 +21,7 @@ describe('chatStore', () => {
       currentTool: null,
       currentUsage: null,
       pendingInput: null,
+      pendingExpertTeam: null,
       thinkingStartTime: null,
     });
   });
@@ -60,6 +61,54 @@ describe('chatStore', () => {
       useChatStore.getState().startNewConversation();
       expect(useChatStore.getState().activeConversationId).toBeNull();
     });
+
+    it('opens the welcome composer with an expert team preselected without creating a conversation', () => {
+      useChatStore.getState().createConversation(null, { id: 'existing' });
+
+      useChatStore.getState().startNewConversation({
+        expertTeam: {
+          id: 'asset-research-team',
+          name: '资产投研团队 · 个股研究',
+          version: '1.0.0',
+          member_count: 5,
+        },
+      });
+
+      const state = useChatStore.getState();
+      expect(state.activeConversationId).toBeNull();
+      expect(Object.keys(state.conversations)).toEqual(['existing']);
+      expect(state.pendingExpertTeam?.id).toBe('asset-research-team');
+    });
+
+    it('clears a preselected team when the user starts a regular new conversation', () => {
+      useChatStore.getState().setPendingExpertTeam({
+        id: 'asset-research-team',
+        name: '资产投研团队 · 个股研究',
+        version: '1.0.0',
+        member_count: 5,
+      });
+
+      useChatStore.getState().startNewConversation();
+
+      expect(useChatStore.getState().pendingExpertTeam).toBeNull();
+    });
+
+    it('consumes the welcome team selection after creating the real conversation', () => {
+      useChatStore.getState().setPendingExpertTeam({
+        id: 'asset-research-team',
+        name: '资产投研团队 · 个股研究',
+        version: '1.0.0',
+        member_count: 5,
+      });
+
+      const id = useChatStore.getState().createConversation(null, {
+        id: 'gateway-chat',
+        expertTeam: useChatStore.getState().pendingExpertTeam,
+      });
+
+      expect(useChatStore.getState().conversations[id].expertTeam?.id).toBe('asset-research-team');
+      expect(useChatStore.getState().pendingExpertTeam).toBeNull();
+    });
   });
 
   // ── switchConversation ──
@@ -72,11 +121,11 @@ describe('chatStore', () => {
     });
   });
 
-  // ── deleteConversation ──
-  describe('deleteConversation', () => {
-    it('deletes a conversation', () => {
+  // ── removeConversationLocally ──
+  describe('removeConversationLocally', () => {
+    it('removes a conversation from the renderer cache', () => {
       const id = useChatStore.getState().createConversation();
-      useChatStore.getState().deleteConversation(id);
+      useChatStore.getState().removeConversationLocally(id);
       expect(useChatStore.getState().conversations[id]).toBeUndefined();
     });
 
@@ -86,7 +135,7 @@ describe('chatStore', () => {
       useChatStore.getState().createConversation(null, { id: 'third' });
       useChatStore.getState().switchConversation(id1);
       useChatStore.getState().switchConversation('second');
-      useChatStore.getState().deleteConversation('second');
+      useChatStore.getState().removeConversationLocally('second');
 
       const state = useChatStore.getState();
       expect(state.activeConversationId).toBe(id1);
@@ -99,7 +148,7 @@ describe('chatStore', () => {
       });
       useChatStore.getState().createConversation(null, { id: 'only-loaded' });
 
-      useChatStore.getState().deleteConversation('only-loaded');
+      useChatStore.getState().removeConversationLocally('only-loaded');
 
       const state = useChatStore.getState();
       expect(state.activeConversationId).toBeNull();
@@ -113,7 +162,7 @@ describe('chatStore', () => {
         skipActivate: true,
       });
 
-      useChatStore.getState().deleteConversation('background');
+      useChatStore.getState().removeConversationLocally('background');
 
       expect(useChatStore.getState().activeConversationId).toBe('active');
     });
@@ -122,11 +171,69 @@ describe('chatStore', () => {
       useChatStore.getState().createConversation(null, { id: 'first' });
       useChatStore.getState().createConversation(null, { id: 'second' });
       useChatStore.getState().createConversation(null, { id: 'third' });
-      useChatStore.getState().deleteConversation('second');
+      useChatStore.getState().removeConversationLocally('second');
 
-      useChatStore.getState().deleteConversation('third');
+      useChatStore.getState().removeConversationLocally('third');
 
       expect(useChatStore.getState().activeConversationId).toBe('first');
+    });
+  });
+
+  describe('reconcileGatewayConversations', () => {
+    it('removes stale durable rows while preserving local drafts', () => {
+      useChatStore.getState().upsertConversation('stale', {
+        id: 'stale',
+        title: 'Archived elsewhere',
+        messages: [],
+        createdAt: 1,
+        updatedAt: 2,
+        status: 'idle',
+        hasHistory: true,
+      });
+      useChatStore.getState().upsertConversation('draft', {
+        id: 'draft',
+        title: 'Local draft',
+        messages: [],
+        createdAt: 2,
+        updatedAt: 3,
+        status: 'idle',
+      });
+      useChatStore.getState().reconcileGatewayConversations({
+        current: {
+          id: 'current',
+          title: 'Current',
+          messages: [],
+          createdAt: 3,
+          updatedAt: 4,
+          status: 'idle',
+          hasHistory: true,
+        },
+      });
+
+      const conversations = useChatStore.getState().conversations;
+      expect(conversations.stale).toBeUndefined();
+      expect(conversations.draft).toBeDefined();
+      expect(conversations.current).toBeDefined();
+    });
+
+    it('removes stale history in one reconciliation and keeps valid navigation', () => {
+      for (const id of ['kept', 'stale-a', 'stale-b']) {
+        useChatStore.getState().createConversation(null, { id });
+        useChatStore.getState().upsertConversation(id, {
+          ...useChatStore.getState().conversations[id],
+          hasHistory: true,
+        });
+      }
+      expect(useChatStore.getState().activeConversationId).toBe('stale-b');
+
+      useChatStore.getState().reconcileGatewayConversations({
+        kept: useChatStore.getState().conversations.kept,
+      });
+
+      const state = useChatStore.getState();
+      expect(Object.keys(state.conversations)).toEqual(['kept']);
+      expect(state.activeConversationId).toBe('kept');
+      expect(state.conversationNavigationHistory).toEqual([]);
     });
   });
 

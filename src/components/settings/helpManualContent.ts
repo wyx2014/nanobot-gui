@@ -86,7 +86,7 @@ TPACowork 的所有任务都在本地电脑上执行，无需把文件上传到�
 | --- | --- |
 | 日常办公 | 根据我附上的会议记录，整理决策事项、负责人和截止日期，输出 Markdown 表格。 |
 | 表格分析 | 分析这份持仓表，检查行业集中度和前十大持仓，并给出三条需要跟踪的风险。 |
-| 单股投研 | 使用资产投研团队分析长江电力（600900.SH），数据截至今天，最后交付 HTML 研报。 |
+| 单股投研 | 使用资产投研团队 · 个股研究分析长江电力（600900.SH），数据截至今天，最后交付 HTML 研报。 |
 | 项目文件 | 阅读当前工作区的 README 和配置文件，先说明问题，再提出修改方案；暂时不要改代码。 |
 
 按 **Enter** 发送，按 **Shift+Enter** 换行。任务运行时仍可继续输入，新内容会进入队列。
@@ -135,7 +135,7 @@ A useful request includes the **goal, inputs, scope, output, and constraints**.
 | --- | --- |
 | Office work | Turn the attached meeting record into decisions, owners, and deadlines in a Markdown table. |
 | Spreadsheet | Review this holdings file for sector concentration and top-ten exposure, then list three risks to monitor. |
-| Stock research | Use the Asset Research Team to analyze 600900.SH with data through today and deliver an HTML report. |
+| Stock research | Use Asset Research Team · Stock Research to analyze 600900.SH with data through today and deliver an HTML report. |
 | Project work | Read the README and configuration in this workspace, explain the issue, and propose a fix without editing yet. |
 
 Press **Enter** to send and **Shift+Enter** for a new line. While a task runs, new requests are placed in the queue.
@@ -156,7 +156,7 @@ Press **Enter** to send and **Shift+Enter** for a new line. While a task runs, n
     zh: {
       title: '界面、会话与历史',
       summary: '认识主界面，管理会话，并在历史记录中快速定位工作。',
-      keywords: '侧栏 会话 历史 搜索 重命名 导出 删除 返回 前进 置顶摘要',
+      keywords: '侧栏 会话 历史 搜索 重命名 导出 归档 数据管理 返回 前进 置顶摘要',
       body: `## 主界面分为四个区域
 
 | 区域 | 用途 |
@@ -181,9 +181,9 @@ Press **Enter** to send and **Shift+Enter** for a new line. While a task runs, n
 
 - **重命名**：修改侧栏和标题栏显示的名称；
 - **导出会话**：保存完整对话记录；
-- **删除会话**：删除应用中的会话及其历史。
+- **归档会话**：从侧栏隐藏会话，但保留完整历史。
 
-删除会话没有撤销按钮。项目菜单中的 **移除项目** 不会删除磁盘文件，但会移除项目关联，并清理该项目在应用中的会话，请先确认重要结果已保存。
+归档内容可在 **设置 → 数据管理** 中取消归档。只有在数据管理中再次确认“永久删除”，才会清理会话记录、任务进度和内部索引；永久删除无法撤销，但不会删除工作空间目录、生成产物或其他磁盘文件。项目菜单中的 **归档工作空间** 也可以从数据管理恢复。
 
 ## 消息操作
 
@@ -202,7 +202,7 @@ Press **Enter** to send and **Shift+Enter** for a new line. While a task runs, n
     en: {
       title: 'Interface, conversations, and history',
       summary: 'Learn the main layout, manage conversations, and find prior work.',
-      keywords: 'sidebar conversation history search rename export delete back forward pinned summary',
+      keywords: 'sidebar conversation history search rename export archive data management back forward pinned summary',
       body: `## The four main areas
 
 | Area | Purpose |
@@ -223,9 +223,9 @@ When the sidebar is collapsed, the folder icon and conversation title remain in 
 
 ## Conversation management
 
-Right-click a conversation to **rename**, **export**, or **delete** it. Deletion has no undo action.
+Right-click a conversation to **rename**, **export**, or **archive** it. Archiving hides it from the sidebar while preserving its history.
 
-Removing a project does not delete its disk folder, but it removes the project association and its conversations from the app. Save important results first.
+Restore archived conversations or workspaces in **Settings → Data Management**. Only the separately confirmed permanent-delete action removes conversation journals, task progress, and internal indexes. Permanent deletion cannot be undone, but workspace folders, generated artifacts, and other files on disk are never removed there.
 
 ## Message actions
 
@@ -441,7 +441,7 @@ Save important artifacts to the workspace or download them rather than relying o
     zh: {
       title: '工作区与权限',
       summary: '让 Agent 在正确目录工作，并理解受限访问与完全访问。',
-      keywords: '工作区 项目 文件夹 权限 沙箱 受限 完全访问 命令 路径 移除项目',
+      keywords: '工作区 项目 文件夹 权限 沙箱 受限 完全访问 命令 路径 归档工作空间',
       body: `## 工作区是什么
 
 工作区是某个任务允许使用的项目目录。它把以下内容关联起来：
@@ -486,14 +486,14 @@ Save important artifacts to the workspace or download them rather than relying o
 
 - 在文件管理器中打开位置；
 - 管理该项目允许使用的“我的技能”；
-- 移除项目。
+- 归档工作空间。
 
-**移除项目不会删除磁盘文件，但会移除应用中的项目关联和该项目会话。** 这是项目管理操作，不是隐藏侧栏分组。`,
+**归档工作空间会将工作空间及其会话从侧栏隐藏，但不会删除磁盘文件。** 之后可在 **设置 → 数据管理** 中取消归档；只有单独确认“永久删除”才会清理应用内记录。`,
     },
     en: {
       title: 'Workspaces and permissions',
       summary: 'Keep the agent in the right folder and understand restricted versus full access.',
-      keywords: 'workspace project folder permission sandbox restricted full access command path remove',
+      keywords: 'workspace project folder permission sandbox restricted full access command path archive',
       body: `## What a workspace means
 
 A workspace is the project folder available to a task. It associates conversations, permitted file locations, project skills, and the default command directory.
@@ -517,21 +517,21 @@ Check that the file still exists at the original path, the correct workspace is 
 
 ## Project menu
 
-Right-click a workspace to reveal it, manage its project skills, or remove it.
+Right-click a workspace to reveal it, manage its project skills, or archive it.
 
-**Removing a project keeps disk files but removes the app association and that project's conversations.** It is not merely a visual hide action.`,
+**Archiving a workspace hides it and its conversations from the sidebar without deleting files on disk.** Restore it from **Settings → Data Management**; only a separately confirmed permanent deletion removes app records.`,
     },
   },
   {
     id: 'asset-research-team',
     section: 'work',
     zh: {
-      title: '资产投研团队',
+      title: '资产投研团队 · 个股研究',
       summary: '什么时候启动单股投研工作流，以及固定 DAG、数据源和交付物怎样运作。',
       keywords: '股票 A股 投研 专家团队 基础数据 商业 财务 行业 风险 主笔 审校 HTML iFinD 聚源 财汇',
       body: `## 适用范围
 
-资产投研团队只承接**明确指向单只股票的投资研究任务**。正确输入应尽量包含：
+资产投研团队 · 个股研究只承接**明确指向单只股票的投资研究任务**。正确输入应尽量包含：
 
 - 公司名称或证券代码；
 - 市场，例如 A 股、港股、美股；
@@ -548,11 +548,11 @@ Right-click a workspace to reveal it, manage its project skills, or remove it.
 
 ## 怎样启动
 
-方式一：**工具箱 → 专家团队 → 资产投研团队 → 启动团队**。
+方式一：**工具箱 → 专家团队 → 资产投研团队 · 个股研究 → 使用团队**。应用会返回新对话并在输入框中预选该团队，不会提前创建会话或启动任务。
 
-方式二：在输入框选择 **+ → 专家团队 → 资产投研团队**，然后发送具体标的。
+方式二：在输入框选择 **+ → 专家团队 → 资产投研团队 · 个股研究**，然后发送具体标的。
 
-选择后输入框会显示团队标签；点击标签上的叉号可以取消。
+选择后输入框会显示团队标签；点击标签上的叉号可以取消。填写具体需求并发送后，系统才会创建会话并启动相应流程。
 
 ## 固定工作流
 
@@ -591,15 +591,15 @@ Right-click a workspace to reveal it, manage its project skills, or remove it.
 
 标准交付是经过审校的 Markdown 源报告和面向阅读的 HTML 研报，包含数据日期、来源、四维分析、关键指标、风险矩阵和研究局限。
 
-> 资产投研团队输出是研究辅助材料，不构成投资建议。对于组合风险、行业研究或普通办公任务，应使用普通 Agent 或相应工具，而不是强行启动单股工作流。`,
+> 资产投研团队 · 个股研究输出是研究辅助材料，不构成投资建议。对于组合风险、行业研究或普通办公任务，应使用普通 Agent 或相应工具，而不是强行启动单股工作流。`,
     },
     en: {
-      title: 'Asset Research Team',
+      title: 'Asset Research Team · Stock Research',
       summary: 'Learn when the single-stock workflow starts and how its fixed DAG, sources, and delivery work.',
       keywords: 'stock research expert team data package business financial industry risk lead audit HTML',
       body: `## Scope
 
-The Asset Research Team handles **investment research on one clearly identified security**. Include the company or ticker, market, research focus, and data cut-off when possible.
+Asset Research Team · Stock Research handles **investment research on one clearly identified security**. Include the company or ticker, market, research focus, and data cut-off when possible.
 
 Inputs such as “BYD,” “Yangtze Power,” or “600900” can identify a security. Industry-wide research, translation, writing, weather, and other non-stock tasks stay with the regular agent.
 
@@ -607,8 +607,10 @@ Even while the team is selected, the model routes every turn to start the workfl
 
 ## Start the team
 
-- Open **Toolbox → Expert Teams → Asset Research Team → Start Team**; or
-- Select **+ → Expert Teams → Asset Research Team** in the composer.
+- Open **Toolbox → Expert Teams → Asset Research Team · Stock Research → Use Team** to return to a new chat with the team preselected; or
+- Select **+ → Expert Teams → Asset Research Team · Stock Research** in the composer.
+
+The team chip appears in the composer. A session is created and the workflow starts only after you enter a concrete request and send it.
 
 ## Fixed workflow
 
@@ -646,12 +648,13 @@ The normal delivery is an audited Markdown source and a readable HTML report wit
     zh: {
       title: '自动化与定时任务',
       summary: '创建、运行和检查重复任务。',
-      keywords: '自动化 定时任务 每小时 每天 每周 工作日 手动 暂停 运行记录 cron',
+      keywords: '自动化 定时任务 每小时 每天 每周 每月 工作日 手动 暂停 运行记录 cron',
       body: `## 创建任务
 
 打开侧栏 **自动化**，可以：
 
-- 点击 **新建任务** 手动填写；
+- 在 **定时任务** 页点击 **添加自动化** 手动填写；
+- 从任务模板选择工作周报、晨间简报、AI 新闻、月度复盘、知识沉淀或邮件待办提取，并在保存前继续修改；
 - 点击 **让 TPACowork 帮我创建**，先在会话中描述需求。
 
 一个任务包含名称、说明、执行指令、频率，以及可选的技能和工作区。
@@ -661,10 +664,11 @@ The normal delivery is an audited Markdown source and a readable HTML report wit
 - 每小时：选择每小时的第几分钟；
 - 每天：选择小时和分钟；
 - 每周：选择星期、小时和分钟；
+- 每月：选择日期、小时和分钟；
 - 工作日：周一至周五固定时间；
 - 仅手动：不会自动触发，只能点击“立即运行”。
 
-当前编辑器不提供每月或任意 cron 表达式输入。
+当前编辑器不提供任意 cron 表达式输入。
 
 ## 管理和查看结果
 
@@ -673,10 +677,9 @@ The normal delivery is an audited Markdown source and a readable HTML report wit
 - 编辑；
 - 立即运行；
 - 暂停或恢复；
-- 删除；
-- 展开运行记录。
+- 删除。
 
-每次运行都有独立会话。点击运行记录可以打开当次对话，查看完整过程、错误和产物，再返回任务详情。
+“我的自动化”只管理任务本身，不再展开执行记录。顶部 **执行记录** 页会汇总所有任务的执行结果，并支持按状态筛选、搜索任务或错误。每次运行都有独立会话；点击记录可以打开当次对话，查看完整过程、错误和产物。已完成或出错的记录可单独删除，正在执行的记录需等待结束后才能删除。
 
 ## 为什么任务没有按时运行
 
@@ -693,10 +696,10 @@ The normal delivery is an audited Markdown source and a readable HTML report wit
     en: {
       title: 'Automations and scheduled tasks',
       summary: 'Create, run, and inspect recurring tasks.',
-      keywords: 'automation scheduled task hourly daily weekly weekdays manual pause run history cron',
+      keywords: 'automation scheduled task hourly daily weekly monthly weekdays manual pause run history cron',
       body: `## Create a task
 
-Open **Automations** and either create a task manually or ask TPACowork to help draft one.
+Open **Automations** and create a task manually, start from a weekly report, morning brief, AI news, monthly review, knowledge capture, or email action template, or ask TPACowork to help draft one. Templates remain fully editable before saving.
 
 A task has a name, description, instruction, frequency, and optional skill and workspace.
 
@@ -705,14 +708,15 @@ A task has a name, description, instruction, frequency, and optional skill and w
 - Hourly at a selected minute;
 - Daily at a selected time;
 - Weekly on a selected day and time;
+- Monthly on a selected date and time;
 - Weekdays, Monday through Friday;
 - Manual only.
 
-The current editor does not expose monthly schedules or arbitrary cron expressions.
+The current editor does not expose arbitrary cron expressions.
 
 ## Manage and review
 
-Cards support edit, run now, pause or resume, delete, and run history. Each run has its own conversation; open it to inspect the full process, errors, and artifacts.
+Task cards only manage the automation itself: edit, run now, pause or resume, and delete. The top-level **Run history** tab is the single place for execution records, with status filters plus task/error search. Each run has its own conversation; open it to inspect the full process, errors, and artifacts. Completed and failed records can be deleted individually; running records become deletable after they finish.
 
 ## If a task does not run
 
@@ -851,7 +855,7 @@ The store lets you discover and install shared skills. Publishing your own skill
 
 - 查结构化金融字段，优先使用已配置的金融 MCP；
 - 查公告、官网和新闻，可使用网络搜索；
-- 资产投研团队会按自己的数据源优先级自动使用绑定来源。
+- 资产投研团队 · 个股研究会按自己的数据源优先级自动使用绑定来源。
 
 ## 性能建议
 
@@ -991,6 +995,8 @@ Packaged builds need microphone access for TPACowork. In development, permission
 - **SOUL.md**：助手人格、工作方式和长期行为原则；
 - **USER.md**：你的称呼、时区、沟通偏好和稳定背景。
 
+页面通过“助手人格”和“用户画像”两个切页分别编辑；切换切页不会丢失当前草稿，带“未保存”标记的切页会在点击“保存更改”后一起保存。
+
 修改会从下一条消息起生效，不需要重启。两个文件都可恢复内置模板。
 
 适合写入长期偏好，例如：
@@ -1038,6 +1044,8 @@ PromptHub 账户主要用于技能商店的安装、发布和账号关联。普�
 - **SOUL.md** for assistant persona and durable working principles;
 - **USER.md** for your name, timezone, communication preferences, and stable background.
 
+Use the Assistant Persona and User Profile tabs to edit one file at a time. Switching tabs preserves drafts, and **Save changes** saves every tab marked as unsaved.
+
 Changes apply on the next message without a restart. Both files can be restored to the bundled template.
 
 Store durable preferences here, not one-off task instructions or secrets such as API keys and passwords.
@@ -1070,7 +1078,7 @@ The Help & Feedback page includes this manual, feedback with up to four screensh
 | 第一条消息等待较久 | 本地服务、模型连接和工具首次初始化；先等待，不要连续重复发送 |
 | 文件卡片存在但 Agent 读不到 | 原文件是否移动、路径是否在工作区外、是否需要完全访问 |
 | MCP 不可用 | 工具箱状态、必填凭证、依赖、测试结果，以及是否提示重启 |
-| 资产投研团队没有启动 | 是否选择团队，输入是否明确是单只股票的投研任务 |
+| 资产投研团队 · 个股研究没有启动 | 是否选择团队，输入是否明确是单只股票的投研任务 |
 | 团队停在某个成员 | 查看该成员状态；运行时会重试一次，其他成员终态后主笔才开始 |
 | 自动化没有执行 | 应用是否运行、电脑是否休眠、任务是否暂停、工作区和凭证是否仍可用 |
 | 任务反复调用工具 | 点击停止，缩小目标和来源范围后重新发送 |

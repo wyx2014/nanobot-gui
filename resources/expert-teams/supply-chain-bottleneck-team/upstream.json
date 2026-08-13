@@ -1,0 +1,9 @@
+{
+  "name": "ai-berkshire",
+  "sourcePath": "/Users/wyx/project/nanobot-pc/ai-berkshire",
+  "importedAt": "2026-08-12T00:00:00Z",
+  "sourceRevision": "459c0c244b1c4030a6d2616176fd2e0ca198ac4d",
+  "files": {
+    "skills/bottleneck-hunter.md": "sha256:ee4582bafe1a95ea85c2a2f0e10304ef5f44397b5f18b3a430ce687f471f3562"
+  }
+}

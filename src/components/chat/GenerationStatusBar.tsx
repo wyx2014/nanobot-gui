@@ -87,7 +87,7 @@ export default function GenerationStatusBar({
       data-generation-status
       data-generation-phase={phase}
       className={cn(
-        'relative -mx-3 mb-1 flex min-h-7 items-center justify-between gap-4 bg-gradient-to-t from-[#fbfaf7] via-[#fbfaf7]/70 to-transparent px-4 text-[13px]',
+        'relative -mx-3 mb-1 flex min-h-7 items-center justify-between gap-4 bg-transparent px-4 text-[13px]',
         className,
       )}
     >

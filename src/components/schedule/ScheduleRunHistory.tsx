@@ -1,11 +1,13 @@
 import { useChatStore } from '@/stores/chatStore';
-import { useSettingsStore } from '@/stores/settingsStore';
-import { useScheduleStore } from '@/stores/scheduleStore';
 import { useI18n } from '@/i18n';
-import { syncSessionFromGateway } from '@/core/nanobotClient';
 import { ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ScheduledTaskRun } from '@/types/schedule';
+import {
+  formatScheduleRunDate,
+  isDefaultScheduleConversationTitle,
+  useOpenScheduleRun,
+} from './useOpenScheduleRun';
 
 function formatTimeAgo(timestamp: number, agoTemplate: string): string {
   const diff = Date.now() - timestamp;
@@ -27,53 +29,13 @@ interface Props {
   taskName: string;
 }
 
-function formatRunDate(timestamp: number): string {
-  const d = new Date(timestamp);
-  const month = d.getMonth() + 1;
-  const day = d.getDate();
-  const h = d.getHours().toString().padStart(2, '0');
-  const m = d.getMinutes().toString().padStart(2, '0');
-  return `${month}/${day} ${h}:${m}`;
-}
-
-function isDefaultConversationTitle(title: string | undefined): boolean {
-  const cleaned = title?.trim();
-  return !cleaned || cleaned === '新对话' || cleaned === 'New chat';
-}
-
 export default function ScheduleRunHistory({ runs, taskName }: Props) {
   const { t } = useI18n();
-  const switchConversation = useChatStore((s) => s.switchConversation);
-  const setViewMode = useSettingsStore((s) => s.setViewMode);
-  const setReturnTarget = useScheduleStore((s) => s.setReturnTarget);
-  const markRunViewed = useScheduleStore((s) => s.markRunViewed);
+  const openScheduleRun = useOpenScheduleRun();
   const conversations = useChatStore((s) => s.conversations);
 
   const handleViewConversation = async (run: ScheduledTaskRun) => {
-    const sessionKey = run.sessionKey ?? run.conversationId;
-    const fallbackTitle = `${formatRunDate(run.startedAt)} - ${taskName}`;
-    if (!conversations[sessionKey]) {
-      await syncSessionFromGateway(sessionKey, {
-        scheduledTaskId: run.scheduledTaskId,
-        title: fallbackTitle,
-      });
-    }
-    const conv = useChatStore.getState().conversations[sessionKey];
-    if (conv) {
-      if (conv.scheduledTaskId !== run.scheduledTaskId || isDefaultConversationTitle(conv.title)) {
-        useChatStore.getState().upsertConversation(sessionKey, {
-          ...conv,
-          title: isDefaultConversationTitle(conv.title) ? fallbackTitle : conv.title,
-          scheduledTaskId: run.scheduledTaskId,
-        });
-      }
-      setReturnTarget({ taskId: run.scheduledTaskId, runId: run.id });
-      switchConversation(sessionKey);
-      setViewMode('chat');
-      void markRunViewed(run.scheduledTaskId, run).catch((err) => {
-        console.warn('Failed to mark schedule run viewed', err);
-      });
-    }
+    await openScheduleRun(run, taskName);
   };
 
   if (runs.length === 0) {
@@ -89,8 +51,8 @@ export default function ScheduleRunHistory({ runs, taskName }: Props) {
       {runs.map((run) => {
         const sessionKey = run.sessionKey ?? run.conversationId;
         const conversationTitle = conversations[sessionKey]?.title;
-        const title = isDefaultConversationTitle(conversationTitle)
-          ? `${formatRunDate(run.startedAt)} - ${taskName}`
+        const title = isDefaultScheduleConversationTitle(conversationTitle)
+          ? `${formatScheduleRunDate(run.startedAt)} - ${taskName}`
           : conversationTitle;
         const isUnread = (run.status === 'completed' || run.status === 'error') && !run.viewedAt;
 

@@ -21,6 +21,23 @@ export const PINNED_SUMMARY_COMPACT_MAX_WIDTH =
 export const PINNED_SUMMARY_COMPACT_MEDIA_QUERY =
   `(max-width: ${PINNED_SUMMARY_COMPACT_MAX_WIDTH}px)`;
 
+// Messages and the composer must share one outer conversation column. The
+// composer stays slightly narrower while the summary is pinned, but is
+// centered inside that column instead of drifting toward the summary rail.
+export function getConversationColumnClasses(summaryPinned: boolean): {
+  outer: string;
+  composer: string;
+} {
+  return {
+    outer: summaryPinned
+      ? 'w-full max-w-4xl ml-auto mr-0'
+      : 'w-full max-w-4xl mx-auto',
+    composer: summaryPinned
+      ? 'w-full max-w-3xl mx-auto'
+      : 'w-full',
+  };
+}
+
 export function shouldAutoHideSidebarForPinnedSummary({
   windows,
   compactViewport,

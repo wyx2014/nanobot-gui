@@ -372,6 +372,46 @@ describe('TaskNarrativeTimeline Hope Agent-compatible UI', () => {
     expect(members?.textContent).not.toContain('耗时');
   });
 
+  it('freezes stale parallel starts at the authoritative interrupted turn duration', () => {
+    const startedAt = 1_785_000_000_000;
+    const messages = [trace({
+      id: 'interrupted-parallel',
+      toolEvents: [
+        {
+          phase: 'start',
+          call_id: 'search-finance',
+          batch_id: 'interrupted-searches',
+          name: 'web_search',
+          occurred_at: startedAt,
+          arguments: { query: '青岛啤酒 财务数据' },
+        },
+        {
+          phase: 'start',
+          call_id: 'search-report',
+          batch_id: 'interrupted-searches',
+          name: 'web_search',
+          occurred_at: startedAt,
+          arguments: { query: '青岛啤酒 年报' },
+        },
+      ],
+    })];
+    const view = render(messages, {
+      isActive: false,
+      turnStatus: 'interrupted',
+      turnLatencyMs: 1_334,
+    });
+
+    const group = view.querySelector<HTMLButtonElement>('[data-hope-tool-group] > button');
+    expect(group?.textContent).toContain('耗时 1s');
+
+    render(messages, {
+      isActive: false,
+      turnStatus: 'interrupted',
+      turnLatencyMs: 1_334,
+    });
+    expect(group?.textContent).toContain('耗时 1s');
+  });
+
   it('shows one quiet loading tail after a tool completes between model rounds', () => {
     const view = render([trace({
       id: 'tool-end',
@@ -604,6 +644,6 @@ describe('TaskNarrativeTimeline Hope Agent-compatible UI', () => {
     expect(planButton?.getAttribute('aria-expanded')).toBe('true');
     expect(activeItem?.querySelector('[data-hope-plan]')).not.toBeNull();
     expect(view.textContent).toContain('让我准备研究任务，然后使用 spawn 启动后台代理。');
-    expect(view.textContent).toContain('研究员已启动，正在等待首个研究进展');
+    expect(view.textContent).toContain('正在启动四位专家');
   });
 });

@@ -2,7 +2,7 @@
  * Scheduled Task Types
  */
 
-export type ScheduleFrequency = 'hourly' | 'daily' | 'weekly' | 'weekdays' | 'manual';
+export type ScheduleFrequency = 'hourly' | 'daily' | 'weekly' | 'monthly' | 'weekdays' | 'manual';
 export type ScheduledTaskStatus = 'active' | 'paused';
 export type ScheduledRunStatus = 'running' | 'completed' | 'error';
 
@@ -12,6 +12,18 @@ export interface ScheduleConfig {
   time?: { hour: number; minute: number };
   /** Day of week for 'weekly' frequency (0=Sunday, 1=Monday, ..., 6=Saturday) */
   dayOfWeek?: number;
+  /** Day of month for 'monthly' frequency (1-31). */
+  dayOfMonth?: number;
+}
+
+/** Shared input shape used by the editor, templates, and gateway mutations. */
+export interface ScheduleTaskDraft {
+  name: string;
+  description?: string;
+  prompt: string;
+  schedule: ScheduleConfig;
+  skillName?: string;
+  workspacePath?: string;
 }
 
 export interface ScheduledTask {

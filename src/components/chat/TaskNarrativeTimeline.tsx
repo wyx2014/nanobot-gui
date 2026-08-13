@@ -92,6 +92,9 @@ export default function TaskNarrativeTimeline({
   );
   const baseUnits = useMemo(() => buildHopeUnits(entries), [entries]);
   const activityActive = isActive && !hasBodyBelow;
+  const terminalTurn = turnStatus === 'completed'
+    || turnStatus === 'failed'
+    || turnStatus === 'interrupted';
   const overallCompleted = !isActive && (
     turnStatus === 'completed'
     || (turnStatus === undefined && hasBodyBelow)
@@ -118,6 +121,7 @@ export default function TaskNarrativeTimeline({
     turnLatencyMs,
     activeElapsedMs,
     overallCompleted,
+    terminalTurn,
   );
 
   if (items.length === 0) return null;
@@ -845,14 +849,24 @@ function buildHopeRenderItems(
   turnLatencyMs: number | undefined,
   activeElapsedMs: number | undefined,
   overallCompleted: boolean,
+  terminalTurn: boolean,
 ): HopeRenderItem[] {
   const items: HopeRenderItem[] = [];
+  const terminalElapsedMs = terminalTurn
+    ? validDuration(turnLatencyMs) ? turnLatencyMs : 0
+    : undefined;
   let index = 0;
 
   while (index < units.length) {
     const unit = units[index];
     if (!hasBodyBelow || !isCompletedProcessUnit(unit)) {
-      items.push(singleRenderItem(unit, activeUnitKey, activeElapsedMs, overallCompleted));
+      items.push(singleRenderItem(
+        unit,
+        activeUnitKey,
+        activeElapsedMs,
+        overallCompleted,
+        terminalElapsedMs,
+      ));
       index += 1;
       continue;
     }
@@ -865,7 +879,13 @@ function buildHopeRenderItems(
     }
 
     if (run.length < 2 && unit.kind !== 'plan') {
-      items.push(singleRenderItem(unit, activeUnitKey, activeElapsedMs, overallCompleted));
+      items.push(singleRenderItem(
+        unit,
+        activeUnitKey,
+        activeElapsedMs,
+        overallCompleted,
+        terminalElapsedMs,
+      ));
       index = next;
       continue;
     }
@@ -901,6 +921,7 @@ function singleRenderItem(
   activeUnitKey: string | undefined,
   activeElapsedMs: number | undefined,
   overallCompleted: boolean,
+  terminalElapsedMs: number | undefined,
 ): HopeRenderItem {
   const active = unit.key === activeUnitKey;
   return {
@@ -910,7 +931,12 @@ function singleRenderItem(
     active,
     tone: active ? activeTone(unit) : overallCompleted ? 'tool' : unit.tone,
     markerAlign: unit.markerAlign,
-    elapsedMs: unitElapsedMs(unit, Date.now(), active ? activeElapsedMs : undefined),
+    elapsedMs: unitElapsedMs(
+      unit,
+      Date.now(),
+      active ? activeElapsedMs : undefined,
+      terminalElapsedMs,
+    ),
   };
 }
 
@@ -962,6 +988,7 @@ function unitElapsedMs(
   unit: HopeUnit,
   now: number,
   activeElapsedMs?: number,
+  terminalElapsedMs?: number,
 ): number | undefined {
   const explicit = unit.entries
     .map((entry) => entry.durationMs)
@@ -976,9 +1003,16 @@ function unitElapsedMs(
     .filter((value): value is number => value !== undefined);
   if (starts.length > 0) {
     const start = Math.min(...starts);
-    const end = ends.length > 0 ? Math.max(...ends) : unit.status === 'running' ? now : start;
+    const end = ends.length > 0
+      ? Math.max(...ends)
+      : unit.status === 'running' && !validDuration(terminalElapsedMs)
+        ? now
+        : start;
     const duration = Math.max(0, end - start);
     if (duration > 0) return duration;
+  }
+  if (unit.status === 'running' && validDuration(terminalElapsedMs)) {
+    return terminalElapsedMs;
   }
   return unit.status === 'running' && validDuration(activeElapsedMs)
     ? activeElapsedMs

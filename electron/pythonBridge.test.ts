@@ -125,6 +125,41 @@ describe('PythonBridge lifecycle', () => {
     });
   });
 
+  it('passes built-in MCP credentials only to the nanobot child process', async () => {
+    const previous = {
+      JUYUAN_MCP_TOKEN: process.env.JUYUAN_MCP_TOKEN,
+      CAIHUI_MCP_API_KEY: process.env.CAIHUI_MCP_API_KEY,
+      IFIND_MCP_API_KEY: process.env.IFIND_MCP_API_KEY,
+      ANYSEARCH_API_KEY: process.env.ANYSEARCH_API_KEY,
+    };
+    Object.assign(process.env, {
+      JUYUAN_MCP_TOKEN: 'juyuan-shared',
+      CAIHUI_MCP_API_KEY: 'caihui-shared',
+      IFIND_MCP_API_KEY: 'ifind-shared',
+      ANYSEARCH_API_KEY: 'anysearch-shared',
+    });
+    try {
+      const child = processStub();
+      spawn.mockReturnValue(child);
+      const { PythonBridge } = await import('./pythonBridge');
+      const bridge = new PythonBridge();
+
+      await bridge.start();
+
+      expect(spawn.mock.calls[0][2]?.env).toMatchObject({
+        JUYUAN_MCP_TOKEN: 'juyuan-shared',
+        CAIHUI_MCP_API_KEY: 'caihui-shared',
+        IFIND_MCP_API_KEY: 'ifind-shared',
+        ANYSEARCH_API_KEY: 'anysearch-shared',
+      });
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
   it('uses the precompiled installed wheel in packaged apps', async () => {
     appIsPackaged = true;
     const previousPythonPath = process.env.PYTHONPATH;

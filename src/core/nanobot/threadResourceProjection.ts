@@ -2,6 +2,7 @@ import type { ThreadResource, ThreadRuntimeSnapshot } from '@/core/types';
 import { useConversationWorkbenchStore } from '@/stores/conversationWorkbenchStore';
 import { useThreadResourceStore } from '@/stores/threadResourceStore';
 import { useTurnPlanStore } from '@/stores/turnPlanStore';
+import { conversationIdToSessionKey } from '@/core/sessionKey';
 
 export function runtimeSnapshotFromThread(
   resource: ThreadResource,
@@ -25,6 +26,15 @@ export function projectThreadResource(
   conversationId: string,
   resource: ThreadResource,
 ): ThreadRuntimeSnapshot | null {
+  const expectedSessionKey = conversationIdToSessionKey(conversationId);
+  const actualSessionKey = conversationIdToSessionKey(resource.session_key);
+  if (expectedSessionKey !== actualSessionKey) {
+    console.error('[ThreadResourceProjection] rejected cross-session snapshot', {
+      expectedSessionKey,
+      actualSessionKey,
+    });
+    return null;
+  }
   if (!useThreadResourceStore.getState().replaceSnapshot(resource)) return null;
 
   const planStore = useTurnPlanStore.getState();

@@ -549,6 +549,31 @@ export interface ProjectSessionPayload {
   updatedAt: number;
 }
 
+export interface ArchivedSessionPayload {
+  sessionKey: string;
+  sessionId?: string;
+  projectId: string;
+  title: string;
+  preview: string;
+  projectName: string;
+  projectRoot: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+  archivedAt: number;
+}
+
+export interface ArchivedProjectPayload extends ProjectPayload {
+  archivedAt: number;
+  sessionCount: number;
+  filesDeleted: false;
+}
+
+export interface ArchivedDataPayload {
+  schemaVersion: number;
+  archivedSessions: ArchivedSessionPayload[];
+  archivedProjects: ArchivedProjectPayload[];
+}
+
 export type WorkspaceAccessMode = "restricted" | "full";
 export type WebuiDefaultAccessMode = "default" | "full";
 
@@ -1016,6 +1041,7 @@ export interface McpPresetField {
   secret: boolean;
   required: boolean;
   configured: boolean;
+  credential_source?: "built_in" | "user" | "environment" | "missing";
   placeholder?: string;
   env_var?: string | null;
 }

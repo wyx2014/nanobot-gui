@@ -9,6 +9,7 @@ import {
   migrateLegacyApplicationData,
   migrateLegacyDefaultWorkspace,
   migrateLegacyUserProjects,
+  migratePersistedWorkspaceReferences,
 } from './appDataMigration';
 
 const temporaryDirectories: string[] = [];
@@ -120,5 +121,43 @@ describe('application data migration', () => {
     expect(result.status).toBe('moved');
     expect(fs.existsSync(path.join(documentsRoot, 'TpaRuyi Projects'))).toBe(false);
     expect(fs.readFileSync(path.join(migratedProject, 'README.md'), 'utf8')).toBe('# migrated');
+  });
+
+  it('rewrites durable session and event paths after directory migration', () => {
+    const workspace = temporaryDirectory();
+    const oldProjects = path.join(workspace, 'TpaRuyi Projects');
+    const newProjects = path.join(workspace, 'TPACowork Projects');
+    const sessionFile = path.join(workspace, 'sessions', 'websocket_chat.jsonl');
+    const transcriptFile = path.join(workspace, '.nanobot', 'webui', 'websocket_chat.jsonl');
+    const lifecycleFile = path.join(workspace, '.nanobot', 'lifecycle.jsonl');
+    fs.mkdirSync(path.dirname(sessionFile), { recursive: true });
+    fs.mkdirSync(path.dirname(transcriptFile), { recursive: true });
+    fs.writeFileSync(sessionFile, `${JSON.stringify({
+      _type: 'metadata',
+      metadata: { workspace_scope: { project_path: path.join(oldProjects, 'demo') } },
+    })}\n`);
+    fs.writeFileSync(transcriptFile, `${JSON.stringify({
+      event: 'file_edit',
+      absolute_path: path.join(oldProjects, 'demo', 'report.md'),
+    })}\n`);
+    fs.writeFileSync(lifecycleFile, `${JSON.stringify({
+      metadata: { canonical_root_path: path.join(oldProjects, 'demo') },
+    })}\n`);
+
+    const first = migratePersistedWorkspaceReferences(workspace, [{
+      source: oldProjects,
+      target: newProjects,
+    }]);
+    const second = migratePersistedWorkspaceReferences(workspace, [{
+      source: oldProjects,
+      target: newProjects,
+    }]);
+
+    expect(first.updatedFiles).toBe(3);
+    expect(second.updatedFiles).toBe(0);
+    for (const file of [sessionFile, transcriptFile, lifecycleFile]) {
+      expect(fs.readFileSync(file, 'utf8')).toContain(newProjects);
+      expect(fs.readFileSync(file, 'utf8')).not.toContain(oldProjects);
+    }
   });
 });

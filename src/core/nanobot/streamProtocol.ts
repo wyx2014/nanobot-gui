@@ -5,6 +5,7 @@ import type { StreamError } from '@/core/nanobot-client';
  * React can batch token frames independently from control-plane updates. */
 export interface StreamProtocolState {
   isStreaming: boolean;
+  isStopping: boolean;
   runStartedAt: number | null;
   goalState: GoalStateWsPayload | undefined;
   streamError: StreamError | null;
@@ -13,6 +14,7 @@ export interface StreamProtocolState {
 export type StreamProtocolAction =
   | { type: 'reset'; isStreaming: boolean; runStartedAt: number | null; goalState: GoalStateWsPayload | undefined }
   | { type: 'streaming'; value: boolean }
+  | { type: 'stopping'; value: boolean }
   | { type: 'goal_state'; value: GoalStateWsPayload | undefined }
   | { type: 'goal_status'; status: string; startedAt?: number }
   | { type: 'error'; value: StreamError | null }
@@ -20,6 +22,7 @@ export type StreamProtocolAction =
 
 export const initialStreamProtocolState: StreamProtocolState = {
   isStreaming: false,
+  isStopping: false,
   runStartedAt: null,
   goalState: undefined,
   streamError: null,
@@ -33,12 +36,17 @@ export function streamProtocolReducer(
     case 'reset':
       return {
         isStreaming: action.isStreaming,
+        isStopping: false,
         runStartedAt: action.runStartedAt,
         goalState: action.goalState,
         streamError: null,
       };
     case 'streaming':
-      return state.isStreaming === action.value ? state : { ...state, isStreaming: action.value };
+      return state.isStreaming === action.value && (action.value || !state.isStopping)
+        ? state
+        : { ...state, isStreaming: action.value, isStopping: action.value ? state.isStopping : false };
+    case 'stopping':
+      return state.isStopping === action.value ? state : { ...state, isStopping: action.value };
     case 'goal_state':
       return state.goalState === action.value ? state : { ...state, goalState: action.value };
     case 'goal_status':
@@ -54,6 +62,7 @@ export function streamProtocolReducer(
       return {
         ...state,
         isStreaming: false,
+        isStopping: false,
         runStartedAt: null,
         ...(action.goalState ? { goalState: action.goalState } : {}),
       };

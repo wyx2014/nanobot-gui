@@ -199,6 +199,10 @@ export default function MCPSection({ showAddForm: externalShowAddForm, onAddForm
         if (last.ok) setMessage(last.message);
         else setError(last.message);
       }
+      if (action === 'enable' || action === 'update') {
+        // Password values must not remain in renderer state after saving.
+        setFieldValues((current) => ({ ...current, [preset.name]: {} }));
+      }
       if (action === 'enable') setExpandedSetup(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -486,13 +490,23 @@ function McpPresetRow({
               <label key={field.name}>
                 <span className="mb-1 block text-[11px] font-medium text-[#656358]">
                   {field.label}
-                  {field.configured ? <span className="ml-1 text-green-600">{isEnglish ? 'Configured' : '已配置'}</span> : null}
+                  {field.configured ? (
+                    <span className="ml-1 text-green-600">
+                      {field.credential_source === 'built_in' || field.credential_source === 'environment'
+                        ? (isEnglish ? 'Built-in shared key' : '内置通用 Key')
+                        : (isEnglish ? 'Personal key' : '个人 Key')}
+                    </span>
+                  ) : null}
                 </span>
                 <Input
                   type={field.secret ? 'password' : 'text'}
                   value={values[field.name] ?? ''}
                   onChange={(event) => onValueChange(field.name, event.target.value)}
-                  placeholder={field.configured ? (isEnglish ? 'Leave blank to keep the current value' : '留空表示保持现有值') : field.placeholder}
+                  placeholder={field.configured
+                    ? (field.credential_source === 'built_in' || field.credential_source === 'environment'
+                        ? (isEnglish ? 'Enter a personal key to override the shared key' : '填写个人 Key 可覆盖内置通用 Key')
+                        : (isEnglish ? 'Leave blank to keep the current personal key' : '留空表示保持当前个人 Key'))
+                    : field.placeholder}
                   className="h-9 rounded-lg bg-white text-[12px]"
                 />
               </label>

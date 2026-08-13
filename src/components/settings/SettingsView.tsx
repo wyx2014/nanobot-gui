@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import HelpManual from "./HelpManual";
+import DataManagementSection from "./DataManagementSection";
+import WindowModalBackdrop from "@/components/common/WindowModalBackdrop";
 import {
   AlertCircle,
   ArrowLeft,
@@ -7,6 +9,7 @@ import {
   Check,
   ChevronDown,
   Cpu,
+  Database,
   ExternalLink,
   HelpCircle,
   ImagePlus,
@@ -83,6 +86,7 @@ type TabKey =
   | "search"
   | "general"
   | "personalization"
+  | "data"
   | "shortcuts"
   | "help";
 
@@ -136,6 +140,7 @@ const tabs: Array<{ key: TabKey; label: string; description: string; icon: typeo
 const secondaryTabs: Array<{ key: TabKey | null; label: string; icon: typeof Cpu; disabled?: boolean }> = [
   { key: "account", label: "账户管理", icon: UserRound },
   { key: "shortcuts", label: "快捷键", icon: Keyboard },
+  { key: "data", label: "数据管理", icon: Database },
   { key: "help", label: "帮助与反馈", icon: HelpCircle },
 ];
 
@@ -149,6 +154,7 @@ const settingsEnglish = {
   },
   account: "Account",
   shortcuts: "Keyboard Shortcuts",
+  data: "Data Management",
   help: "Help & Feedback",
   settings: "Settings",
   close: "Close settings",
@@ -227,9 +233,9 @@ function Field({
 }) {
   return (
     <label className="grid gap-1.5">
-      <span className="text-sm font-medium text-[#403b2f]">{label}</span>
+      <span className="text-sm font-medium text-[#403b2f] dark:text-[#ddd8cf]">{label}</span>
       {children}
-      {hint ? <span className="text-xs leading-5 text-[#8b8578]">{hint}</span> : null}
+      {hint ? <span className="text-xs leading-5 text-[#8b8578] dark:text-[#918d85]">{hint}</span> : null}
     </label>
   );
 }
@@ -304,7 +310,9 @@ export function SettingsView({
       ? settingsEnglish.account
       : tab.key === "help"
         ? settingsEnglish.help
-        : settingsEnglish.shortcuts;
+        : tab.key === "data"
+          ? settingsEnglish.data
+          : settingsEnglish.shortcuts;
     return { ...tab, label };
   }), [isEnglish]);
   const settingsStore = useSettingsStore();
@@ -800,8 +808,9 @@ export function SettingsView({
 
   if (loading && !settings) {
     return (
-      <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/20 backdrop-blur-[1px] animate-in fade-in duration-150 text-[#777267]">
-        <div className="flex h-[720px] w-[1040px] items-center justify-center rounded-xl bg-white shadow-2xl">
+      <div className="fixed inset-0 z-[70] flex items-center justify-center animate-in fade-in duration-150 text-[#777267]">
+        <WindowModalBackdrop />
+        <div className="relative flex h-[720px] w-[1040px] items-center justify-center rounded-xl bg-white shadow-2xl">
           <Loader2 className="mr-2 h-5 w-5 animate-spin" />
           正在连接设置服务...
         </div>
@@ -810,8 +819,9 @@ export function SettingsView({
   }
 
   return (
-    <div data-settings-surface className="fixed inset-0 z-[70] flex items-center justify-center bg-black/20 p-8 text-[#202020] backdrop-blur-[1px] animate-in fade-in duration-150">
-      <div data-settings-dialog className="flex h-[min(720px,calc(100vh-64px))] w-[min(1040px,calc(100vw-96px))] overflow-hidden rounded-xl bg-white shadow-2xl">
+    <div data-settings-surface className="fixed inset-0 z-[70] flex items-center justify-center p-8 text-[#202020] animate-in fade-in duration-150">
+      <WindowModalBackdrop />
+      <div data-settings-dialog className="relative flex h-[min(720px,calc(100vh-64px))] w-[min(1040px,calc(100vw-96px))] overflow-hidden rounded-xl bg-white shadow-2xl">
         <aside data-settings-sidebar className="w-[236px] shrink-0 bg-[#f2f2f3] px-3 py-9">
           <nav className="space-y-1">
             {localizedTabs.map((tab) => {
@@ -870,6 +880,8 @@ export function SettingsView({
                     ? (isEnglish ? settingsEnglish.account : "账户管理")
                     : activeTab === "help"
                       ? (isEnglish ? settingsEnglish.help : "帮助与反馈")
+                      : activeTab === "data"
+                        ? (isEnglish ? settingsEnglish.data : "数据管理")
                       : activeTab === "shortcuts"
                         ? (isEnglish ? settingsEnglish.shortcuts : "快捷键")
                         : localizedTabs.find((tab) => tab.key === activeTab)?.label || (isEnglish ? settingsEnglish.settings : "设置")}
@@ -960,6 +972,14 @@ export function SettingsView({
               )}
 
               {activeTab === "shortcuts" && <KeyboardShortcutsSection isEnglish={isEnglish} />}
+
+              {activeTab === "data" && (
+                <DataManagementSection
+                  token={token}
+                  apiBase={apiBase}
+                  isEnglish={isEnglish}
+                />
+              )}
 
               {activeTab === "help" && (
                 <HelpFeedbackSection onOpenFeedback={() => setFeedbackOpen(true)} isEnglish={isEnglish} />
@@ -1472,9 +1492,9 @@ function ModelManagerSection({
   };
 
   return (
-    <div className="space-y-4">
+    <div data-model-manager className="space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <div className="inline-flex rounded-lg bg-[#f2f2f3] p-1">
+        <div data-model-segmented className="inline-flex rounded-lg bg-[#f2f2f3] p-1">
           {[
             ["use", copy?.use ?? "使用"],
             ["access", copy?.connect ?? "接入"],
@@ -1483,6 +1503,8 @@ function ModelManagerSection({
               key={key}
               type="button"
               onClick={() => setSubTab(key as "use" | "access")}
+              data-model-segment
+              data-active={subTab === key ? "true" : "false"}
               className={cn(
                 "rounded-md px-4 py-1.5 text-sm font-medium transition-colors",
                 subTab === key ? "bg-white text-[#202020] shadow-sm" : "text-[#6f6f73] hover:text-[#202020]",
@@ -1494,11 +1516,11 @@ function ModelManagerSection({
         </div>
         {subTab === "access" ? (
           !addOpen && !selectedProviderInfo ? (
-            <Button className="bg-[#202020] text-white hover:bg-[#333]" onClick={() => setAddOpen(true)}>
+            <Button data-model-primary-action className="bg-[#202020] text-white hover:bg-[#333]" onClick={() => setAddOpen(true)}>
               {copy?.add ?? "添加模型服务"}
             </Button>
           ) : (
-            <Button variant="outline" className="border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]" onClick={() => { setAddOpen(false); setSelectedProvider(""); }}>
+            <Button data-model-secondary-action variant="outline" className="border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]" onClick={() => { setAddOpen(false); setSelectedProvider(""); }}>
               {copy?.back ?? "返回列表"}
             </Button>
           )
@@ -1508,12 +1530,14 @@ function ModelManagerSection({
       {subTab === "use" ? (
         <div className="space-y-3">
           {/* Compact capability switch between conversation and speech models. */}
-          <div className="inline-flex rounded-lg bg-[#f2f2f3] p-1">
+          <div data-model-segmented className="inline-flex rounded-lg bg-[#f2f2f3] p-1">
             {localizedCapabilities.map((capability) => (
               <button
                 key={capability.value}
                 type="button"
                 onClick={() => setSelectedCapability(capability.value)}
+                data-model-segment
+                data-active={selectedCapability === capability.value ? "true" : "false"}
                 className={cn(
                   "rounded-md px-4 py-1.5 text-sm font-medium transition-colors",
                   selectedCapability === capability.value
@@ -1534,6 +1558,8 @@ function ModelManagerSection({
                 return (
                   <div
                     key={preset.name}
+                    data-model-preset-card
+                    data-active={active ? "true" : "false"}
                     className={cn(
                       "rounded-lg border bg-white p-4 text-left transition-colors hover:border-[#cfcfd2]",
                       active ? "border-[#202020] shadow-sm" : "border-[#e6e6e8]",
@@ -1544,6 +1570,8 @@ function ModelManagerSection({
                         type="button"
                         onClick={() => onSelectDefault(selectedCapability, preset.name)}
                         disabled={saving[`model-default:${selectedCapability}`]}
+                        data-model-default-action
+                        data-active={active ? "true" : "false"}
                         className={cn(
                           "mb-2 flex w-full items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors",
                           active
@@ -1562,14 +1590,14 @@ function ModelManagerSection({
                     ) : null}
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold text-[#202020]">{preset.label}</div>
-                        <div className="mt-1 truncate text-xs text-[#6f6f73]">{provider?.label || preset.provider}</div>
+                        <div data-model-title className="truncate text-sm font-semibold text-[#202020]">{preset.label}</div>
+                        <div data-model-secondary className="mt-1 truncate text-xs text-[#6f6f73]">{provider?.label || preset.provider}</div>
                       </div>
                     </div>
-                    <div className="mt-3 truncate text-[13px] text-[#444]">{preset.model}</div>
+                    <div data-model-id className="mt-3 truncate text-[13px] text-[#444]">{preset.model}</div>
                     <div className="mt-2 flex flex-wrap gap-1">
                       {preset.capabilities.map((capability) => (
-                        <span key={capability} className="rounded-full bg-[#f3f3f4] px-2 py-0.5 text-[10px] text-[#666]">
+                        <span data-model-capability key={capability} className="rounded-full bg-[#f3f3f4] px-2 py-0.5 text-[10px] text-[#666]">
                           {localizedCapabilities.find((item) => item.value === capability)?.label || capability}
                         </span>
                       ))}
@@ -1579,7 +1607,7 @@ function ModelManagerSection({
               })}
             </div>
           ) : (
-            <div className="rounded-lg border border-dashed border-[#dedede] bg-[#fafafa] p-8 text-center text-sm text-[#6f6f73]">
+            <div data-model-empty className="rounded-lg border border-dashed border-[#dedede] bg-[#fafafa] p-8 text-center text-sm text-[#6f6f73]">
               {copy?.empty ?? "当前没有可分类的模型配置，请先在“接入”中添加模型服务。"}
             </div>
           )}
@@ -1590,17 +1618,18 @@ function ModelManagerSection({
             <button
               type="button"
               onClick={() => setAddOpen(false)}
+              data-model-back-button
               className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#e6e6e8] text-[#6f6f73] hover:bg-[#f5f5f7] hover:text-[#202020] transition-colors"
             >
               <ArrowLeft className="h-4 w-4" />
             </button>
             <div>
-              <h3 className="text-lg font-semibold text-[#202020]">{copy?.addCustom ?? "添加自定义模型服务"}</h3>
-              <p className="text-xs text-[#6f6f73]">{copy?.customHint ?? "通过 OpenAI-compatible 协议接入其他大模型 API 提供商。"}</p>
+              <h3 data-model-heading className="text-lg font-semibold text-[#202020]">{copy?.addCustom ?? "添加自定义模型服务"}</h3>
+              <p data-model-secondary className="text-xs text-[#6f6f73]">{copy?.customHint ?? "通过 OpenAI-compatible 协议接入其他大模型 API 提供商。"}</p>
             </div>
           </div>
 
-          <div className="rounded-xl border border-[#e6e6e8] bg-white p-6 space-y-4">
+          <div data-model-form-card className="rounded-xl border border-[#e6e6e8] bg-white p-6 space-y-4">
             <Field label={copy?.providerName ?? "自定义供应商名称"}>
               <Input value={addForm.providerName} onChange={(event) => setAddForm({ ...addForm, providerName: event.target.value })} />
             </Field>
@@ -1617,15 +1646,15 @@ function ModelManagerSection({
               <Textarea placeholder="gpt-4o, deepseek-chat" value={addForm.models} onChange={(event) => setAddForm({ ...addForm, models: event.target.value })} className="min-h-[80px]" />
             </Field>
             <div className="flex items-center gap-3 pt-2">
-              <Button variant="outline" className="border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]" onClick={probeAddProviderModels} disabled={saving["provider-probe"] || !addForm.apiBase.trim()}>
+              <Button data-model-secondary-action variant="outline" className="border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]" onClick={probeAddProviderModels} disabled={saving["provider-probe"] || !addForm.apiBase.trim()}>
                 {saving["provider-probe"] ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                 {copy?.probe ?? "测试并获取模型"}
               </Button>
-              <Button className="bg-[#202020] text-white hover:bg-[#333]" onClick={submitAddProvider} disabled={saving["provider-create"]}>
+              <Button data-model-primary-action className="bg-[#202020] text-white hover:bg-[#333]" onClick={submitAddProvider} disabled={saving["provider-create"]}>
                 {saving["provider-create"] ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                 {copy?.saveConnection ?? "保存接入"}
               </Button>
-              <Button variant="outline" className="border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]" onClick={() => setAddOpen(false)}>
+              <Button data-model-secondary-action variant="outline" className="border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]" onClick={() => setAddOpen(false)}>
                 {copy?.cancel ?? "取消"}
               </Button>
             </div>
@@ -1637,17 +1666,18 @@ function ModelManagerSection({
             <button
               type="button"
               onClick={() => setSelectedProvider("")}
+              data-model-back-button
               className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#e6e6e8] text-[#6f6f73] hover:bg-[#f5f5f7] hover:text-[#202020] transition-colors"
             >
               <ArrowLeft className="h-4 w-4" />
             </button>
             <div>
-              <h3 className="text-lg font-semibold text-[#202020]">{copy?.editCustom ?? "配置模型服务"}</h3>
-              <p className="text-xs text-[#6f6f73]">{isEnglish ? "Update provider details, API base URL, credentials, and models." : "修改供应商信息、API 地址、密钥和模型列表。"}</p>
+              <h3 data-model-heading className="text-lg font-semibold text-[#202020]">{copy?.editCustom ?? "配置模型服务"}</h3>
+              <p data-model-secondary className="text-xs text-[#6f6f73]">{isEnglish ? "Update provider details, API base URL, credentials, and models." : "修改供应商信息、API 地址、密钥和模型列表。"}</p>
             </div>
           </div>
 
-          <div className="rounded-xl border border-[#e6e6e8] bg-white p-6 space-y-4">
+          <div data-model-form-card className="rounded-xl border border-[#e6e6e8] bg-white p-6 space-y-4">
             <Field label={copy?.providerName ?? "自定义供应商名称"}>
               <Input value={editForm.providerName} onChange={(event) => setEditForm({ ...editForm, providerName: event.target.value })} />
             </Field>
@@ -1664,24 +1694,25 @@ function ModelManagerSection({
               <Textarea placeholder="gpt-4o, deepseek-chat" value={editForm.models} onChange={(event) => setEditForm({ ...editForm, models: event.target.value })} className="min-h-[80px]" />
             </Field>
             <div className="flex items-center gap-3 pt-2">
-              <Button variant="outline" className="border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]" onClick={probeEditProviderModels} disabled={saving["provider-probe"] || !editForm.apiBase.trim()}>
+              <Button data-model-secondary-action variant="outline" className="border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]" onClick={probeEditProviderModels} disabled={saving["provider-probe"] || !editForm.apiBase.trim()}>
                 {saving["provider-probe"] ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                 {copy?.probe ?? "测试并获取模型"}
               </Button>
-              <Button className="bg-[#202020] text-white hover:bg-[#333]" onClick={submitEditProvider} disabled={saving["provider-update"]}>
+              <Button data-model-primary-action className="bg-[#202020] text-white hover:bg-[#333]" onClick={submitEditProvider} disabled={saving["provider-update"]}>
                 {saving["provider-update"] ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                 {copy?.save ?? "保存配置"}
               </Button>
-              <Button variant="outline" className="border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]" onClick={() => setSelectedProvider("")}>
+              <Button data-model-secondary-action variant="outline" className="border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]" onClick={() => setSelectedProvider("")}>
                 {copy?.cancel ?? "取消"}
               </Button>
               {selectedProviderIsProtected ? (
-                <span className="ml-auto inline-flex items-center rounded-full bg-[#f1eee8] px-3 py-1.5 text-xs font-medium text-[#6f6758]">
+                <span data-model-builtin-badge className="ml-auto inline-flex items-center rounded-full bg-[#f1eee8] px-3 py-1.5 text-xs font-medium text-[#6f6758]">
                   {isEnglish ? "Built-in · Cannot delete" : "系统内置 · 不可删除"}
                 </span>
               ) : (
                 <Button
                   variant="outline"
+                  data-model-delete-action
                   className="ml-auto border-red-200 bg-white text-red-600 hover:bg-red-50 hover:text-red-700"
                   onClick={() => setPendingDeleteProvider({
                     name: selectedProviderInfo.name,
@@ -1699,24 +1730,24 @@ function ModelManagerSection({
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="rounded-lg bg-[#f7f7f8] p-4">
-            <div className="text-[15px] font-semibold text-[#202020]">{copy?.customServices ?? "已接入模型服务"}</div>
-            <div className="mt-1 text-[13px] text-[#6f6f73]">
+          <div data-model-access-summary className="rounded-lg bg-[#f7f7f8] p-4">
+            <div data-model-title className="text-[15px] font-semibold text-[#202020]">{copy?.customServices ?? "已接入模型服务"}</div>
+            <div data-model-secondary className="mt-1 text-[13px] text-[#6f6f73]">
               {copy?.customServicesHint ?? "管理已接入的模型 API；获取到的模型会按文字、语音识别和语音合成自动分类。"}
             </div>
           </div>
 
           {!connectedProviders.length ? (
-            <div className="rounded-xl border border-dashed border-[#e6e6e8] bg-white p-12 text-center">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#fafafa] text-[#6f6f73]">
+            <div data-model-empty className="rounded-xl border border-dashed border-[#e6e6e8] bg-white p-12 text-center">
+              <div data-model-empty-icon className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#fafafa] text-[#6f6f73]">
                 <Cpu className="h-6 w-6" />
               </div>
-              <h3 className="mt-4 text-sm font-semibold text-[#202020]">{copy?.none ?? "暂无接入的模型服务"}</h3>
-              <p className="mt-1 text-sm text-[#6f6f73] max-w-sm mx-auto">
+              <h3 data-model-title className="mt-4 text-sm font-semibold text-[#202020]">{copy?.none ?? "暂无接入的模型服务"}</h3>
+              <p data-model-secondary className="mt-1 text-sm text-[#6f6f73] max-w-sm mx-auto">
                 {copy?.noneHint ?? "添加自定义供应商（如 OpenAI、DeepSeek 等）后，可以为它们创建模型通道并在此管理。"}
               </p>
               <div className="mt-6">
-                <Button className="bg-[#202020] text-white hover:bg-[#333]" onClick={() => setAddOpen(true)}>
+                <Button data-model-primary-action className="bg-[#202020] text-white hover:bg-[#333]" onClick={() => setAddOpen(true)}>
                   {copy?.add ?? "添加模型服务"}
                 </Button>
               </div>
@@ -1731,38 +1762,39 @@ function ModelManagerSection({
                 return (
                   <div
                     key={provider.name}
+                    data-model-provider-card
                     className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-[#e6e6e8] bg-white p-5 transition-all duration-200 hover:border-[#cfcfd2] hover:shadow-sm"
                   >
                     <div className="min-w-0 flex-1 space-y-2">
                       <div className="flex items-center gap-3">
-                        <h4 className="truncate text-base font-semibold text-[#202020]">
+                        <h4 data-model-title className="truncate text-base font-semibold text-[#202020]">
                           {provider.label}
                         </h4>
                         {protectedProvider ? (
-                          <span className="inline-flex shrink-0 rounded-full bg-[#f1eee8] px-2 py-0.5 text-xs font-medium text-[#6f6758]">
+                          <span data-model-builtin-badge className="inline-flex shrink-0 rounded-full bg-[#f1eee8] px-2 py-0.5 text-xs font-medium text-[#6f6758]">
                             {isEnglish ? "Built-in" : "系统内置"}
                           </span>
                         ) : null}
                         {provider.configured ? (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                          <span data-model-status="configured" className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
                             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                             {copy?.configured ?? "已配置"}
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-[#f4f4f5] px-2 py-0.5 text-xs font-medium text-[#71717a]">
+                          <span data-model-status="pending" className="inline-flex items-center gap-1 rounded-full bg-[#f4f4f5] px-2 py-0.5 text-xs font-medium text-[#71717a]">
                             <span className="h-1.5 w-1.5 rounded-full bg-[#d4d4d8]" />
                             {copy?.pending ?? "待配置"}
                           </span>
                         )}
                       </div>
 
-                      <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2 text-xs text-[#6f6f73]">
+                      <div data-model-meta className="grid gap-x-6 gap-y-1 sm:grid-cols-2 text-xs text-[#6f6f73]">
                         <div className="truncate">
-                          <span className="text-[#a1a1a9] mr-1.5">{copy?.apiType ?? "接口类型:"}</span>
+                          <span data-model-meta-label className="text-[#a1a1a9] mr-1.5">{copy?.apiType ?? "接口类型:"}</span>
                           {provider.api_type || (isEnglish ? "Auto detect" : "自动检测")}
                         </div>
                         <div className="truncate">
-                          <span className="text-[#a1a1a9] mr-1.5">{copy?.apiAddress ?? "API 地址:"}</span>
+                          <span data-model-meta-label className="text-[#a1a1a9] mr-1.5">{copy?.apiAddress ?? "API 地址:"}</span>
                           {provider.api_base || provider.default_api_base || copy?.notConfigured || "未设置"}
                         </div>
                       </div>
@@ -1770,14 +1802,14 @@ function ModelManagerSection({
                       {presets.length > 0 && (
                         <div className="pt-1">
                           <div className="flex flex-wrap gap-1 items-center">
-                            <span className="text-[11px] font-semibold text-[#a1a1a9] mr-2">{copy?.channels ?? "模型通道"} ({presets.length}):</span>
+                            <span data-model-meta-label className="text-[11px] font-semibold text-[#a1a1a9] mr-2">{copy?.channels ?? "模型通道"} ({presets.length}):</span>
                             {presets.slice(0, 8).map((p) => (
-                              <span key={p.name} className="inline-block rounded bg-[#f1f1f2] px-1.5 py-0.5 text-[11px] text-[#444] truncate max-w-[150px]">
+                              <span data-model-channel key={p.name} className="inline-block rounded bg-[#f1f1f2] px-1.5 py-0.5 text-[11px] text-[#444] truncate max-w-[150px]">
                                 {p.model}
                               </span>
                             ))}
                             {presets.length > 8 && (
-                              <span className="text-[11px] text-[#888] font-medium pl-1">
+                              <span data-model-secondary className="text-[11px] text-[#888] font-medium pl-1">
                                 +{presets.length - 8}
                               </span>
                             )}
@@ -1786,7 +1818,7 @@ function ModelManagerSection({
                       )}
                     </div>
 
-                    <div className="flex shrink-0 items-center justify-end gap-2 border-t border-[#f4f4f5] pt-3 sm:border-0 sm:pt-0">
+                    <div data-model-provider-actions className="flex shrink-0 items-center justify-end gap-2 border-t border-[#f4f4f5] pt-3 sm:border-0 sm:pt-0">
                       {!protectedProvider ? (
                         <button
                           type="button"
@@ -1796,6 +1828,7 @@ function ModelManagerSection({
                             modelCount: presets.length,
                           })}
                           disabled={saving[`provider-delete:${provider.name}`]}
+                          data-model-delete-action
                           className="flex items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50 disabled:cursor-wait disabled:opacity-60"
                         >
                           {saving[`provider-delete:${provider.name}`] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
@@ -1807,6 +1840,7 @@ function ModelManagerSection({
                         onClick={() => {
                           setSelectedProvider(provider.name);
                         }}
+                        data-model-secondary-action
                         className="flex items-center justify-center gap-1.5 rounded-lg border border-[#e6e6e8] bg-white px-4 py-2 text-xs font-semibold text-[#202020] transition-colors hover:bg-[#fafafa]"
                       >
                         <SlidersHorizontal className="h-3.5 w-3.5" />
@@ -1869,13 +1903,8 @@ function VoiceSection({
     ? settings.transcription.providers.find((item) => item.name === preset.provider)
     : undefined;
   const providerReady = Boolean(provider?.configured);
-  const normalizedVoiceModel = preset?.model.trim().toLowerCase() ?? "";
   const realtimeCapable = Boolean(
     preset && settings.transcription.streaming?.supported,
-  );
-  const isStepfunConversationModel = (
-    preset?.provider === "stepfun"
-    && normalizedVoiceModel === "stepaudio-2.5-realtime"
   );
 
   if (!preset) {
@@ -2020,21 +2049,6 @@ function VoiceSection({
             />
           </Field>
         </div>
-
-        {isStepfunConversationModel ? (
-          <div className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            stepaudio-2.5-realtime 是双向语音通话模型，不适合作为输入框听写模型。
-            请选择 stepaudio-2.5-asr；桌面端会自动使用 stepaudio-2.5-asr-stream
-            进行实时识别。
-          </div>
-        ) : !realtimeCapable ? (
-          <div className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            当前模型使用录音后识别。若需要边说边出字，请选择 StepFun 的
-            stepaudio-2.5-asr、DashScope 的 qwen3-asr-flash-realtime，
-            或支持 Realtime Transcription 的 OpenAI 模型。
-          </div>
-        ) : null}
-
         <Button
           className="mt-5 bg-[#d97757] text-white hover:bg-[#c86647]"
           onClick={onSave}
@@ -2049,6 +2063,7 @@ function VoiceSection({
 }
 
 const MAX_PERSONALIZATION_CHARS = 32_000;
+type PersonalizationKind = "soul" | "user";
 
 async function personalizationAuth(): Promise<{ token: string; baseUrl: string }> {
   const status = await getNanobotStatus();
@@ -2062,28 +2077,53 @@ async function personalizationAuth(): Promise<{ token: string; baseUrl: string }
   return { token, baseUrl };
 }
 
-function PersonalizationSection({ isEnglish }: { isEnglish: boolean }) {
+export function PersonalizationSection({ isEnglish }: { isEnglish: boolean }) {
   const copy = isEnglish ? {
     title: "Personalization",
-    description: "Customize how TPACowork behaves and what it knows about you. Changes take effect from the next message.",
+    description: "Edit the assistant persona and your profile on separate tabs. Changes take effect from the next message.",
     soulTitle: "Assistant Persona (SOUL.md)",
     soulHint: "Defines the assistant's personality and working style. Loaded into the system prompt every turn.",
     userTitle: "User Profile (USER.md)",
     userHint: "Facts about you that the assistant should always keep in mind, such as preferences and background.",
+    tabsLabel: "Personalization files",
+    unsaved: "Unsaved",
+    allSaved: "All changes saved",
+    dirtyTabs: "{count} tab(s) have unsaved changes",
     restore: "Restore default",
     restoreConfirm: "Replace this file with the bundled default template?",
-    save: "Save",
+    save: "Save changes",
     saved: "Personalization saved — takes effect from the next message.",
     restored: "Restored the bundled template.",
     chars: "{used} / {max} characters",
     loading: "Loading personalization files...",
-  } : null;
+    retry: "Retry",
+  } : {
+    title: "个性化",
+    description: "助手人格和用户画像分开编辑，修改后从下一条消息起生效。",
+    soulTitle: "助手人格 (SOUL.md)",
+    soulHint: "定义助手的性格、表达方式与工作原则，每轮都会加载进系统提示。",
+    userTitle: "用户画像 (USER.md)",
+    userHint: "记录你的称呼、背景与长期偏好，让助手在后续对话中始终牢记。",
+    tabsLabel: "个性化文件",
+    unsaved: "未保存",
+    allSaved: "所有更改均已保存",
+    dirtyTabs: "{count} 个切页有未保存更改",
+    restore: "恢复默认",
+    restoreConfirm: "用内置默认模板替换该文件？",
+    save: "保存更改",
+    saved: "个性化设置已保存，下一条消息起生效。",
+    restored: "已恢复内置默认模板。",
+    chars: "{used} / {max} 字符",
+    loading: "正在加载个性化文件...",
+    retry: "重试",
+  };
   const [payload, setPayload] = useState<PersonalizationPayload | null>(null);
   const [soul, setSoul] = useState("");
   const [user, setUser] = useState("");
+  const [activeKind, setActiveKind] = useState<PersonalizationKind>("soul");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [restoring, setRestoring] = useState<"soul" | "user" | null>(null);
+  const [restoring, setRestoring] = useState<PersonalizationKind | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -2114,14 +2154,23 @@ function PersonalizationSection({ isEnglish }: { isEnglish: boolean }) {
     setUser(next.user ?? "");
   };
 
+  const soulDirty = payload !== null && soul !== payload.soul;
+  const userDirty = payload !== null && user !== payload.user;
+  const dirtyCount = Number(soulDirty) + Number(userDirty);
+  const hasChanges = dirtyCount > 0;
+
   const save = async () => {
+    if (!payload || !hasChanges) return;
     setSaving(true);
     setError(null);
     setMessage(null);
     try {
       const { token, baseUrl } = await personalizationAuth();
-      applyPayload(await savePersonalization(token, { soul, user }, baseUrl));
-      setMessage(copy?.saved ?? "个性化设置已保存，下一条消息起生效。");
+      applyPayload(await savePersonalization(token, {
+        ...(soulDirty ? { soul } : {}),
+        ...(userDirty ? { user } : {}),
+      }, baseUrl));
+      setMessage(copy.saved);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -2129,15 +2178,20 @@ function PersonalizationSection({ isEnglish }: { isEnglish: boolean }) {
     }
   };
 
-  const restore = async (kind: "soul" | "user") => {
-    if (!window.confirm(copy?.restoreConfirm ?? "用内置默认模板替换该文件？")) return;
+  const restore = async (kind: PersonalizationKind) => {
+    if (!window.confirm(copy.restoreConfirm)) return;
     setRestoring(kind);
     setError(null);
     setMessage(null);
+    const currentSoul = soul;
+    const currentUser = user;
     try {
       const { token, baseUrl } = await personalizationAuth();
-      applyPayload(await restorePersonalization(token, kind, baseUrl));
-      setMessage(copy?.restored ?? "已恢复内置默认模板。");
+      const next = await restorePersonalization(token, kind, baseUrl);
+      setPayload(next);
+      setSoul(kind === "soul" ? next.soul : currentSoul);
+      setUser(kind === "user" ? next.user : currentUser);
+      setMessage(copy.restored);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -2145,87 +2199,162 @@ function PersonalizationSection({ isEnglish }: { isEnglish: boolean }) {
     }
   };
 
+  const updateDraft = (kind: PersonalizationKind, value: string) => {
+    if (kind === "soul") setSoul(value);
+    else setUser(value);
+    setMessage(null);
+  };
+
   if (loading && !payload) {
     return (
-      <div className="flex items-center justify-center gap-2 py-12 text-sm text-[#6f6f73]">
+      <div data-personalization-loading className="flex items-center justify-center gap-2 py-12 text-sm text-[#6f6f73]">
         <Loader2 className="h-4 w-4 animate-spin" />
-        {copy?.loading ?? "正在加载个性化文件..."}
+        {copy.loading}
       </div>
     );
   }
 
-  const charCount = (value: string) => (copy?.chars ?? "{used} / {max} 字符").replace("{used}", String(value.length)).replace("{max}", String(MAX_PERSONALIZATION_CHARS));
+  const charCount = (value: string) => copy.chars.replace("{used}", String(value.length)).replace("{max}", String(MAX_PERSONALIZATION_CHARS));
+  const tabs = [
+    { kind: "soul" as const, title: copy.soulTitle, hint: copy.soulHint, file: "SOUL.md", icon: Sparkles, dirty: soulDirty },
+    { kind: "user" as const, title: copy.userTitle, hint: copy.userHint, file: "USER.md", icon: UserRound, dirty: userDirty },
+  ];
+  const activeTab = tabs.find((tab) => tab.kind === activeKind) ?? tabs[0];
+  const activeValue = activeKind === "soul" ? soul : user;
+  const ActiveIcon = activeTab.icon;
 
   return (
     <SettingsGroup>
-      <SettingsCard
-        title={copy?.title ?? "个性化"}
-        description={copy?.description ?? "自定义 TPACowork 的行为与对你的了解，修改后下一条消息起生效。"}
-      >
-        {error ? (
-          <div className="mb-4 rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-        ) : null}
-        {message ? (
-          <div className="mb-4 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div>
-        ) : null}
+      <div data-personalization-surface>
+        <SettingsCard
+          title={copy.title}
+          description={copy.description}
+        >
+          {error ? (
+            <div data-personalization-alert="error" className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+              <span>{error}</span>
+              {!payload ? (
+                <button
+                  type="button"
+                  className="shrink-0 rounded-md px-2 py-1 font-medium hover:bg-red-100"
+                  onClick={() => void load()}
+                  disabled={loading}
+                >
+                  {copy.retry}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+          {message ? (
+            <div data-personalization-alert="success" aria-live="polite" className="mb-4 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div>
+          ) : null}
 
-        <div className="mb-5">
-          <div className="mb-1 flex items-center justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold text-[#202020]">{copy?.soulTitle ?? "助手人格 (SOUL.md)"}</div>
-              <div className="mt-0.5 text-xs text-[#6f6f73]">{copy?.soulHint ?? "定义助手的性格与工作方式，每轮都会加载进系统提示。"}</div>
+          <div data-personalization-tablist role="tablist" aria-label={copy.tabsLabel} className="grid grid-cols-2 gap-1.5 rounded-xl bg-[#ececee] p-1.5">
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              const active = activeKind === tab.kind;
+              return (
+                <button
+                  key={tab.kind}
+                  id={`personalization-tab-${tab.kind}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  aria-controls="personalization-editor-panel"
+                  data-personalization-tab={tab.kind}
+                  data-active={active ? "true" : "false"}
+                  data-dirty={tab.dirty ? "true" : "false"}
+                  onClick={() => setActiveKind(tab.kind)}
+                  className={cn(
+                    "flex min-w-0 items-center gap-2.5 rounded-lg px-3 py-2.5 text-left transition-all",
+                    active
+                      ? "bg-white text-[#202020] shadow-sm"
+                      : "text-[#67676d] hover:bg-white/60 hover:text-[#202020]",
+                  )}
+                >
+                  <span data-personalization-tab-icon className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg", active ? "bg-[#f3eee9] text-[#b76043]" : "bg-white/60 text-[#78787e]")}>
+                    <Icon className="h-4 w-4" strokeWidth={1.8} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span data-personalization-tab-title className="block truncate text-sm font-semibold">{tab.title.replace(` (${tab.file})`, "")}</span>
+                    <span data-personalization-file className="block text-[11px] text-[#909096]">{tab.file}</span>
+                  </span>
+                  {tab.dirty ? (
+                    <span data-personalization-dirty className="shrink-0 rounded-full bg-[#fff0e9] px-2 py-0.5 text-[10px] font-medium text-[#bd6243]">
+                      {copy.unsaved}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+
+          <div
+            id="personalization-editor-panel"
+            role="tabpanel"
+            aria-labelledby={`personalization-tab-${activeKind}`}
+            data-personalization-panel={activeKind}
+            className="mt-4 rounded-xl border border-[#e3e3e5] bg-white p-4"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex min-w-0 items-start gap-3">
+                <span data-personalization-editor-icon className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#f6f3ef] text-[#a85a40]">
+                  <ActiveIcon className="h-4 w-4" strokeWidth={1.8} />
+                </span>
+                <div>
+                  <div data-personalization-editor-title className="text-sm font-semibold text-[#202020]">{activeTab.title}</div>
+                  <div data-personalization-editor-hint className="mt-1 max-w-[500px] text-xs leading-5 text-[#6f6f73]">{activeTab.hint}</div>
+                </div>
+              </div>
+              <Button
+                data-personalization-restore
+                variant="outline"
+                className="shrink-0 border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]"
+                onClick={() => void restore(activeKind)}
+                disabled={!payload || restoring !== null || saving}
+              >
+                {restoring === activeKind ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                {copy.restore}
+              </Button>
+            </div>
+            <Textarea
+              key={activeKind}
+              data-personalization-editor
+              aria-label={activeTab.title}
+              value={activeValue}
+              maxLength={MAX_PERSONALIZATION_CHARS}
+              onChange={(event) => updateDraft(activeKind, event.target.value)}
+              className="mt-4 min-h-[290px] resize-y bg-[#fcfcfc] font-mono text-xs leading-5 focus:bg-white"
+              spellCheck={false}
+              disabled={!payload || saving || restoring !== null}
+            />
+            <div data-personalization-count className="mt-1.5 text-right text-[11px] text-[#a1a1a9]">{charCount(activeValue)}</div>
+          </div>
+
+          <div data-personalization-footer className="mt-4 flex items-center justify-between gap-4 border-t border-[#e4e4e6] pt-4">
+            <div
+              data-personalization-status
+              data-dirty={hasChanges ? "true" : "false"}
+              aria-live="polite"
+              className={cn("flex items-center gap-1.5 text-xs", hasChanges ? "text-[#b76043]" : "text-[#76767c]")}
+            >
+              {hasChanges ? <AlertCircle className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5 text-emerald-600" />}
+              {hasChanges
+                ? copy.dirtyTabs.replace("{count}", String(dirtyCount))
+                : copy.allSaved}
             </div>
             <Button
-              variant="outline"
-              className="shrink-0 border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]"
-              onClick={() => void restore("soul")}
-              disabled={restoring !== null || saving}
+              data-personalization-save
+              className="bg-[#202020] text-white hover:bg-[#333]"
+              onClick={() => void save()}
+              disabled={!payload || saving || loading || restoring !== null || !hasChanges}
             >
-              {restoring === "soul" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
-              {copy?.restore ?? "恢复默认"}
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {copy.save}
             </Button>
           </div>
-          <Textarea
-            value={soul}
-            onChange={(event) => setSoul(event.target.value)}
-            className="mt-2 min-h-[240px] font-mono text-xs"
-            spellCheck={false}
-          />
-          <div className="mt-1 text-right text-[11px] text-[#a1a1a9]">{charCount(soul)}</div>
-        </div>
-
-        <div className="mb-5">
-          <div className="mb-1 flex items-center justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold text-[#202020]">{copy?.userTitle ?? "用户画像 (USER.md)"}</div>
-              <div className="mt-0.5 text-xs text-[#6f6f73]">{copy?.userHint ?? "关于你的信息，如偏好与背景，让助手始终牢记。"}</div>
-            </div>
-            <Button
-              variant="outline"
-              className="shrink-0 border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]"
-              onClick={() => void restore("user")}
-              disabled={restoring !== null || saving}
-            >
-              {restoring === "user" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
-              {copy?.restore ?? "恢复默认"}
-            </Button>
-          </div>
-          <Textarea
-            value={user}
-            onChange={(event) => setUser(event.target.value)}
-            className="mt-2 min-h-[200px] font-mono text-xs"
-            spellCheck={false}
-          />
-          <div className="mt-1 text-right text-[11px] text-[#a1a1a9]">{charCount(user)}</div>
-        </div>
-
-        <div className="flex justify-end pt-1">
-          <Button className="bg-[#202020] text-white hover:bg-[#333]" onClick={() => void save()} disabled={saving || loading}>
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            {copy?.save ?? "保存"}
-          </Button>
-        </div>
-      </SettingsCard>
+        </SettingsCard>
+      </div>
     </SettingsGroup>
   );
 }

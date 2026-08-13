@@ -1,0 +1,114 @@
+schema_version: 1
+id: supply-chain-bottleneck-team
+name: 资产投研团队 · 供应链瓶颈研究
+description: 从超级趋势出发拆解实体产业链，两阶段并行验证供需瓶颈、上市公司映射、估值与反方证据，输出可审计的瓶颈机会地图。
+version: 1.0.0
+source_root: source
+cover: source/assets/supply-chain-bottleneck.svg
+entry_workflow: bottleneck-hunter
+enabled: true
+tags:
+  - 投资研究
+  - 供应链
+  - 产业研究
+  - 瓶颈识别
+  - 估值验证
+runtime:
+  requested_concurrency: 3
+  max_members: 5
+  report_directory: reports/bottleneck-map
+  adapter: adapter.md
+  member_runtime:
+    max_iterations: 24
+    timeout_seconds: 360
+    max_retries: 0
+    members:
+      bottleneck-validator:
+        max_iterations: 16
+        timeout_seconds: 300
+      company-screener:
+        max_iterations: 24
+        timeout_seconds: 360
+      counter-case-analyst:
+        max_iterations: 16
+        timeout_seconds: 300
+  lead_playbooks:
+    - playbooks/team-lead.md
+  completion:
+    required_tools:
+      - write_file
+    required_artifacts:
+      - html
+    instruction: 即使部分来源或成员失败，也必须基于已核验材料生成最终 Markdown 与 HTML 瓶颈地图，并明确标注证据缺口、瓶颈时效、估值约束和结论置信度。
+mcp_presets:
+  - name: anysearch
+    display_name: AnySearch MCP
+    required: false
+    description: 用于全球产业链、行业供需、扩产周期、客户验证和替代路线等公开证据检索。
+  - name: hexin-ifind-ds-stock-mcp
+    display_name: 同花顺 iFinD 股票 MCP
+    required: false
+    description: 候选公司形成后，用于行情、公司资料、主营构成和估值字段核验。
+  - name: hexin-ifind-ds-news-mcp
+    display_name: 同花顺 iFinD 新闻 MCP
+    required: false
+    description: 用于瓶颈相关公司新闻、供需事件和风险信号核验。
+  - name: hexin-ifind-ds-edb-mcp
+    display_name: 同花顺 iFinD 宏观 MCP
+    required: false
+    description: 用于行业需求、资本开支、产量和宏观序列验证。
+  - name: hexin-ifind-ds-index-mcp
+    display_name: 同花顺 iFinD 指数 MCP
+    required: false
+    description: 用于行业板块、指数和候选公司的相对表现对比。
+  - name: juyuan
+    display_name: 聚源金融数据 MCP
+    required: false
+    description: 候选公司形成后提供行情、财务、估值、公告与机构数据。
+  - name: caihui_mcp
+    display_name: 财汇金融数据 MCP
+    required: false
+    description: 候选公司形成后参与财务、行情、公告和关键估值字段交叉核验。
+members:
+  - id: trend-verifier
+    name: 趋势与需求验证师
+    framework: 超级趋势验证
+    phase: discovery
+    phase_label: 第一阶段 · 发现
+    playbook: playbooks/trend-verifier.md
+    description: 验证趋势持续性、物理资本开支、需求增速与时间窗口，先判断研究前提是否成立。
+  - id: chain-mapper
+    name: 产业链架构师
+    framework: 物理供应链拆解
+    phase: discovery
+    phase_label: 第一阶段 · 发现
+    playbook: playbooks/chain-mapper.md
+    description: 从终端向材料、设备和基础设施逐层拆解，形成可验证的供应链节点与供应商地图。
+  - id: bottleneck-validator
+    name: 瓶颈证据分析师
+    framework: 六维瓶颈评分
+    phase: validation
+    phase_label: 第二阶段 · 验证
+    playbook: playbooks/bottleneck-validator.md
+    description: 根据集中度、扩产周期、替代难度、利用率、需求增速和认证周期验证瓶颈等级与持续时间。
+  - id: company-screener
+    name: 标的映射与估值师
+    framework: 财务与定价约束
+    phase: validation
+    phase_label: 第二阶段 · 验证
+    playbook: playbooks/company-screener.md
+    description: 将高等级瓶颈映射到上市公司，核验业务暴露、财务质量、流动性、估值和潜在回报。
+  - id: counter-case-analyst
+    name: 反方验证与风险师
+    framework: 芒格式否定
+    phase: validation
+    phase_label: 第二阶段 · 验证
+    playbook: playbooks/counter-case-analyst.md
+    description: 主动寻找替代技术、扩产响应、需求下行、地缘、稀释和叙事过热等反证。
+workflows:
+  - id: bottleneck-hunter
+    name: 供应链瓶颈扫描
+    description: 从一个超级趋势或产业主题出发，输出瓶颈地图、候选公司、估值约束与行动分级。
+    source: ai-berkshire/skills/bottleneck-hunter.md
+    mode: team
+    featured: true

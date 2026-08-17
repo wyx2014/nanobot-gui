@@ -20,6 +20,12 @@ import { deviceLinkBridge } from './deviceLinkBridge'
 import { acquireSingleInstanceLock, restoreAndFocusWindow } from './singleInstance'
 import { createWindowsTerminalLaunchSpec } from './terminalLauncher'
 import { showDesktopNotification, type DesktopNotificationInput } from './desktopNotification'
+import { ensureInstallationId } from './installationIdentity'
+import {
+  closeToTrayNoticePreferences,
+  hasSeenCloseToTrayNoticeForInstallation,
+  type WindowPreferences,
+} from './installScopedPreferences'
 import {
   applicationUserDataPath,
   defaultWorkspacePath,
@@ -79,16 +85,31 @@ let pendingInstanceActivation = false;
 let appTray: Tray | null = null;
 let closeToTrayNoticeSeen: boolean | null = null;
 let closeToTrayNoticeSending = false;
+let installationIdPromise: Promise<string> | null = null;
 
 const windowPreferencesPath = join(configuredUserDataPath, 'window-preferences.json');
 
-async function hasSeenCloseToTrayNotice(): Promise<boolean> {
+function getInstallationId(): Promise<string> {
+  if (!installationIdPromise) {
+    installationIdPromise = ensureInstallationId(configuredUserDataPath, app.isPackaged)
+      .catch((error) => {
+        console.warn('[Main] Failed to resolve installation identity:', error);
+        return `fallback-installation-${app.getVersion()}`;
+      });
+  }
+  return installationIdPromise;
+}
+
+async function hasSeenCloseToTrayNotice(installationId: string): Promise<boolean> {
   if (closeToTrayNoticeSeen !== null) return closeToTrayNoticeSeen;
   try {
-    const saved = JSON.parse(await fs.readFile(windowPreferencesPath, 'utf-8')) as {
-      closeToTrayNoticeSeen?: unknown;
-    };
-    closeToTrayNoticeSeen = saved.closeToTrayNoticeSeen === true;
+    const saved = JSON.parse(
+      await fs.readFile(windowPreferencesPath, 'utf-8'),
+    ) as WindowPreferences;
+    closeToTrayNoticeSeen = hasSeenCloseToTrayNoticeForInstallation(
+      saved,
+      installationId,
+    );
   } catch (error) {
     if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') {
       console.warn('[Main] Failed to read window preferences:', error);
@@ -98,12 +119,12 @@ async function hasSeenCloseToTrayNotice(): Promise<boolean> {
   return closeToTrayNoticeSeen;
 }
 
-async function rememberCloseToTrayNotice(): Promise<void> {
+async function rememberCloseToTrayNotice(installationId: string): Promise<void> {
   closeToTrayNoticeSeen = true;
   try {
     await fs.writeFile(
       windowPreferencesPath,
-      `${JSON.stringify({ closeToTrayNoticeSeen: true }, null, 2)}\n`,
+      `${JSON.stringify(closeToTrayNoticePreferences(installationId), null, 2)}\n`,
       'utf-8',
     );
   } catch (error) {
@@ -115,8 +136,9 @@ async function handleCloseToTray(win: BrowserWindow): Promise<void> {
   if (closeToTrayNoticeSending || win.isDestroyed()) return;
   closeToTrayNoticeSending = true;
   try {
-    const shouldNotify = !(await hasSeenCloseToTrayNotice());
-    if (shouldNotify) await rememberCloseToTrayNotice();
+    const installationId = await getInstallationId();
+    const shouldNotify = !(await hasSeenCloseToTrayNotice(installationId));
+    if (shouldNotify) await rememberCloseToTrayNotice(installationId);
     if (!win.isDestroyed()) win.hide();
     if (!shouldNotify) return;
 
@@ -646,6 +668,7 @@ async function startApplication(): Promise<void> {
 
   safeInvoke('os:homeDir', async () => os.homedir());
   safeInvoke('os:platform', async () => process.platform);
+  safeInvoke('app:installationId', async () => getInstallationId());
   safeInvoke('os:appDataDir', async () => app.getPath('userData'));
   safeInvoke('os:desktopDir', async () => app.getPath('desktop'));
   safeInvoke('os:documentDir', async () => app.getPath('documents'));

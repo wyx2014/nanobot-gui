@@ -155,6 +155,9 @@ export const clipboardBridge = {
 export type EditCommand = 'undo' | 'cut' | 'copy' | 'paste' | 'selectAll';
 
 export const windowBridge = {
+  getInstallationId: async (): Promise<string> => {
+    return window.ipc.invoke('app:installationId');
+  },
   setTitle: async (title: string): Promise<void> => {
     return window.ipc.invoke('window:setTitle', title);
   },

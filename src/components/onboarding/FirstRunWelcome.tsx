@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Check, Globe2, Monitor, Moon, Sparkles, Sun } from 'lucide-react';
 import appIcon from '../../../TPACowork-3_512x512.png';
 import { useI18n } from '@/i18n';
+import { waitForGatewayReady } from './waitForGatewayReady';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/nanobotClient';
 import { fetchPersonalization, savePersonalization } from '@/core/api';
@@ -26,7 +27,7 @@ interface ProfileAnswers {
 function replaceSection(markdown: string, title: string, body: string): string {
   const lines = markdown.split('\n');
   const header = `## ${title}`;
-  let start = lines.findIndex((line) => line.trim() === header);
+  const start = lines.findIndex((line) => line.trim() === header);
   if (start === -1) {
     const anchor = lines.findIndex((line, index) => index > 0 && line.trim().startsWith('## '));
     const insertAt = anchor === -1 ? lines.length : anchor;
@@ -182,8 +183,9 @@ export default function FirstRunWelcome({ onContinue }: FirstRunWelcomeProps) {
   const finish = async () => {
     setSaving(true);
     try {
-      const status = await getNanobotStatus();
-      if (status.ready) {
+      const ready = await waitForGatewayReady(getNanobotStatus);
+      if (ready) {
+        const status = await getNanobotStatus();
         const baseUrl = `http://127.0.0.1:${status.port}`;
         let token = getNanobotToken();
         if (!token) {
@@ -425,7 +427,7 @@ export default function FirstRunWelcome({ onContinue }: FirstRunWelcomeProps) {
           disabled={saving}
           className="h-9 rounded-lg bg-[#29261b] px-5 text-[14px] font-semibold text-white shadow-sm transition-colors hover:bg-[#423d32] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d97757]/35 disabled:opacity-60 dark:bg-[#d97757] dark:hover:bg-[#c86c4d]"
         >
-          {saving ? '...' : (step === 0 ? t.onboarding.next : t.onboarding.start)}
+          {saving ? t.onboarding.finishing : (step === 0 ? t.onboarding.next : t.onboarding.start)}
         </button>
       </footer>
     </div>

@@ -12,6 +12,9 @@ interface PackageManifest {
       compression?: string;
       target?: string[];
     };
+    nsis?: {
+      include?: string;
+    };
   };
 }
 
@@ -21,6 +24,10 @@ const packageManifest = JSON.parse(
 
 const electronViteConfig = fs.readFileSync(
   path.join(process.cwd(), 'electron.vite.config.ts'),
+  'utf8',
+);
+const installerInclude = fs.readFileSync(
+  path.join(process.cwd(), 'build', 'installer.nsh'),
   'utf8',
 );
 
@@ -62,5 +69,11 @@ describe('packaged dependency boundary', () => {
     expect(packageManifest.scripts?.['build:win:portable'])
       .toContain('npm run prepare-python:win');
     expect(packageManifest.scripts?.['build:win:portable']).toContain('--win portable');
+  });
+
+  it('resets the installation marker only for a real uninstall', () => {
+    expect(packageManifest.build?.nsis?.include).toBe('build/installer.nsh');
+    expect(installerInclude).toContain('${ifNot} ${isUpdated}');
+    expect(installerInclude).toContain('Delete "$APPDATA\\tpacowork\\.installation-id"');
   });
 });

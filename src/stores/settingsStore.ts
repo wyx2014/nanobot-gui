@@ -277,6 +277,7 @@ interface SettingsState {
   userAvatar: string; // data URI or empty
   // Guide
   guideShown: boolean; // persisted: true after the first-run guide is completed
+  guideInstallationId: string; // persisted: installation that completed the guide
   guideOpen: boolean; // ephemeral: manually replay the guide from Help
   helpManualOpen: boolean; // ephemeral: display the full user manual over Help & Feedback
   // Behavior sensor
@@ -357,6 +358,7 @@ interface SettingsActions {
   setUserNickname: (nickname: string) => void;
   setUserAvatar: (avatar: string) => void;
   setGuideShown: (shown: boolean) => void;
+  setGuideInstallationId: (installationId: string) => void;
   openGuide: () => void;
   closeGuide: () => void;
   openHelpManual: () => void;
@@ -464,6 +466,7 @@ export const useSettingsStore = create<SettingsStore>()(
       userNickname: '',
       userAvatar: '',
       guideShown: false,
+      guideInstallationId: '',
       guideOpen: false,
       helpManualOpen: false,
       behaviorSensorEnabled: false,
@@ -558,6 +561,7 @@ export const useSettingsStore = create<SettingsStore>()(
       setUserNickname: (userNickname) => set({ userNickname }),
       setUserAvatar: (userAvatar) => set({ userAvatar }),
       setGuideShown: (guideShown) => set({ guideShown }),
+      setGuideInstallationId: (guideInstallationId) => set({ guideInstallationId }),
       openGuide: () => set({ guideOpen: true }),
       closeGuide: () => set({ guideOpen: false }),
       openHelpManual: () => set({
@@ -590,9 +594,12 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: 'ruyi-settings',
-      version: 7,
+      version: 8,
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
+        if (version < 8 && state.guideInstallationId === undefined) {
+          state.guideInstallationId = '';
+        }
         if (version < 7 && state.theme !== 'light' && state.theme !== 'dark' && state.theme !== 'system') {
           state.theme = 'system';
         }
@@ -665,6 +672,7 @@ export const useSettingsStore = create<SettingsStore>()(
         userNickname: state.userNickname,
         userAvatar: state.userAvatar,
         guideShown: state.guideShown,
+        guideInstallationId: state.guideInstallationId,
         behaviorSensorEnabled: state.behaviorSensorEnabled,
         computerUseEnabled: state.computerUseEnabled,
         embeddingProvider: state.embeddingProvider,

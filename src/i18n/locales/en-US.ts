@@ -798,6 +798,7 @@ const enUS: TranslationDict = {
     next: 'Next',
     back: 'Back',
     start: 'Get started',
+    finishing: 'Finishing setup…',
     profileTitle: 'Tell AI a little about you',
     profileHint: 'This is saved to USER.md so the assistant can personalize responses. You can edit it anytime in the workspace USER.md.',
     name: 'Your name',

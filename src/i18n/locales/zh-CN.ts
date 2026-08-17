@@ -798,6 +798,7 @@ const zhCN: TranslationDict = {
     next: '下一步',
     back: '上一步',
     start: '开始使用',
+    finishing: '正在完成初始化…',
     profileTitle: '告诉 AI 一些关于你的基础信息',
     profileHint: '这些信息会写入 USER.md，帮助 AI 更好地了解你。之后随时可在工作区 USER.md 中修改。',
     name: '你的称呼',

@@ -42,6 +42,7 @@ import { useBrowserStore } from '@/stores/browserStore';
 import { renderMermaidPng } from '@/core/mermaid';
 import { usePromptHubStore } from '@/stores/promptHubStore';
 import FirstRunWelcome from '@/components/onboarding/FirstRunWelcome';
+import { shouldShowInstallationGuide } from '@/components/onboarding/installationGuide';
 import { useAppNavigationHistory } from '@/hooks/useAppNavigationHistory';
 import { resolveTitlebarLayout } from '@/core/navigation/titlebarLayout';
 import {
@@ -132,13 +133,16 @@ function App() {
   const promptHubBaseUrl = usePromptHubStore((s) => s.baseUrl);
   const promptHubToken = usePromptHubStore((s) => s.token);
   const guideShown = useSettingsStore((s) => s.guideShown);
+  const guideInstallationId = useSettingsStore((s) => s.guideInstallationId);
   const guideOpen = useSettingsStore((s) => s.guideOpen);
   const setGuideShown = useSettingsStore((s) => s.setGuideShown);
+  const setGuideInstallationId = useSettingsStore((s) => s.setGuideInstallationId);
   const closeGuide = useSettingsStore((s) => s.closeGuide);
   const theme = useSettingsStore((s) => s.theme);
   const keyboardShortcuts = useSettingsStore((s) => s.keyboardShortcuts);
   const compactSummaryViewport = useMediaQuery(PINNED_SUMMARY_COMPACT_MEDIA_QUERY);
   const [settingsHydrated, setSettingsHydrated] = useState(() => useSettingsStore.persist.hasHydrated());
+  const [installationId, setInstallationId] = useState<string | null>(null);
   const [windowFullScreen, setWindowFullScreen] = useState(false);
   const {
     canGoBack,
@@ -154,6 +158,22 @@ function App() {
     }
     return useSettingsStore.persist.onFinishHydration(() => setSettingsHydrated(true));
   }, []);
+
+  useEffect(() => {
+    if (!settingsHydrated) return;
+    let active = true;
+    void windowBridge.getInstallationId()
+      .then((value) => {
+        if (active) setInstallationId(value?.trim() || 'unavailable-installation');
+      })
+      .catch((error) => {
+        console.warn('[App] Failed to read installation identity:', error);
+        if (active) setInstallationId('unavailable-installation');
+      });
+    return () => {
+      active = false;
+    };
+  }, [settingsHydrated]);
 
   useEffect(() => {
     let active = true;
@@ -690,17 +710,25 @@ function App() {
     toggleSidebar();
   };
 
-  if (!settingsHydrated) {
+  if (!settingsHydrated || !installationId) {
     return <div className="h-full w-full bg-[#fbfaf7]" />;
   }
+
+  const showInstallationGuide = shouldShowInstallationGuide({
+    guideShown,
+    guideOpen,
+    completedInstallationId: guideInstallationId,
+    currentInstallationId: installationId,
+  });
 
   return (
     <ErrorBoundary>
       <TooltipProvider delayDuration={200}>
-        {(!guideShown || guideOpen) && (
+        {showInstallationGuide && (
           <FirstRunWelcome
             onContinue={() => {
               setGuideShown(true);
+              setGuideInstallationId(installationId);
               closeGuide();
             }}
           />

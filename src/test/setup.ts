@@ -20,6 +20,8 @@ const mockIpc = {
         return '/Users/testuser/Downloads';
       case 'os:platform':
         return 'darwin'; // maps to 'macos'
+      case 'app:installationId':
+        return 'test-installation';
       case 'os:resolve':
         return typeof data === 'string' ? data : data?.path || '';
       case 'os:resolveResource':

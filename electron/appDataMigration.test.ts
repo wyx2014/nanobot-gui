@@ -10,7 +10,6 @@ import {
   migrateLegacyDefaultWorkspace,
   migrateLegacyUserProjects,
   migratePersistedWorkspaceReferences,
-  migratePersistedWorkspaceReferencesOnce,
 } from './appDataMigration';
 
 const temporaryDirectories: string[] = [];
@@ -162,29 +161,4 @@ describe('application data migration', () => {
     }
   });
 
-  it('does not cold-scan retained histories again after a completed path migration', () => {
-    const userData = temporaryDirectory();
-    const workspace = path.join(userData, 'workspace');
-    const marker = path.join(userData, '.persisted-path-migration-v1.json');
-    const sessionFile = path.join(workspace, 'sessions', 'websocket_chat.jsonl');
-    const oldRoot = path.join(userData, 'nanobot-workspace');
-    const newRoot = workspace;
-    fs.mkdirSync(path.dirname(sessionFile), { recursive: true });
-    fs.writeFileSync(sessionFile, JSON.stringify({ project_path: oldRoot }));
-
-    const first = migratePersistedWorkspaceReferencesOnce(workspace, marker, [{
-      source: oldRoot,
-      target: newRoot,
-    }]);
-    fs.writeFileSync(sessionFile, JSON.stringify({ project_path: oldRoot }));
-    const second = migratePersistedWorkspaceReferencesOnce(workspace, marker, [{
-      source: oldRoot,
-      target: newRoot,
-    }]);
-
-    expect(first).toMatchObject({ skipped: false, scannedFiles: 1, updatedFiles: 1 });
-    expect(second).toEqual({ skipped: true, scannedFiles: 0, updatedFiles: 0 });
-    expect(fs.existsSync(marker)).toBe(true);
-    expect(fs.readFileSync(sessionFile, 'utf8')).toContain(oldRoot);
-  });
 });

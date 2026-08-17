@@ -1,9 +1,12 @@
 import { useCallback } from 'react';
 import { getNanobotClient, syncSessionFromGateway } from '@/core/nanobotClient';
+import { isScheduleRunConversationTitle } from '@/core/scheduleRunTitle';
 import { useChatStore } from '@/stores/chatStore';
 import { useScheduleStore } from '@/stores/scheduleStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import type { ScheduledTaskRun } from '@/types/schedule';
+
+export { isScheduleRunConversationTitle };
 
 export function formatScheduleRunDate(timestamp: number): string {
   const date = new Date(timestamp);
@@ -12,11 +15,6 @@ export function formatScheduleRunDate(timestamp: number): string {
   const hour = date.getHours().toString().padStart(2, '0');
   const minute = date.getMinutes().toString().padStart(2, '0');
   return `${month}/${day} ${hour}:${minute}`;
-}
-
-export function isDefaultScheduleConversationTitle(title: string | undefined): boolean {
-  const cleaned = title?.trim();
-  return !cleaned || cleaned === '新对话' || cleaned === 'New chat';
 }
 
 export function useOpenScheduleRun() {
@@ -60,13 +58,11 @@ export function useOpenScheduleRun() {
 
     if (
       conversation.scheduledTaskId !== run.scheduledTaskId
-      || isDefaultScheduleConversationTitle(conversation.title)
+      || conversation.title !== fallbackTitle
     ) {
       useChatStore.getState().upsertConversation(sessionKey, {
         ...conversation,
-        title: isDefaultScheduleConversationTitle(conversation.title)
-          ? fallbackTitle
-          : conversation.title,
+        title: fallbackTitle,
         scheduledTaskId: run.scheduledTaskId,
       });
     }

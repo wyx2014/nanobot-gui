@@ -122,6 +122,75 @@ describe('conversationFromSessionSummary', () => {
     expect(conversation.status).toBe('idle');
     expect(conversation.hasHistory).toBe(true);
   });
+
+  it('does not adopt gateway-generated previews as titles for cron run sessions', () => {
+    const conversation = conversationFromSessionSummary({
+      key: 'cron:daily-brief:1723456789000:abcd1234',
+      channel: 'cron',
+      chatId: 'cron:daily-brief:1723456789000:abcd1234',
+      createdAt: null,
+      updatedAt: null,
+      title: 'The user wants me to execute a',
+      preview: 'The user wants me to execute a',
+      runStartedAt: null,
+    });
+
+    expect(conversation.title).toBe('新对话');
+    expect(conversation.hasHistory).toBe(true);
+  });
+
+  it('replaces stale generated cron run titles even when the session was already linked', () => {
+    const existing = {
+      id: 'cron:daily-brief:1723456789000:abcd1234',
+      title: 'The user wants me to execute a',
+      scheduledTaskId: 'daily-brief',
+      messages: [],
+      createdAt: 1,
+      updatedAt: 2,
+      status: 'idle' as const,
+    };
+
+    const conversation = conversationFromSessionSummary({
+      key: 'cron:daily-brief:1723456789000:abcd1234',
+      channel: 'cron',
+      chatId: 'cron:daily-brief:1723456789000:abcd1234',
+      createdAt: null,
+      updatedAt: null,
+      title: 'The user wants me to execute a',
+      preview: 'The user wants me to execute a',
+      runStartedAt: null,
+    }, existing);
+
+    expect(conversation.title).toBe('新对话');
+    expect(conversation.scheduledTaskId).toBe('daily-brief');
+  });
+
+  it('preserves a normalized scheduled-run title once the run has been opened', () => {
+    const existing = {
+      id: 'cron:daily-brief:1723456789000:abcd1234',
+      title: '8/13 13:05 - 每日AI新闻推送',
+      scheduledTaskId: 'daily-brief',
+      messages: [],
+      createdAt: 1,
+      updatedAt: 2,
+      status: 'idle' as const,
+    };
+
+    const conversation = conversationFromSessionSummary({
+      key: 'cron:daily-brief:1723456789000:abcd1234',
+      channel: 'cron',
+      chatId: 'cron:daily-brief:1723456789000:abcd1234',
+      createdAt: null,
+      updatedAt: null,
+      title: 'The user wants me to execute a',
+      preview: 'The user wants me to execute a',
+      runStartedAt: null,
+    }, existing);
+
+    expect(conversation.title).toBe('8/13 13:05 - 每日AI新闻推送');
+    expect(conversation.scheduledTaskId).toBe('daily-brief');
+  });
+
 });
 
 describe('shouldPreserveRunningConversation', () => {

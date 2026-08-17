@@ -1,11 +1,9 @@
-import { useChatStore } from '@/stores/chatStore';
 import { useI18n } from '@/i18n';
 import { ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ScheduledTaskRun } from '@/types/schedule';
 import {
   formatScheduleRunDate,
-  isDefaultScheduleConversationTitle,
   useOpenScheduleRun,
 } from './useOpenScheduleRun';
 
@@ -32,7 +30,6 @@ interface Props {
 export default function ScheduleRunHistory({ runs, taskName }: Props) {
   const { t } = useI18n();
   const openScheduleRun = useOpenScheduleRun();
-  const conversations = useChatStore((s) => s.conversations);
 
   const handleViewConversation = async (run: ScheduledTaskRun) => {
     await openScheduleRun(run, taskName);
@@ -49,11 +46,7 @@ export default function ScheduleRunHistory({ runs, taskName }: Props) {
   return (
     <div className="space-y-1 px-2 pb-2">
       {runs.map((run) => {
-        const sessionKey = run.sessionKey ?? run.conversationId;
-        const conversationTitle = conversations[sessionKey]?.title;
-        const title = isDefaultScheduleConversationTitle(conversationTitle)
-          ? `${formatScheduleRunDate(run.startedAt)} - ${taskName}`
-          : conversationTitle;
+        const title = `${formatScheduleRunDate(run.startedAt)} - ${taskName}`;
         const isUnread = (run.status === 'completed' || run.status === 'error') && !run.viewedAt;
 
         return (

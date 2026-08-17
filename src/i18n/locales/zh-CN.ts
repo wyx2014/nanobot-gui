@@ -121,8 +121,7 @@ const zhCN: TranslationDict = {
     inputTokens: '输入',
     outputTokens: '输出',
     addAttachment: '添加图片或文件',
-    shortcutResearch: '投研决策',
-    shortcutPortfolioRisk: '组合风控',
+    shortcutDataAnalysis: '数据分析',
     shortcutOffice: '综合办公',
   },
 

@@ -20,7 +20,7 @@ import { Select } from '@/components/ui/select';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import type { ScheduledTask, ScheduledTaskRun } from '@/types/schedule';
 import {
-  isDefaultScheduleConversationTitle,
+  isScheduleRunConversationTitle,
   useOpenScheduleRun,
 } from './useOpenScheduleRun';
 
@@ -103,7 +103,10 @@ export default function ScheduleRunCenter() {
 
       const sessionKey = run.sessionKey ?? run.conversationId;
       const conversationTitle = sessionKey ? conversations[sessionKey]?.title : '';
-      return [task.name, task.description, run.error, conversationTitle]
+      const searchableTitle = isScheduleRunConversationTitle(conversationTitle)
+        ? conversationTitle
+        : '';
+      return [task.name, task.description, run.error, searchableTitle]
         .filter(Boolean)
         .some((value) => String(value).toLocaleLowerCase().includes(normalizedQuery));
     });
@@ -262,7 +265,7 @@ export default function ScheduleRunCenter() {
                       const rowKey = `${task.id}:${run.id}`;
                       const sessionKey = run.sessionKey ?? run.conversationId;
                       const conversationTitle = sessionKey ? conversations[sessionKey]?.title : undefined;
-                      const detail = !isDefaultScheduleConversationTitle(conversationTitle)
+                      const detail = isScheduleRunConversationTitle(conversationTitle)
                         ? conversationTitle
                         : statusLabel(run, {
                           running: t.schedule.runStatusRunning,

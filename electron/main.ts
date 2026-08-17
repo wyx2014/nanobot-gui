@@ -40,6 +40,7 @@ import {
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 
 const isDev = typeof app !== 'undefined' ? !app.isPackaged : (process.env.NODE_ENV === 'development')
+app.setName('TPACowork')
 
 function reportDirectoryMigration(label: string, result: DirectoryMigrationResult): void {
   if (result.status === 'not-found') return;
@@ -76,6 +77,67 @@ let mainWindow: BrowserWindow | null = null;
 let mainWindowReady = false;
 let pendingInstanceActivation = false;
 let appTray: Tray | null = null;
+let closeToTrayNoticeSeen: boolean | null = null;
+let closeToTrayNoticeSending = false;
+
+const windowPreferencesPath = join(configuredUserDataPath, 'window-preferences.json');
+
+async function hasSeenCloseToTrayNotice(): Promise<boolean> {
+  if (closeToTrayNoticeSeen !== null) return closeToTrayNoticeSeen;
+  try {
+    const saved = JSON.parse(await fs.readFile(windowPreferencesPath, 'utf-8')) as {
+      closeToTrayNoticeSeen?: unknown;
+    };
+    closeToTrayNoticeSeen = saved.closeToTrayNoticeSeen === true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+      console.warn('[Main] Failed to read window preferences:', error);
+    }
+    closeToTrayNoticeSeen = false;
+  }
+  return closeToTrayNoticeSeen;
+}
+
+async function rememberCloseToTrayNotice(): Promise<void> {
+  closeToTrayNoticeSeen = true;
+  try {
+    await fs.writeFile(
+      windowPreferencesPath,
+      `${JSON.stringify({ closeToTrayNoticeSeen: true }, null, 2)}\n`,
+      'utf-8',
+    );
+  } catch (error) {
+    console.warn('[Main] Failed to save window preferences:', error);
+  }
+}
+
+async function handleCloseToTray(win: BrowserWindow): Promise<void> {
+  if (closeToTrayNoticeSending || win.isDestroyed()) return;
+  closeToTrayNoticeSending = true;
+  try {
+    const shouldNotify = !(await hasSeenCloseToTrayNotice());
+    if (shouldNotify) await rememberCloseToTrayNotice();
+    if (!win.isDestroyed()) win.hide();
+    if (!shouldNotify) return;
+
+    const isChinese = app.getLocale().toLowerCase().startsWith('zh');
+    const { Notification } = await import('electron');
+    // Do not provide an explicit icon: macOS then uses the compact application
+    // badge in the notification header instead of showing a large content icon.
+    showDesktopNotification({
+      title: isChinese ? 'TPACowork 已在后台运行' : 'TPACowork is running in the background',
+      body: isChinese
+        ? '窗口已收起到菜单栏，点击图标可随时重新打开。'
+        : 'The window is in the menu bar. Click its icon to reopen it anytime.',
+    }, {
+      supported: Notification.isSupported(),
+      create: ({ title, body }) => new Notification({ title, body }),
+      activate: () => restoreAndFocusWindow(win),
+    });
+  } finally {
+    closeToTrayNoticeSending = false;
+  }
+}
 
 function applicationIconPath(): string {
   if (app.isPackaged) return join(process.resourcesPath, 'app-icon.png');
@@ -122,7 +184,7 @@ function createWindow(): void {
   win.on('close', (e) => {
     if (!isQuitting) {
       e.preventDefault();
-      win.webContents.send('event:close-requested');
+      void handleCloseToTray(win);
     }
   });
 
@@ -539,7 +601,6 @@ async function startApplication(): Promise<void> {
       create: ({ title, body }) => new Notification({
         title,
         body,
-        icon: applicationIconPath(),
       }),
       activate: (conversationId) => {
         const targetWindow = sourceWindow && !sourceWindow.isDestroyed()
@@ -683,6 +744,44 @@ async function startApplication(): Promise<void> {
     return BrowserWindow.fromWebContents(event.sender)?.isFullScreen() ?? false
   })
 
+  ipcMain.handle('window:performEditCommand', (event, command: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return false
+    switch (command) {
+      case 'undo':
+        win.webContents.undo()
+        break
+      case 'cut':
+        win.webContents.cut()
+        break
+      case 'copy':
+        win.webContents.copy()
+        break
+      case 'paste':
+        win.webContents.paste()
+        break
+      case 'selectAll':
+        win.webContents.selectAll()
+        break
+      default:
+        return false
+    }
+    return true
+  })
+
+  ipcMain.handle('window:close', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return false
+    win.close()
+    return true
+  })
+
+  ipcMain.handle('window:openLogsDirectory', async () => {
+    const error = await shell.openPath(app.getPath('userData'))
+    if (error) throw new Error(error)
+    return true
+  })
+
   ipcMain.handle('app_exit', () => app.quit())
   ipcMain.handle('window_hide', (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
@@ -755,6 +854,10 @@ async function startApplication(): Promise<void> {
     port: pythonBridge.port,
     tokenSecret: pythonBridge.tokenSecret,
   }));
+
+  // Process-lifetime diagnostics are recorded from launch; this call only
+  // reveals the already-running buffer and the current nanobot.log tail.
+  ipcMain.handle('nanobot:diagnostics', () => pythonBridge.getDiagnostics());
 
   // Renderer pushes settings → main syncs to nanobot config and (re)starts bridge
   ipcMain.handle('nanobot:sync-config', async (_, settings: NanobotConfigInput) => {

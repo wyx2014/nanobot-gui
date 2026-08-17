@@ -40,6 +40,24 @@ const mockIpc = {
         return null;
       case 'clipboard:readText':
         return '';
+      case 'nanobot:diagnostics':
+        return {
+          capturedAt: '2026-08-13T00:00:00.000Z',
+          status: 'starting',
+          ready: false,
+          starting: true,
+          port: 8900,
+          pid: 1234,
+          restartCount: 0,
+          platform: 'win32/x64',
+          packaged: true,
+          pythonBin: 'C:\\TPACowork\\resources\\python\\python.exe',
+          pythonExists: true,
+          logPath: 'C:\\Users\\test\\AppData\\Roaming\\TPACowork\\nanobot.log',
+          logExists: true,
+          lastError: null,
+          text: 'TPACowork nanobot diagnostics\nstatus=starting',
+        };
       default:
         return undefined;
     }

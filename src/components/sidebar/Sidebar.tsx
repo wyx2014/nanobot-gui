@@ -36,6 +36,7 @@ import {
   refreshNanobotAuth,
   syncProjectsFromGateway,
 } from '@/core/nanobotClient';
+import NanobotDiagnosticsDialog from './NanobotDiagnosticsDialog';
 
 interface StatusIndicatorProps {
   status: ConversationStatus;
@@ -65,6 +66,8 @@ function StatusIndicator({ status, onComplete }: StatusIndicatorProps) {
 const PROJECT_VISIBLE_LIMIT = 5;
 const PROJECT_MENU_WIDTH = 150;
 const PROJECT_MENU_HEIGHT = 215;
+const DIAGNOSTICS_TRIGGER_CLICKS = 5;
+const DIAGNOSTICS_CLICK_GAP_MS = 1_200;
 
 async function getProjectSkillsAuth(): Promise<{ token: string; baseUrl: string }> {
   const status = await getNanobotStatus();
@@ -130,6 +133,8 @@ export default function Sidebar() {
   const [draftSkillBindings, setDraftSkillBindings] = useState<string[]>([]);
   const [promptHubUsername, setPromptHubUsername] = useState('');
   const [promptHubPassword, setPromptHubPassword] = useState('');
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const diagnosticsClicksRef = useRef({ count: 0, lastClickAt: 0 });
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const conversationSearchRef = useRef<HTMLInputElement>(null);
 
@@ -566,6 +571,18 @@ export default function Sidebar() {
     setViewMode('chat');
   };
 
+  const handleBrandClick = () => {
+    const now = Date.now();
+    const previous = diagnosticsClicksRef.current;
+    const count = now - previous.lastClickAt <= DIAGNOSTICS_CLICK_GAP_MS
+      ? previous.count + 1
+      : 1;
+    diagnosticsClicksRef.current = { count, lastClickAt: now };
+    if (count < DIAGNOSTICS_TRIGGER_CLICKS) return;
+    diagnosticsClicksRef.current = { count: 0, lastClickAt: 0 };
+    setDiagnosticsOpen(true);
+  };
+
   const openSearchResult = (conversationId: string) => {
     switchConversation(conversationId);
     setViewMode('chat');
@@ -680,14 +697,20 @@ export default function Sidebar() {
       {(isMacOS() || windows) && (
         <div
           data-sidebar-titlebar-spacer
-          className={cn('shrink-0', windows ? 'h-10' : 'h-12')}
+          className={cn('shrink-0', windows ? 'h-9' : 'h-12')}
         />
       )}
       <header className="shrink-0 px-3 pb-2.5 pt-2.5">
         <div className="flex h-9 items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center px-1.5 text-[20px] font-semibold leading-6 tracking-[-0.025em] text-[#34322d] dark:text-[#f3f0e8]">
+          <button
+            type="button"
+            data-testid="sidebar-brand-trigger"
+            onClick={handleBrandClick}
+            className="flex min-w-0 items-center rounded-md px-1.5 text-[20px] font-semibold leading-6 tracking-[-0.025em] text-[#34322d] outline-none select-none dark:text-[#f3f0e8]"
+            aria-label={t.common.appName}
+          >
             <span className="truncate">{t.common.appName}</span>
-          </div>
+          </button>
           <button
             onClick={openConversationSearch}
             className={cn(
@@ -1383,6 +1406,11 @@ export default function Sidebar() {
           <span className="text-sm">{t.sidebar.conversationArchived}</span>
         </div>
       )}
+      <NanobotDiagnosticsDialog
+        open={diagnosticsOpen}
+        onClose={() => setDiagnosticsOpen(false)}
+        isEnglish={isEnglish}
+      />
     </div>
   );
 }

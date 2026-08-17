@@ -184,6 +184,31 @@ describe('ScheduleView automation center', () => {
     expect(view.textContent).toContain('联网搜索失败');
   });
 
+  it('does not surface gateway-generated conversation titles in run records', () => {
+    useScheduleStore.setState({ tasks: { 'daily-brief': taskFixture() } });
+    const sessionKey = 'cron:daily-brief:success';
+    useChatStore.setState({
+      conversations: {
+        [sessionKey]: {
+          id: sessionKey,
+          title: 'The user wants me to execute a',
+          messages: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          status: 'idle',
+          scheduledTaskId: 'daily-brief',
+        },
+      },
+      activeConversationId: null,
+      conversationNavigationHistory: [],
+    });
+    const view = renderView();
+    act(() => view.querySelector<HTMLButtonElement>('[data-schedule-tab="runs"]')?.click());
+
+    expect(view.textContent).not.toContain('The user wants me to execute a');
+  });
+
+
   it('keeps task cards focused on task management without expandable run history', () => {
     useScheduleStore.setState({ tasks: { 'daily-brief': taskFixture() } });
     const view = renderView();

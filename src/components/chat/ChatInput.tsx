@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Plus, ArrowUp, Square, X, ChevronDown, Check, FileText, CornerDownRight, Pencil, Trash2, GraduationCap, Paperclip, ChevronRight, Puzzle, Globe, Search, ShieldCheck, Users, Mic, Loader2 } from 'lucide-react';
+import { Plus, ArrowUp, Square, X, ChevronDown, Check, FileText, CornerDownRight, Pencil, Trash2, GraduationCap, Paperclip, ChevronRight, Puzzle, Globe, Search, BarChart3, Users, Mic, Loader2 } from 'lucide-react';
 import { ThinkingOrb } from 'thinking-orbs';
 import ExpertTeamIcon from '@/components/common/ExpertTeamIcon';
 import { dialogBridge, fsBridge, mediaBridge } from '@/lib/ipc-factory';
@@ -65,64 +65,36 @@ interface ShortcutOption {
 interface ShortcutCategory {
   id: string;
   icon: any;
-  labelKey: 'shortcutResearch' | 'shortcutPortfolioRisk' | 'shortcutOffice';
+  labelKey: 'shortcutDataAnalysis' | 'shortcutOffice';
   options: ShortcutOption[];
 }
 
 const SHORTCUT_CATEGORIES: ShortcutCategory[] = [
   {
-    id: 'research',
-    icon: Search,
-    labelKey: 'shortcutResearch',
+    id: 'data-analysis',
+    icon: BarChart3,
+    labelKey: 'shortcutDataAnalysis',
     options: [
       {
-        key: 'company_research',
-        labelZh: '上市公司深度分析',
-        labelEn: 'Company deep dive',
-        promptZh: '我想对一家上市公司进行深度投研。请先询问公司名称或股票代码；确认标的后，从商业模式、行业格局、财务质量、估值和主要风险等方面形成结构化结论。',
-        promptEn: 'I want to conduct in-depth research on a listed company. First ask for the company name or ticker, then provide a structured assessment covering its business model, industry position, financial quality, valuation, and key risks.',
+        key: 'spreadsheet_analysis',
+        labelZh: '表格智能分析',
+        labelEn: 'Smart spreadsheet analysis',
+        promptZh: '请帮我智能分析一份表格或数据文件。先提醒我上传文件并确认分析目标；再检查数据质量、识别异常和趋势，提炼关键结论，并给出可执行的业务建议。',
+        promptEn: 'Help me analyze a spreadsheet or data file. First ask me to upload it and confirm the objective, then check data quality, identify anomalies and trends, summarize key findings, and provide actionable recommendations.',
       },
       {
-        key: 'industry_research',
-        labelZh: '行业与产业链研究',
-        labelEn: 'Industry research',
-        promptZh: '我想研究一个行业或产业链。请先询问具体行业、研究范围和时间区间，再梳理市场空间、竞争格局、产业链结构、关键驱动因素和主要风险。',
-        promptEn: 'I want to research an industry or value chain. First ask for the sector, scope, and time horizon, then analyze market size, competition, value-chain structure, key drivers, and major risks.',
+        key: 'metric_comparison',
+        labelZh: '指标查询与对比',
+        labelEn: 'Metric lookup and comparison',
+        promptZh: '请帮我查询并对比关键指标。先确认指标口径、对比对象、时间范围和数据来源；再整理数据、计算变化和差异，并说明可能原因与需关注的信号。',
+        promptEn: 'Help me look up and compare key metrics. First confirm the metric definition, comparison targets, time range, and data sources, then organize the data, calculate changes and differences, and explain likely drivers and signals to watch.',
       },
       {
-        key: 'macro_market',
-        labelZh: '宏观与市场研判',
-        labelEn: 'Macro and market outlook',
-        promptZh: '我想研判宏观经济和资本市场。请先询问关注的地区、市场和时间范围，再基于可靠数据梳理核心变量、市场影响、可能情景和需要持续跟踪的指标。',
-        promptEn: 'I want a macroeconomic and capital-markets assessment. First ask for the region, market, and time horizon, then use reliable data to identify key variables, market implications, scenarios, and indicators to monitor.',
-      },
-    ],
-  },
-  {
-    id: 'portfolio-risk',
-    icon: ShieldCheck,
-    labelKey: 'shortcutPortfolioRisk',
-    options: [
-      {
-        key: 'portfolio_risk_review',
-        labelZh: '组合风险诊断',
-        labelEn: 'Portfolio risk review',
-        promptZh: '请帮我诊断投资组合风险。先提醒我上传持仓明细，并询问组合基准、风险预算和分析区间；再从波动、回撤、相关性、行业与风格暴露等方面识别主要风险。',
-        promptEn: 'Help me review portfolio risk. First ask me to upload the holdings and confirm the benchmark, risk budget, and analysis period, then identify key risks across volatility, drawdown, correlations, and sector and style exposures.',
-      },
-      {
-        key: 'stress_test',
-        labelZh: '压力测试与情景分析',
-        labelEn: 'Stress testing and scenarios',
-        promptZh: '请帮我对投资组合做压力测试和情景分析。先询问或读取持仓、基准和关注的风险情景，再评估不同冲击下的潜在损失、敏感资产和风险传导路径。',
-        promptEn: 'Help me run stress tests and scenario analysis on a portfolio. First obtain the holdings, benchmark, and risk scenarios, then assess potential losses, sensitive positions, and risk transmission paths under each shock.',
-      },
-      {
-        key: 'concentration_exposure',
-        labelZh: '持仓集中度与暴露分析',
-        labelEn: 'Concentration and exposure analysis',
-        promptZh: '请帮我分析投资组合的持仓集中度与风险暴露。先提醒我上传持仓明细，再检查单一证券、行业、主题、风格和流动性集中风险，并给出需要重点监控的项目。',
-        promptEn: 'Help me analyze portfolio concentration and exposures. First ask me to upload the holdings, then assess concentration by security, sector, theme, style, and liquidity, and highlight the items that require close monitoring.',
+        key: 'data_summary_charts',
+        labelZh: '数据总结与图表',
+        labelEn: 'Data summaries and charts',
+        promptZh: '请基于我提供的数据制作总结和图表。先确认受众、汇报场景和希望回答的问题；再提炼核心结论，推荐合适图表，并输出可直接用于汇报的图表说明和摘要。',
+        promptEn: 'Create a concise summary and charts from my data. First confirm the audience, reporting context, and questions to answer, then identify the main findings, recommend suitable charts, and produce presentation-ready captions and a summary.',
       },
     ],
   },
@@ -139,18 +111,18 @@ const SHORTCUT_CATEGORIES: ShortcutCategory[] = [
         promptEn: 'Help me draft or polish a business document. First ask about its purpose, audience, length, and tone, and remind me to provide any draft or reference files I already have.',
       },
       {
-        key: 'meeting_minutes',
-        labelZh: '整理会议纪要',
-        labelEn: 'Prepare meeting minutes',
-        promptZh: '请帮我整理会议纪要。提醒我上传或粘贴会议记录，并按议题、核心观点、决策事项、负责人和后续行动形成清晰纪要。',
-        promptEn: 'Help me prepare meeting minutes. Ask me to upload or paste the meeting record, then organize it by agenda item, key points, decisions, owners, and follow-up actions.',
+        key: 'meeting_minutes_actions',
+        labelZh: '会议纪要与待办',
+        labelEn: 'Meeting minutes and action items',
+        promptZh: '请帮我整理会议纪要和待办事项。提醒我上传或粘贴会议记录，并按议题、核心观点、决策事项、负责人、截止时间和后续行动形成清晰纪要。',
+        promptEn: 'Help me prepare meeting minutes and action items. Ask me to upload or paste the meeting record, then organize it by agenda item, key points, decisions, owners, due dates, and follow-up actions.',
       },
       {
-        key: 'analyze_spreadsheet',
-        labelZh: '分析表格与数据',
-        labelEn: 'Analyze spreadsheets and data',
-        promptZh: '请帮我分析一份表格或数据文件。先提醒我上传文件并说明分析目标，再检查数据质量、提炼关键结论，并用适合业务汇报的方式呈现结果。',
-        promptEn: 'Help me analyze a spreadsheet or data file. First ask me to upload it and explain the objective, then check data quality, identify key findings, and present the results for a business audience.',
+        key: 'document_summary',
+        labelZh: '文档阅读与总结',
+        labelEn: 'Document reading and summary',
+        promptZh: '请帮我阅读并总结一份文档。提醒我上传文件或粘贴内容，并根据我的用途提炼核心观点、重要数据、风险事项和待办；必要时给出一页式摘要。',
+        promptEn: 'Help me read and summarize a document. Ask me to upload it or paste the content, then extract the key points, important data, risks, and action items for my intended use; provide a one-page brief when useful.',
       },
     ],
   },

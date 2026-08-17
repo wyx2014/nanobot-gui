@@ -206,7 +206,14 @@ export const AVAILABLE_MODELS = Object.fromEntries(
 export type ViewMode = 'chat' | 'schedule' | 'toolbox' | 'settings';
 
 // System settings tabs
-export type SystemSettingsTab = 'general' | 'ai-services' | 'voice' | 'sandbox' | 'about';
+export type SystemSettingsTab =
+  | 'general'
+  | 'ai-services'
+  | 'voice'
+  | 'sandbox'
+  | 'about'
+  | 'help'
+  | 'feedback';
 
 // Toolbox tabs (Skills, MCP, skill store)
 export type ToolboxTab = 'expert-teams' | 'skills' | 'mcp' | 'skill-store';
@@ -271,6 +278,7 @@ interface SettingsState {
   // Guide
   guideShown: boolean; // persisted: true after the first-run guide is completed
   guideOpen: boolean; // ephemeral: manually replay the guide from Help
+  helpManualOpen: boolean; // ephemeral: display the full user manual over Help & Feedback
   // Behavior sensor
   behaviorSensorEnabled: boolean;
   // Computer Use (screenshot + keyboard/mouse simulation)
@@ -351,6 +359,8 @@ interface SettingsActions {
   setGuideShown: (shown: boolean) => void;
   openGuide: () => void;
   closeGuide: () => void;
+  openHelpManual: () => void;
+  closeHelpManual: () => void;
   setBehaviorSensorEnabled: (enabled: boolean) => void;
   setComputerUseEnabled: (enabled: boolean) => void;
   // New embedding actions
@@ -455,6 +465,7 @@ export const useSettingsStore = create<SettingsStore>()(
       userAvatar: '',
       guideShown: false,
       guideOpen: false,
+      helpManualOpen: false,
       behaviorSensorEnabled: false,
       computerUseEnabled: false,
       // Embedding settings
@@ -505,8 +516,11 @@ export const useSettingsStore = create<SettingsStore>()(
           activeSystemTab: tab ?? s.activeSystemTab,
         })),
       closeSystemSettings: () =>
-        set({ viewMode: 'chat' as ViewMode }),
-      setActiveSystemTab: (tab) => set({ activeSystemTab: tab }),
+        set({ viewMode: 'chat' as ViewMode, helpManualOpen: false }),
+      setActiveSystemTab: (tab) => set({
+        activeSystemTab: tab,
+        ...(tab === 'help' ? {} : { helpManualOpen: false }),
+      }),
       // Toolbox actions
       openToolbox: (tab) =>
         set(() => ({
@@ -546,6 +560,12 @@ export const useSettingsStore = create<SettingsStore>()(
       setGuideShown: (guideShown) => set({ guideShown }),
       openGuide: () => set({ guideOpen: true }),
       closeGuide: () => set({ guideOpen: false }),
+      openHelpManual: () => set({
+        viewMode: 'settings' as ViewMode,
+        activeSystemTab: 'help',
+        helpManualOpen: true,
+      }),
+      closeHelpManual: () => set({ helpManualOpen: false }),
       setBehaviorSensorEnabled: (behaviorSensorEnabled) => set({ behaviorSensorEnabled }),
       setComputerUseEnabled: (computerUseEnabled) => set({ computerUseEnabled }),
       setEmbeddingProvider: (embeddingProvider) => set({ embeddingProvider }),

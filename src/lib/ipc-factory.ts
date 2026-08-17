@@ -152,6 +152,8 @@ export const clipboardBridge = {
   }
 };
 
+export type EditCommand = 'undo' | 'cut' | 'copy' | 'paste' | 'selectAll';
+
 export const windowBridge = {
   setTitle: async (title: string): Promise<void> => {
     return window.ipc.invoke('window:setTitle', title);
@@ -167,6 +169,15 @@ export const windowBridge = {
   },
   onFullScreenChanged: (callback: (isFullScreen: boolean) => void): (() => void) => {
     return window.ipc.on('event:window-full-screen-changed', callback);
+  },
+  performEditCommand: async (command: EditCommand): Promise<boolean> => {
+    return window.ipc.invoke('window:performEditCommand', command);
+  },
+  closeWindow: async (): Promise<boolean> => {
+    return window.ipc.invoke('window:close');
+  },
+  openLogsDirectory: async (): Promise<boolean> => {
+    return window.ipc.invoke('window:openLogsDirectory');
   },
 };
 

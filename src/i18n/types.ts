@@ -135,8 +135,7 @@ export interface TranslationDict {
     inputTokens: string;
     outputTokens: string;
     addAttachment: string;
-    shortcutResearch: string;
-    shortcutPortfolioRisk: string;
+    shortcutDataAnalysis: string;
     shortcutOffice: string;
   };
 

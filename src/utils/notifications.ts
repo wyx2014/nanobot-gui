@@ -42,10 +42,10 @@ export async function notifyTaskCompleted(
 
   try {
     await notificationBridge.sendNotification({
-      title: 'TPACowork · 任务完成',
+      title: '任务已完成',
       body: conversationTitle.trim()
-        ? `「${conversationTitle.trim()}」已完成，可以查看结果。`
-        : '任务已完成，可以查看结果。',
+        ? `「${conversationTitle.trim()}」已成功完成，您可以在当前会话中查看结果。`
+        : '任务已成功完成，您可以在当前会话中查看结果。',
       ...(conversationId ? { conversationId } : {}),
     });
   } catch (err) {

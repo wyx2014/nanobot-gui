@@ -174,6 +174,29 @@ describe('Sidebar help', () => {
   });
 });
 
+describe('Sidebar hidden diagnostics', () => {
+  it('only opens the continuously recorded log panel after five consecutive brand clicks', async () => {
+    const view = renderSidebar();
+    const brand = view.querySelector<HTMLButtonElement>('[data-testid="sidebar-brand-trigger"]');
+
+    expect(brand).not.toBeNull();
+    act(() => {
+      for (let click = 0; click < 4; click += 1) brand?.click();
+    });
+    expect(document.body.querySelector('[data-testid="nanobot-diagnostics-dialog"]')).toBeNull();
+
+    await act(async () => {
+      brand?.click();
+      await Promise.resolve();
+    });
+
+    const dialog = document.body.querySelector<HTMLElement>('[data-testid="nanobot-diagnostics-dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog?.textContent).toContain('日志从应用启动时就持续记录');
+    expect(dialog?.textContent).toContain('复制诊断日志');
+  });
+});
+
 describe('Sidebar toolbox', () => {
   it('opens the toolbox on expert teams by default', () => {
     useSettingsStore.setState({ activeToolboxTab: 'mcp', toolboxSearchQuery: '旧搜索' });

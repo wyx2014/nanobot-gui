@@ -25,6 +25,28 @@ export async function getNanobotStatus(): Promise<NanobotStatus> {
   return ipc.invoke('nanobot:status');
 }
 
+export interface NanobotDiagnosticsSnapshot {
+  capturedAt: string;
+  status: 'ready' | 'starting' | 'running' | 'error' | 'stopped';
+  ready: boolean;
+  starting: boolean;
+  port: number;
+  pid: number | null;
+  restartCount: number;
+  platform: string;
+  packaged: boolean;
+  pythonBin: string;
+  pythonExists: boolean;
+  logPath: string;
+  logExists: boolean;
+  lastError: string | null;
+  text: string;
+}
+
+export async function getNanobotDiagnostics(): Promise<NanobotDiagnosticsSnapshot> {
+  return ipc.invoke('nanobot:diagnostics');
+}
+
 export interface NanobotSyncResult {
   ok: boolean;
   changed?: boolean;
@@ -404,6 +426,7 @@ import { normalizeLegacyLongTaskMessages } from './nanobot/thread-display-compat
 import { projectLegacyLocalFileContext } from './nanobot/localFileContext';
 import { projectThreadResource } from './nanobot/threadResourceProjection';
 import { useThreadResourceStore } from '@/stores/threadResourceStore';
+import { isScheduleRunConversationTitle } from './scheduleRunTitle';
 
 // Register token provider to automatically refresh and retry REST API calls on 401 Unauthorized
 registerTokenProvider(async () => {
@@ -859,7 +882,11 @@ export async function syncSessionFromGateway(
       id: sessionKey,
       sessionId: thread.session_id,
       projectId: thread.project_id,
-      title: options.title ?? titleFromSession(undefined, guiMessages),
+      title: options.title ?? (
+        sessionKey.startsWith('cron:')
+          ? '新对话'
+          : titleFromSession(undefined, guiMessages)
+      ),
       messages: guiMessages,
       createdAt: firstTimestamp,
       updatedAt: Number.isFinite(savedAt) ? savedAt : lastTimestamp,
@@ -906,6 +933,11 @@ export function conversationFromSessionSummary(
     ? new Date(session.updatedAt).getTime()
     : existing?.updatedAt ?? createdAt;
   const safeCreatedAt = Number.isFinite(createdAt) ? createdAt : Date.now();
+  // Cron run sessions are surfaced through schedule run history, not as
+  // sidebar chats. Gateway previews for these sessions can be internal
+  // narration (e.g. "The user wants me to execute a..."), so only keep the
+  // deterministic `M/D HH:mm - TaskName` title created by the schedule UI.
+  const isCronRunSession = session.key.startsWith('cron:');
 
   return {
     id: session.chatId,
@@ -913,10 +945,18 @@ export function conversationFromSessionSummary(
     projectId: session.projectId ?? existing?.projectId,
     hasHistory: true,
     title: (
-      listedTitle
-      || (existingTitle && existingTitle !== '新对话' ? existingTitle : '')
-      || preview
-      || '新对话'
+      isCronRunSession
+        ? (
+          isScheduleRunConversationTitle(existingTitle)
+            ? existingTitle
+            : '新对话'
+        )
+        : (
+          listedTitle
+          || (existingTitle && existingTitle !== '新对话' ? existingTitle : '')
+          || preview
+          || '新对话'
+        )
     ).slice(0, 30),
     messages: existing?.messages ?? [],
     createdAt: safeCreatedAt,

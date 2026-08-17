@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useLayoutEffect, useState, useCallback, useM
 import { ipc, windowBridge, eventBridge } from '@/lib/ipc-factory';
 import Sidebar from '@/components/sidebar/Sidebar';
 import ToastContainer from '@/components/common/ToastContainer';
+import AppTitlebarMenu from '@/components/common/AppTitlebarMenu';
 import { useToastStore } from '@/stores/toastStore';
 import { initPlatform } from '@/utils/platform';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
@@ -394,23 +395,6 @@ function App() {
     setDraftWorkspaceScope(next);
   }, [activeConvId]);
 
-  // Listen for window close-requested: always hide to system tray.
-  // Quitting is done via the tray menu or Cmd+Q.
-  useEffect(() => {
-    let unlistenFn: (() => void) | null = null;
-    let cancelled = false;
-    eventBridge.listen('close-requested', () => {
-      ipc.invoke('window_hide');
-    }).then((fn) => {
-      if (cancelled) fn();
-      else unlistenFn = fn;
-    });
-    return () => {
-      cancelled = true;
-      unlistenFn?.();
-    };
-  }, []);
-
   // Listen for nanobot backend error events
   useEffect(() => {
     let unlistenFn: (() => void) | null = null;
@@ -727,17 +711,19 @@ function App() {
             data-window-titlebar-platform={windows ? 'windows' : 'macos'}
             className={cn(
               'window-titlebar-drag fixed left-0 right-0 top-0 z-40',
-              windows ? 'h-10' : 'h-12',
+              windows ? 'h-9' : 'h-12',
               windows && 'border-b border-[#e5e2db] bg-[#f7f6f2] dark:border-[#3d3d3d] dark:bg-[#242424]',
             )}
-          />
+          >
+            {windows && <AppTitlebarMenu />}
+          </div>
         )}
 
         <div
           className={cn(
             'pointer-events-none fixed left-0 right-0 top-0 z-[60] transition-opacity duration-150',
             previewExpanded && 'opacity-0 [&_button]:pointer-events-none',
-            windows ? 'h-10' : customTitlebar ? 'h-12' : 'h-8',
+            windows ? 'h-9' : customTitlebar ? 'h-12' : 'h-8',
           )}
           style={{ transitionDelay: shellTransitionDelay }}
         >
@@ -757,7 +743,7 @@ function App() {
                   data-sidebar-titlebar-toggle
                   className={cn(
                     'flex items-center justify-center rounded-lg text-[#656358] transition-colors hover:bg-[#ded9cf] hover:text-[#29261b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d97757]/40 dark:text-[#d8d5ce] dark:hover:bg-[#57534d] dark:hover:text-white',
-                    windows ? 'mr-2 h-8 w-8' : 'h-7 w-7',
+                    windows ? 'mr-2 h-7 w-7' : 'h-7 w-7',
                   )}
                   aria-label={effectiveSidebarCollapsed ? t.sidebar.showSidebar : t.sidebar.hideSidebar}
                 >
@@ -780,10 +766,7 @@ function App() {
                   onClick={goBack}
                   disabled={!canGoBack}
                   data-titlebar-back
-                  className={cn(
-                    'flex items-center justify-center rounded-lg text-[#656358] transition-colors hover:bg-[#ded9cf] hover:text-[#29261b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d97757]/40 disabled:cursor-default disabled:text-[#b8b5ae] disabled:hover:bg-transparent dark:text-[#d8d5ce] dark:hover:bg-[#57534d] dark:hover:text-white dark:disabled:text-[#67645f]',
-                    windows ? 'h-8 w-8' : 'h-7 w-7',
-                  )}
+                  className="flex h-7 w-7 items-center justify-center rounded-lg text-[#656358] transition-colors hover:bg-[#ded9cf] hover:text-[#29261b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d97757]/40 disabled:cursor-default disabled:text-[#b8b5ae] disabled:hover:bg-transparent dark:text-[#d8d5ce] dark:hover:bg-[#57534d] dark:hover:text-white dark:disabled:text-[#67645f]"
                   aria-label={t.sidebar.goBack}
                 >
                   <ArrowLeft className={windows ? 'h-[18px] w-[18px]' : 'h-[17px] w-[17px]'} strokeWidth={1.8} />
@@ -805,10 +788,7 @@ function App() {
                   onClick={goForward}
                   disabled={!canGoForward}
                   data-titlebar-forward
-                  className={cn(
-                    'flex items-center justify-center rounded-lg text-[#656358] transition-colors hover:bg-[#ded9cf] hover:text-[#29261b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d97757]/40 disabled:cursor-default disabled:text-[#b8b5ae] disabled:hover:bg-transparent dark:text-[#d8d5ce] dark:hover:bg-[#57534d] dark:hover:text-white dark:disabled:text-[#67645f]',
-                    windows ? 'h-8 w-8' : 'h-7 w-7',
-                  )}
+                  className="flex h-7 w-7 items-center justify-center rounded-lg text-[#656358] transition-colors hover:bg-[#ded9cf] hover:text-[#29261b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d97757]/40 disabled:cursor-default disabled:text-[#b8b5ae] disabled:hover:bg-transparent dark:text-[#d8d5ce] dark:hover:bg-[#57534d] dark:hover:text-white dark:disabled:text-[#67645f]"
                   aria-label={t.sidebar.goForward}
                 >
                   <ArrowRight className={windows ? 'h-[18px] w-[18px]' : 'h-[17px] w-[17px]'} strokeWidth={1.8} />
@@ -849,7 +829,7 @@ function App() {
             className={cn(
               'flex-1 min-w-0 bg-[#fbfaf7] transition-opacity duration-150',
               previewExpanded && 'pointer-events-none overflow-hidden opacity-0',
-              mac ? 'pt-12' : windows && 'pt-10',
+              mac ? 'pt-12' : windows && 'pt-9',
             )}
             style={{
               transitionDelay: shellTransitionDelay,

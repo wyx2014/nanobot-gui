@@ -326,6 +326,8 @@ export function SettingsView({
   const initialTab: TabKey =
     requestedSystemTab === "ai-services"
       ? "providers"
+      : requestedSystemTab === "help" || requestedSystemTab === "feedback"
+        ? "help"
       : requestedSystemTab === "sandbox" || requestedSystemTab === "about"
         ? "general"
         : requestedSystemTab;
@@ -337,7 +339,7 @@ export function SettingsView({
   const [, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState<Record<ActionKey, boolean>>({});
-  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(requestedSystemTab === "feedback");
   const [feedbackText, setFeedbackText] = useState("");
   const [feedbackImages, setFeedbackImages] = useState<string[]>([]);
   const [feedbackIncludeLogs, setFeedbackIncludeLogs] = useState(true);
@@ -395,10 +397,13 @@ export function SettingsView({
     const nextTab: TabKey =
       requestedSystemTab === "ai-services"
         ? "providers"
+        : requestedSystemTab === "help" || requestedSystemTab === "feedback"
+          ? "help"
         : requestedSystemTab === "sandbox" || requestedSystemTab === "about"
           ? "general"
           : requestedSystemTab;
     setActiveTab(nextTab);
+    if (requestedSystemTab === "feedback") setFeedbackOpen(true);
   }, [requestedSystemTab]);
 
   const refreshSettingsAuth = useCallback(async () => {
@@ -800,6 +805,7 @@ export function SettingsView({
           platform: navigator.platform,
         });
         setFeedbackOpen(false);
+        settingsStore.setActiveSystemTab("help");
         setFeedbackText("");
         setFeedbackImages([]);
       },
@@ -999,7 +1005,10 @@ export function SettingsView({
           setIncludeLogs={setFeedbackIncludeLogs}
           saving={saving["feedback"]}
           onAddImages={addFeedbackImages}
-          onClose={() => setFeedbackOpen(false)}
+          onClose={() => {
+            setFeedbackOpen(false);
+            settingsStore.setActiveSystemTab("help");
+          }}
           onSubmit={submitFeedback}
           isEnglish={isEnglish}
         />
@@ -1110,13 +1119,15 @@ function AccountSection({
 }
 
 function HelpFeedbackSection({ onOpenFeedback, isEnglish }: { onOpenFeedback: () => void; isEnglish: boolean }) {
-  const [helpOpen, setHelpOpen] = useState(false);
+  const helpOpen = useSettingsStore((state) => state.helpManualOpen);
+  const openHelpManual = useSettingsStore((state) => state.openHelpManual);
+  const closeHelpManual = useSettingsStore((state) => state.closeHelpManual);
   const [contactOpen, setContactOpen] = useState(false);
 
   return (
     <div className="space-y-6">
       <div className="space-y-3">
-        <HelpRow icon={BookOpenText} label={isEnglish ? "User Manual" : "使用手册"} trailing onClick={() => setHelpOpen(true)} />
+        <HelpRow icon={BookOpenText} label={isEnglish ? "User Manual" : "使用手册"} trailing onClick={openHelpManual} />
         <HelpRow icon={MessageSquare} label={isEnglish ? "Send Feedback" : "意见反馈"} onClick={onOpenFeedback} />
         <HelpRow
           icon={Link}
@@ -1135,7 +1146,7 @@ function HelpFeedbackSection({ onOpenFeedback, isEnglish }: { onOpenFeedback: ()
             : "如您在使用 TPACowork 时遇到任何问题，欢迎联系太平资产信息科技部：王耀彬（分机 3397）、张志庆（分机 3346）。"}
         </div>
       ) : null}
-      {helpOpen ? <HelpManual onClose={() => setHelpOpen(false)} /> : null}
+      {helpOpen ? <HelpManual onClose={closeHelpManual} /> : null}
     </div>
   );
 }

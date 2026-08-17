@@ -44,6 +44,7 @@
         "to": "python/",
         "filter": [
           "**/*",
+          "!**/*.pdb",
           "!**/*.pyo",
           "!**/test/**",
           "!**/tests/**"
@@ -72,6 +73,10 @@
     },
     "win": {
       "compression": "normal",
+      "electronLanguages": [
+        "zh-CN",
+        "en-US"
+      ],
       "target": [
         "nsis"
       ],
@@ -82,7 +87,8 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "differentialPackage": false
     }
   },
   "dependencies": {

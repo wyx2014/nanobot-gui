@@ -61,6 +61,7 @@ import { normalizeTaskTimestamp } from '@/utils/taskDuration';
 import { cn } from '@/lib/utils';
 import { isMacOS } from '@/utils/platform';
 import { useConversationSearch } from './useConversationSearch';
+import { shouldShowConversationLoading } from './conversationHistoryLoading';
 
 interface PendingFirstMessage {
   text: string;
@@ -119,6 +120,11 @@ export default function ChatView({
 }) {
   const activeConv = useActiveConversation();
   const activeConvId = activeConv?.id;
+  const scheduledTaskId = activeConv?.scheduledTaskId;
+  // Ordinary chat status changes (idle -> running -> completed) must not
+  // refetch the transcript. Scheduled runs are the only flow whose status can
+  // make an initially empty history become available later.
+  const scheduledHistoryStatus = scheduledTaskId ? activeConv?.status : undefined;
   const summaryCollapsed = useSettingsStore((s) => s.rightPanelCollapsed);
   // The summary inset must match what RightPanel actually renders: it only
   // floats the summary card when no artifact preview / browser panel is open.
@@ -168,8 +174,10 @@ export default function ChatView({
   const activeHistoryMessages = historyConversationId === activeConvId
     ? historyMessages
     : [];
-  const isConversationLoading = !!activeConvId
-    && (historyLoading || historyConversationId !== activeConvId);
+  const isConversationLoading = shouldShowConversationLoading(
+    activeConvId,
+    historyConversationId,
+  );
   const canonicalThreadResource = useThreadResourceStore((state) => (
     activeConvId
       ? state.resourcesBySession[conversationIdToSessionKey(activeConvId)]
@@ -300,8 +308,8 @@ export default function ChatView({
         setHistoryVersion((value) => value + 1);
       } catch (error) {
         if (!cancelled) {
-          const waitingForScheduledRun = activeConv?.scheduledTaskId
-            && activeConv.status === 'running';
+          const waitingForScheduledRun = scheduledTaskId
+            && scheduledHistoryStatus === 'running';
           if (!waitingForScheduledRun) {
             console.error('[ChatView] Failed to load conversation history:', error);
           }
@@ -317,7 +325,7 @@ export default function ChatView({
     return () => {
       cancelled = true;
     };
-  }, [activeConv?.scheduledTaskId, activeConv?.status, activeConvId, gatewayReady, historyReloadRevision]);
+  }, [activeConvId, gatewayReady, historyReloadRevision, scheduledHistoryStatus, scheduledTaskId]);
 
   const handleTurnEnd = useCallback(() => {
     void syncSessionsFromGateway();

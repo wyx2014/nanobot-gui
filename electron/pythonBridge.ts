@@ -5,11 +5,39 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { DEFAULT_WORKSPACE_DIRECTORY_NAME } from '../src/config/appDirectories';
 import { desktopMcpGatewayEnvironment } from './builtinMcpCredentials';
+import {
+  NanobotDiagnosticBuffer,
+  redactNanobotDiagnosticText,
+} from './nanobotDiagnostics';
 
 const NANOBOT_PORT = 8900;
-const MAX_WAIT_MS = 30_000;  // 30s — Python + asyncio startup on slow systems
+// A freshly installed standalone Python runtime can take much longer on
+// Windows while Defender scans its modules for the first time.
+const MAX_WAIT_MS = process.platform === 'win32' ? 120_000 : 30_000;
 const POLL_INTERVAL_MS = 100;
 const MAX_RESTARTS = 3;
+const RESTART_DELAY_MS = 3000;
+const NANOBOT_LOG_TAIL_BYTES = 96 * 1024;
+
+class RetryableNanobotStartupError extends Error {}
+
+export interface NanobotDiagnosticsSnapshot {
+  capturedAt: string;
+  status: 'ready' | 'starting' | 'running' | 'error' | 'stopped';
+  ready: boolean;
+  starting: boolean;
+  port: number;
+  pid: number | null;
+  restartCount: number;
+  platform: string;
+  packaged: boolean;
+  pythonBin: string;
+  pythonExists: boolean;
+  logPath: string;
+  logExists: boolean;
+  lastError: string | null;
+  text: string;
+}
 
 export class PythonBridge {
   private proc: ChildProcess | null = null;
@@ -18,6 +46,9 @@ export class PythonBridge {
   private _stopping = false;
   private _tokenSecret = '';
   private _startingPromise: Promise<void> | null = null;  // Prevent concurrent starts
+  private readonly _diagnostics = new NanobotDiagnosticBuffer();
+  private _lastError: string | null = null;
+  private _lastExit: { code: number | null; signal: NodeJS.Signals | null } | null = null;
   private _mermaidRenderer: { url: string; token: string } | null = null;
   private _pdfRenderer: { url: string; token: string } | null = null;
   private _htmlRenderer: { url: string; token: string } | null = null;
@@ -56,17 +87,59 @@ export class PythonBridge {
       console.log('[PythonBridge] start() already in progress, awaiting existing promise...');
       return this._startingPromise;
     }
-    this._startingPromise = this._doStart();
+    this._stopping = false;
+    this._restarts = 0;
+    this._lastError = null;
+    this._lastExit = null;
+    this._startingPromise = this._startWithRetries();
     try {
       await this._startingPromise;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this._ready = false;
+      this._lastError = message;
+      this.recordDiagnostic('bridge', `Start failed: ${message}`);
+      throw error;
     } finally {
       this._startingPromise = null;
     }
   }
 
+  private async _startWithRetries(): Promise<void> {
+    let retryCount = 0;
+
+    while (true) {
+      try {
+        await this._doStart();
+        this._restarts = 0;
+        return;
+      } catch (error) {
+        if (
+          this._stopping ||
+          !(error instanceof RetryableNanobotStartupError) ||
+          retryCount >= MAX_RESTARTS
+        ) {
+          throw error;
+        }
+
+        retryCount += 1;
+        this._restarts = retryCount;
+        const message = error instanceof Error ? error.message : String(error);
+        const retryMessage =
+          `Nanobot startup attempt failed; retrying ` +
+          `(${retryCount}/${MAX_RESTARTS}) in ${RESTART_DELAY_MS / 1000}s: ${message}`;
+        console.warn(`[PythonBridge] ${retryMessage}`);
+        this.recordDiagnostic('bridge', retryMessage);
+        await new Promise((resolve) => setTimeout(resolve, RESTART_DELAY_MS));
+        if (this._stopping) {
+          throw new Error('Nanobot startup was cancelled.');
+        }
+      }
+    }
+  }
+
   private async _doStart(): Promise<void> {
     const startedAt = Date.now();
-    this._stopping = false;
     const { pythonBin, nanobotSrc, workspaceDir, configDir, expertTeamsDir } = this.resolvePaths();
 
     if (!this._tokenSecret) {
@@ -74,8 +147,12 @@ export class PythonBridge {
     }
 
     console.log('[PythonBridge] Starting nanobot...', { pythonBin, nanobotSrc, workspaceDir });
+    this.recordDiagnostic(
+      'bridge',
+      `Starting nanobot (platform=${process.platform}/${process.arch}, packaged=${app.isPackaged}, python=${pythonBin}, workspace=${workspaceDir})`,
+    );
 
-    if (await this.isNanobotHealthy() && this.proc && !this.proc.killed) {
+    if (await this.isNanobotHealthy() && this.isManagedProcessRunning()) {
       console.log('[PythonBridge] Existing managed nanobot API is healthy');
       this._ready = true;
       return;
@@ -90,6 +167,7 @@ export class PythonBridge {
 
     // Verify Python binary exists
     if (!fs.existsSync(pythonBin)) {
+      this.recordDiagnostic('bridge', `Python binary not found: ${pythonBin}`);
       throw new Error(
         `Python binary not found: ${pythonBin}\n` +
         `In dev mode, run: cd nanobot && python3 -m venv venv && venv/bin/pip install -e ".[desktop]"`
@@ -113,7 +191,7 @@ export class PythonBridge {
       gatewayEnv.PYTHONPATH = nanobotSrc;
     }
 
-    this.proc = spawn(pythonBin, args, {
+    const child = spawn(pythonBin, args, {
       cwd: nanobotSrc,
       env: {
         ...gatewayEnv,
@@ -144,72 +222,169 @@ export class PythonBridge {
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    this.proc = child;
+    let becameReady = false;
+    this.recordDiagnostic('bridge', `Spawned nanobot process (pid=${child.pid ?? 'pending'}, port=${NANOBOT_PORT})`);
 
-    this.proc.stdout?.on('data', (d: Buffer) => {
-      console.log('[nanobot]', d.toString().trimEnd());
+    child.stdout?.on('data', (d: Buffer) => {
+      const output = d.toString().trimEnd();
+      console.log('[nanobot]', output);
+      this.recordDiagnostic('stdout', output);
     });
 
-    this.proc.stderr?.on('data', (d: Buffer) => {
-      console.error('[nanobot:err]', d.toString().trimEnd());
+    child.stderr?.on('data', (d: Buffer) => {
+      const output = d.toString().trimEnd();
+      console.error('[nanobot:err]', output);
+      this.recordDiagnostic('stderr', output);
     });
 
-    this.proc.on('exit', (code, signal) => {
+    const startupFailure = new Promise<never>((_resolve, reject) => {
+      child.once('exit', (code, signal) => {
+        reject(new RetryableNanobotStartupError(
+          `nanobot exited before becoming ready ` +
+          `(code=${code ?? 'null'}, signal=${signal ?? 'null'})`,
+        ));
+      });
+      child.once('error', (error) => {
+        reject(new RetryableNanobotStartupError(`Failed to spawn nanobot: ${error.message}`));
+      });
+    });
+
+    child.on('exit', (code, signal) => {
       console.warn('[PythonBridge] nanobot exited', { code, signal });
+      if (this.proc !== child) return;
       this._ready = false;
+      this._lastExit = { code, signal };
+      this._lastError = `nanobot exited (code=${code ?? 'null'}, signal=${signal ?? 'null'})`;
+      this.recordDiagnostic('bridge', this._lastError);
 
-      // Auto-restart on unexpected exit (not when we killed it intentionally)
-      if (!this._stopping && this._restarts < MAX_RESTARTS) {
-        this._restarts++;
-        console.log(`[PythonBridge] Auto-restarting (${this._restarts}/${MAX_RESTARTS}) in 3s...`);
+      // Startup failures are retried by _startWithRetries(). Once the child
+      // became healthy, preserve automatic recovery for later runtime exits.
+      if (!this._stopping && becameReady) {
+        this._restarts = Math.min(this._restarts + 1, MAX_RESTARTS);
+        console.log(
+          `[PythonBridge] Auto-restarting (${this._restarts}/${MAX_RESTARTS}) ` +
+          `in ${RESTART_DELAY_MS / 1000}s...`,
+        );
         setTimeout(() => {
-          if (!this._stopping) {
+          if (!this._stopping && this.proc === child) {
             this.start().catch((err) => {
               console.error('[PythonBridge] Restart failed:', err);
               this._broadcastError(`nanobot failed to restart: ${err.message}`);
             });
           }
-        }, 3000);
-      } else if (!this._stopping) {
-        this._broadcastError('nanobot exited unexpectedly and could not be restarted.');
+        }, RESTART_DELAY_MS);
       }
     });
 
-    this.proc.on('error', (err) => {
+    child.on('error', (err) => {
       console.error('[PythonBridge] spawn error:', err);
+      if (this.proc !== child) return;
       this._ready = false;
+      this._lastError = `Spawn error: ${err.message}`;
+      this.recordDiagnostic('bridge', this._lastError);
     });
 
-    await this.waitReady();
+    await Promise.race([this.waitReady(child), startupFailure]);
+    becameReady = true;
     this._ready = true;
+    this._lastError = null;
+    this._lastExit = null;
     this._restarts = 0; // Reset counter on successful start
     console.log(
       '[PythonBridge] nanobot ready on port',
       NANOBOT_PORT,
       `in ${Date.now() - startedAt}ms`,
     );
+    this.recordDiagnostic('bridge', `Nanobot ready on port ${NANOBOT_PORT} in ${Date.now() - startedAt}ms`);
+  }
+
+  getDiagnostics(): NanobotDiagnosticsSnapshot {
+    const capturedAt = new Date().toISOString();
+    const { pythonBin } = this.resolvePaths();
+    const logPath = path.join(app.getPath('userData'), 'nanobot.log');
+    const logTail = this.readLogTail(logPath);
+    const exactSecrets = [this._tokenSecret];
+    const processRunning = Boolean(this.proc && this.proc.exitCode === null && !this.proc.killed);
+    const status: NanobotDiagnosticsSnapshot['status'] = this._ready
+      ? 'ready'
+      : this.isStarting
+        ? 'starting'
+        : this._lastError
+          ? 'error'
+          : processRunning
+            ? 'running'
+            : 'stopped';
+    const lastExit = this._lastExit
+      ? `code=${this._lastExit.code ?? 'null'}, signal=${this._lastExit.signal ?? 'null'}`
+      : 'none';
+    const metadata = [
+      'TPACowork nanobot diagnostics',
+      `captured_at=${capturedAt}`,
+      `status=${status}`,
+      `ready=${this._ready}`,
+      `starting=${this.isStarting}`,
+      `platform=${process.platform}/${process.arch}`,
+      `packaged=${app.isPackaged}`,
+      `port=${NANOBOT_PORT}`,
+      `pid=${this.proc?.pid ?? 'none'}`,
+      `process_running=${processRunning}`,
+      `restart_count=${this._restarts}/${MAX_RESTARTS}`,
+      `last_exit=${lastExit}`,
+      `python=${pythonBin}`,
+      `python_exists=${fs.existsSync(pythonBin)}`,
+      `log=${logPath}`,
+      `log_exists=${fs.existsSync(logPath)}`,
+      `last_error=${this._lastError ?? 'none'}`,
+    ].join('\n');
+    const bridgeOutput = this._diagnostics.format(exactSecrets) || '(no bridge output captured yet)';
+    const fileOutput = logTail || '(nanobot.log has not been created or is empty)';
+    const text = redactNanobotDiagnosticText(
+      `${metadata}\n\n[bridge / process output]\n${bridgeOutput}\n\n[nanobot.log tail]\n${fileOutput}`,
+      exactSecrets,
+    );
+
+    return {
+      capturedAt,
+      status,
+      ready: this._ready,
+      starting: this.isStarting,
+      port: NANOBOT_PORT,
+      pid: this.proc?.pid ?? null,
+      restartCount: this._restarts,
+      platform: `${process.platform}/${process.arch}`,
+      packaged: app.isPackaged,
+      pythonBin,
+      pythonExists: fs.existsSync(pythonBin),
+      logPath,
+      logExists: fs.existsSync(logPath),
+      lastError: this._lastError,
+      text,
+    };
   }
 
   async stop(): Promise<void> {
     this._stopping = true;
     this._restarts = MAX_RESTARTS; // Block auto-restart
 
-    if (!this.proc || this.proc.killed) {
+    const child = this.proc;
+    if (!child || child.exitCode !== null || child.killed) {
       await this.killExternalListener();
       this._ready = false;
       return;
     }
 
     console.log('[PythonBridge] Stopping nanobot (SIGTERM)...');
-    this.proc.kill('SIGTERM');
+    child.kill('SIGTERM');
 
     await new Promise<void>((resolve) => {
       const forceKill = setTimeout(() => {
         console.warn('[PythonBridge] Force-killing nanobot (SIGKILL)');
-        this.proc?.kill('SIGKILL');
+        child.kill('SIGKILL');
         resolve();
       }, 8000);
 
-      this.proc!.once('exit', () => {
+      child.once('exit', () => {
         clearTimeout(forceKill);
         resolve();
       });
@@ -274,9 +449,15 @@ export class PythonBridge {
     return { pythonBin, nanobotSrc, workspaceDir, configDir, expertTeamsDir };
   }
 
-  private async waitReady(): Promise<void> {
+  private async waitReady(child: ChildProcess): Promise<void> {
     const deadline = Date.now() + MAX_WAIT_MS;
     while (Date.now() < deadline) {
+      if (child.exitCode !== null || child.killed) {
+        throw new RetryableNanobotStartupError(
+          `nanobot exited before becoming ready ` +
+          `(code=${child.exitCode ?? 'null'}, killed=${child.killed})`,
+        );
+      }
       if (await this.isNanobotHealthy()) return;
       await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
     }
@@ -284,6 +465,30 @@ export class PythonBridge {
       `nanobot did not become ready within ${MAX_WAIT_MS / 1000}s. ` +
       `Check ${path.join(app.getPath('userData'), 'nanobot.log')} for details.`
     );
+  }
+
+  private recordDiagnostic(source: 'bridge' | 'stdout' | 'stderr', value: unknown): void {
+    this._diagnostics.append(source, value);
+  }
+
+  private readLogTail(logPath: string): string {
+    let handle: number | null = null;
+    try {
+      const size = fs.statSync(logPath).size;
+      if (size <= 0) return '';
+      const length = Math.min(size, NANOBOT_LOG_TAIL_BYTES);
+      const buffer = Buffer.alloc(length);
+      handle = fs.openSync(logPath, 'r');
+      fs.readSync(handle, buffer, 0, length, size - length);
+      const decoded = buffer.toString('utf8').replace(/^\uFFFD/, '');
+      const firstNewline = size > length ? decoded.indexOf('\n') : -1;
+      return (firstNewline >= 0 ? decoded.slice(firstNewline + 1) : decoded).trimEnd();
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return '';
+      return `[Could not read nanobot.log: ${error instanceof Error ? error.message : String(error)}]`;
+    } finally {
+      if (handle !== null) fs.closeSync(handle);
+    }
   }
 
   private async isNanobotHealthy(): Promise<boolean> {
@@ -306,8 +511,12 @@ export class PythonBridge {
     }
   }
 
+  private isManagedProcessRunning(): boolean {
+    return Boolean(this.proc && this.proc.exitCode === null && !this.proc.killed);
+  }
+
   private async killExternalListener(): Promise<void> {
-    if (this.proc && !this.proc.killed) return;
+    if (this.isManagedProcessRunning()) return;
 
     const pids = await this.findPortListenerPids();
     if (pids.length === 0) return;

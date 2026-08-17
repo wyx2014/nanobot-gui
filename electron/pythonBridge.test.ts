@@ -24,22 +24,32 @@ vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: vi.fn(() => []) },
 }));
 
-function processStub() {
+function processStub(pid = 1234) {
   const child = new EventEmitter() as EventEmitter & {
     killed: boolean;
+    exitCode: number | null;
+    pid: number;
     stdout: EventEmitter;
     stderr: EventEmitter;
     kill: ReturnType<typeof vi.fn>;
   };
   child.killed = false;
+  child.exitCode = null;
+  child.pid = pid;
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
   child.kill = vi.fn(() => {
     child.killed = true;
-    queueMicrotask(() => child.emit('exit', 0, 'SIGTERM'));
+    child.exitCode = 0;
+    queueMicrotask(() => child.emit('exit', child.exitCode, 'SIGTERM'));
     return true;
   });
   return child;
+}
+
+function exitProcess(child: ReturnType<typeof processStub>, code: number): void {
+  child.exitCode = code;
+  child.emit('exit', code, null);
 }
 
 describe('PythonBridge lifecycle', () => {
@@ -107,6 +117,43 @@ describe('PythonBridge lifecycle', () => {
 
     expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
     expect(bridge.isReady).toBe(true);
+  });
+
+  it('detects an early child exit and starts a new process instead of waiting for timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const firstChild = processStub(1001);
+      const secondChild = processStub(1002);
+      fetchMock.mockRejectedValue(new Error('gateway unavailable'));
+      spawn
+        .mockReturnValueOnce(firstChild)
+        .mockImplementationOnce(() => {
+          fetchMock.mockResolvedValue({
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({ agent_ready: true }),
+          });
+          return secondChild;
+        });
+      const { PythonBridge } = await import('./pythonBridge');
+      const bridge = new PythonBridge();
+
+      const starting = bridge.start();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(spawn).toHaveBeenCalledTimes(1);
+
+      exitProcess(firstChild, 1);
+      await vi.advanceTimersByTimeAsync(2999);
+      expect(spawn).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1);
+      await starting;
+
+      expect(spawn).toHaveBeenCalledTimes(2);
+      expect(bridge.isReady).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('passes the authenticated desktop PDF renderer to nanobot', async () => {

@@ -18,7 +18,7 @@ export const MAIN_WINDOW_BOUNDS = Object.freeze({
 
 export const MAIN_WINDOW_BACKGROUND = '#fbfaf7';
 export const MACOS_TITLE_BAR_HEIGHT = 48;
-export const WINDOWS_TITLE_BAR_HEIGHT = 40;
+export const WINDOWS_TITLE_BAR_HEIGHT = 36;
 export const WINDOWS_TITLE_BAR_LIGHT = Object.freeze({
   color: '#f7f6f2',
   symbolColor: '#29261b',

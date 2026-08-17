@@ -121,8 +121,7 @@ const enUS: TranslationDict = {
     inputTokens: 'Input',
     outputTokens: 'Output',
     addAttachment: 'Add images or files',
-    shortcutResearch: 'Investment Research',
-    shortcutPortfolioRisk: 'Portfolio Risk',
+    shortcutDataAnalysis: 'Data Analysis',
     shortcutOffice: 'Office Work',
   },
 

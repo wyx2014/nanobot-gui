@@ -28,6 +28,10 @@ export interface PersistedPathMigrationResult {
   updatedFiles: number;
 }
 
+export interface PersistedPathMigrationOnceResult extends PersistedPathMigrationResult {
+  skipped: boolean;
+}
+
 const MIGRATION_CONFLICTS_DIRECTORY_NAME = '.migration-conflicts';
 
 function movePath(source: string, target: string): void {
@@ -210,4 +214,38 @@ export function migratePersistedWorkspaceReferences(
     updatedFiles += 1;
   }
   return { scannedFiles, updatedFiles };
+}
+
+/**
+ * Run a versioned persisted-path migration once for a retained userData root.
+ *
+ * Desktop uninstallers intentionally keep conversations and workspace data.
+ * Without a durable marker, a reinstall cold-reads every JSON/JSONL history
+ * file before each first paint even though the migration is already complete.
+ */
+export function migratePersistedWorkspaceReferencesOnce(
+  workspaceRoot: string,
+  markerPath: string,
+  replacements: PersistedPathReplacement[],
+): PersistedPathMigrationOnceResult {
+  try {
+    const marker = JSON.parse(fs.readFileSync(markerPath, 'utf8')) as { completed?: boolean };
+    if (marker.completed === true) {
+      return { scannedFiles: 0, updatedFiles: 0, skipped: true };
+    }
+  } catch {
+    // A missing or interrupted marker means the migration must be retried.
+  }
+
+  const result = migratePersistedWorkspaceReferences(workspaceRoot, replacements);
+  fs.mkdirSync(path.dirname(markerPath), { recursive: true });
+  // This marker is deliberately written directly. On Windows, antivirus can
+  // transiently lock a fresh temporary file between write and rename. A
+  // partial marker is harmless because the JSON validation above retries.
+  fs.writeFileSync(markerPath, `${JSON.stringify({
+    completed: true,
+    completedAt: new Date().toISOString(),
+    ...result,
+  })}\n`, 'utf8');
+  return { ...result, skipped: false };
 }

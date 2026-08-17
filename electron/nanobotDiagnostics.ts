@@ -2,7 +2,7 @@ const DEFAULT_MAX_LINES = 500;
 const DEFAULT_MAX_CHARACTERS = 120_000;
 const MAX_LINE_LENGTH = 12_000;
 
-export type NanobotDiagnosticSource = 'bridge' | 'stdout' | 'stderr';
+export type NanobotDiagnosticSource = 'main' | 'bridge' | 'stdout' | 'stderr';
 
 interface NanobotDiagnosticEntry {
   timestamp: string;

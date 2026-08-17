@@ -32,7 +32,7 @@ import {
   migrateLegacyApplicationData,
   migrateLegacyDefaultWorkspace,
   migrateLegacyUserProjects,
-  migratePersistedWorkspaceReferences,
+  migratePersistedWorkspaceReferencesOnce,
   type DirectoryMigrationResult,
 } from './appDataMigration'
 import {
@@ -47,6 +47,14 @@ import { electronApp, optimizer } from '@electron-toolkit/utils'
 
 const isDev = typeof app !== 'undefined' ? !app.isPackaged : (process.env.NODE_ENV === 'development')
 app.setName('TPACowork')
+
+const mainProcessStartedAt = Date.now() - Math.round(process.uptime() * 1000);
+
+function recordMainStartupEvent(message: string): void {
+  const annotated = `${message} (+${Date.now() - mainProcessStartedAt}ms from process start)`;
+  console.log(`[Main] ${annotated}`);
+  pythonBridge.recordMainStartupEvent(annotated);
+}
 
 function reportDirectoryMigration(label: string, result: DirectoryMigrationResult): void {
   if (result.status === 'not-found') return;
@@ -66,6 +74,7 @@ try {
 }
 mkdirSync(configuredUserDataPath, { recursive: true });
 app.setPath('userData', configuredUserDataPath);
+recordMainStartupEvent('Main module initialized and userData configured');
 
 // Keep GPU acceleration enabled by default. Individual deployments can opt
 // into the conservative software-rendering path if a device/driver proves
@@ -86,6 +95,12 @@ let appTray: Tray | null = null;
 let closeToTrayNoticeSeen: boolean | null = null;
 let closeToTrayNoticeSending = false;
 let installationIdPromise: Promise<string> | null = null;
+let firstWindowShown = false;
+let resolveFirstWindowShown: (() => void) | null = null;
+const firstWindowShownPromise = new Promise<void>((resolve) => {
+  resolveFirstWindowShown = resolve;
+});
+let startupWorkspacePreparationPromise: Promise<void> | null = null;
 
 const windowPreferencesPath = join(configuredUserDataPath, 'window-preferences.json');
 
@@ -170,6 +185,7 @@ function applicationIconPath(): string {
 
 function createWindow(): void {
   const windowStartedAt = Date.now();
+  recordMainStartupEvent('Creating BrowserWindow');
   mainWindowReady = false;
   const win = new BrowserWindow({
     ...MAIN_WINDOW_BOUNDS,
@@ -187,9 +203,14 @@ function createWindow(): void {
   mainWindow = win
 
   win.on('ready-to-show', () => {
-    console.log(`[Main] Window ready to show in ${Date.now() - windowStartedAt}ms`);
+    recordMainStartupEvent(`BrowserWindow ready to show in ${Date.now() - windowStartedAt}ms`);
     mainWindowReady = true;
     win.show()
+    if (!firstWindowShown) {
+      firstWindowShown = true;
+      resolveFirstWindowShown?.();
+      resolveFirstWindowShown = null;
+    }
     if (pendingInstanceActivation) {
       pendingInstanceActivation = false;
       win.focus();
@@ -276,42 +297,61 @@ if (isPrimaryInstance) {
   }
 }
 
+function prepareStartupWorkspace(): Promise<void> {
+  if (startupWorkspacePreparationPromise) return startupWorkspacePreparationPromise;
+
+  startupWorkspacePreparationPromise = firstWindowShownPromise.then(async () => {
+    // Let the just-shown window reach the compositor before doing legacy
+    // filesystem work. Renderer IPC that needs nanobot awaits this same task.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    const startedAt = Date.now();
+
+    try {
+      reportDirectoryMigration('User projects', migrateLegacyUserProjects(app.getPath('documents')));
+    } catch (error) {
+      console.error('[Main] Failed to migrate legacy user projects:', error);
+    }
+
+    try {
+      const workspace = defaultWorkspacePath(configuredUserDataPath);
+      const pathMigration = migratePersistedWorkspaceReferencesOnce(
+        workspace,
+        join(configuredUserDataPath, '.persisted-path-migration-v1.json'),
+        [
+          {
+            source: join(
+              appDataRoot,
+              LEGACY_APPLICATION_DATA_DIRECTORY_NAME,
+              LEGACY_DEFAULT_WORKSPACE_DIRECTORY_NAME,
+            ),
+            target: workspace,
+          },
+          {
+            source: join(configuredUserDataPath, LEGACY_DEFAULT_WORKSPACE_DIRECTORY_NAME),
+            target: workspace,
+          },
+          {
+            source: join(app.getPath('documents'), LEGACY_USER_PROJECTS_DIRECTORY_NAME),
+            target: join(app.getPath('documents'), USER_PROJECTS_DIRECTORY_NAME),
+          },
+        ],
+      );
+      if (!pathMigration.skipped) {
+        console.log('[Main] Persisted workspace path migration completed:', pathMigration);
+      }
+    } catch (error) {
+      console.error('[Main] Failed to migrate persisted workspace paths:', error);
+    }
+
+    recordMainStartupEvent(`Startup workspace preparation finished in ${Date.now() - startedAt}ms`);
+  });
+
+  return startupWorkspacePreparationPromise;
+}
+
 async function startApplication(): Promise<void> {
   await app.whenReady();
-  console.log('[Main] app.whenReady fired');
-
-  try {
-    reportDirectoryMigration('User projects', migrateLegacyUserProjects(app.getPath('documents')));
-  } catch (error) {
-    console.error('[Main] Failed to migrate legacy user projects:', error);
-  }
-
-  try {
-    const workspace = defaultWorkspacePath(configuredUserDataPath);
-    const pathMigration = migratePersistedWorkspaceReferences(workspace, [
-      {
-        source: join(
-          appDataRoot,
-          LEGACY_APPLICATION_DATA_DIRECTORY_NAME,
-          LEGACY_DEFAULT_WORKSPACE_DIRECTORY_NAME,
-        ),
-        target: workspace,
-      },
-      {
-        source: join(configuredUserDataPath, LEGACY_DEFAULT_WORKSPACE_DIRECTORY_NAME),
-        target: workspace,
-      },
-      {
-        source: join(app.getPath('documents'), LEGACY_USER_PROJECTS_DIRECTORY_NAME),
-        target: join(app.getPath('documents'), USER_PROJECTS_DIRECTORY_NAME),
-      },
-    ]);
-    if (pathMigration.updatedFiles > 0) {
-      console.log('[Main] Persisted workspace path migration completed:', pathMigration);
-    }
-  } catch (error) {
-    console.error('[Main] Failed to migrate persisted workspace paths:', error);
-  }
+  recordMainStartupEvent('app.whenReady fired');
 
   if (process.platform === 'darwin' && isDev) {
     app.dock.setIcon(applicationIconPath());
@@ -331,7 +371,9 @@ async function startApplication(): Promise<void> {
   });
   const userData = app.getPath('userData');
   const mermaidBridge = new MermaidBridge();
+  const mermaidStartedAt = Date.now();
   await mermaidBridge.start();
+  recordMainStartupEvent(`Local render bridge started in ${Date.now() - mermaidStartedAt}ms`);
   pythonBridge.setMermaidRenderer(mermaidBridge.url, mermaidBridge.token);
   pythonBridge.setPdfRenderer(mermaidBridge.pdfUrl, mermaidBridge.token);
   pythonBridge.setHtmlRenderer(mermaidBridge.htmlUrl, mermaidBridge.token);
@@ -346,7 +388,7 @@ async function startApplication(): Promise<void> {
     '.nanobot',
     'config.json',
   );
-  void fs.access(earlyConfigPath).then(() => {
+  void prepareStartupWorkspace().then(() => fs.access(earlyConfigPath)).then(() => {
     console.log('[Main] Config found — pre-starting nanobot bridge...');
     return pythonBridge.start();
   }).then(() => {
@@ -885,6 +927,7 @@ async function startApplication(): Promise<void> {
   // Renderer pushes settings → main syncs to nanobot config and (re)starts bridge
   ipcMain.handle('nanobot:sync-config', async (_, settings: NanobotConfigInput) => {
     try {
+      await prepareStartupWorkspace();
       const changed = await syncNanobotConfig(settings);
       let restarted = false;
       // A pre-start may already have read the previous config. Wait for that
@@ -923,6 +966,9 @@ async function startApplication(): Promise<void> {
 
   createWindow()
   createTray()
+  void prepareStartupWorkspace().catch((error) => {
+    console.error('[Main] Startup workspace preparation failed:', error);
+  });
 
   app.on('activate', function () {
     // Re-show the existing window instead of recreating it, so the app can

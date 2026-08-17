@@ -820,7 +820,6 @@ export interface TranslationDict {
     next: string;
     back: string;
     start: string;
-    finishing: string;
     profileTitle: string;
     profileHint: string;
     name: string;

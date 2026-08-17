@@ -22,7 +22,7 @@ describe('nanobot diagnostics', () => {
 
   it('records continuously into a bounded process-lifetime buffer', () => {
     const buffer = new NanobotDiagnosticBuffer(3, 10_000);
-    buffer.append('bridge', 'starting', new Date('2026-08-13T00:00:00.000Z'));
+    buffer.append('main', 'starting', new Date('2026-08-13T00:00:00.000Z'));
     buffer.append('stdout', 'line one\nline two', new Date('2026-08-13T00:00:01.000Z'));
     buffer.append('stderr', 'last error', new Date('2026-08-13T00:00:02.000Z'));
 

@@ -8,7 +8,9 @@ import { desktopMcpGatewayEnvironment } from './builtinMcpCredentials';
 import {
   NanobotDiagnosticBuffer,
   redactNanobotDiagnosticText,
+  type NanobotDiagnosticSource,
 } from './nanobotDiagnostics';
+import { StartupLog } from './startupLog';
 
 const NANOBOT_PORT = 8900;
 // A freshly installed standalone Python runtime can take much longer on
@@ -35,6 +37,8 @@ export interface NanobotDiagnosticsSnapshot {
   pythonExists: boolean;
   logPath: string;
   logExists: boolean;
+  startupLogPath: string;
+  startupLogExists: boolean;
   lastError: string | null;
   text: string;
 }
@@ -47,6 +51,7 @@ export class PythonBridge {
   private _tokenSecret = '';
   private _startingPromise: Promise<void> | null = null;  // Prevent concurrent starts
   private readonly _diagnostics = new NanobotDiagnosticBuffer();
+  private _startupLog: StartupLog | null = null;
   private _lastError: string | null = null;
   private _lastExit: { code: number | null; signal: NodeJS.Signals | null } | null = null;
   private _mermaidRenderer: { url: string; token: string } | null = null;
@@ -79,6 +84,10 @@ export class PythonBridge {
 
   get tokenSecret(): string {
     return this._tokenSecret;
+  }
+
+  recordMainStartupEvent(message: string): void {
+    this.recordDiagnostic('main', message);
   }
 
   async start(): Promise<void> {
@@ -303,7 +312,9 @@ export class PythonBridge {
     const capturedAt = new Date().toISOString();
     const { pythonBin } = this.resolvePaths();
     const logPath = path.join(app.getPath('userData'), 'nanobot.log');
+    const startupLogPath = path.join(app.getPath('userData'), 'startup.log');
     const logTail = this.readLogTail(logPath);
+    const startupLogTail = this.readLogTail(startupLogPath);
     const exactSecrets = [this._tokenSecret];
     const processRunning = Boolean(this.proc && this.proc.exitCode === null && !this.proc.killed);
     const status: NanobotDiagnosticsSnapshot['status'] = this._ready
@@ -335,12 +346,17 @@ export class PythonBridge {
       `python_exists=${fs.existsSync(pythonBin)}`,
       `log=${logPath}`,
       `log_exists=${fs.existsSync(logPath)}`,
+      `startup_log=${startupLogPath}`,
+      `startup_log_exists=${fs.existsSync(startupLogPath)}`,
       `last_error=${this._lastError ?? 'none'}`,
     ].join('\n');
     const bridgeOutput = this._diagnostics.format(exactSecrets) || '(no bridge output captured yet)';
+    const startupFileOutput = startupLogTail || '(startup.log has not been created or is empty)';
     const fileOutput = logTail || '(nanobot.log has not been created or is empty)';
     const text = redactNanobotDiagnosticText(
-      `${metadata}\n\n[bridge / process output]\n${bridgeOutput}\n\n[nanobot.log tail]\n${fileOutput}`,
+      `${metadata}\n\n[bridge / process output]\n${bridgeOutput}`
+      + `\n\n[startup.log tail]\n${startupFileOutput}`
+      + `\n\n[nanobot.log tail]\n${fileOutput}`,
       exactSecrets,
     );
 
@@ -358,6 +374,8 @@ export class PythonBridge {
       pythonExists: fs.existsSync(pythonBin),
       logPath,
       logExists: fs.existsSync(logPath),
+      startupLogPath,
+      startupLogExists: fs.existsSync(startupLogPath),
       lastError: this._lastError,
       text,
     };
@@ -467,8 +485,16 @@ export class PythonBridge {
     );
   }
 
-  private recordDiagnostic(source: 'bridge' | 'stdout' | 'stderr', value: unknown): void {
+  private recordDiagnostic(source: NanobotDiagnosticSource, value: unknown): void {
     this._diagnostics.append(source, value);
+    // Keep launch history across restarts. Once healthy, nanobot.log owns the
+    // long-running Python stream; startup.log only needs main/bridge events.
+    if (source === 'main' || source === 'bridge' || !this._ready) {
+      if (!this._startupLog) {
+        this._startupLog = new StartupLog(path.join(app.getPath('userData'), 'startup.log'));
+      }
+      this._startupLog.append(source, value, [this._tokenSecret]);
+    }
   }
 
   private readLogTail(logPath: string): string {

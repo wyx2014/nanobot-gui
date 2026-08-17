@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Check, Globe2, Monitor, Moon, Sparkles, Sun } from 'lucide-react';
 import appIcon from '../../../TPACowork-3_512x512.png';
 import { useI18n } from '@/i18n';
-import { waitForGatewayReady } from './waitForGatewayReady';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/nanobotClient';
 import { fetchPersonalization, savePersonalization } from '@/core/api';
@@ -145,7 +144,6 @@ export default function FirstRunWelcome({ onContinue }: FirstRunWelcomeProps) {
   const setTheme = useSettingsStore((state) => state.setTheme);
 
   const [step, setStep] = useState(0);
-  const [saving, setSaving] = useState(false);
   const [answers, setAnswers] = useState<ProfileAnswers>({
     name: '',
     communicationStyle: 'professional',
@@ -180,12 +178,15 @@ export default function FirstRunWelcome({ onContinue }: FirstRunWelcomeProps) {
     },
   ];
 
-  const finish = async () => {
-    setSaving(true);
+  const saveProfileInBackground = async () => {
     try {
-      const ready = await waitForGatewayReady(getNanobotStatus);
-      if (ready) {
-        const status = await getNanobotStatus();
+      const deadline = Date.now() + 60_000;
+      let status = await getNanobotStatus();
+      while (!status.ready && Date.now() < deadline) {
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 500));
+        status = await getNanobotStatus();
+      }
+      if (status.ready) {
         const baseUrl = `http://127.0.0.1:${status.port}`;
         let token = getNanobotToken();
         if (!token) {
@@ -211,9 +212,14 @@ export default function FirstRunWelcome({ onContinue }: FirstRunWelcomeProps) {
     } catch (err) {
       // Best-effort: profile persistence must never block first-run.
       console.warn('[onboarding] failed to save USER.md profile:', err);
-    } finally {
-      onContinue();
     }
+  };
+
+  const finish = () => {
+    // Enter the main UI immediately. Profile persistence is best-effort and
+    // may wait for the already-warming gateway only in the background.
+    onContinue();
+    void saveProfileInBackground();
   };
 
   return (
@@ -409,8 +415,7 @@ export default function FirstRunWelcome({ onContinue }: FirstRunWelcomeProps) {
           <button
             type="button"
             onClick={() => setStep(0)}
-            disabled={saving}
-            className="h-9 rounded-lg border border-[#dedad1] bg-white/55 px-5 text-[14px] font-medium text-[#5f5a50] transition-colors hover:bg-[#f2eee6] disabled:opacity-60 dark:border-[#43413d] dark:bg-[#242424] dark:text-[#c8c3b9] dark:hover:bg-[#30302f]"
+            className="h-9 rounded-lg border border-[#dedad1] bg-white/55 px-5 text-[14px] font-medium text-[#5f5a50] transition-colors hover:bg-[#f2eee6] dark:border-[#43413d] dark:bg-[#242424] dark:text-[#c8c3b9] dark:hover:bg-[#30302f]"
           >
             {t.onboarding.back}
           </button>
@@ -421,13 +426,12 @@ export default function FirstRunWelcome({ onContinue }: FirstRunWelcomeProps) {
             if (step === 0) {
               setStep(1);
             } else {
-              void finish();
+              finish();
             }
           }}
-          disabled={saving}
-          className="h-9 rounded-lg bg-[#29261b] px-5 text-[14px] font-semibold text-white shadow-sm transition-colors hover:bg-[#423d32] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d97757]/35 disabled:opacity-60 dark:bg-[#d97757] dark:hover:bg-[#c86c4d]"
+          className="h-9 rounded-lg bg-[#29261b] px-5 text-[14px] font-semibold text-white shadow-sm transition-colors hover:bg-[#423d32] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d97757]/35 dark:bg-[#d97757] dark:hover:bg-[#c86c4d]"
         >
-          {saving ? t.onboarding.finishing : (step === 0 ? t.onboarding.next : t.onboarding.start)}
+          {step === 0 ? t.onboarding.next : t.onboarding.start}
         </button>
       </footer>
     </div>

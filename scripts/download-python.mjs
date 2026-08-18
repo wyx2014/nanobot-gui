@@ -19,6 +19,7 @@ import {
   fileSha256,
   nanobotSourceSha256,
 } from './python-runtime-source.mjs';
+import { precompileDesktopStartupModules } from './python-runtime-startup-cache.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -197,6 +198,7 @@ function installNanobot({ includeDependencies }) {
     ],
     { stdio: 'inherit' },
   );
+  precompileDesktopStartupModules(pythonBin);
 }
 
 function pruneRuntime(rootDir) {
@@ -350,6 +352,7 @@ async function buildRuntimeOnHost() {
       writeSourceMarker();
     } else {
       console.log(`Python and nanobot already present for ${targetKey}, skipping preparation.`);
+      precompileDesktopStartupModules(pythonBin);
     }
     writeRuntimeMarker();
     pruneRuntime(destDir);

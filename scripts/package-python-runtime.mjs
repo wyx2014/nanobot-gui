@@ -15,6 +15,7 @@ import {
   fileSha256,
   nanobotSourceSha256,
 } from './python-runtime-source.mjs';
+import { precompileDesktopStartupModules } from './python-runtime-startup-cache.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -92,6 +93,8 @@ if (`${process.platform}-${process.arch}` !== target) {
 function nanobotSourceSha256ForCheckout() {
   return nanobotSourceSha256(nanobotSourceDir);
 }
+
+precompileDesktopStartupModules(pythonBin);
 
 execFileSync(
   pythonBin,

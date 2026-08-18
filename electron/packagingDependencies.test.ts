@@ -30,6 +30,18 @@ const installerInclude = fs.readFileSync(
   path.join(process.cwd(), 'build', 'installer.nsh'),
   'utf8',
 );
+const runtimeDownloadScript = fs.readFileSync(
+  path.join(process.cwd(), 'scripts', 'download-python.mjs'),
+  'utf8',
+);
+const runtimePackagingScript = fs.readFileSync(
+  path.join(process.cwd(), 'scripts', 'package-python-runtime.mjs'),
+  'utf8',
+);
+const runtimeStartupCacheScript = fs.readFileSync(
+  path.join(process.cwd(), 'scripts', 'python-runtime-startup-cache.mjs'),
+  'utf8',
+);
 
 describe('packaged dependency boundary', () => {
   it('ships only the Node module required by the Electron main process', () => {
@@ -75,5 +87,14 @@ describe('packaged dependency boundary', () => {
     expect(packageManifest.build?.nsis?.include).toBe('build/installer.nsh');
     expect(installerInclude).toContain('${ifNot} ${isUpdated}');
     expect(installerInclude).toContain('Delete "$APPDATA\\tpacowork\\.installation-id"');
+  });
+
+  it('ships relocatable bytecode for the desktop startup hot path', () => {
+    expect(runtimeDownloadScript).toContain('precompileDesktopStartupModules(pythonBin)');
+    expect(runtimePackagingScript).toContain('precompileDesktopStartupModules(pythonBin)');
+    expect(runtimeStartupCacheScript).toContain("'mcp.client.stdio'");
+    expect(runtimeStartupCacheScript).toContain("'nanobot.channels.websocket'");
+    expect(runtimeStartupCacheScript).toContain("getattr(sys.modules['openai'], 'AsyncOpenAI')");
+    expect(runtimeStartupCacheScript).toContain('PycInvalidationMode.UNCHECKED_HASH');
   });
 });

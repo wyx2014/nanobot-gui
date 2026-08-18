@@ -15,7 +15,7 @@ const triggerClassName =
   'window-titlebar-no-drag flex h-7 items-center rounded-md px-2 text-[13px] font-normal text-[#625f57] outline-none transition-colors hover:bg-[#e7e4de] hover:text-[#29261b] focus-visible:bg-[#e7e4de] data-[state=open]:bg-[#dfdcd5] data-[state=open]:text-[#29261b] dark:text-[#cbc7bf] dark:hover:bg-white/10 dark:hover:text-white dark:focus-visible:bg-white/10 dark:data-[state=open]:bg-white/12 dark:data-[state=open]:text-white';
 
 const contentClassName =
-  'min-w-[210px] rounded-lg border-[#d7d4cd] bg-[#fffefa]/98 p-1 shadow-[0_10px_30px_rgba(36,33,27,0.16)] backdrop-blur-xl dark:border-white/12 dark:bg-[#2a2a2a]/98';
+  'min-w-[210px] rounded-lg border-[#d7d4cd] bg-[#fffefa] p-1 shadow-md dark:border-white/12 dark:bg-[#2a2a2a]';
 
 const itemClassName =
   'min-h-0 rounded-md px-2.5 py-1.5 text-[13px] text-[#34312b] focus:bg-[#ece9e3] dark:text-[#eeeae2] dark:focus:bg-white/10';

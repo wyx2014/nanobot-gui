@@ -4,6 +4,7 @@ import {
   windowModalBackdropPositionClasses,
   type BackdropPosition,
 } from './windowModalBackdropClasses';
+import { useModalBackgroundPause } from './modalPerformance';
 
 interface WindowModalBackdropProps extends HTMLAttributes<HTMLDivElement> {
   position?: BackdropPosition;
@@ -21,13 +22,15 @@ export default function WindowModalBackdrop({
   interactive = false,
   ...props
 }: WindowModalBackdropProps) {
+  useModalBackgroundPause();
+
   return (
     <div
       aria-hidden="true"
       data-window-modal-backdrop
       className={cn(
         windowModalBackdropPositionClasses(position),
-        'bg-black/20 backdrop-blur-[1px]',
+        'bg-black/15',
         interactive ? 'pointer-events-auto' : 'pointer-events-none',
         className,
       )}

@@ -137,9 +137,9 @@ export default function ScheduleEditor() {
   };
 
   return (
-    <div data-schedule-editor-overlay className="fixed inset-0 z-50 flex items-center justify-center animate-in fade-in duration-150">
+    <div data-schedule-editor-overlay className="fixed inset-0 z-50 flex items-center justify-center">
       <WindowModalBackdrop />
-      <div data-schedule-editor className="relative bg-white rounded-2xl shadow-xl w-[480px] max-h-[85vh] flex flex-col">
+      <div data-schedule-editor className="relative flex max-h-[85vh] w-[480px] flex-col rounded-2xl border border-black/5 bg-white shadow-lg">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100 shrink-0">
           <h2 className="text-[16px] font-semibold text-[#29261b]">

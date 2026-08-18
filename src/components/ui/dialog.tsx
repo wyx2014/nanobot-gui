@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { windowModalBackdropPositionClasses } from "@/components/common/windowModalBackdropClasses";
+import { useModalBackgroundPause } from "@/components/common/modalPerformance";
 
 const Dialog = DialogPrimitive.Root;
 const DialogPortal = DialogPrimitive.Portal;
@@ -11,17 +12,20 @@ const DialogPortal = DialogPrimitive.Portal;
 const DialogOverlay = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Overlay>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay>
->(({ className, ...props }, ref) => (
-  <DialogPrimitive.Overlay
-    ref={ref}
-    className={cn(
-      windowModalBackdropPositionClasses('fixed'),
-      "z-50 bg-black/20 backdrop-blur-[1px] duration-150 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
-      className,
-    )}
-    {...props}
-  />
-));
+>(({ className, ...props }, ref) => {
+  useModalBackgroundPause();
+  return (
+    <DialogPrimitive.Overlay
+      ref={ref}
+      className={cn(
+        windowModalBackdropPositionClasses('fixed'),
+        "z-50 bg-black/15",
+        className,
+      )}
+      {...props}
+    />
+  );
+});
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 interface DialogContentProps
@@ -39,7 +43,7 @@ const DialogContent = React.forwardRef<
       <DialogPrimitive.Content
         ref={ref}
         className={cn(
-          "grid w-full max-w-lg origin-center gap-4 border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 sm:rounded-lg",
+          "grid w-full max-w-lg gap-4 border bg-background p-6 shadow-md sm:rounded-lg",
           className,
         )}
         {...props}

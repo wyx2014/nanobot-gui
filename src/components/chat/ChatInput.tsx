@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Plus, ArrowUp, Square, X, ChevronDown, Check, FileText, CornerDownRight, Pencil, Trash2, GraduationCap, Paperclip, ChevronRight, Puzzle, Globe, Search, BarChart3, Users, Mic, Loader2 } from 'lucide-react';
-import { ThinkingOrb } from 'thinking-orbs';
+import ThinkingOrb from '@/components/common/ModalAwareThinkingOrb';
 import ExpertTeamIcon from '@/components/common/ExpertTeamIcon';
 import { dialogBridge, fsBridge, mediaBridge } from '@/lib/ipc-factory';
 import { useFileDragDrop } from '@/hooks/useFileDragDrop';

@@ -51,7 +51,7 @@ import {
   replaceVisibleLocalFileContent,
 } from '@/core/nanobot/localFileContext';
 import GenerationStatusBar, { type GenerationPhase } from './GenerationStatusBar';
-import { ThinkingOrb } from 'thinking-orbs';
+import ThinkingOrb from '@/components/common/ModalAwareThinkingOrb';
 import ConversationHeader from './ConversationHeader';
 import { historyHasPendingActivity } from '@/core/nanobot/historyActivity';
 import { buildTaskNarrativeEntries } from '@/core/nanobot/taskNarrativeTimeline';
@@ -790,7 +790,7 @@ export default function ChatView({
   // use the chat surface itself for a calm, contextual readiness indicator.
   if (!gatewayReady) {
     return (
-      <div className="flex h-full min-h-[45vh] w-full items-center justify-center bg-[#fbfaf7] dark:bg-[#1f1f1f]">
+      <div data-chat-surface className="flex h-full min-h-[45vh] w-full items-center justify-center bg-[#fbfaf7] dark:bg-[#1f1f1f]">
         <div className="flex flex-col items-center gap-4" role="status" aria-live="polite">
           <ThinkingOrb state="solving" size={64} style={{ width: 44, height: 44 }} aria-label="" />
           <p className="text-[15px] font-medium leading-6 text-[#88857b] dark:text-[#aaa69e]">
@@ -803,7 +803,7 @@ export default function ChatView({
 
   if (!activeConv) {
     return (
-      <div className="flex flex-col h-full bg-[#fbfaf7]">
+      <div data-chat-surface className="flex h-full flex-col bg-[#fbfaf7]">
         <div className="flex flex-1 flex-col items-center justify-center px-8 py-10">
           <div className="w-full max-w-[720px] -translate-y-[2vh]">
             {/* Title */}
@@ -869,6 +869,7 @@ export default function ChatView({
 
   return (
     <div
+      data-chat-surface
       className={cn(
         'relative flex min-h-0 min-w-0 flex-col bg-[#fbfaf7] dark:bg-[#1f1f1f]',
         isMacOS() ? '-mt-12 h-[calc(100%+3rem)]' : 'h-full',

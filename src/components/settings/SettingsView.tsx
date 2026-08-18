@@ -814,9 +814,9 @@ export function SettingsView({
 
   if (loading && !settings) {
     return (
-      <div className="fixed inset-0 z-[70] flex items-center justify-center animate-in fade-in duration-150 text-[#777267]">
+      <div className="fixed inset-0 z-[70] flex items-center justify-center text-[#777267]">
         <WindowModalBackdrop />
-        <div className="relative flex h-[720px] w-[1040px] items-center justify-center rounded-xl bg-white shadow-2xl">
+        <div className="relative flex h-[720px] w-[1040px] items-center justify-center rounded-xl border border-black/5 bg-white shadow-lg">
           <Loader2 className="mr-2 h-5 w-5 animate-spin" />
           正在连接设置服务...
         </div>
@@ -825,9 +825,9 @@ export function SettingsView({
   }
 
   return (
-    <div data-settings-surface className="fixed inset-0 z-[70] flex items-center justify-center p-8 text-[#202020] animate-in fade-in duration-150">
+    <div data-settings-surface className="fixed inset-0 z-[70] flex items-center justify-center p-8 text-[#202020]">
       <WindowModalBackdrop />
-      <div data-settings-dialog className="relative flex h-[min(720px,calc(100vh-64px))] w-[min(1040px,calc(100vw-96px))] overflow-hidden rounded-xl bg-white shadow-2xl">
+      <div data-settings-dialog className="relative flex h-[min(720px,calc(100vh-64px))] w-[min(1040px,calc(100vw-96px))] overflow-hidden rounded-xl border border-black/5 bg-white shadow-lg">
         <aside data-settings-sidebar className="w-[236px] shrink-0 bg-[#f2f2f3] px-3 py-9">
           <nav className="space-y-1">
             {localizedTabs.map((tab) => {
@@ -1215,8 +1215,8 @@ function FeedbackDialog({
   const disabled = saving || !text.trim() || text.length > 300;
 
   return (
-    <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/20 backdrop-blur-[1px] animate-in fade-in duration-150">
-      <div className="w-[480px] overflow-hidden rounded-xl bg-white shadow-2xl">
+    <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/15">
+      <div className="w-[480px] overflow-hidden rounded-xl border border-black/5 bg-white shadow-lg">
         <div className="flex items-center justify-between border-b border-[#eeeeef] px-5 py-4">
           <h3 className="text-lg font-semibold text-[#202020]">{isEnglish ? "Send Feedback" : "意见反馈"}</h3>
           <button type="button" className="grid h-8 w-8 place-items-center rounded-md text-[#777] hover:bg-[#f2f2f3]" onClick={onClose}>

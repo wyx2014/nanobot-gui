@@ -478,13 +478,13 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
 
       {createOpen && (
         <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center animate-in fade-in duration-150"
+          className="fixed inset-0 z-[9999] flex items-center justify-center"
           onClick={(event) => {
             if (event.target === event.currentTarget && !creating) setCreateOpen(false);
           }}
         >
           <WindowModalBackdrop />
-          <div data-skill-create-dialog className="relative w-[520px] rounded-2xl bg-white p-5 shadow-xl">
+          <div data-skill-create-dialog className="relative w-[520px] rounded-2xl border border-black/5 bg-white p-5 shadow-lg">
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
                 <h3 className="text-[17px] font-semibold text-[#29261b]">创建技能</h3>

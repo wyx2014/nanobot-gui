@@ -52,12 +52,12 @@ export default function CustomizePanel() {
       <WindowModalBackdrop
         position="fixed"
         interactive
-        className="z-40 animate-in fade-in duration-150"
+        className="z-40"
         onClick={closeCustomize}
       />
 
       {/* Panel */}
-      <div className="fixed right-0 top-0 bottom-0 w-[420px] bg-[#faf9f7] shadow-2xl z-50 flex flex-col animate-slide-in-right">
+      <div className="fixed bottom-0 right-0 top-0 z-50 flex w-[420px] flex-col border-l border-black/5 bg-[#faf9f7] shadow-lg">
         {/* Header */}
         <div className="shrink-0 px-5 pt-5 pb-4 border-b border-neutral-200">
           <div className="flex items-center justify-between mb-4">

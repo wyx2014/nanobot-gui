@@ -1,6 +1,6 @@
 import { ArrowDown } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { ThinkingOrb, type OrbState } from 'thinking-orbs';
+import ThinkingOrb, { type OrbState } from '@/components/common/ModalAwareThinkingOrb';
 import { cn } from '@/lib/utils';
 import { formatTaskDuration, normalizeTaskTimestamp } from '@/utils/taskDuration';
 

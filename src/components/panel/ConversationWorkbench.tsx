@@ -285,7 +285,7 @@ export default function ConversationWorkbench() {
   return (
     <div
       data-conversation-summary
-      className="flex max-h-[min(72vh,680px)] min-h-0 flex-col overflow-hidden rounded-[20px] border border-[#dcd8d0] bg-[#fbfaf7]/98 shadow-[0_18px_55px_rgba(59,52,39,0.16)] backdrop-blur-xl dark:border-white/10 dark:bg-[#222]/98 dark:shadow-[0_20px_60px_rgba(0,0,0,0.5)]"
+      className="flex max-h-[min(72vh,680px)] min-h-0 flex-col overflow-hidden rounded-[20px] border border-[#dcd8d0] bg-[#fbfaf7] shadow-lg dark:border-white/10 dark:bg-[#222] dark:shadow-lg"
     >
       <section
         data-summary-section="progress"

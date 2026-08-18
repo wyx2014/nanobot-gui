@@ -961,25 +961,21 @@ export default function Sidebar() {
 
       {conversationSearchOpen && createPortal(
         <div
-          className="fixed inset-0 z-[10000] flex items-start justify-center px-6 pt-[9vh] animate-in fade-in duration-150"
+          className="fixed inset-0 z-[10000] flex items-start justify-center px-6 pt-[9vh]"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) closeConversationSearch();
           }}
         >
-          <div
+          <WindowModalBackdrop
+            position="fixed"
             data-testid="conversation-search-backdrop"
-            aria-hidden="true"
-            className={cn(
-              'pointer-events-none absolute bottom-0 left-0 right-0 bg-black/20 backdrop-blur-[1px]',
-              windows ? 'top-10' : 'top-0',
-            )}
           />
           <div
             role="dialog"
             aria-modal="true"
             aria-label={t.sidebar.searchConversations}
             data-testid="conversation-search-dialog"
-            className="relative flex max-h-[min(720px,82vh)] w-full max-w-[760px] flex-col overflow-hidden rounded-[28px] border border-black/5 bg-[#fbfbfa] shadow-[0_24px_70px_rgba(0,0,0,0.22)] dark:border-white/10 dark:bg-[#272727]"
+            className="relative flex max-h-[min(720px,82vh)] w-full max-w-[760px] flex-col overflow-hidden rounded-[28px] border border-black/5 bg-[#fbfbfa] shadow-lg dark:border-white/10 dark:bg-[#272727]"
           >
             <div className="shrink-0 px-7 pb-4 pt-5">
               <input
@@ -1165,9 +1161,9 @@ export default function Sidebar() {
       />
 
       {skillProject && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center px-4 animate-in fade-in duration-150">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center px-4">
           <WindowModalBackdrop className="dark:bg-black/45" />
-          <div className="relative flex w-[480px] max-h-[85vh] flex-col bg-white rounded-2xl shadow-xl overflow-hidden dark:border dark:border-[#3a3a3a] dark:bg-[#262626]">
+          <div className="relative flex max-h-[85vh] w-[480px] flex-col overflow-hidden rounded-2xl border border-black/5 bg-white shadow-lg dark:border-[#3a3a3a] dark:bg-[#262626]">
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100 shrink-0 dark:border-white/10">
               <div className="min-w-0">
@@ -1256,9 +1252,9 @@ export default function Sidebar() {
       )}
 
       {pendingRemoveProject && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center px-4 animate-in fade-in duration-150">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center px-4">
           <WindowModalBackdrop className="dark:bg-black/45" />
-          <div className="relative w-full max-w-[500px] rounded-[20px] border border-[#e6e1d8] bg-white shadow-[0_16px_48px_rgba(0,0,0,0.16)] overflow-hidden dark:border-[#3a3a3a] dark:bg-[#262626] dark:shadow-[0_16px_48px_rgba(0,0,0,0.5)]">
+          <div className="relative w-full max-w-[500px] overflow-hidden rounded-[20px] border border-[#e6e1d8] bg-white shadow-lg dark:border-[#3a3a3a] dark:bg-[#262626] dark:shadow-lg">
             <div className="flex items-start justify-between px-7 pt-6 pb-4">
               <div>
                 <h2 className="text-[22px] font-semibold leading-tight text-[#242424] dark:text-[#ece8e1]">
@@ -1296,13 +1292,13 @@ export default function Sidebar() {
 
       {promptHubOpen && (
         <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center animate-in fade-in duration-150"
+          className="fixed inset-0 z-[9999] flex items-center justify-center"
           onClick={(event) => {
             if (event.target === event.currentTarget && !promptHubIsLoggingIn) closePromptHubLogin();
           }}
         >
           <WindowModalBackdrop />
-          <div data-testid="prompthub-login-dialog" className="relative w-[380px] rounded-2xl bg-white p-5 shadow-xl">
+          <div data-testid="prompthub-login-dialog" className="relative w-[380px] rounded-2xl border border-black/5 bg-white p-5 shadow-lg">
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
                 <h3 className="text-[17px] font-semibold text-[#29261b]">

@@ -60,9 +60,9 @@ export default function PermissionDialog({ request, onAllow, onDeny, onChooseFol
   // Cowork-style folder selection variant
   if (request.type === 'folder-select') {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center animate-in fade-in duration-150">
+      <div className="fixed inset-0 z-50 flex items-center justify-center">
         <WindowModalBackdrop />
-        <div className="relative w-full max-w-sm mx-4 bg-white rounded-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <div className="relative mx-4 w-full max-w-sm overflow-hidden rounded-2xl border border-black/5 bg-white shadow-lg">
           {/* Close button */}
           <button
             onClick={onDeny}
@@ -149,9 +149,9 @@ export default function PermissionDialog({ request, onAllow, onDeny, onChooseFol
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
       <WindowModalBackdrop />
-      <div className="relative w-full max-w-md mx-4 bg-white rounded-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+      <div className="relative mx-4 w-full max-w-md overflow-hidden rounded-2xl border border-black/5 bg-white shadow-lg">
         {/* Header */}
         <div className="relative px-6 pt-6 pb-4">
           <button

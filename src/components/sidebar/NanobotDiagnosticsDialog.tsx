@@ -140,7 +140,7 @@ export default function NanobotDiagnosticsDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="nanobot-diagnostics-title"
-        className="relative flex h-[min(760px,88vh)] w-[min(920px,92vw)] flex-col overflow-hidden rounded-[20px] border border-[#dedad2] bg-[#fbfaf7] shadow-[0_22px_70px_rgba(0,0,0,0.24)] dark:border-[#414141] dark:bg-[#242424]"
+        className="relative flex h-[min(760px,88vh)] w-[min(920px,92vw)] flex-col overflow-hidden rounded-[20px] border border-[#dedad2] bg-[#fbfaf7] shadow-lg dark:border-[#414141] dark:bg-[#242424]"
       >
         <header className="flex shrink-0 items-start justify-between gap-5 border-b border-[#e6e2da] px-6 py-5 dark:border-white/10">
           <div className="min-w-0">

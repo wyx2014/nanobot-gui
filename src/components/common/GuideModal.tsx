@@ -29,13 +29,13 @@ export default function GuideModal({ open, onClose }: GuideModalProps) {
 
   return (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center animate-in fade-in duration-150"
+      className="fixed inset-0 z-[9999] flex items-center justify-center"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <WindowModalBackdrop />
-      <div className="relative bg-white rounded-2xl shadow-xl w-[420px] p-6 animate-in zoom-in-95 duration-150">
+      <div className="relative w-[420px] rounded-2xl border border-black/5 bg-white p-6 shadow-lg">
         <h3 className="text-[16px] font-semibold text-[#29261b] mb-5">
           {t.guide.title}
         </h3>

@@ -36,7 +36,7 @@ export default function ConfirmDialog({
 
   return (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center animate-in fade-in duration-150"
+      className="fixed inset-0 z-[9999] flex items-center justify-center"
       onClick={(e) => {
         if (e.target === e.currentTarget) onCancel();
       }}
@@ -44,7 +44,7 @@ export default function ConfirmDialog({
       <WindowModalBackdrop />
       <div
         data-confirm-dialog
-        className="relative w-[360px] rounded-2xl bg-white p-6 shadow-xl animate-in zoom-in-95 duration-150 dark:border dark:border-white/10 dark:bg-[#242424]"
+        className="relative w-[360px] rounded-2xl border border-black/5 bg-white p-6 shadow-lg dark:border-white/10 dark:bg-[#242424]"
       >
         <h3 className="mb-2 text-[16px] font-semibold text-[#29261b] dark:text-[#f1ede5]">
           {title}

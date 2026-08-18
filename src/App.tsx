@@ -27,7 +27,7 @@ initPlatform().then(() => {
 import { useSettingsStore, getEffectiveModel } from '@/stores/settingsStore';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ArrowLeft, ArrowRight, PanelLeft } from 'lucide-react';
-import { ThinkingOrb } from 'thinking-orbs';
+import ThinkingOrb from '@/components/common/ModalAwareThinkingOrb';
 import { isMacOS, isWindows } from '@/utils/platform';
 import { cn } from '@/lib/utils';
 import { initNotifications } from '@/utils/notifications';

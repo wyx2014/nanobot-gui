@@ -62,7 +62,7 @@ function resolveCopy(error: StreamError): { title: string; body: string } {
     case 'workspace_scope_rejected':
       return {
         title: '工作区权限未生效',
-        body: 'Nanobot 拒绝了请求的工作区或权限模式，请确认路径有效后再试。',
+        body: 'TPACowork 拒绝了请求的工作区或权限模式，请确认路径有效后再试。',
       };
     case 'workspace_access_required':
       return {

@@ -421,7 +421,7 @@ function App() {
     let cancelled = false;
     eventBridge.listen('nanobot-error', (msg: string) => {
       useToastStore.getState().addToast({
-        title: 'Nanobot 错误',
+        title: 'TPACowork 错误',
         message: msg,
         type: 'error',
         duration: 5000,

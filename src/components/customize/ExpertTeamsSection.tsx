@@ -117,7 +117,7 @@ function memberText(
 
 async function getAuth(): Promise<{ token: string; baseUrl: string }> {
   const status = await getNanobotStatus();
-  if (!status.ready) throw new Error('nanobot 服务尚未就绪');
+  if (!status.ready) throw new Error('TPACowork 服务尚未就绪');
   const baseUrl = `http://127.0.0.1:${status.port}`;
   const token = getNanobotToken();
   if (token) return { token, baseUrl };

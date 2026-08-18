@@ -136,7 +136,7 @@ export function getGatewayBaseUrl(): string {
 export async function refreshNanobotAuth(): Promise<{ token: string; baseUrl: string; wsUrl: string }> {
   const status = await getNanobotStatus();
   if (!status.ready) {
-    throw new Error('Nanobot backend process is not ready yet.');
+    throw new Error('TPACowork backend process is not ready yet.');
   }
   const baseUrl = `http://127.0.0.1:${status.port}`;
   const boot = await fetchBootstrap(baseUrl, status.tokenSecret);
@@ -157,7 +157,7 @@ export async function refreshNanobotAuth(): Promise<{ token: string; baseUrl: st
 export async function bootstrapNanobotGateway(): Promise<NanobotClient> {
   const status = await getNanobotStatus();
   if (!status.ready) {
-    throw new Error('Nanobot backend process is not ready yet.');
+    throw new Error('TPACowork backend process is not ready yet.');
   }
 
   const baseUrl = `http://127.0.0.1:${status.port}`;

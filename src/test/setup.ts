@@ -58,7 +58,7 @@ const mockIpc = {
           logPath: 'C:\\Users\\test\\AppData\\Roaming\\TPACowork\\nanobot.log',
           logExists: true,
           lastError: null,
-          text: 'TPACowork nanobot diagnostics\nstatus=starting',
+          text: 'TPACowork diagnostics\nstatus=starting',
         };
       default:
         return undefined;

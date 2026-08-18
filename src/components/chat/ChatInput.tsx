@@ -509,7 +509,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       setExpertTeamsError(null);
       try {
         const status = await getNanobotStatus();
-        if (!status.ready) throw new Error(isEn ? 'Nanobot is not ready' : 'Nanobot 服务尚未就绪');
+        if (!status.ready) throw new Error(isEn ? 'TPACowork is not ready' : 'TPACowork 服务尚未就绪');
         let token = getNanobotToken();
         let base = `http://127.0.0.1:${status.port}`;
         if (!token) {

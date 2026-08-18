@@ -54,7 +54,7 @@ function getSkillIcon(name: string) {
 async function getSkillsAuth(): Promise<{ token: string; baseUrl: string }> {
   const status = await getNanobotStatus();
   if (!status.ready) {
-    throw new Error('nanobot 服务尚未就绪');
+    throw new Error('TPACowork 服务尚未就绪');
   }
   const baseUrl = `http://127.0.0.1:${status.port}`;
   const token = getNanobotToken();
@@ -430,7 +430,6 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
                   {sourceLabel(detail.source, isEnglish)}
                 </span>
               </div>
-              <p className="mt-1 truncate text-xs text-neutral-500">{detail.path}</p>
             </div>
             <div className="flex items-center gap-1">
               {detail.path ? (

@@ -961,7 +961,7 @@ export default function Sidebar() {
 
       {conversationSearchOpen && createPortal(
         <div
-          className="fixed inset-0 z-[10000] flex items-start justify-center px-6 pt-[9vh]"
+          className="window-modal-viewport fixed inset-0 z-[10000] flex items-start justify-center px-6 pt-[9vh]"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) closeConversationSearch();
           }}
@@ -1161,7 +1161,7 @@ export default function Sidebar() {
       />
 
       {skillProject && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center px-4">
+        <div className="window-modal-viewport fixed inset-0 z-[80] flex items-center justify-center px-4">
           <WindowModalBackdrop className="dark:bg-black/45" />
           <div className="relative flex max-h-[85vh] w-[480px] flex-col overflow-hidden rounded-2xl border border-black/5 bg-white shadow-lg dark:border-[#3a3a3a] dark:bg-[#262626]">
             {/* Header */}
@@ -1252,7 +1252,7 @@ export default function Sidebar() {
       )}
 
       {pendingRemoveProject && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center px-4">
+        <div className="window-modal-viewport fixed inset-0 z-[80] flex items-center justify-center px-4">
           <WindowModalBackdrop className="dark:bg-black/45" />
           <div className="relative w-full max-w-[500px] overflow-hidden rounded-[20px] border border-[#e6e1d8] bg-white shadow-lg dark:border-[#3a3a3a] dark:bg-[#262626] dark:shadow-lg">
             <div className="flex items-start justify-between px-7 pt-6 pb-4">
@@ -1292,7 +1292,7 @@ export default function Sidebar() {
 
       {promptHubOpen && (
         <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center"
+          className="window-modal-viewport fixed inset-0 z-[9999] flex items-center justify-center"
           onClick={(event) => {
             if (event.target === event.currentTarget && !promptHubIsLoggingIn) closePromptHubLogin();
           }}

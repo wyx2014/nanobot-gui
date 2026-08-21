@@ -128,7 +128,7 @@ export default function NanobotDiagnosticsDialog({
   const status = snapshot?.status ?? 'starting';
 
   return createPortal(
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center px-5 py-8">
+    <div className="window-modal-viewport fixed inset-0 z-[10000] flex items-center justify-center px-5 py-8">
       <WindowModalBackdrop
         position="fixed"
         interactive

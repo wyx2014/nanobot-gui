@@ -51,4 +51,15 @@ describe('desktop notifications', () => {
     })).toEqual({ shown: false, reason: 'unsupported' });
     expect(create).not.toHaveBeenCalled();
   });
+
+  it('does not interrupt the user while the app window is active', () => {
+    const create = vi.fn();
+    expect(showDesktopNotification('任务完成', {
+      supported: true,
+      activeWindow: true,
+      create,
+      activate: vi.fn(),
+    })).toEqual({ shown: false, reason: 'active-window' });
+    expect(create).not.toHaveBeenCalled();
+  });
 });

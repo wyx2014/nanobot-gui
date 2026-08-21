@@ -212,19 +212,26 @@ export default function ChatView({
   }, [activeConvId]);
 
   const { containerRef, scrollElement, isAtBottom, scrollToBottom } = useAutoScroll();
+  const chatSurfaceRef = useRef<HTMLDivElement>(null);
   const composerDockRef = useRef<HTMLDivElement>(null);
-  const [composerDockHeight, setComposerDockHeight] = useState(0);
+  const composerDockHeightRef = useRef(0);
 
   useLayoutEffect(() => {
     const dock = composerDockRef.current;
     if (!activeConvId || !dock) {
-      setComposerDockHeight(0);
+      composerDockHeightRef.current = 0;
+      chatSurfaceRef.current?.style.removeProperty('--chat-composer-dock-height');
       return;
     }
 
     const measure = () => {
       const nextHeight = Math.ceil(dock.getBoundingClientRect().height);
-      setComposerDockHeight((current) => (current === nextHeight ? current : nextHeight));
+      if (composerDockHeightRef.current === nextHeight) return;
+      composerDockHeightRef.current = nextHeight;
+      chatSurfaceRef.current?.style.setProperty('--chat-composer-dock-height', `${nextHeight}px`);
+      // The dock can grow substantially when an interactive prompt appears.
+      // Keep the user's bottom anchor without scheduling a full ChatView render.
+      scrollToBottom({ force: false });
     };
     measure();
 
@@ -235,12 +242,7 @@ export default function ChatView({
     const observer = new ResizeObserver(measure);
     observer.observe(dock);
     return () => observer.disconnect();
-  }, [activeConvId]);
-
-  useLayoutEffect(() => {
-    if (!activeConvId || historyLoading || composerDockHeight <= 0) return;
-    scrollToBottom({ force: false });
-  }, [activeConvId, composerDockHeight, historyLoading, scrollToBottom]);
+  }, [activeConvId, scrollToBottom]);
 
   useEffect(() => {
     if (!activeConvId) {
@@ -396,17 +398,26 @@ export default function ChatView({
     }
   }, [activeConv?.expertTeam, activeConvId, stream]);
 
-  const displayMessages = useMemo(
-    () => mapWebuiThreadToGuiMessages(stream.messages),
+  const pendingPromptMessage = useMemo(
+    () => stream.messages.find((message) => message.interactivePrompt?.status === 'pending') ?? null,
     [stream.messages],
   );
-  const pendingPromptMessage = useMemo(
-    () => displayMessages.find((message) => message.interactivePrompt?.status === 'pending') ?? null,
-    [displayMessages],
-  );
+  const timelineSourceRef = useRef<UIMessage[]>([]);
+  const timelineSourceMessages = useMemo(() => {
+    const next = stream.messages.filter((message) => !message.interactivePrompt);
+    const previous = timelineSourceRef.current;
+    if (
+      previous.length === next.length
+      && previous.every((message, index) => message === next[index])
+    ) {
+      return previous;
+    }
+    timelineSourceRef.current = next;
+    return next;
+  }, [stream.messages]);
   const timelineMessages = useMemo(
-    () => displayMessages.filter((message) => !message.interactivePrompt),
-    [displayMessages],
+    () => mapWebuiThreadToGuiMessages(timelineSourceMessages),
+    [timelineSourceMessages],
   );
   const conversationSearch = useConversationSearch({
     root: scrollElement,
@@ -639,7 +650,7 @@ export default function ChatView({
   }, [resendFromUserMessage, stream.messages]);
 
   const handleSubmitInteractivePromptAnswer = useCallback((
-    message: Message,
+    message: UIMessage,
     payload: InteractivePromptSubmitPayload,
   ) => {
     const prompt = message.interactivePrompt;
@@ -672,6 +683,11 @@ export default function ChatView({
       });
     }
   }, [activeConv?.expertTeam, scrollToBottom, stream, workspaceScope]);
+
+  const handlePendingPromptSubmit = useCallback((payload: InteractivePromptSubmitPayload) => {
+    if (!pendingPromptMessage) return;
+    handleSubmitInteractivePromptAnswer(pendingPromptMessage, payload);
+  }, [handleSubmitInteractivePromptAnswer, pendingPromptMessage]);
 
   useEffect(() => {
     if (!promptSubmitState) return;
@@ -869,6 +885,7 @@ export default function ChatView({
 
   return (
     <div
+      ref={chatSurfaceRef}
       data-chat-surface
       className={cn(
         'relative flex min-h-0 min-w-0 flex-col bg-[#fbfaf7] dark:bg-[#1f1f1f]',
@@ -959,7 +976,7 @@ export default function ChatView({
             <div
               aria-hidden="true"
               data-chat-composer-spacer
-              style={{ height: composerDockHeight }}
+              style={{ height: 'var(--chat-composer-dock-height, 0px)' }}
             />
 
           </div>
@@ -972,7 +989,7 @@ export default function ChatView({
             title={t.chat.scrollToBottom}
             aria-label={t.chat.scrollToBottom}
             style={{
-              bottom: composerDockHeight + 12,
+              bottom: 'calc(var(--chat-composer-dock-height, 0px) + 12px)',
               left: summaryContentInset
                 // Center on the shared outer conversation column (right-aligned
                 // max-w-4xl with the summary inset), never over the summary.
@@ -1031,6 +1048,7 @@ export default function ChatView({
             {pendingPromptMessage?.interactivePrompt ? (
               <div className="mb-3">
                 <InteractivePromptCard
+                  key={pendingPromptMessage.interactivePrompt.promptId}
                   prompt={pendingPromptMessage.interactivePrompt}
                   compact
                   submitting={
@@ -1043,7 +1061,7 @@ export default function ChatView({
                       ? promptSubmitState.error ?? '提交失败，请重试'
                       : null
                   }
-                  onSubmit={(payload) => handleSubmitInteractivePromptAnswer(pendingPromptMessage, payload)}
+                  onSubmit={handlePendingPromptSubmit}
                 />
               </div>
             ) : null}

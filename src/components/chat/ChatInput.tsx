@@ -5,7 +5,7 @@ import ExpertTeamIcon from '@/components/common/ExpertTeamIcon';
 import { dialogBridge, fsBridge, mediaBridge } from '@/lib/ipc-factory';
 import { useFileDragDrop } from '@/hooks/useFileDragDrop';
 import { uint8ArrayToBase64 } from '@/utils/base64';
-import { getBaseName, IMAGE_MIME_MAP } from '@/utils/pathUtils';
+import { getBaseName, IMAGE_MIME_MAP, isLocalFilePath } from '@/utils/pathUtils';
 import { isImageFile } from '@/components/chat/FileAttachment';
 import { useChatStore, useActiveConversation } from '@/stores/chatStore';
 import { useSettingsStore, getEffectiveModel, AVAILABLE_MODELS } from '@/stores/settingsStore';
@@ -201,6 +201,7 @@ function normalizeDraft(value: unknown): ComposerDraft | null {
         !!file
         && typeof file.id === 'string'
         && typeof file.path === 'string'
+        && isLocalFilePath(file.path)
         && typeof file.name === 'string',
       )
       : [],
@@ -619,12 +620,26 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   };
 
   // File drag & drop (always called; works for both variants)
-  const { isDragging } = useFileDragDrop(async (paths) => {
-    await processFilePaths(
-      paths,
-      (imgs) => setImages((prev) => [...prev, ...imgs].slice(0, MAX_IMAGES_PER_MESSAGE)),
-      (items) => setFiles((prev) => [...prev, ...items]),
-    );
+  const { isDragging } = useFileDragDrop(async (paths, unresolvedNames) => {
+    if (paths.length > 0) {
+      await processFilePaths(
+        paths,
+        (imgs) => setImages((prev) => [...prev, ...imgs].slice(0, MAX_IMAGES_PER_MESSAGE)),
+        (items) => setFiles((prev) => [...prev, ...items]),
+      );
+    }
+    if (unresolvedNames.length > 0) {
+      const names = unresolvedNames.slice(0, 3).join('、');
+      const more = unresolvedNames.length > 3 ? ` +${unresolvedNames.length - 3}` : '';
+      addToast({
+        type: 'error',
+        title: isEn ? 'Could not add dropped file' : '无法添加拖入的文件',
+        message: isEn
+          ? `${names}${more} did not provide a readable local path. Please use “+ → Add files”.`
+          : `${names}${more} 未提供可读取的本地路径，请使用“+ → 添加文件”。`,
+        duration: 5000,
+      });
+    }
     textareaRef.current?.focus();
   });
 

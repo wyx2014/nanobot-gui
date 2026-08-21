@@ -6,7 +6,7 @@ export interface DesktopNotificationInput {
 
 export interface DesktopNotificationResult {
   shown: boolean;
-  reason?: 'unsupported' | 'invalid';
+  reason?: 'unsupported' | 'invalid' | 'active-window';
 }
 
 export interface NativeNotificationLike {
@@ -16,6 +16,9 @@ export interface NativeNotificationLike {
 
 export interface DesktopNotificationDependencies {
   supported: boolean;
+  /** Suppress background-style notifications while the owning app window is
+   * already visible and focused. */
+  activeWindow?: boolean;
   create(options: { title: string; body?: string }): NativeNotificationLike;
   activate(conversationId?: string): void;
 }
@@ -55,6 +58,7 @@ export function showDesktopNotification(
   if (!dependencies.supported) return { shown: false, reason: 'unsupported' };
   const normalized = normalizeDesktopNotificationInput(input);
   if (!normalized) return { shown: false, reason: 'invalid' };
+  if (dependencies.activeWindow) return { shown: false, reason: 'active-window' };
 
   const notification = dependencies.create({
     title: normalized.title,

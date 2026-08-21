@@ -6,7 +6,6 @@ import { useChatStore } from '@/stores/chatStore';
 import { useScheduleStore } from '@/stores/scheduleStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { isWindows } from '@/utils/platform';
 import { usePromptHubStore } from '@/stores/promptHubStore';
 
 let container: HTMLDivElement | undefined;
@@ -93,7 +92,8 @@ describe('Sidebar conversation search', () => {
     const dialog = openSearchDialog();
     const backdrop = document.body.querySelector<HTMLElement>('[data-testid="conversation-search-backdrop"]');
     expect(dialog).not.toBeNull();
-    expect(backdrop?.classList.contains(isWindows() ? 'top-10' : 'top-0')).toBe(true);
+    expect(backdrop?.classList.contains('window-titlebar-safe-top')).toBe(true);
+    expect(dialog?.parentElement?.classList.contains('window-modal-viewport')).toBe(true);
     expect(dialog?.querySelector('input[placeholder="搜索聊天"]')).not.toBeNull();
     expect(dialog?.textContent).toContain('Alpha 方案');
     expect(dialog?.textContent).toContain('Beta 报告');

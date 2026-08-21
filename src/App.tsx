@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useLayoutEffect, useState, useCallback, useM
 import { ipc, windowBridge, eventBridge } from '@/lib/ipc-factory';
 import Sidebar from '@/components/sidebar/Sidebar';
 import ToastContainer from '@/components/common/ToastContainer';
+import HelpAndFeedbackOverlays from '@/components/common/HelpAndFeedbackOverlays';
 import AppTitlebarMenu from '@/components/common/AppTitlebarMenu';
 import { useToastStore } from '@/stores/toastStore';
 import { initPlatform } from '@/utils/platform';
@@ -740,11 +741,18 @@ function App() {
             className={cn(
               'window-titlebar-drag fixed left-0 right-0 top-0 z-40',
               windows ? 'h-9' : 'h-12',
-              windows && 'border-b border-[#e5e2db] bg-[#f7f6f2] dark:border-[#3d3d3d] dark:bg-[#242424]',
+              windows && 'bg-[#f7f6f2] dark:bg-[#242424]',
             )}
           >
             {windows && <AppTitlebarMenu />}
           </div>
+        )}
+        {customTitlebar && windows && (
+          <div
+            data-window-titlebar-divider
+            aria-hidden="true"
+            className="window-titlebar-divider pointer-events-none fixed left-0 right-0 z-[10001] h-px bg-[#e5e2db] dark:bg-[#3d3d3d]"
+          />
         )}
 
         <div
@@ -889,6 +897,7 @@ function App() {
           </Suspense>
 
           <ToastContainer />
+          <HelpAndFeedbackOverlays />
         </div>
       </TooltipProvider>
     </ErrorBoundary>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useScheduleStore } from '@/stores/scheduleStore';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useI18n } from '@/i18n';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -11,10 +12,12 @@ import WindowModalBackdrop from '@/components/common/WindowModalBackdrop';
 const FREQUENCIES: ScheduleFrequency[] = ['hourly', 'daily', 'weekly', 'monthly', 'weekdays', 'manual'];
 
 export default function ScheduleEditor() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { showEditor, editingTaskId, editorDraft, closeEditor, createTask, updateTask, tasks } =
     useScheduleStore();
   const skills = useDiscoveryStore((s) => s.skills);
+  const projects = useWorkspaceStore((s) => s.projects);
+  const isEnglish = locale === 'en-US';
 
   const editingTask = editingTaskId ? tasks[editingTaskId] : null;
 
@@ -31,6 +34,15 @@ export default function ScheduleEditor() {
   const [workspacePath, setWorkspacePath] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const workspaceOptions = projects
+    .filter((project) => project.kind === 'workspace' && project.status === 'active' && Boolean(project.rootPath))
+    .map((project) => ({
+      value: project.rootPath,
+      label: `${project.name || project.rootPath} · ${project.rootPath}`,
+    }));
+  const selectedWorkspacePath = workspaceOptions.some((option) => option.value === workspacePath)
+    ? workspacePath
+    : '';
 
   // Initialize form when editing task changes
   useEffect(() => {
@@ -137,7 +149,7 @@ export default function ScheduleEditor() {
   };
 
   return (
-    <div data-schedule-editor-overlay className="fixed inset-0 z-50 flex items-center justify-center">
+    <div data-schedule-editor-overlay className="window-modal-viewport fixed inset-0 z-50 flex items-center justify-center">
       <WindowModalBackdrop />
       <div data-schedule-editor className="relative flex max-h-[85vh] w-[480px] flex-col rounded-2xl border border-black/5 bg-white shadow-lg">
         {/* Header */}
@@ -331,12 +343,27 @@ export default function ScheduleEditor() {
             <label className="block text-[13px] font-medium text-[#29261b] mb-1.5">
               {t.schedule.workspacePath}
             </label>
+            {workspaceOptions.length > 0 ? (
+              <div className="mb-2">
+                <Select
+                  value={selectedWorkspacePath}
+                  onChange={setWorkspacePath}
+                  placeholder={isEnglish ? 'Select an existing workspace' : '选择已有工作空间'}
+                  options={[
+                    { value: '', label: isEnglish ? 'No workspace selected' : '不指定工作空间' },
+                    ...workspaceOptions,
+                  ]}
+                />
+              </div>
+            ) : null}
             <input
               name="schedule-workspace"
               type="text"
               value={workspacePath}
               onChange={(e) => setWorkspacePath(e.target.value)}
-              placeholder={t.schedule.workspacePathPlaceholder}
+              placeholder={workspaceOptions.length > 0
+                ? (isEnglish ? 'Or enter a custom path' : '或手动输入自定义路径')
+                : t.schedule.workspacePathPlaceholder}
               className="w-full h-10 px-3 bg-white border border-[#e8e4dd] rounded-lg text-sm text-[#29261b] focus:outline-none focus:ring-2 focus:ring-[#d97757]/30 focus:border-[#d97757]"
             />
           </div>

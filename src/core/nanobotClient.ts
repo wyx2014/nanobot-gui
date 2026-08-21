@@ -13,7 +13,10 @@ import type {
   ThreadRuntimeSnapshot,
 } from './types';
 import { notifyTaskCompleted } from '@/utils/notifications';
-import { CompletedTurnNotificationTracker } from './nanobot/taskCompletionNotification';
+import {
+  CompletedTurnNotificationTracker,
+  type CompletedTurnNotification,
+} from './nanobot/taskCompletionNotification';
 
 export interface NanobotStatus {
   ready: boolean;
@@ -67,6 +70,24 @@ let globalMcpStatus: NonNullable<BootstrapResponse['mcp_status']> = 'unknown';
 const globalConnectionListeners = new Set<() => void>();
 const canonicalRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const completedTurnNotificationTracker = new CompletedTurnNotificationTracker();
+const completionNotificationTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const COMPLETION_NOTIFICATION_GRACE_MS = 500;
+
+function scheduleCompletedTurnNotification(
+  completion: CompletedTurnNotification,
+): void {
+  const previous = completionNotificationTimers.get(completion.key);
+  if (previous) clearTimeout(previous);
+  completionNotificationTimers.set(completion.key, setTimeout(() => {
+    completionNotificationTimers.delete(completion.key);
+    if (!completedTurnNotificationTracker.shouldNotify(completion)) return;
+    const conversation = useChatStore.getState().conversations[completion.chatId];
+    const title = conversation?.title?.trim() && conversation.title !== '新对话'
+      ? conversation.title
+      : '当前任务';
+    void notifyTaskCompleted(title, completion.chatId);
+  }, COMPLETION_NOTIFICATION_GRACE_MS));
+}
 
 function canonicalEventFinalizesAnswer(event: CanonicalSessionEvent): boolean {
   if (event.event !== 'message') return false;
@@ -177,6 +198,9 @@ export async function bootstrapNanobotGateway(): Promise<NanobotClient> {
   globalRuntimeSnapshotGapUnsubscribe = null;
   globalCanonicalEventUnsubscribe?.();
   globalCanonicalEventUnsubscribe = null;
+  for (const timer of completionNotificationTimers.values()) clearTimeout(timer);
+  completionNotificationTimers.clear();
+  completedTurnNotificationTracker.reset();
   globalClient?.close();
   globalClient = new NanobotClient({
     url: wsUrl,
@@ -245,11 +269,7 @@ export async function bootstrapNanobotGateway(): Promise<NanobotClient> {
     }
     const completion = completedTurnNotificationTracker.consume(event);
     if (completion) {
-      const conversation = useChatStore.getState().conversations[completion.chatId];
-      const title = conversation?.title?.trim() && conversation.title !== '新对话'
-        ? conversation.title
-        : '当前任务';
-      void notifyTaskCompleted(title, completion.chatId);
+      scheduleCompletedTurnNotification(completion);
     }
     if (
       result === 'gap'

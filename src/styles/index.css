@@ -5,6 +5,10 @@
 
 @custom-variant dark (&:is(.dark *));
 
+:root {
+  --window-titlebar-safe-top: 0px;
+}
+
 @layer base {
   html, body, #root {
     height: 100%;
@@ -93,6 +97,31 @@
 .window-titlebar-no-drag * {
   -webkit-app-region: no-drag;
   app-region: no-drag;
+}
+
+/* Draw the Windows divider immediately below the native caption row. A
+   border inside the renderer title bar is hidden underneath the opaque native
+   minimise/maximise/close button surface on the right side. */
+.window-titlebar-divider {
+  top: var(--window-titlebar-safe-top);
+}
+
+/* Keep all renderer-owned modal geometry below Windows' native caption row.
+   Native minimise/maximise/close buttons live in a higher OS surface and
+   cannot be covered consistently with z-index. */
+.window-titlebar-safe-top,
+.window-modal-viewport {
+  top: var(--window-titlebar-safe-top) !important;
+}
+
+/* A backdrop inside an already-safe modal viewport fills that viewport; a
+   standalone fixed backdrop still uses window-titlebar-safe-top directly. */
+.window-modal-viewport > [data-window-modal-backdrop] {
+  top: 0 !important;
+}
+
+.window-toast-container {
+  top: calc(var(--window-titlebar-safe-top) + 1rem) !important;
 }
 
 .conversation-header-titlebar-inset {

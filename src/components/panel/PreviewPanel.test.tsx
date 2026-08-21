@@ -57,7 +57,7 @@ describe('PreviewPanel artifact viewer', () => {
 
     expect(view.textContent).toContain('Artifacts');
     expect(view.textContent).toContain('market.txt');
-    expect(view.textContent).toContain('reports/market.txt');
+    expect(view.textContent).not.toContain('reports/market.txt');
     expect(view.textContent).toContain('artifact body');
 
     await act(async () => {

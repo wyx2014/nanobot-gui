@@ -54,7 +54,7 @@ export default function NewWorkspaceDialog({ open, onClose, onCreated }: NewWork
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center px-4"
+      className="window-modal-viewport fixed inset-0 z-[200] flex items-center justify-center px-4"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}

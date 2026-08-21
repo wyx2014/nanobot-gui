@@ -1,8 +1,13 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 
 // Custom APIs for renderer
-const api = {}
+const api = {
+  // Electron 32+ no longer exposes the non-standard `File.path` property to
+  // renderer code. Resolve dropped files in preload with the supported API so
+  // drag-and-drop and the native file picker both produce absolute paths.
+  getPathForFile: (file: File): string => webUtils.getPathForFile(file),
+}
 
 // Use `contextBridge` APIs to expose Electron APIs to
 // renderer only if electron isolation is enabled, otherwise

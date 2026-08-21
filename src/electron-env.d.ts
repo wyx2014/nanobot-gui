@@ -4,9 +4,14 @@ export interface IpcBridge {
   on: (channel: string, func: (...args: any[]) => void) => () => void;
 }
 
+export interface DesktopApiBridge {
+  getPathForFile: (file: File) => string;
+}
+
 declare global {
   interface Window {
     ipc: IpcBridge;
     electron: any; // From @electron-toolkit/preload
+    api: DesktopApiBridge;
   }
 }

@@ -636,6 +636,12 @@ async function startApplication(): Promise<void> {
     const sourceWindow = BrowserWindow.fromWebContents(event.sender) ?? mainWindow
     return showDesktopNotification(options, {
       supported: Notification.isSupported(),
+      activeWindow: Boolean(
+        sourceWindow
+        && !sourceWindow.isDestroyed()
+        && sourceWindow.isVisible()
+        && sourceWindow.isFocused()
+      ),
       create: ({ title, body }) => new Notification({
         title,
         body,

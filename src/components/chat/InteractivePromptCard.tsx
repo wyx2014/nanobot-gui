@@ -1,5 +1,5 @@
 import { ArrowRight, Check, ChevronLeft, ChevronRight, Loader2, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import type {
   UIInteractivePrompt,
   UIInteractivePromptAnswer,
@@ -56,7 +56,7 @@ function initialFreeformDrafts(questions: UIInteractivePromptQuestion[]): Record
   return out;
 }
 
-export default function InteractivePromptCard({
+function InteractivePromptCard({
   prompt,
   onSubmit,
   compact = false,
@@ -258,3 +258,5 @@ export default function InteractivePromptCard({
     </div>
   );
 }
+
+export default memo(InteractivePromptCard);

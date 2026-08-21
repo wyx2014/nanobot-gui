@@ -26,6 +26,7 @@ describe('task completion notifications', () => {
     expect(completedTurnNotificationFromEvent(event('completed'))).toEqual({
       key: 'terminal-1',
       chatId: 'chat-1',
+      sessionKey: 'websocket:chat-1',
       turnId: 'turn-1',
     });
   });
@@ -41,8 +42,46 @@ describe('task completion notifications', () => {
 
   it('notifies once when a durable event is replayed', () => {
     const tracker = new CompletedTurnNotificationTracker();
-    expect(tracker.consume(event('completed'))).not.toBeNull();
+    const completion = tracker.consume(event('completed'));
+    expect(completion).not.toBeNull();
+    expect(tracker.shouldNotify(completion!)).toBe(true);
     expect(tracker.consume(event('completed'))).toBeNull();
     expect(tracker.consume(event('completed', 'terminal-2'))).not.toBeNull();
+  });
+
+  it('suppresses a completed sub-turn that is waiting for interactive input', () => {
+    const tracker = new CompletedTurnNotificationTracker();
+    expect(tracker.consume({
+      ...event('completed', 'prompt-message'),
+      event: 'message',
+      interactive_prompt: {
+        promptId: 'prompt-1',
+        question: '请选择范围',
+        options: [],
+        status: 'pending',
+      },
+    })).toBeNull();
+
+    const completion = tracker.consume(event('completed'));
+    expect(completion).not.toBeNull();
+    expect(tracker.shouldNotify(completion!)).toBe(false);
+  });
+
+  it('also catches a prompt delivered immediately after its terminal event', () => {
+    const tracker = new CompletedTurnNotificationTracker();
+    const completion = tracker.consume(event('completed'));
+    expect(completion).not.toBeNull();
+
+    tracker.consume({
+      ...event('completed', 'late-prompt-message'),
+      event: 'message',
+      interactive_prompt: {
+        promptId: 'prompt-1',
+        question: '请选择范围',
+        options: [],
+        status: 'pending',
+      },
+    });
+    expect(tracker.shouldNotify(completion!)).toBe(false);
   });
 });

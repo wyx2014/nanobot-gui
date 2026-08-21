@@ -52,8 +52,8 @@ function EditMenuItem({
 
 export default function AppTitlebarMenu() {
   const { locale } = useI18n();
-  const openSystemSettings = useSettingsStore((state) => state.openSystemSettings);
   const openHelpManual = useSettingsStore((state) => state.openHelpManual);
+  const openFeedbackDialog = useSettingsStore((state) => state.openFeedbackDialog);
   const isEnglish = locale === 'en-US';
   const lastEditTargetRef = useRef<HTMLElement | null>(null);
 
@@ -170,7 +170,7 @@ export default function AppTitlebarMenu() {
           <DropdownMenuSeparator className="my-1 bg-[#e3e0da] dark:bg-white/10" />
           <DropdownMenuItem
             className={itemClassName}
-            onSelect={() => openSystemSettings('feedback')}
+            onSelect={openFeedbackDialog}
           >
             {labels.feedback}
           </DropdownMenuItem>

@@ -574,6 +574,7 @@ const enUS: TranslationDict = {
     revealInFolder: 'Show in folder',
     downloadFile: 'Download file',
     failedToReadFile: 'Failed to read file',
+    loadingPreview: 'Opening document…',
     fileNotFound: 'File not found',
     // FilesSection
     operationRead: 'Read',

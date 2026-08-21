@@ -1,9 +1,29 @@
 import { useEffect, useState, useCallback } from 'react';
+import { isLocalFilePath } from '@/utils/pathUtils';
 
-export function useFileDragDrop(onDrop: (paths: string[]) => void) {
+export function resolveDroppedFilePath(file: File): string | null {
+  let supportedPath = '';
+  try {
+    supportedPath = window.api?.getPathForFile?.(file) ?? '';
+  } catch {
+    // Keep the legacy property as a compatibility fallback for older Electron
+    // builds and isolated browser tests.
+  }
+
+  const legacyPath = (file as File & { path?: string }).path ?? '';
+  const candidate = supportedPath.trim() || legacyPath.trim();
+  return candidate && isLocalFilePath(candidate) ? candidate : null;
+}
+
+export function useFileDragDrop(
+  onDrop: (paths: string[], unresolvedNames: string[]) => void,
+) {
   const [isDragging, setIsDragging] = useState(false);
 
-  const stableDrop = useCallback((paths: string[]) => onDrop(paths), [onDrop]);
+  const stableDrop = useCallback(
+    (paths: string[], unresolvedNames: string[]) => onDrop(paths, unresolvedNames),
+    [onDrop],
+  );
 
   useEffect(() => {
     let dragCounter = 0;
@@ -36,13 +56,14 @@ export function useFileDragDrop(onDrop: (paths: string[]) => void) {
       setIsDragging(false);
 
       if (e.dataTransfer && e.dataTransfer.files.length > 0) {
-        const paths = Array.from(e.dataTransfer.files).map(
-          (file) => {
-            const f = file as File & { path?: string };
-            return f.path || f.name;
-          }
-        );
-        stableDrop(paths);
+        const paths: string[] = [];
+        const unresolvedNames: string[] = [];
+        Array.from(e.dataTransfer.files).forEach((file) => {
+          const path = resolveDroppedFilePath(file);
+          if (path) paths.push(path);
+          else unresolvedNames.push(file.name);
+        });
+        stableDrop(paths, unresolvedNames);
       }
     };
 

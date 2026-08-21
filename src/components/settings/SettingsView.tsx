@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import HelpManual from "./HelpManual";
 import DataManagementSection from "./DataManagementSection";
 import WindowModalBackdrop from "@/components/common/WindowModalBackdrop";
 import {
@@ -814,9 +813,9 @@ export function SettingsView({
 
   if (loading && !settings) {
     return (
-      <div className="fixed inset-0 z-[70] flex items-center justify-center text-[#777267]">
+      <div className="window-modal-viewport fixed inset-0 z-[70] flex items-center justify-center text-[#777267]">
         <WindowModalBackdrop />
-        <div className="relative flex h-[720px] w-[1040px] items-center justify-center rounded-xl border border-black/5 bg-white shadow-lg">
+        <div className="relative flex h-[min(720px,calc(100vh-var(--window-titlebar-safe-top)-64px))] w-[min(1040px,calc(100vw-96px))] items-center justify-center rounded-xl border border-black/5 bg-white shadow-lg">
           <Loader2 className="mr-2 h-5 w-5 animate-spin" />
           正在连接设置服务...
         </div>
@@ -825,9 +824,9 @@ export function SettingsView({
   }
 
   return (
-    <div data-settings-surface className="fixed inset-0 z-[70] flex items-center justify-center p-8 text-[#202020]">
+    <div data-settings-surface className="window-modal-viewport fixed inset-0 z-[70] flex items-center justify-center p-8 text-[#202020]">
       <WindowModalBackdrop />
-      <div data-settings-dialog className="relative flex h-[min(720px,calc(100vh-64px))] w-[min(1040px,calc(100vw-96px))] overflow-hidden rounded-xl border border-black/5 bg-white shadow-lg">
+      <div data-settings-dialog className="relative flex h-[min(720px,calc(100vh-var(--window-titlebar-safe-top)-64px))] w-[min(1040px,calc(100vw-96px))] overflow-hidden rounded-xl border border-black/5 bg-white shadow-lg">
         <aside data-settings-sidebar className="w-[236px] shrink-0 bg-[#f2f2f3] px-3 py-9">
           <nav className="space-y-1">
             {localizedTabs.map((tab) => {
@@ -1119,9 +1118,7 @@ function AccountSection({
 }
 
 function HelpFeedbackSection({ onOpenFeedback, isEnglish }: { onOpenFeedback: () => void; isEnglish: boolean }) {
-  const helpOpen = useSettingsStore((state) => state.helpManualOpen);
   const openHelpManual = useSettingsStore((state) => state.openHelpManual);
-  const closeHelpManual = useSettingsStore((state) => state.closeHelpManual);
   const [contactOpen, setContactOpen] = useState(false);
 
   return (
@@ -1146,7 +1143,6 @@ function HelpFeedbackSection({ onOpenFeedback, isEnglish }: { onOpenFeedback: ()
             : "如您在使用 TPACowork 时遇到任何问题，欢迎联系太平资产信息科技部：王耀彬（分机 3397）、张志庆（分机 3346）。"}
         </div>
       ) : null}
-      {helpOpen ? <HelpManual onClose={closeHelpManual} /> : null}
     </div>
   );
 }

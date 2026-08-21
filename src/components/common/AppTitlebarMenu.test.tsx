@@ -96,15 +96,13 @@ describe('AppTitlebarMenu', () => {
 
     act(() => buttonWithText('使用文档').click());
     expect(useSettingsStore.getState()).toMatchObject({
-      viewMode: 'settings',
-      activeSystemTab: 'help',
       helpManualOpen: true,
     });
 
     act(() => buttonWithText('意见反馈').click());
     expect(useSettingsStore.getState()).toMatchObject({
-      viewMode: 'settings',
-      activeSystemTab: 'feedback',
+      viewMode: 'chat',
+      feedbackDialogOpen: true,
     });
   });
 });

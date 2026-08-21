@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import type { Message } from '@/types';
 import type { TurnLifecycleStatus } from '@/core/types';
 import MessageBubble from './MessageBubble';
@@ -33,7 +33,7 @@ export function lastAssistantReplyIndex(units: DisplayUnit[]): number {
   return -1;
 }
 
-export default function ThreadMessages({
+function ThreadMessages({
   messages,
   isStreaming = false,
   activeTurnElapsedMs,
@@ -97,6 +97,8 @@ export default function ThreadMessages({
     </div>
   );
 }
+
+export default memo(ThreadMessages);
 
 function currentActivityTimelineIndices(units: DisplayUnit[]): Set<number> {
   const indices = new Set<number>();

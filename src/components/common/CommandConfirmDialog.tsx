@@ -75,7 +75,7 @@ export default function CommandConfirmDialog({
   }, [handleKeyDown]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="window-modal-viewport fixed inset-0 z-50 flex items-center justify-center">
       <WindowModalBackdrop />
       <div className="relative mx-4 flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-black/5 bg-white shadow-lg">
         {/* Header */}

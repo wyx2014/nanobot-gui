@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 
 import { getNanobotClient } from "@/core/nanobotClient";
 import { resolveArtifactUrl } from "@/core/artifacts";
@@ -1346,7 +1346,10 @@ export function useNanobotStream(
   const [messages, setMessages] = useState<UIMessage[]>(initialMessages);
   const [turnUsage, setTurnUsage] = useState<CurrentTurnUsage>();
   const [messageConversationId, setMessageConversationId] = useState<string | null>(chatId);
-  const visibleMessages = messageConversationId === chatId ? messages : [];
+  const visibleMessages = useMemo(
+    () => messageConversationId === chatId ? messages : [],
+    [chatId, messageConversationId, messages],
+  );
   /** Runtime Snapshot is authoritative after reconnect. Historical trace rows
    * and pending-looking tool records must not resurrect a completed turn. */
   const initialRuntimeSnapshot = runtimeSnapshotForClient(client, chatId);
@@ -2586,7 +2589,7 @@ export function useNanobotStream(
     client.sendMessage(chatId, "/stop");
   }, [chatId, client, flushPendingStreamEvents, isStopping, isStreaming, setIsStopping]);
 
-  return {
+  return useMemo(() => ({
     messages: visibleMessages,
     messageConversationId: messageConversationId === chatId
       ? messageConversationId
@@ -2601,5 +2604,18 @@ export function useNanobotStream(
     setMessages,
     streamError,
     dismissStreamError,
-  };
+  }), [
+    dismissStreamError,
+    goalState,
+    isStopping,
+    isStreaming,
+    messageConversationId,
+    runStartedAt,
+    send,
+    stop,
+    streamError,
+    turnUsage,
+    visibleMessages,
+    chatId,
+  ]);
 }

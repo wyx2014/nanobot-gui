@@ -4,8 +4,18 @@
  */
 
 import { osBridge } from '@/lib/ipc-factory';
+import { rendererTitlebarSafeTop } from '@/config/windowChrome';
 
 let cached: string | null = null;
+
+function applyRendererPlatform(platform: string): void {
+  if (typeof document === 'undefined') return;
+  document.documentElement.dataset.desktopPlatform = platform;
+  document.documentElement.style.setProperty(
+    '--window-titlebar-safe-top',
+    `${rendererTitlebarSafeTop(platform)}px`,
+  );
+}
 
 function rendererPlatformFallback(): string | null {
   if (typeof navigator === 'undefined') return null;
@@ -19,6 +29,7 @@ function rendererPlatformFallback(): string | null {
 /** Initialize platform detection (call once at app startup) */
 export async function initPlatform(): Promise<string> {
   cached = await osBridge.platform();
+  applyRendererPlatform(cached);
   return cached;
 }
 
@@ -41,3 +52,6 @@ export function getPlatform(): string {
   }
   return cached ?? 'unknown';
 }
+
+const initialPlatform = rendererPlatformFallback();
+if (initialPlatform) applyRendererPlatform(initialPlatform);

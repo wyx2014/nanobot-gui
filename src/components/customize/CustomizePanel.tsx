@@ -57,7 +57,7 @@ export default function CustomizePanel() {
       />
 
       {/* Panel */}
-      <div className="fixed bottom-0 right-0 top-0 z-50 flex w-[420px] flex-col border-l border-black/5 bg-[#faf9f7] shadow-lg">
+      <div className="window-modal-viewport fixed bottom-0 right-0 top-0 z-50 flex w-[420px] flex-col border-l border-black/5 bg-[#faf9f7] shadow-lg">
         {/* Header */}
         <div className="shrink-0 px-5 pt-5 pb-4 border-b border-neutral-200">
           <div className="flex items-center justify-between mb-4">

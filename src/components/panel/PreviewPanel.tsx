@@ -15,12 +15,12 @@ import {
   Download,
   ExternalLink,
   FolderOpen,
-  Loader2,
   Maximize2,
   Minimize2,
   RefreshCw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import ThinkingOrb from '@/components/common/ModalAwareThinkingOrb';
 import {
   artifactDisplayPath,
   artifactDownloadUrl,
@@ -53,9 +53,22 @@ function getLanguage(filePath: string): string {
 }
 
 function LazyFallback() {
+  return <PreviewLoadingIndicator />;
+}
+
+function PreviewLoadingIndicator() {
+  const { t } = useI18n();
   return (
-    <div className="flex items-center justify-center h-full">
-      <Loader2 className="w-5 h-5 text-[#d97757] animate-spin" />
+    <div
+      data-testid="preview-loading"
+      className="flex h-full min-h-[45vh] items-center justify-center"
+      role="status"
+      aria-live="polite"
+    >
+      <div className="inline-flex items-center gap-2.5 text-[13px] text-[#88857b] dark:text-[#aaa69e]">
+        <ThinkingOrb state="solving" size={64} style={{ width: 32, height: 32 }} aria-label="" />
+        <span>{t.panel.loadingPreview}</span>
+      </div>
     </div>
   );
 }
@@ -186,10 +199,10 @@ export default function PreviewPanel() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#f5f3ee] dark:bg-[#202020]">
-      {/* OpenWorker-style viewer header: back to the rail, breadcrumb, path, then native actions. */}
+      {/* Match the native title-bar height; keep artifact controls compact. */}
       <div className={cn(
-        'flex min-h-[58px] shrink-0 items-center gap-3 border-b border-[#e5e2db] bg-[#fbfaf7]/95 px-4 py-2.5 dark:border-[#3d3d3d] dark:bg-[#262626]/95',
-        isWindows() ? 'mt-10' : 'mt-7',
+        'flex shrink-0 items-center gap-3 border-b border-[#e5e2db] bg-[#fbfaf7]/95 px-4 dark:border-[#3d3d3d] dark:bg-[#262626]/95',
+        isWindows() ? 'mt-9 h-9 min-h-9' : 'mt-12 h-12 min-h-12',
       )}>
         <Button
           variant="ghost"
@@ -206,9 +219,6 @@ export default function PreviewPanel() {
             <span className="shrink-0">{t.panel.artifacts}</span>
             <span className="font-normal text-[#aaa69c] dark:text-[#77746d]">/</span>
             <span className="truncate">{fileName}</span>
-          </div>
-          <div className="mt-0.5 truncate text-[11.5px] text-[#9a968c] dark:text-[#a39f96]" title={displayPath}>
-            {displayPath}
           </div>
         </div>
         {rendererType === 'html' ? (
@@ -300,9 +310,7 @@ export default function PreviewPanel() {
       {/* Content */}
       <div className="flex-1 min-h-0 overflow-hidden">
         {loading ? (
-          <div className="flex items-center justify-center h-full">
-            <Loader2 className="w-5 h-5 text-[#d97757] animate-spin" />
-          </div>
+          <PreviewLoadingIndicator />
         ) : error ? (
           <div className="flex flex-col items-center justify-center h-full p-4 text-center">
             <p className="text-[13px] text-red-500">{error}</p>

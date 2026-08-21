@@ -477,7 +477,7 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
 
       {createOpen && (
         <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center"
+          className="window-modal-viewport fixed inset-0 z-[9999] flex items-center justify-center"
           onClick={(event) => {
             if (event.target === event.currentTarget && !creating) setCreateOpen(false);
           }}

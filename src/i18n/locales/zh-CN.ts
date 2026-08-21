@@ -574,6 +574,7 @@ const zhCN: TranslationDict = {
     revealInFolder: '在文件夹中显示',
     downloadFile: '下载文件',
     failedToReadFile: '无法读取文件',
+    loadingPreview: '正在打开文档…',
     fileNotFound: '文件不存在',
     // FilesSection
     operationRead: '读取',

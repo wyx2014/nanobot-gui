@@ -591,6 +591,7 @@ export interface TranslationDict {
     revealInFolder: string;
     downloadFile: string;
     failedToReadFile: string;
+    loadingPreview: string;
     fileNotFound: string;
     // FilesSection
     operationRead: string;

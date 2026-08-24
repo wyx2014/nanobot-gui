@@ -967,7 +967,6 @@ export default function Sidebar() {
           }}
         >
           <WindowModalBackdrop
-            position="fixed"
             data-testid="conversation-search-backdrop"
           />
           <div

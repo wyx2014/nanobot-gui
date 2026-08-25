@@ -11,27 +11,12 @@ import {
   Clock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { ScheduleFrequency } from '@/types/schedule';
 import ScheduleRunHistory from './ScheduleRunHistory';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
-
-function getFrequencyLabel(
-  freq: ScheduleFrequency,
-  t: ReturnType<typeof useI18n>['t']
-): string {
-  const map: Record<ScheduleFrequency, string> = {
-    hourly: t.schedule.frequencyHourly,
-    daily: t.schedule.frequencyDaily,
-    weekly: t.schedule.frequencyWeekly,
-    monthly: t.schedule.frequencyMonthly,
-    weekdays: t.schedule.frequencyWeekdays,
-    manual: t.schedule.frequencyManual,
-  };
-  return map[freq];
-}
+import { getScheduleDescription } from './scheduleFormat';
 
 export default function ScheduleTaskDetail() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const {
     tasks,
     selectedTaskId,
@@ -51,6 +36,7 @@ export default function ScheduleTaskDetail() {
   if (!task) return null;
 
   const isPaused = task.status === 'paused';
+  const isCompleted = task.status === 'completed';
 
   const handleRunNow = async () => {
     setIsRunning(true);
@@ -78,30 +64,7 @@ export default function ScheduleTaskDetail() {
     setSelectedTaskId(null);
   };
 
-  // Build schedule description
-  const freq = getFrequencyLabel(task.schedule.frequency, t);
-  const time = task.schedule.time;
-  let scheduleDesc = freq;
-  if (time) {
-    if (task.schedule.frequency === 'hourly') {
-      scheduleDesc = `${freq} :${time.minute.toString().padStart(2, '0')}`;
-    } else {
-      const timeStr = `${time.hour.toString().padStart(2, '0')}:${time.minute.toString().padStart(2, '0')}`;
-      if (task.schedule.frequency === 'weekly') {
-        const days = [
-          t.schedule.sunday, t.schedule.monday, t.schedule.tuesday,
-          t.schedule.wednesday, t.schedule.thursday, t.schedule.friday,
-          t.schedule.saturday,
-        ];
-        const day = days[task.schedule.dayOfWeek ?? 1];
-        scheduleDesc = `${freq} ${day} ${timeStr}`;
-      } else if (task.schedule.frequency === 'monthly') {
-        scheduleDesc = `${freq} ${t.schedule.monthDay.replace('{day}', String(task.schedule.dayOfMonth ?? 1))} ${timeStr}`;
-      } else {
-        scheduleDesc = `${freq} ${timeStr}`;
-      }
-    }
-  }
+  const scheduleDesc = getScheduleDescription(task.schedule, t, locale);
 
   return (
     <div data-schedule-detail className="flex flex-col h-full">
@@ -137,14 +100,18 @@ export default function ScheduleTaskDetail() {
                 <span
                   className={cn(
                     'w-2 h-2 rounded-full',
-                    isPaused ? 'bg-neutral-300' : 'bg-green-500'
+                    isPaused || isCompleted ? 'bg-neutral-300' : 'bg-green-500'
                   )}
                 />
                 <span className={cn(
                   'text-[13px] font-medium',
-                  isPaused ? 'text-neutral-500' : 'text-green-600'
+                  isPaused || isCompleted ? 'text-neutral-500' : 'text-green-600'
                 )}>
-                  {isPaused ? t.schedule.statusPaused : t.schedule.statusActive}
+                  {isCompleted
+                    ? t.schedule.statusCompleted
+                    : isPaused
+                      ? t.schedule.statusPaused
+                      : t.schedule.statusActive}
                 </span>
               </span>
             </div>
@@ -205,15 +172,17 @@ export default function ScheduleTaskDetail() {
               {isRunning ? t.schedule.running : t.schedule.runNow}
             </button>
 
-            <button
-              onClick={() => {
-                void (isPaused ? resumeTask(task.id) : pauseTask(task.id));
-              }}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-[13px] font-medium bg-[#f5f3ee] text-[#3d3929] hover:bg-[#e8e5de] transition-colors"
-            >
-              {isPaused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
-              {isPaused ? t.schedule.resume : t.schedule.pause}
-            </button>
+            {!isCompleted && (
+              <button
+                onClick={() => {
+                  void (isPaused ? resumeTask(task.id) : pauseTask(task.id));
+                }}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-[13px] font-medium bg-[#f5f3ee] text-[#3d3929] hover:bg-[#e8e5de] transition-colors"
+              >
+                {isPaused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+                {isPaused ? t.schedule.resume : t.schedule.pause}
+              </button>
+            )}
 
             <div className="flex-1" />
 

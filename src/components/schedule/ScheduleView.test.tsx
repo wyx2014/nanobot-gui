@@ -117,6 +117,69 @@ afterEach(() => {
 });
 
 describe('ScheduleView automation center', () => {
+  it('defaults a blank task to a one-time date instead of a daily recurrence', () => {
+    useScheduleStore.setState({
+      showEditor: true,
+      editingTaskId: null,
+      editorDraft: null,
+    });
+
+    const view = renderView();
+
+    expect(view.querySelector('[data-schedule-once-date]')).not.toBeNull();
+    expect(view.querySelector<HTMLInputElement>('input[name="schedule-date"]')?.value).toMatch(
+      /^\d{4}-\d{2}-\d{2}$/,
+    );
+    expect(view.textContent).toContain('仅一次');
+    expect(view.textContent).toContain('不会自动重复');
+  });
+
+  it('renders a chat-created one-time reminder with its exact date', () => {
+    useScheduleStore.setState({
+      tasks: {
+        once: taskFixture({
+          id: 'once',
+          name: '提交材料提醒',
+          schedule: {
+            frequency: 'once',
+            at: '2099-08-30T01:15:00Z',
+            timezone: 'Asia/Shanghai',
+          },
+        }),
+      },
+    });
+
+    const view = renderView();
+
+    expect(view.textContent).toContain('仅一次');
+    expect(view.textContent).toContain('2099');
+    expect(view.textContent).toContain('Asia/Shanghai');
+    expect(view.textContent).not.toContain('每天 09:00');
+  });
+
+  it('keeps a finished one-time reminder as completed history instead of a resumable task', () => {
+    useScheduleStore.setState({
+      tasks: {
+        completed: taskFixture({
+          id: 'completed',
+          name: '已触发的提醒',
+          status: 'completed',
+          schedule: {
+            frequency: 'once',
+            at: '2026-08-20T01:15:00Z',
+            timezone: 'Asia/Shanghai',
+          },
+          lastRunAt: Date.now() - 60_000,
+        }),
+      },
+    });
+
+    const view = renderView();
+
+    expect(view.textContent).toContain('已完成');
+    expect(view.querySelector('[data-schedule-toggle]')).toBeNull();
+  });
+
   it('shows WorkBuddy-style tabs and opens a template as a prefilled real task draft', () => {
     const view = renderView();
 

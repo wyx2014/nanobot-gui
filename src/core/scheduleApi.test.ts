@@ -31,4 +31,27 @@ describe('schedule API', () => {
     expect(url.searchParams.get('minute')).toBe('15');
     expect(url.searchParams.get('day_of_month')).toBe('1');
   });
+
+  it('sends an exact timestamp and timezone for a one-time reminder', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ tasks: [] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await createScheduleTask('token', {
+      name: '提交材料提醒',
+      prompt: '提醒我提交材料。',
+      schedule: {
+        frequency: 'once',
+        at: '2099-08-30T01:15:00.000Z',
+        timezone: 'Asia/Shanghai',
+      },
+    }, 'http://127.0.0.1:8900');
+
+    const url = new URL(String(fetchMock.mock.calls[0][0]));
+    expect(url.searchParams.get('frequency')).toBe('once');
+    expect(url.searchParams.get('at')).toBe('2099-08-30T01:15:00.000Z');
+    expect(url.searchParams.get('timezone')).toBe('Asia/Shanghai');
+  });
 });

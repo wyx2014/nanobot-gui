@@ -8,8 +8,36 @@ import { cn } from '@/lib/utils';
 import { Select } from '@/components/ui/select';
 import type { ScheduleFrequency, ScheduleConfig } from '@/types/schedule';
 import WindowModalBackdrop from '@/components/common/WindowModalBackdrop';
+import { getScheduleDescription } from './scheduleFormat';
 
-const FREQUENCIES: ScheduleFrequency[] = ['hourly', 'daily', 'weekly', 'monthly', 'weekdays', 'manual'];
+const FREQUENCIES: Exclude<ScheduleFrequency, 'custom'>[] = [
+  'once',
+  'hourly',
+  'daily',
+  'weekly',
+  'monthly',
+  'weekdays',
+  'manual',
+];
+
+function toLocalDateValue(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function defaultOnceDate(): string {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return toLocalDateValue(tomorrow);
+}
+
+function parseOnceDate(at: string | undefined): Date | null {
+  if (!at) return null;
+  const parsed = new Date(at);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
 
 export default function ScheduleEditor() {
   const { t, locale } = useI18n();
@@ -25,7 +53,8 @@ export default function ScheduleEditor() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [prompt, setPrompt] = useState('');
-  const [frequency, setFrequency] = useState<ScheduleFrequency>('daily');
+  const [frequency, setFrequency] = useState<ScheduleFrequency>('once');
+  const [onceDate, setOnceDate] = useState(defaultOnceDate);
   const [hour, setHour] = useState(9);
   const [minute, setMinute] = useState(0);
   const [dayOfWeek, setDayOfWeek] = useState(1);
@@ -46,26 +75,29 @@ export default function ScheduleEditor() {
 
   // Initialize form when editing task changes
   useEffect(() => {
+    const initializeSchedule = (schedule: ScheduleConfig | undefined) => {
+      const nextFrequency = schedule?.frequency ?? 'once';
+      const once = nextFrequency === 'once' ? parseOnceDate(schedule?.at) : null;
+      setFrequency(nextFrequency);
+      setOnceDate(once ? toLocalDateValue(once) : defaultOnceDate());
+      setHour(once ? once.getHours() : (schedule?.time?.hour ?? 9));
+      setMinute(once ? once.getMinutes() : (schedule?.time?.minute ?? 0));
+      setDayOfWeek(schedule?.dayOfWeek ?? 1);
+      setDayOfMonth(schedule?.dayOfMonth ?? 1);
+    };
+
     if (editingTask) {
       setName(editingTask.name);
       setDescription(editingTask.description ?? '');
       setPrompt(editingTask.prompt);
-      setFrequency(editingTask.schedule.frequency);
-      setHour(editingTask.schedule.time?.hour ?? 9);
-      setMinute(editingTask.schedule.time?.minute ?? 0);
-      setDayOfWeek(editingTask.schedule.dayOfWeek ?? 1);
-      setDayOfMonth(editingTask.schedule.dayOfMonth ?? 1);
+      initializeSchedule(editingTask.schedule);
       setSkillName(editingTask.skillName ?? '');
       setWorkspacePath(editingTask.workspacePath ?? '');
     } else {
       setName(editorDraft?.name ?? '');
       setDescription(editorDraft?.description ?? '');
       setPrompt(editorDraft?.prompt ?? '');
-      setFrequency(editorDraft?.schedule.frequency ?? 'daily');
-      setHour(editorDraft?.schedule.time?.hour ?? 9);
-      setMinute(editorDraft?.schedule.time?.minute ?? 0);
-      setDayOfWeek(editorDraft?.schedule.dayOfWeek ?? 1);
-      setDayOfMonth(editorDraft?.schedule.dayOfMonth ?? 1);
+      initializeSchedule(editorDraft?.schedule);
       setSkillName(editorDraft?.skillName ?? '');
       setWorkspacePath(editorDraft?.workspacePath ?? '');
     }
@@ -85,11 +117,13 @@ export default function ScheduleEditor() {
   if (!showEditor) return null;
 
   const frequencyLabels: Record<ScheduleFrequency, string> = {
+    once: t.schedule.frequencyOnce,
     hourly: t.schedule.frequencyHourly,
     daily: t.schedule.frequencyDaily,
     weekly: t.schedule.frequencyWeekly,
     monthly: t.schedule.frequencyMonthly,
     weekdays: t.schedule.frequencyWeekdays,
+    custom: t.schedule.frequencyCustom,
     manual: t.schedule.frequencyManual,
   };
 
@@ -103,20 +137,46 @@ export default function ScheduleEditor() {
     t.schedule.saturday,
   ];
 
-  const showTimeSelector = frequency !== 'manual';
+  const sourceSchedule = editingTask?.schedule ?? editorDraft?.schedule;
+  const showTimeSelector = frequency !== 'manual' && frequency !== 'custom';
   const showHourSelector = frequency !== 'hourly';
+  const showDateSelector = frequency === 'once';
   const showDaySelector = frequency === 'weekly';
   const showMonthDaySelector = frequency === 'monthly';
 
   const handleSave = async () => {
     if (!name.trim() || !prompt.trim()) return;
 
-    const schedule: ScheduleConfig = {
-      frequency,
-      time: frequency !== 'manual' ? { hour, minute } : undefined,
-      dayOfWeek: frequency === 'weekly' ? dayOfWeek : undefined,
-      dayOfMonth: frequency === 'monthly' ? dayOfMonth : undefined,
-    };
+    let schedule: ScheduleConfig;
+    if (frequency === 'once') {
+      const [year, month, day] = onceDate.split('-').map(Number);
+      const at = new Date(year, month - 1, day, hour, minute, 0, 0);
+      if (
+        !onceDate
+        || !year
+        || !month
+        || !day
+        || Number.isNaN(at.getTime())
+        || at.getTime() <= Date.now()
+      ) {
+        setSaveError(t.schedule.onceTimePast);
+        return;
+      }
+      schedule = {
+        frequency: 'once',
+        at: at.toISOString(),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      };
+    } else if (frequency === 'custom') {
+      schedule = { ...(sourceSchedule ?? { frequency: 'custom' }), frequency: 'custom' };
+    } else {
+      schedule = {
+        frequency,
+        time: frequency !== 'manual' ? { hour, minute } : undefined,
+        dayOfWeek: frequency === 'weekly' ? dayOfWeek : undefined,
+        dayOfMonth: frequency === 'monthly' ? dayOfMonth : undefined,
+      };
+    }
 
     setIsSaving(true);
     setSaveError(null);
@@ -219,6 +279,11 @@ export default function ScheduleEditor() {
               {t.schedule.frequency}
             </label>
             <div className="flex flex-wrap gap-1.5">
+              {frequency === 'custom' && (
+                <span className="px-3 py-1.5 rounded-lg text-[12px] font-medium bg-[#d97757] text-white">
+                  {frequencyLabels.custom}
+                </span>
+              )}
               {FREQUENCIES.map((freq) => (
                 <button
                   key={freq}
@@ -235,6 +300,36 @@ export default function ScheduleEditor() {
               ))}
             </div>
           </div>
+
+          {/* One-time date selector */}
+          {showDateSelector && (
+            <div data-schedule-once-date>
+              <label className="block text-[13px] font-medium text-[#29261b] mb-1.5">
+                {t.schedule.executionDate}
+              </label>
+              <input
+                name="schedule-date"
+                type="date"
+                min={toLocalDateValue(new Date())}
+                value={onceDate}
+                onChange={(event) => setOnceDate(event.target.value)}
+                className="h-10 w-full rounded-lg border border-[#e8e4dd] bg-white px-3 text-sm text-[#29261b] focus:border-[#d97757] focus:outline-none focus:ring-2 focus:ring-[#d97757]/30"
+              />
+              <p className="mt-1.5 text-[11px] text-[#8a867c]">{t.schedule.onceHint}</p>
+            </div>
+          )}
+
+          {/* Canonical custom schedule */}
+          {frequency === 'custom' && sourceSchedule && (
+            <div data-schedule-custom className="rounded-lg border border-[#e8e4dd] bg-[#faf8f5] px-3 py-2.5">
+              <div className="text-[12px] font-medium text-[#3d3929]">
+                {getScheduleDescription(sourceSchedule, t, locale)}
+              </div>
+              <p className="mt-1 text-[11px] leading-relaxed text-[#8a867c]">
+                {t.schedule.customScheduleHint}
+              </p>
+            </div>
+          )}
 
           {/* Time selector */}
           {showTimeSelector && (

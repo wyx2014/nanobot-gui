@@ -3,8 +3,9 @@ import { useScheduleStore } from '@/stores/scheduleStore';
 import { useI18n } from '@/i18n';
 import { Clock, Pencil, Play, RotateCw, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { ScheduledTask, ScheduleFrequency } from '@/types/schedule';
+import type { ScheduledTask } from '@/types/schedule';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
+import { getScheduleDescription } from './scheduleFormat';
 
 function formatTimeAgo(timestamp: number, agoTemplate: string): string {
   const diff = Date.now() - timestamp;
@@ -21,61 +22,19 @@ function formatTimeAgo(timestamp: number, agoTemplate: string): string {
   return agoTemplate.replace('{time}', time);
 }
 
-function getFrequencyLabel(
-  freq: ScheduleFrequency,
-  t: ReturnType<typeof useI18n>['t']
-): string {
-  const map: Record<ScheduleFrequency, string> = {
-    hourly: t.schedule.frequencyHourly,
-    daily: t.schedule.frequencyDaily,
-    weekly: t.schedule.frequencyWeekly,
-    monthly: t.schedule.frequencyMonthly,
-    weekdays: t.schedule.frequencyWeekdays,
-    manual: t.schedule.frequencyManual,
-  };
-  return map[freq];
-}
-
-function getScheduleDescription(task: ScheduledTask, t: ReturnType<typeof useI18n>['t']): string {
-  const freq = getFrequencyLabel(task.schedule.frequency, t);
-  const time = task.schedule.time;
-  if (!time) return freq;
-
-  if (task.schedule.frequency === 'hourly') {
-    return `${freq} :${time.minute.toString().padStart(2, '0')}`;
-  }
-
-  const timeStr = `${time.hour.toString().padStart(2, '0')}:${time.minute.toString().padStart(2, '0')}`;
-
-  if (task.schedule.frequency === 'weekly') {
-    const days = [
-      t.schedule.sunday, t.schedule.monday, t.schedule.tuesday,
-      t.schedule.wednesday, t.schedule.thursday, t.schedule.friday,
-      t.schedule.saturday,
-    ];
-    const day = days[task.schedule.dayOfWeek ?? 1];
-    return `${freq} ${day} ${timeStr}`;
-  }
-
-  if (task.schedule.frequency === 'monthly') {
-    return `${freq} ${t.schedule.monthDay.replace('{day}', String(task.schedule.dayOfMonth ?? 1))} ${timeStr}`;
-  }
-
-  return `${freq} ${timeStr}`;
-}
-
 interface Props {
   task: ScheduledTask;
 }
 
 export default function ScheduleTaskCard({ task }: Props) {
-  const { t, format } = useI18n();
+  const { t, locale, format } = useI18n();
   const { pauseTask, resumeTask, runTaskNow, loadTasks, deleteTask, openEditor } = useScheduleStore();
   const [running, setRunning] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const isPaused = task.status === 'paused';
-  const scheduleDesc = getScheduleDescription(task, t);
+  const isCompleted = task.status === 'completed';
+  const scheduleDesc = getScheduleDescription(task.schedule, t, locale);
   const unreadRunCount = task.runs.filter((run) => (
     (run.status === 'completed' || run.status === 'error') && !run.viewedAt
   )).length;
@@ -115,7 +74,7 @@ export default function ScheduleTaskCard({ task }: Props) {
                 <span
                   className={cn(
                     'w-2 h-2 rounded-full shrink-0',
-                    isPaused ? 'bg-neutral-300' : 'bg-green-500'
+                    isPaused || isCompleted ? 'bg-neutral-300' : 'bg-green-500'
                   )}
                 />
                 <span className="text-[14px] font-medium text-[#29261b] truncate">
@@ -174,24 +133,30 @@ export default function ScheduleTaskCard({ task }: Props) {
               </button>
             </div>
 
-            <button
-              onClick={handleToggle}
-              data-schedule-toggle
-              data-active={isPaused ? "false" : "true"}
-              className={cn(
-                'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
-                isPaused ? 'bg-neutral-200' : 'bg-green-500'
-              )}
-              title={isPaused ? t.schedule.resume : t.schedule.pause}
-            >
-              <span
-                data-schedule-toggle-thumb
+            {isCompleted ? (
+              <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-1 text-[11px] font-medium text-neutral-500">
+                {t.schedule.statusCompleted}
+              </span>
+            ) : (
+              <button
+                onClick={handleToggle}
+                data-schedule-toggle
+                data-active={isPaused ? "false" : "true"}
                 className={cn(
-                  'inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform',
-                  isPaused ? 'translate-x-[3px]' : 'translate-x-[19px]'
+                  'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
+                  isPaused ? 'bg-neutral-200' : 'bg-green-500'
                 )}
-              />
-            </button>
+                title={isPaused ? t.schedule.resume : t.schedule.pause}
+              >
+                <span
+                  data-schedule-toggle-thumb
+                  className={cn(
+                    'inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform',
+                    isPaused ? 'translate-x-[3px]' : 'translate-x-[19px]'
+                  )}
+                />
+              </button>
+            )}
           </div>
         </div>
 

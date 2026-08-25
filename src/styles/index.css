@@ -64,6 +64,76 @@
   background: rgba(255, 255, 255, 0.22);
 }
 
+/* Main conversation scrollbar (Windows/Chromium).
+ * Keep a generous, stable hit target while rendering a quiet narrow thumb.
+ * Hovering or dragging expands only the painted thumb, so the conversation
+ * column never shifts as the scrollbar becomes easier to grab. */
+html[data-desktop-platform="windows"] .conversation-detail-scrollbar {
+  /* Windows scrollbars consume layout width. Always reserve the rail so
+   * crossing the overflow threshold cannot reflow the conversation. */
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+}
+
+html[data-desktop-platform="windows"] .conversation-detail-scrollbar::-webkit-scrollbar {
+  width: 12px;
+}
+
+html[data-desktop-platform="windows"] .conversation-detail-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 999px;
+}
+
+html[data-desktop-platform="windows"] .conversation-detail-scrollbar::-webkit-scrollbar-track:hover {
+  background: rgba(112, 107, 87, 0.045);
+}
+
+html[data-desktop-platform="windows"] .conversation-detail-scrollbar::-webkit-scrollbar-thumb {
+  --conversation-scrollbar-thumb: rgba(112, 107, 87, 0.28);
+  min-height: 44px;
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background-color: transparent;
+  background-clip: padding-box;
+  background-image: linear-gradient(
+    var(--conversation-scrollbar-thumb),
+    var(--conversation-scrollbar-thumb)
+  );
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 4px 100%;
+  transition: background-size 120ms ease;
+}
+
+html[data-desktop-platform="windows"] .conversation-detail-scrollbar:hover::-webkit-scrollbar-thumb,
+html[data-desktop-platform="windows"] .conversation-detail-scrollbar::-webkit-scrollbar-thumb:hover {
+  --conversation-scrollbar-thumb: rgba(112, 107, 87, 0.46);
+  background-size: 8px 100%;
+}
+
+html[data-desktop-platform="windows"] .conversation-detail-scrollbar::-webkit-scrollbar-thumb:active {
+  --conversation-scrollbar-thumb: rgba(112, 107, 87, 0.58);
+  background-size: 10px 100%;
+}
+
+html.dark[data-desktop-platform="windows"] .conversation-detail-scrollbar::-webkit-scrollbar-track:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+html.dark[data-desktop-platform="windows"] .conversation-detail-scrollbar::-webkit-scrollbar-thumb {
+  --conversation-scrollbar-thumb: rgba(255, 255, 255, 0.2);
+}
+
+html.dark[data-desktop-platform="windows"] .conversation-detail-scrollbar:hover::-webkit-scrollbar-thumb,
+html.dark[data-desktop-platform="windows"] .conversation-detail-scrollbar::-webkit-scrollbar-thumb:hover {
+  --conversation-scrollbar-thumb: rgba(255, 255, 255, 0.38);
+}
+
+html.dark[data-desktop-platform="windows"] .conversation-detail-scrollbar::-webkit-scrollbar-thumb:active {
+  --conversation-scrollbar-thumb: rgba(255, 255, 255, 0.5);
+}
+
 /* Hide the scrollbar entirely while keeping the region scrollable
    (used by compact floating surfaces like the pinned summary). */
 .no-scrollbar {

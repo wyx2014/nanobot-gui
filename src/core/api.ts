@@ -705,9 +705,13 @@ function appendScheduleParams(
   if (data.prompt !== undefined) query.set("prompt", data.prompt);
   if (data.skillName !== undefined) query.set("skill_name", data.skillName ?? "");
   if (data.workspacePath !== undefined) query.set("workspace_path", data.workspacePath ?? "");
-  if (data.timezone !== undefined) query.set("timezone", data.timezone);
+  const timezone = data.timezone ?? data.schedule?.timezone;
+  if (timezone !== undefined) query.set("timezone", timezone);
   if (data.schedule !== undefined) {
     query.set("frequency", data.schedule.frequency);
+    if (data.schedule.at !== undefined) {
+      query.set("at", data.schedule.at);
+    }
     if (data.schedule.time) {
       query.set("hour", String(data.schedule.time.hour));
       query.set("minute", String(data.schedule.time.minute));
@@ -717,6 +721,12 @@ function appendScheduleParams(
     }
     if (data.schedule.dayOfMonth !== undefined) {
       query.set("day_of_month", String(data.schedule.dayOfMonth));
+    }
+    if (data.schedule.cronExpression !== undefined) {
+      query.set("cron_expression", data.schedule.cronExpression);
+    }
+    if (data.schedule.everyMs !== undefined) {
+      query.set("every_ms", String(data.schedule.everyMs));
     }
   }
 }

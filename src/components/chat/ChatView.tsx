@@ -910,7 +910,8 @@ export default function ChatView({
       <div className="relative flex-1 min-h-0">
         <div
           key={activeConvId}
-          className="conversation-search-scope h-full overflow-y-auto"
+          data-conversation-scroll-container
+          className="conversation-detail-scrollbar conversation-search-scope h-full overflow-y-auto"
           ref={containerRef}
           style={summaryContentInset ? { paddingRight: summaryContentInset } : undefined}
           aria-busy={isConversationLoading}

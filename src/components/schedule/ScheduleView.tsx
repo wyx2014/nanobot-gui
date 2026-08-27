@@ -15,8 +15,10 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import ScheduleEditor from './ScheduleEditor';
 import ScheduleRunCenter from './ScheduleRunCenter';
+import ScheduleRunDetail from './ScheduleRunDetail';
 import ScheduleTaskCard from './ScheduleTaskCard';
 import ScheduleTemplateGallery from './ScheduleTemplateGallery';
+import { isArchivedOneTimeTask } from './scheduleTaskVisibility';
 
 type ScheduleTab = 'tasks' | 'runs';
 
@@ -29,6 +31,7 @@ export default function ScheduleView() {
     loading,
     error,
     getUnviewedRunCount,
+    activeRunDetail,
   } = useScheduleStore();
   const [activeTab, setActiveTab] = useState<ScheduleTab>('tasks');
 
@@ -36,13 +39,21 @@ export default function ScheduleView() {
     void loadTasks();
   }, [loadTasks]);
 
-  const sortedTasks = useMemo(
+  useEffect(() => {
+    if (activeRunDetail) setActiveTab('runs');
+  }, [activeRunDetail]);
+
+  const allTasks = useMemo(
     () => Object.values(tasks).sort((a, b) => b.createdAt - a.createdAt),
     [tasks],
   );
-  const hasRunningRuns = sortedTasks.some((task) => task.runs.some((run) => run.status === 'running'));
-  const activeCount = sortedTasks.filter((task) => task.status === 'active').length;
-  const runCount = sortedTasks.reduce((count, task) => count + task.runs.length, 0);
+  const visibleTasks = useMemo(
+    () => allTasks.filter((task) => !isArchivedOneTimeTask(task)),
+    [allTasks],
+  );
+  const hasRunningRuns = allTasks.some((task) => task.runs.some((run) => run.status === 'running'));
+  const activeCount = visibleTasks.filter((task) => task.status === 'active').length;
+  const runCount = visibleTasks.reduce((count, task) => count + task.runs.length, 0);
   const unviewedRunCount = getUnviewedRunCount();
 
   useEffect(() => {
@@ -102,7 +113,7 @@ export default function ScheduleView() {
           </button>
         </div>
 
-        {activeTab === 'tasks' && sortedTasks.length > 0 && (
+        {activeTab === 'tasks' && visibleTasks.length > 0 && (
           <div data-schedule-header-actions className="flex shrink-0 items-center gap-2">
             <button
               type="button"
@@ -131,7 +142,7 @@ export default function ScheduleView() {
       ) : (
         <ScrollArea className="min-h-0 flex-1">
           <div className="mx-auto w-full max-w-[1320px] px-6 pb-10 pt-5">
-            {loading && sortedTasks.length === 0 ? (
+            {loading && allTasks.length === 0 ? (
               <div role="status" className="flex min-h-[240px] items-center justify-center gap-2 text-[13px] text-[#777267] dark:text-[#aaa69d]">
                 <RefreshCw className="h-4 w-4 animate-spin" />
                 {t.schedule.loadingTasks}
@@ -143,7 +154,7 @@ export default function ScheduleView() {
                   {t.schedule.retry}
                 </button>
               </div>
-            ) : sortedTasks.length === 0 ? (
+            ) : visibleTasks.length === 0 ? (
               <section className="flex min-h-[350px] flex-col items-center justify-center px-6 text-center">
                 <span className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#f0ede7] text-[#aaa69d] dark:bg-[#292929] dark:text-[#77736c]">
                   <AlarmClockCheck className="h-8 w-8" strokeWidth={1.55} />
@@ -182,7 +193,7 @@ export default function ScheduleView() {
                     </h1>
                     <p className="mt-0.5 text-[12px] text-[#777267] dark:text-[#9d9990]">
                       {format(t.schedule.automationSummary, {
-                        total: sortedTasks.length,
+                        total: visibleTasks.length,
                         active: activeCount,
                         runs: runCount,
                       })}
@@ -209,7 +220,7 @@ export default function ScheduleView() {
                   </Tooltip>
                 </div>
                 <div className="space-y-3">
-                  {sortedTasks.map((task) => (
+                  {visibleTasks.map((task) => (
                     <ScheduleTaskCard key={task.id} task={task} />
                   ))}
                 </div>
@@ -222,6 +233,7 @@ export default function ScheduleView() {
       )}
 
       <ScheduleEditor />
+      <ScheduleRunDetail />
     </div>
   );
 }

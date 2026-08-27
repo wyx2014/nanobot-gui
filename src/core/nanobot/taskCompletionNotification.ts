@@ -40,6 +40,9 @@ export function completedTurnNotificationFromEvent(
   event: CanonicalSessionEvent,
 ): CompletedTurnNotification | null {
   if (event.event !== 'turn_completed') return null;
+  // Scheduled runs have their own task-aware notification monitor. Ignoring
+  // cron child sessions here prevents a duplicate generic completion alert.
+  if (event.session_key.startsWith('cron:')) return null;
   const payload = record(event.payload);
   const turn = record(event.turn) ?? record(payload?.turn);
   if (nonEmptyString(turn?.status) !== 'completed') return null;

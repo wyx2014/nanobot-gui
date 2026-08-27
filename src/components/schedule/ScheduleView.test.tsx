@@ -13,6 +13,7 @@ import type { ScheduledTask } from '@/types/schedule';
 
 const originalLoadTasks = useScheduleStore.getState().loadTasks;
 const originalDeleteRun = useScheduleStore.getState().deleteRun;
+const originalMarkRunViewed = useScheduleStore.getState().markRunViewed;
 
 let container: HTMLDivElement | undefined;
 let root: Root | undefined;
@@ -84,7 +85,9 @@ beforeEach(() => {
     showEditor: false,
     editingTaskId: null,
     editorDraft: null,
+    activeRunDetail: null,
     loadTasks: vi.fn(async () => undefined),
+    markRunViewed: vi.fn(async () => undefined),
     deleteRun: vi.fn(async (taskId, run) => {
       useScheduleStore.setState((state) => ({
         tasks: {
@@ -108,11 +111,13 @@ afterEach(() => {
   useScheduleStore.setState({
     loadTasks: originalLoadTasks,
     deleteRun: originalDeleteRun,
+    markRunViewed: originalMarkRunViewed,
     tasks: {},
     selectedTaskId: null,
     showEditor: false,
     editingTaskId: null,
     editorDraft: null,
+    activeRunDetail: null,
   });
 });
 
@@ -178,6 +183,173 @@ describe('ScheduleView automation center', () => {
 
     expect(view.textContent).toContain('已完成');
     expect(view.querySelector('[data-schedule-toggle]')).toBeNull();
+  });
+
+  it('archives a successfully completed one-time task after its latest run is viewed', async () => {
+    const completedAt = Date.now();
+    useScheduleStore.setState({
+      markRunViewed: vi.fn(async (taskId, run) => {
+        useScheduleStore.setState((state) => ({
+          tasks: {
+            ...state.tasks,
+            [taskId]: {
+              ...state.tasks[taskId],
+              runs: state.tasks[taskId].runs.map((item) => (
+                item.id === run.id ? { ...item, viewedAt: Date.now() } : item
+              )),
+            },
+          },
+        }));
+      }),
+      tasks: {
+        once: taskFixture({
+          id: 'once',
+          name: '找李家平安排任务',
+          status: 'completed',
+          schedule: {
+            frequency: 'once',
+            at: '2026-08-26T05:10:00Z',
+          },
+          totalRuns: 1,
+          runs: [{
+            id: 'once-run',
+            runId: 'once-run',
+            scheduledTaskId: 'once',
+            conversationId: 'cron:once:once-run',
+            sessionKey: 'cron:once:once-run',
+            startedAt: completedAt - 1_000,
+            completedAt,
+            status: 'completed',
+          }],
+        }),
+      },
+    });
+
+    const view = renderView();
+
+    expect(view.querySelector('[data-schedule-card]')).not.toBeNull();
+    expect(view.textContent).toContain('找李家平安排任务');
+
+    act(() => view.querySelector<HTMLButtonElement>('[data-schedule-tab="runs"]')?.click());
+    expect(view.querySelector('[data-schedule-run-row="once:once-run"]')).not.toBeNull();
+    await act(async () => {
+      view.querySelector<HTMLButtonElement>('[data-schedule-run-open="once:once-run"]')?.click();
+      await Promise.resolve();
+    });
+    expect(useScheduleStore.getState().markRunViewed).toHaveBeenCalledWith(
+      'once',
+      expect.objectContaining({ id: 'once-run' }),
+    );
+
+    act(() => {
+      useScheduleStore.getState().closeRunDetail();
+      view.querySelector<HTMLButtonElement>('[data-schedule-tab="tasks"]')?.click();
+    });
+    expect(view.querySelector('[data-schedule-card]')).toBeNull();
+    expect(view.textContent).not.toContain('找李家平安排任务');
+
+    act(() => view.querySelector<HTMLButtonElement>('[data-schedule-tab="runs"]')?.click());
+    expect(view.querySelector('[data-schedule-run-row="once:once-run"]')).not.toBeNull();
+  });
+
+  it('does not restore an archived reminder when a stale poll omits viewedAt', () => {
+    const completedAt = Date.now();
+    const archivedTask = taskFixture({
+      id: 'once',
+      name: 'A股开市提醒',
+      status: 'completed',
+      schedule: {
+        frequency: 'once',
+        at: '2026-08-26T05:10:00Z',
+      },
+      totalRuns: 1,
+      runs: [{
+        id: 'once-run',
+        runId: 'once-run',
+        scheduledTaskId: 'once',
+        resultType: 'none',
+        conversationAvailable: false,
+        startedAt: completedAt - 1_000,
+        completedAt,
+        status: 'completed',
+        viewedAt: completedAt + 1_000,
+      }],
+    });
+    useScheduleStore.setState({ tasks: { once: archivedTask } });
+    const view = renderView();
+
+    expect(view.querySelector('[data-schedule-card]')).toBeNull();
+
+    act(() => {
+      useScheduleStore.getState().applyPayload({
+        tasks: [{
+          ...archivedTask,
+          runs: archivedTask.runs.map(({ viewedAt: _viewedAt, ...run }) => run),
+        }],
+      });
+    });
+
+    expect(useScheduleStore.getState().tasks.once.runs[0]?.viewedAt).toBe(completedAt + 1_000);
+    expect(view.querySelector('[data-schedule-card]')).toBeNull();
+  });
+
+  it('keeps unviewed, failed, and recurring tasks in My Automations', () => {
+    const now = Date.now();
+    const run = (id: string, status: 'completed' | 'error', viewedAt?: number) => ({
+      id,
+      runId: id,
+      scheduledTaskId: id,
+      conversationId: `cron:${id}:${id}`,
+      sessionKey: `cron:${id}:${id}`,
+      startedAt: now,
+      completedAt: now + 1_000,
+      status,
+      viewedAt,
+    });
+    useScheduleStore.setState({
+      tasks: {
+        unviewed: taskFixture({
+          id: 'unviewed',
+          name: '未查看单次任务',
+          status: 'completed',
+          schedule: { frequency: 'once', at: '2026-08-26T05:10:00Z' },
+          runs: [run('unviewed', 'completed')],
+        }),
+        failed: taskFixture({
+          id: 'failed',
+          name: '失败单次任务',
+          status: 'completed',
+          schedule: { frequency: 'once', at: '2026-08-26T05:10:00Z' },
+          runs: [run('failed', 'error', now + 2_000)],
+        }),
+        recurring: taskFixture({
+          id: 'recurring',
+          name: '周期任务',
+          schedule: { frequency: 'daily', time: { hour: 9, minute: 0 } },
+          runs: [run('recurring', 'completed', now + 2_000)],
+        }),
+      },
+    });
+
+    const view = renderView();
+
+    expect(view.querySelectorAll('[data-schedule-card]')).toHaveLength(3);
+    expect(view.textContent).toContain('未查看单次任务');
+    expect(view.textContent).toContain('失败单次任务');
+    expect(view.textContent).toContain('周期任务');
+  });
+
+  it('shows unread reminders only in execution records, not task cards', () => {
+    useScheduleStore.setState({ tasks: { 'daily-brief': taskFixture() } });
+    const view = renderView();
+
+    const taskCard = view.querySelector<HTMLElement>('[data-schedule-card]');
+    const runsTab = view.querySelector<HTMLButtonElement>('[data-schedule-tab="runs"]');
+    expect(taskCard?.textContent).not.toContain('未读');
+    expect(runsTab?.textContent).toContain('2');
+
+    act(() => runsTab?.click());
+    expect(view.querySelector('[aria-label="未读结果"]')).not.toBeNull();
   });
 
   it('shows WorkBuddy-style tabs and opens a template as a prefilled real task draft', () => {
@@ -310,7 +482,7 @@ describe('ScheduleView automation center', () => {
     expect(view.querySelector('[data-schedule-run-row="daily-brief:run-success"]')).toBeNull();
   });
 
-  it('opens a running record immediately and creates its live conversation shell', async () => {
+  it('opens run details first, then opens the full live conversation', async () => {
     const runningSessionKey = 'cron:daily-brief:1723456789000:abcd1234';
     const runningTask = taskFixture({
       totalRuns: 1,
@@ -336,12 +508,69 @@ describe('ScheduleView automation center', () => {
       await Promise.resolve();
     });
 
+    expect(useScheduleStore.getState().activeRunDetail).toEqual({
+      taskId: 'daily-brief',
+      runId: '1723456789000:abcd1234',
+    });
+    expect(document.querySelector('[data-schedule-run-detail]')).not.toBeNull();
+
+    const viewConversation = Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent?.includes('查看完整对话'));
+    await act(async () => {
+      viewConversation?.click();
+      await Promise.resolve();
+    });
+
     expect(useChatStore.getState().activeConversationId).toBe(runningSessionKey);
     expect(useChatStore.getState().conversations[runningSessionKey]).toMatchObject({
       scheduledTaskId: 'daily-brief',
       status: 'running',
     });
     expect(useSettingsStore.getState().viewMode).toBe('chat');
+  });
+
+  it('confirms a reminder without opening details or a fake conversation', async () => {
+    const reminderSessionKey = 'cron:reminder:legacy-run';
+    useScheduleStore.setState({
+      tasks: {
+        'daily-brief': taskFixture({
+          totalRuns: 1,
+          runs: [{
+            id: 'legacy-run',
+            runId: 'legacy-run',
+            scheduledTaskId: 'daily-brief',
+            conversationId: reminderSessionKey,
+            sessionKey: reminderSessionKey,
+            resultType: 'none',
+            conversationAvailable: false,
+            startedAt: Date.now() - 1_000,
+            completedAt: Date.now(),
+            status: 'completed',
+          }],
+        }),
+      },
+    });
+    const view = renderView();
+    act(() => view.querySelector<HTMLButtonElement>('[data-schedule-tab="runs"]')?.click());
+    const row = view.querySelector<HTMLButtonElement>('[data-schedule-run-confirm]');
+    expect(row?.disabled).toBe(false);
+    expect(row?.textContent).toContain('确认');
+
+    await act(async () => {
+      row?.click();
+      await Promise.resolve();
+    });
+
+    expect(useScheduleStore.getState().markRunViewed).toHaveBeenCalledWith(
+      'daily-brief',
+      expect.objectContaining({ id: 'legacy-run', resultType: 'none' }),
+    );
+    expect(useScheduleStore.getState().activeRunDetail).toBeNull();
+    expect(document.querySelector('[data-schedule-run-detail]')).toBeNull();
+    expect(useChatStore.getState().activeConversationId).toBeNull();
+    expect(Array.from(document.querySelectorAll('button')).some(
+      (button) => button.textContent?.includes('查看完整对话'),
+    )).toBe(false);
   });
 
   it('keeps the awake-only notice behind an accessible info tooltip', () => {

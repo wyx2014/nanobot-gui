@@ -16,7 +16,6 @@ import {
   WINDOWS_TITLE_BAR_LIGHT,
 } from './mainWindowConfig'
 import { getOpenDialogProperties } from './dialogOptions'
-import { deviceLinkBridge } from './deviceLinkBridge'
 import { acquireSingleInstanceLock, restoreAndFocusWindow } from './singleInstance'
 import { createWindowsTerminalLaunchSpec } from './terminalLauncher'
 import { showDesktopNotification, type DesktopNotificationInput } from './desktopNotification'
@@ -40,13 +39,15 @@ import {
   LEGACY_APPLICATION_DATA_DIRECTORY_NAME,
   LEGACY_DEFAULT_WORKSPACE_DIRECTORY_NAME,
   LEGACY_USER_PROJECTS_DIRECTORY_NAME,
+  PREVIOUS_APPLICATION_DATA_DIRECTORY_NAME,
+  PREVIOUS_USER_PROJECTS_DIRECTORY_NAME,
   USER_PROJECTS_DIRECTORY_NAME,
 } from '../src/config/appDirectories'
 
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 
 const isDev = typeof app !== 'undefined' ? !app.isPackaged : (process.env.NODE_ENV === 'development')
-app.setName('TPACowork')
+app.setName('TPCowork')
 
 const mainProcessStartedAt = Date.now() - Math.round(process.uptime() * 1000);
 
@@ -156,7 +157,7 @@ async function handleCloseToTray(win: BrowserWindow): Promise<void> {
     // Do not provide an explicit icon: macOS then uses the compact application
     // badge in the notification header instead of showing a large content icon.
     showDesktopNotification({
-      title: isChinese ? 'TPACowork 已在后台运行' : 'TPACowork is running in the background',
+      title: isChinese ? 'TPCowork 已在后台运行' : 'TPCowork is running in the background',
       body: isChinese
         ? '窗口已收起到菜单栏，点击图标可随时重新打开。'
         : 'The window is in the menu bar. Click its icon to reopen it anytime.',
@@ -173,8 +174,8 @@ async function handleCloseToTray(win: BrowserWindow): Promise<void> {
 function applicationIconPath(): string {
   if (app.isPackaged) return join(process.resourcesPath, 'app-icon.png');
   return process.platform === 'darwin'
-    ? join(process.cwd(), 'resources/icons/TPACowork-macos.png')
-    : join(process.cwd(), 'TPACowork-3_512x512.png');
+    ? join(process.cwd(), 'resources/icons/TPCowork-macos.png')
+    : join(process.cwd(), 'TPCowork-3_512x512.png');
 }
 
 function createWindow(): void {
@@ -191,7 +192,10 @@ function createWindow(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
       sandbox: false,
-      webSecurity: false
+      webSecurity: false,
+      // Schedule execution lives in nanobot, but renderer polling delivers the
+      // completion alert. Keep that timer punctual while the window is hidden.
+      backgroundThrottling: false
     }
   })
   mainWindow = win
@@ -264,7 +268,7 @@ function createTray(): void {
   }
   const tray = new Tray(icon);
   appTray = tray;
-  tray.setToolTip('TPACowork');
+  tray.setToolTip('TPCowork');
   tray.on('click', showMainWindow);
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: '显示主界面', click: showMainWindow },
@@ -303,6 +307,22 @@ async function startApplication(): Promise<void> {
       {
         source: join(
           appDataRoot,
+          PREVIOUS_APPLICATION_DATA_DIRECTORY_NAME,
+          DEFAULT_WORKSPACE_DIRECTORY_NAME,
+        ),
+        target: workspace,
+      },
+      {
+        source: join(
+          appDataRoot,
+          PREVIOUS_APPLICATION_DATA_DIRECTORY_NAME,
+          LEGACY_DEFAULT_WORKSPACE_DIRECTORY_NAME,
+        ),
+        target: workspace,
+      },
+      {
+        source: join(
+          appDataRoot,
           LEGACY_APPLICATION_DATA_DIRECTORY_NAME,
           LEGACY_DEFAULT_WORKSPACE_DIRECTORY_NAME,
         ),
@@ -311,6 +331,10 @@ async function startApplication(): Promise<void> {
       {
         source: join(configuredUserDataPath, LEGACY_DEFAULT_WORKSPACE_DIRECTORY_NAME),
         target: workspace,
+      },
+      {
+        source: join(app.getPath('documents'), PREVIOUS_USER_PROJECTS_DIRECTORY_NAME),
+        target: join(app.getPath('documents'), USER_PROJECTS_DIRECTORY_NAME),
       },
       {
         source: join(app.getPath('documents'), LEGACY_USER_PROJECTS_DIRECTORY_NAME),
@@ -338,7 +362,6 @@ async function startApplication(): Promise<void> {
       console.log('[Main] Gracefully stopping nanobot before quit...');
       appTray?.destroy();
       appTray = null;
-      deviceLinkBridge.stop();
       await pythonBridge.stop();
       app.quit();
     }
@@ -517,12 +540,6 @@ async function startApplication(): Promise<void> {
     return new Uint8Array(buffer);
   });
 
-  safeInvoke('device-link:configure', async (data) => {
-    const baseUrl = typeof data?.baseUrl === 'string' ? data.baseUrl : '';
-    const token = typeof data?.token === 'string' ? data.token : '';
-    return deviceLinkBridge.configure(baseUrl && token ? { baseUrl, token } : null);
-  });
-
   safeInvoke('skills:readPackage', async (data) => {
     const skillPath = typeof data === 'string' ? data : data?.path;
     if (!skillPath) throw new Error('skills:readPackage failed: path is missing');
@@ -646,13 +663,15 @@ async function startApplication(): Promise<void> {
         title,
         body,
       }),
-      activate: (conversationId) => {
+      activate: ({ conversationId, scheduleTaskId, runId }) => {
         const targetWindow = sourceWindow && !sourceWindow.isDestroyed()
           ? sourceWindow
           : mainWindow
         restoreAndFocusWindow(targetWindow)
         if (conversationId && targetWindow && !targetWindow.isDestroyed()) {
           targetWindow.webContents.send('notification:open-conversation', { conversationId })
+        } else if (scheduleTaskId && runId && targetWindow && !targetWindow.isDestroyed()) {
+          targetWindow.webContents.send('notification:open-schedule-run', { scheduleTaskId, runId })
         }
       },
     })

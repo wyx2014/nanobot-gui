@@ -29,6 +29,11 @@ function openSearchDialog() {
   return document.body.querySelector<HTMLElement>('[data-testid="conversation-search-dialog"]');
 }
 
+function buttonWithText(rootNode: ParentNode, text: string) {
+  return [...rootNode.querySelectorAll<HTMLButtonElement>('button')]
+    .find((button) => button.textContent?.trim() === text);
+}
+
 beforeEach(() => {
   useSettingsStore.getState().setLanguage('zh-CN');
   useSettingsStore.setState({ viewMode: 'chat', guideShown: true, guideOpen: false });
@@ -84,17 +89,23 @@ describe('Sidebar conversation search', () => {
   it('opens a command dialog and keeps the project path out of the sidebar', () => {
     const view = renderSidebar();
 
-    expect(view.textContent).toContain('TPACowork');
+    expect(view.textContent).toContain('TPCowork');
     expect(view.textContent).toContain('nanobot-gui');
     expect(view.textContent).not.toContain('/Users/test/nanobot-gui');
-    expect(view.querySelector('input[placeholder="搜索聊天"]')).toBeNull();
+    expect(view.querySelector('input[placeholder="搜索任务"]')).toBeNull();
 
     const dialog = openSearchDialog();
     const backdrop = document.body.querySelector<HTMLElement>('[data-testid="conversation-search-backdrop"]');
     expect(dialog).not.toBeNull();
     expect(backdrop?.classList.contains('window-titlebar-safe-top')).toBe(true);
     expect(dialog?.parentElement?.classList.contains('window-modal-viewport')).toBe(true);
-    expect(dialog?.querySelector('input[placeholder="搜索聊天"]')).not.toBeNull();
+    expect(dialog?.parentElement?.classList.contains('items-center')).toBe(true);
+    expect(dialog?.classList.contains('max-w-[720px]')).toBe(true);
+    expect(dialog?.classList.contains('h-[72vh]')).toBe(true);
+    expect(dialog?.querySelector('input[placeholder="搜索任务"]')).not.toBeNull();
+    expect(dialog?.textContent).toContain('最近任务');
+    expect(dialog?.querySelector('button[aria-label="关闭"]')).not.toBeNull();
+    expect(dialog?.querySelector('svg.lucide-folder')).not.toBeNull();
     expect(dialog?.textContent).toContain('Alpha 方案');
     expect(dialog?.textContent).toContain('Beta 报告');
   });
@@ -102,7 +113,7 @@ describe('Sidebar conversation search', () => {
   it('filters message content and opens the selected conversation with Enter', () => {
     renderSidebar();
     const dialog = openSearchDialog();
-    const input = dialog?.querySelector<HTMLInputElement>('input[placeholder="搜索聊天"]');
+    const input = dialog?.querySelector<HTMLInputElement>('input[placeholder="搜索任务"]');
     expect(input).not.toBeNull();
 
     act(() => {
@@ -120,6 +131,114 @@ describe('Sidebar conversation search', () => {
 
     expect(useChatStore.getState().activeConversationId).toBe('beta');
     expect(document.body.querySelector('[data-testid="conversation-search-dialog"]')).toBeNull();
+  });
+
+  it('filters by real conversation status and marks the filter icon while active', () => {
+    useChatStore.setState((state) => ({
+      conversations: {
+        ...state.conversations,
+        beta: { ...state.conversations.beta, status: 'running' },
+      },
+    }));
+    renderSidebar();
+    const dialog = openSearchDialog();
+    const trigger = dialog?.querySelector<HTMLButtonElement>('[data-testid="conversation-filter-trigger"]');
+
+    expect(trigger).not.toBeNull();
+    act(() => trigger?.click());
+    const menu = dialog?.querySelector<HTMLElement>('[data-testid="conversation-filter-menu"]');
+    expect(menu?.textContent).toContain('筛选状态');
+    expect(menu?.textContent).toContain('筛选时间');
+
+    act(() => buttonWithText(menu!, '进行中')?.click());
+
+    expect(dialog?.textContent).not.toContain('Alpha 方案');
+    expect(dialog?.textContent).toContain('Beta 报告');
+    expect(trigger?.querySelector('[data-testid="conversation-filter-active-dot"]')).not.toBeNull();
+
+    act(() => buttonWithText(menu!, '重置筛选条件')?.click());
+
+    expect(dialog?.textContent).toContain('Alpha 方案');
+    expect(dialog?.textContent).toContain('Beta 报告');
+    expect(trigger?.querySelector('[data-testid="conversation-filter-active-dot"]')).toBeNull();
+  });
+
+  it('shows the filter empty state below recent tasks and keeps keyword search independent', () => {
+    renderSidebar();
+    const dialog = openSearchDialog();
+    const trigger = dialog?.querySelector<HTMLButtonElement>('[data-testid="conversation-filter-trigger"]');
+    act(() => trigger?.click());
+    const menu = dialog?.querySelector<HTMLElement>('[data-testid="conversation-filter-menu"]');
+
+    act(() => buttonWithText(menu!, '失败')?.click());
+    expect(dialog?.textContent).toContain('最近任务');
+    expect(dialog?.textContent).toContain('没有匹配的任务');
+
+    const input = dialog?.querySelector<HTMLInputElement>('input[placeholder="搜索任务"]');
+    act(() => {
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      valueSetter?.call(input, 'Alpha');
+      input?.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    expect(dialog?.textContent).toContain('Alpha 方案');
+    expect(dialog?.textContent).not.toContain('Beta 报告');
+    expect(trigger?.querySelector('[data-testid="conversation-filter-active-dot"]')).toBeNull();
+  });
+});
+
+describe('Sidebar homepage conversation filters', () => {
+  it('filters workspace and recent conversations from the homepage control', () => {
+    useChatStore.setState((state) => ({
+      conversations: {
+        ...state.conversations,
+        beta: { ...state.conversations.beta, status: 'running' },
+      },
+    }));
+    const view = renderSidebar();
+    const trigger = view.querySelector<HTMLButtonElement>('[data-testid="sidebar-conversation-filter-trigger"]');
+
+    expect(trigger).not.toBeNull();
+    act(() => trigger?.click());
+    const menu = view.querySelector<HTMLElement>('[data-testid="sidebar-conversation-filter-menu"]');
+    expect(trigger?.parentElement?.previousElementSibling?.getAttribute('aria-label')).toBe('搜索任务');
+    expect(menu?.classList.contains('fixed')).toBe(true);
+    expect(menu?.classList.contains('w-56')).toBe(true);
+    expect(menu?.style.left).toBe('8px');
+    expect(menu?.textContent).toContain('筛选状态');
+    expect(menu?.textContent).toContain('筛选时间');
+
+    act(() => buttonWithText(menu!, '进行中')?.click());
+
+    expect(view.textContent).not.toContain('Alpha 方案');
+    expect(view.textContent).not.toContain('nanobot-gui');
+    expect(view.textContent).toContain('Beta 报告');
+    expect(trigger?.querySelector('[data-testid="sidebar-conversation-filter-active-dot"]')).not.toBeNull();
+
+    act(() => buttonWithText(menu!, '重置筛选条件')?.click());
+
+    expect(view.textContent).toContain('Alpha 方案');
+    expect(view.textContent).toContain('nanobot-gui');
+    expect(view.textContent).toContain('Beta 报告');
+    expect(trigger?.querySelector('[data-testid="sidebar-conversation-filter-active-dot"]')).toBeNull();
+  });
+
+  it('shows no matching tasks below recents without changing search dialog results', () => {
+    const view = renderSidebar();
+    const trigger = view.querySelector<HTMLButtonElement>('[data-testid="sidebar-conversation-filter-trigger"]');
+    act(() => trigger?.click());
+    const menu = view.querySelector<HTMLElement>('[data-testid="sidebar-conversation-filter-menu"]');
+
+    act(() => buttonWithText(menu!, '失败')?.click());
+
+    expect(view.textContent).toContain('最近');
+    expect(view.textContent).toContain('没有匹配的任务');
+    expect(view.textContent).not.toContain('Alpha 方案');
+    expect(view.textContent).not.toContain('Beta 报告');
+
+    const dialog = openSearchDialog();
+    expect(dialog?.textContent).toContain('Alpha 方案');
+    expect(dialog?.textContent).toContain('Beta 报告');
   });
 });
 
@@ -153,7 +272,7 @@ describe('Sidebar workspace creation', () => {
       await Promise.resolve();
     });
 
-    const createdPath = '/Users/testuser/Documents/TPACowork Projects/季度研究';
+    const createdPath = '/Users/testuser/Documents/TPCowork Projects/季度研究';
     expect(useWorkspaceStore.getState().currentPath).toBe(createdPath);
     expect(useWorkspaceStore.getState().recentPaths[0]).toBe(createdPath);
     expect(view.textContent).toContain('季度研究');

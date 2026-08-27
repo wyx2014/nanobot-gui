@@ -53,12 +53,12 @@ const mockIpc = {
           restartCount: 0,
           platform: 'win32/x64',
           packaged: true,
-          pythonBin: 'C:\\TPACowork\\resources\\python\\python.exe',
+          pythonBin: 'C:\\TPCowork\\resources\\python\\python.exe',
           pythonExists: true,
-          logPath: 'C:\\Users\\test\\AppData\\Roaming\\TPACowork\\nanobot.log',
+          logPath: 'C:\\Users\\test\\AppData\\Roaming\\TPCowork\\nanobot.log',
           logExists: true,
           lastError: null,
-          text: 'TPACowork diagnostics\nstatus=starting',
+          text: 'TPCowork diagnostics\nstatus=starting',
         };
       default:
         return undefined;

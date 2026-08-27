@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Check, Globe2, Monitor, Moon, Sparkles, Sun } from 'lucide-react';
-import appIcon from '../../../TPACowork-3_512x512.png';
+import appIcon from '../../../TPCowork-3_512x512.png';
 import { useI18n } from '@/i18n';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/nanobotClient';
@@ -260,7 +260,7 @@ export default function FirstRunWelcome({ onContinue }: FirstRunWelcomeProps) {
                   <div className="absolute inset-1 rounded-[24px] bg-[#3f8ff7]/25 blur-xl dark:bg-[#5d4bf8]/25" />
                   <img
                     src={appIcon}
-                    alt="TPACowork"
+                    alt="TPCowork"
                     draggable={false}
                     className="relative h-20 w-20 rounded-[22px] object-cover shadow-[0_12px_35px_rgba(49,113,224,0.22)] dark:ring-1 dark:ring-white/10 dark:shadow-[0_14px_42px_rgba(0,0,0,0.48)]"
                   />

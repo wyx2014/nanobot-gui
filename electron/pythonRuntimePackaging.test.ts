@@ -18,7 +18,7 @@ describe('cross-platform Python runtime packaging', () => {
         encoding: 'utf8',
         env: {
           ...process.env,
-          TPACOWORK_RUNTIME_REPOSITORY: 'example/tpacowork',
+          TPCOWORK_RUNTIME_REPOSITORY: 'example/tpcowork',
         },
       },
     );
@@ -26,14 +26,36 @@ describe('cross-platform Python runtime packaging', () => {
 
     expect(metadata.target).toBe('win32-x64');
     expect(metadata.pythonVersion).toBe('3.12.9');
-    expect(metadata.repository).toBe('example/tpacowork');
+    expect(metadata.repository).toBe('example/tpcowork');
     expect(metadata.archive).toBe(
-      'tpacowork-python-3.12.9-win32-x64-desktop-v2-bytecode.zip',
+      'tpcowork-python-3.12.9-win32-x64-desktop-v2-bytecode.zip',
     );
     expect(metadata.checksum).toBe(`${metadata.archive}.sha256`);
     expect(metadata.releaseTag).toContain('3.12.9-win32-x64');
     expect(metadata.archiveUrl).toContain(metadata.releaseTag);
     expect(metadata.archiveUrl).toContain(metadata.archive);
+  });
+
+  it('accepts the previous runtime repository variable during brand migration', () => {
+    const raw = execFileSync(
+      process.execPath,
+      [
+        path.join(process.cwd(), 'scripts', 'download-python.mjs'),
+        '--target',
+        'win32-x64',
+        '--print-config',
+      ],
+      {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          TPCOWORK_RUNTIME_REPOSITORY: '',
+          TPACOWORK_RUNTIME_REPOSITORY: 'example/previous-brand',
+        },
+      },
+    );
+
+    expect(JSON.parse(raw).repository).toBe('example/previous-brand');
   });
 
   it('builds and publishes the prebuilt runtime on a Windows CI runner', () => {
@@ -58,5 +80,7 @@ describe('cross-platform Python runtime packaging', () => {
     );
 
     expect(preparationScript).toContain("NANOBOT_SKIP_WEBUI_BUILD: '1'");
+    expect(preparationScript).toContain("PREVIOUS_RUNTIME_MARKER_NAME = '.tpacowork-runtime.json'");
+    expect(preparationScript).toContain("PREVIOUS_SOURCE_MARKER_NAME = '.tpacowork-nanobot-source.sha256'");
   });
 });

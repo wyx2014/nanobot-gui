@@ -330,7 +330,7 @@ export class PythonBridge {
       ? `code=${this._lastExit.code ?? 'null'}, signal=${this._lastExit.signal ?? 'null'}`
       : 'none';
     const metadata = [
-      'TPACowork diagnostics',
+      'TPCowork diagnostics',
       `captured_at=${capturedAt}`,
       `status=${status}`,
       `ready=${this._ready}`,

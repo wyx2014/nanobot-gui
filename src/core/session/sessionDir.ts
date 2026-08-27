@@ -8,8 +8,8 @@ let cachedBasePath: string | null = null;
  * Creates the directory if it doesn't exist.
  *
  * Directory structure (platform-dependent):
- * macOS: ~/Library/Application Support/tpacowork/sessions/{id}/outputs/
- * Windows: %APPDATA%/tpacowork/sessions/{id}/outputs/
+ * macOS: ~/Library/Application Support/tpcowork/sessions/{id}/outputs/
+ * Windows: %APPDATA%/tpcowork/sessions/{id}/outputs/
  */
 export async function getSessionOutputDir(conversationId: string): Promise<string> {
   if (!cachedBasePath) {

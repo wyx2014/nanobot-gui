@@ -40,6 +40,14 @@ describe('task completion notifications', () => {
     })).toBeNull();
   });
 
+  it('leaves cron child completions to the schedule notification monitor', () => {
+    expect(completedTurnNotificationFromEvent({
+      ...event('completed'),
+      session_key: 'cron:task-1:run-1',
+      chat_id: 'cron:task-1:run-1',
+    })).toBeNull();
+  });
+
   it('notifies once when a durable event is replayed', () => {
     const tracker = new CompletedTurnNotificationTracker();
     const completion = tracker.consume(event('completed'));

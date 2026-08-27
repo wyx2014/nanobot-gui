@@ -1,8 +1,8 @@
 {
-  "name": "tpacowork",
+  "name": "tpcowork",
   "private": false,
   "version": "0.5.9",
-  "description": "TPACowork - AI Desktop Office Assistant",
+  "description": "TPCowork - AI Desktop Office Assistant",
   "main": "./out/main/index.cjs",
   "type": "module",
   "scripts": {
@@ -30,7 +30,7 @@
   },
   "build": {
     "appId": "com.tparuyi.app",
-    "productName": "TPACowork",
+    "productName": "TPCowork",
     "directories": {
       "output": "dist/installers"
     },
@@ -58,7 +58,7 @@
         ]
       },
       {
-        "from": "TPACowork-3_1024x1024.png",
+        "from": "TPCowork-3_1024x1024.png",
         "to": "app-icon.png"
       }
     ],
@@ -66,9 +66,9 @@
       "target": [
         "zip"
       ],
-      "icon": "resources/icons/TPACowork-macos.png",
+      "icon": "resources/icons/TPCowork-macos.png",
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "TPACowork需要使用麦克风，将录音通过默认语音识别模型转换为输入文字。"
+        "NSMicrophoneUsageDescription": "TPCowork需要使用麦克风，将录音通过默认语音识别模型转换为输入文字。"
       }
     },
     "win": {
@@ -80,10 +80,10 @@
       "target": [
         "nsis"
       ],
-      "icon": "TPACowork-3_512x512.png"
+      "icon": "TPCowork-3_512x512.png"
     },
     "linux": {
-      "icon": "TPACowork-3_512x512.png"
+      "icon": "TPCowork-3_512x512.png"
     },
     "nsis": {
       "oneClick": false,
@@ -91,9 +91,6 @@
       "include": "build/installer.nsh",
       "differentialPackage": false
     }
-  },
-  "dependencies": {
-    "ws": "^8.21.1"
   },
   "devDependencies": {
     "@electron-toolkit/preload": "^3.0.2",
@@ -110,7 +107,6 @@
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@types/react-syntax-highlighter": "^15.5.13",
-    "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^5.1.1",
     "@vitest/coverage-v8": "^4.1.10",
     "autoprefixer": "^10.4.27",

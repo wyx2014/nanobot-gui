@@ -275,13 +275,13 @@ projectName = conversation.workspaceScope?.project_name ?? basename(projectPath)
 默认项目根目录：
 
 ```text
-Documents/TPACowork Projects/
+Documents/TPCowork Projects/
 ```
 
 最终项目路径：
 
 ```text
-Documents/TPACowork Projects/<项目名>
+Documents/TPCowork Projects/<项目名>
 ```
 
 目录名中的非法路径字符需要做最小清理，例如替换 `/ \ : * ? " < > |`。
@@ -531,6 +531,6 @@ src/components/sidebar/projectGrouping.ts
 12. `...` 菜单支持打开位置、重命名项目、移除项目。
 13. 点击项目行编辑按钮后回到首页，输入框默认选择该项目，首页标题显示“我们应该在 xxx 中构建什么？”。
 14. 项目选择器保留“新建项目”的二级菜单。
-15. “新建空白项目”弹出命名对话框，并在 `Documents/TPACowork Projects/<项目名>` 创建目录。
+15. “新建空白项目”弹出命名对话框，并在 `Documents/TPCowork Projects/<项目名>` 创建目录。
 16. 鼠标从“新建项目”移动到右侧二级菜单时，菜单不应闪退。
 17. `npm run build` 通过。

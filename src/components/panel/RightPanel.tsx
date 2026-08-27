@@ -1,4 +1,4 @@
-import { useEffect, useRef, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { usePreviewStore } from '@/stores/previewStore';
 import { useChatStore } from '@/stores/chatStore';
@@ -40,6 +40,8 @@ export default function RightPanel() {
       : false
   ));
   const previousConversationId = useRef(activeConversationId);
+  const [summaryConversationId, setSummaryConversationId] = useState(activeConversationId);
+  const conversationChangedWhileSummaryVisible = summaryConversationId !== activeConversationId;
 
   useEffect(() => {
     if (
@@ -51,6 +53,10 @@ export default function RightPanel() {
     }
     previousConversationId.current = activeConversationId;
   }, [activeConversationId, closePreview, previewArtifact]);
+
+  useEffect(() => {
+    setSummaryConversationId(activeConversationId);
+  }, [activeConversationId]);
 
   // The workbench belongs to an existing chat session, not the welcome screen.
   if (viewMode !== 'chat' || !activeConversationId) {
@@ -78,7 +84,10 @@ export default function RightPanel() {
             maxWidth: 'calc(100vw - 24px)',
           }}
         >
-          <ConversationWorkbench />
+          <ConversationWorkbench
+            key={activeConversationId}
+            showInitialLoading={conversationChangedWhileSummaryVisible}
+          />
         </div>
       </div>
     );

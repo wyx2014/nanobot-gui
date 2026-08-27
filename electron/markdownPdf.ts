@@ -75,7 +75,7 @@ function researchPrintPreamble(markdown: string, title: string): string {
     ? outline.map((item) => `<li class="toc-level-${item.level}">${escapeHtml(item.title)}</li>`).join('')
     : '<li class="toc-empty">正文未包含可列入目录的二、三级标题。</li>';
   return `<section class="research-cover">
-  <div class="research-cover-kicker">TPACOWORK · EXPERT RESEARCH</div>
+  <div class="research-cover-kicker">TPCOWORK · EXPERT RESEARCH</div>
   <h1>${escapeHtml(title)}</h1>
   <p>多角色研究、交叉质证与数据审计</p>
   <div class="research-cover-meta">${meta.date ? `数据截止：${escapeHtml(meta.date)}` : '以报告正文披露的数据截止日期为准'}</div>
@@ -296,14 +296,14 @@ function renderRichMarkdownHtml(
     isResearchReport ? '<span>AI 多角色交叉研究</span>' : '',
   ].filter(Boolean).join('');
   const eyebrow = isResearchReport
-    ? '<div class="eyebrow">TPACOWORK · EXPERT RESEARCH</div>'
+    ? '<div class="eyebrow">TPCOWORK · EXPERT RESEARCH</div>'
     : '';
   const subtitle = isResearchReport
     ? '<p class="hero-subtitle">专家团队 · 多角色研究、交叉质证与数据审计</p>'
     : '';
   const footer = isResearchReport
-    ? '本报告由 TPACowork 专家团队基于可用资料生成，仅作研究辅助，不构成投资建议。'
-    : '本文档由 TPACowork 根据当前任务内容生成。';
+    ? '本报告由 TPCowork 专家团队基于可用资料生成，仅作研究辅助，不构成投资建议。'
+    : '本文档由 TPCowork 根据当前任务内容生成。';
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -770,7 +770,7 @@ export async function renderMarkdownHtml(
   template: MarkdownRenderTemplate = 'simple',
 ): Promise<string> {
   const prepared = await prepareMermaid(markdown, mermaidRenderer);
-  return `<!-- Generated from Markdown by TPACowork -->\n${renderRichMarkdownHtml(
+  return `<!-- Generated from Markdown by TPCowork -->\n${renderRichMarkdownHtml(
     prepared.markdown,
     title,
     prepared.figures,

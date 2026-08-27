@@ -1006,6 +1006,7 @@ export interface ExpertTeamSummary {
   unavailable_reason?: string;
   cover?: string;
   member_count: number;
+  entry_workflow?: string;
   workflow_count: number;
   tags: string[];
   requested_concurrency: number;

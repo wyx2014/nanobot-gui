@@ -26,7 +26,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
-      - name: Checkout TPACowork GUI
+      - name: Checkout TPCowork GUI
         uses: actions/checkout@v4
         with:
           path: nanobot-gui
@@ -86,7 +86,7 @@ jobs:
         run: |
           gh release view $env:RUNTIME_TAG 2>$null
           if ($LASTEXITCODE -ne 0) {
-            gh release create $env:RUNTIME_TAG --prerelease --target $env:GITHUB_SHA --title "TPACowork Windows Python 3.12.9 runtime" --notes "Prebuilt win32-x64 desktop runtime. Embedded nanobot ref: $env:NANOBOT_REF"
+            gh release create $env:RUNTIME_TAG --prerelease --target $env:GITHUB_SHA --title "TPCowork Windows Python 3.12.9 runtime" --notes "Prebuilt win32-x64 desktop runtime. Embedded nanobot ref: $env:NANOBOT_REF"
           } else {
             gh release edit $env:RUNTIME_TAG --prerelease
           }

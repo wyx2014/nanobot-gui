@@ -53,7 +53,7 @@ export class StartupLog {
     }
     fs.appendFileSync(
       this.filePath,
-      `\n=== TPACowork launch ${capturedAt.toISOString()} pid=${process.pid} ===\n`,
+      `\n=== TPCowork launch ${capturedAt.toISOString()} pid=${process.pid} ===\n`,
       'utf8',
     );
   }

@@ -27,7 +27,7 @@ interface Props {
 }
 
 export default function ScheduleTaskCard({ task }: Props) {
-  const { t, locale, format } = useI18n();
+  const { t, locale } = useI18n();
   const { pauseTask, resumeTask, runTaskNow, loadTasks, deleteTask, openEditor } = useScheduleStore();
   const [running, setRunning] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -35,9 +35,6 @@ export default function ScheduleTaskCard({ task }: Props) {
   const isPaused = task.status === 'paused';
   const isCompleted = task.status === 'completed';
   const scheduleDesc = getScheduleDescription(task.schedule, t, locale);
-  const unreadRunCount = task.runs.filter((run) => (
-    (run.status === 'completed' || run.status === 'error') && !run.viewedAt
-  )).length;
 
   const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -83,11 +80,6 @@ export default function ScheduleTaskCard({ task }: Props) {
                 <span className="text-[12px] text-[#8a867c] shrink-0">
                   {task.runs.length ? `${task.runs.length} ${t.schedule.runHistory}` : t.schedule.noRuns}
                 </span>
-                {unreadRunCount > 0 && (
-                  <span className="shrink-0 rounded-full bg-[#d97757]/10 px-1.5 py-0.5 text-[11px] font-medium text-[#d97757]">
-                    {format(t.schedule.unreadRuns, { count: unreadRunCount })}
-                  </span>
-                )}
               </div>
               <div className="flex items-center gap-3 text-[12px] text-[#656358]">
                 <span className="flex items-center gap-1">

@@ -1,6 +1,18 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useChatStore } from './chatStore';
 
+const apiMocks = vi.hoisted(() => ({
+  archiveSession: vi.fn(),
+}));
+
+const nanobotClientMocks = vi.hoisted(() => ({
+  getNanobotStatus: vi.fn(),
+  getNanobotToken: vi.fn(),
+}));
+
+vi.mock('@/core/api', () => apiMocks);
+vi.mock('@/core/nanobotClient', () => nanobotClientMocks);
+
 // Mock workspaceStore to avoid cross-store side effects
 vi.mock('./workspaceStore', () => ({
   useWorkspaceStore: {
@@ -13,6 +25,7 @@ vi.mock('./workspaceStore', () => ({
 
 describe('chatStore', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     useChatStore.setState({
       conversations: {},
       activeConversationId: null,
@@ -23,6 +36,25 @@ describe('chatStore', () => {
       pendingInput: null,
       pendingExpertTeam: null,
       thinkingStartTime: null,
+    });
+  });
+
+  describe('archiveConversation', () => {
+    it('keeps a durable conversation when the gateway rejects archival', async () => {
+      const id = useChatStore.getState().createConversation(null, { id: 'reminder-chat' });
+      useChatStore.getState().upsertConversation(id, {
+        ...useChatStore.getState().conversations[id],
+        hasHistory: true,
+      });
+      nanobotClientMocks.getNanobotStatus.mockResolvedValue({ ready: true, port: 8900 });
+      nanobotClientMocks.getNanobotToken.mockReturnValue('gateway-token');
+      apiMocks.archiveSession.mockRejectedValue(new Error('该会话仍关联自动化任务'));
+
+      await expect(
+        useChatStore.getState().archiveConversation(id),
+      ).rejects.toThrow('该会话仍关联自动化任务');
+
+      expect(useChatStore.getState().conversations[id]).toBeDefined();
     });
   });
 

@@ -29,6 +29,24 @@ function teamText(team: { id: string; name: string; description: string }, isEng
   return isEnglish ? teamEnglish[team.id] ?? { name: team.name, description: team.description } : team;
 }
 
+function workflowCountText(count: number, isEnglish: boolean) {
+  if (!isEnglish) return `${count} 套固定工作流`;
+  return `${count} fixed ${count === 1 ? 'workflow' : 'workflows'}`;
+}
+
+function runtimeWorkflowCount(team: ExpertTeamSummary) {
+  // Older gateways returned the size of the bundled upstream Skill catalog.
+  // Without an explicit entry field, only the first manifest entry was runnable.
+  return team.entry_workflow ? team.workflow_count : Math.min(team.workflow_count, 1);
+}
+
+function runtimeWorkflows(detail: ExpertTeamDetail) {
+  const entry = detail.entry_workflow
+    ? detail.workflows.find((workflow) => workflow.id === detail.entry_workflow)
+    : detail.workflows[0];
+  return entry ? [entry] : [];
+}
+
 function mcpPresetText(
   preset: { name: string; display_name: string; description?: string },
   isEnglish: boolean,
@@ -117,7 +135,7 @@ function memberText(
 
 async function getAuth(): Promise<{ token: string; baseUrl: string }> {
   const status = await getNanobotStatus();
-  if (!status.ready) throw new Error('TPACowork 服务尚未就绪');
+  if (!status.ready) throw new Error('TPCowork 服务尚未就绪');
   const baseUrl = `http://127.0.0.1:${status.port}`;
   const token = getNanobotToken();
   if (token) return { token, baseUrl };
@@ -210,6 +228,7 @@ export default function ExpertTeamsSection() {
 
   if (detail) {
     const display = teamText(detail, isEnglish);
+    const workflows = runtimeWorkflows(detail);
     return (
       <div data-expert-team-detail className="h-full overflow-y-auto px-5 py-5">
         <button
@@ -232,7 +251,7 @@ export default function ExpertTeamsSection() {
               <p className="mt-2 max-w-2xl text-sm leading-6 text-[#656358]">{display.description}</p>
               <div className="mt-3 flex flex-wrap gap-3 text-xs text-[#777368]">
                 <span>{detail.member_count} {isEnglish ? 'specialists' : '位专家'}</span>
-                <span>{detail.workflow_count} {isEnglish ? 'workflows' : '个工作流'}</span>
+                <span>{workflowCountText(runtimeWorkflowCount(detail), isEnglish)}</span>
                 <span>{mcpPresets.length} {isEnglish ? 'MCP bindings' : '个 MCP 绑定'}</span>
                 <span>{isEnglish ? 'Version' : '版本'} {detail.version}</span>
               </div>
@@ -280,9 +299,9 @@ export default function ExpertTeamsSection() {
         </section>
 
         <section className="mt-5">
-          <h3 className="mb-3 text-sm font-semibold text-[#29261b]">{isEnglish ? 'Featured Workflows' : '常用工作流'}</h3>
+          <h3 className="mb-3 text-sm font-semibold text-[#29261b]">{isEnglish ? 'Fixed Workflow' : '固定工作流'}</h3>
           <div className="rounded-xl border border-[#e8e4dd] bg-white p-2">
-            {detail.workflows.filter((workflow) => workflow.featured).map((workflow) => (
+            {workflows.map((workflow) => (
               <div key={workflow.id} data-expert-workflow className="flex items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-[#faf8f5]">
                 <Sparkles className="h-4 w-4 shrink-0 text-[#d97757]" />
                 <div className="min-w-0 flex-1">
@@ -338,7 +357,7 @@ export default function ExpertTeamsSection() {
               <CheckCircle2 className="h-4 w-4" />
               {isEnglish ? 'Runtime Dependencies' : '运行依赖'}
             </div>
-            <p className="mt-2 text-xs leading-5 text-[#777368]">{isEnglish ? 'Teams reuse the current TPACowork model, web search, built-in iFinD skill, and configured MCP services; an alternative bound source is used when one is unavailable.' : '团队复用当前 Cowork 的模型、联网搜索、内置 聚源、同花顺、财汇MCP；单一来源不可用时自动换用另一绑定来源。'}</p>
+            <p className="mt-2 text-xs leading-5 text-[#777368]">{isEnglish ? 'Teams reuse the current TPCowork model, web search, built-in iFinD skill, and configured MCP services; an alternative bound source is used when one is unavailable.' : '团队复用当前 Cowork 的模型、联网搜索、内置 聚源、同花顺、财汇MCP；单一来源不可用时自动换用另一绑定来源。'}</p>
           </div>
         </section>
       </div>
@@ -381,7 +400,7 @@ export default function ExpertTeamsSection() {
                 </div>
                 <div className="mt-4 flex flex-wrap items-center gap-2">
                   <span className="rounded-lg bg-[#f5f2ed] px-2 py-1 text-[11px] text-[#6d695f]">{team.member_count} {isEnglish ? 'specialists' : '位专家'}</span>
-                  <span className="rounded-lg bg-[#f5f2ed] px-2 py-1 text-[11px] text-[#6d695f]">{team.workflow_count} {isEnglish ? 'workflows' : '个工作流'}</span>
+                  <span className="rounded-lg bg-[#f5f2ed] px-2 py-1 text-[11px] text-[#6d695f]">{workflowCountText(runtimeWorkflowCount(team), isEnglish)}</span>
                   <span className={cn(
                     'ml-auto inline-flex items-center gap-1 text-[11px]',
                     team.available ? 'text-emerald-700' : 'text-amber-700',

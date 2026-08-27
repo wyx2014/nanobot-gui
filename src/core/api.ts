@@ -35,10 +35,7 @@ import type {
   PersonalizationPayload,
 } from "./types";
 import type { ScheduleConfig } from "@/types/schedule";
-import {
-  isProtectedBuiltinModelPreset,
-  isProtectedBuiltinModelProvider,
-} from "@/config/builtinModelServices";
+import { isProtectedBuiltinModelProvider } from "@/config/builtinModelServices";
 import { fetchWithTimeout } from "./bootstrap";
 
 const API_READ_TIMEOUT_MS = 20_000;
@@ -533,11 +530,27 @@ export async function archiveSession(
   key: string,
   base: string = "",
 ): Promise<boolean> {
-  const body = await request<{ archived: boolean }>(
+  const body = await request<{
+    archived?: boolean;
+    blocked_by_automations?: boolean;
+    automations?: Array<{ name?: string }>;
+  }>(
     `${base}/api/sessions/${encodeURIComponent(key)}/archive`,
     token,
   );
-  return body.archived;
+  if (body.archived === true) return true;
+  if (body.blocked_by_automations) {
+    const names = Array.from(new Set(
+      (body.automations ?? [])
+        .map((automation) => automation.name?.trim())
+        .filter((name): name is string => Boolean(name)),
+    ));
+    const detail = names.length > 0 ? `：${names.join("、")}` : "";
+    throw new Error(
+      `该会话仍关联自动化任务${detail}。请先在“自动化”中删除任务，再归档会话。`,
+    );
+  }
+  throw new Error("本地服务未确认会话归档，请刷新后重试");
 }
 
 export async function restoreSession(
@@ -557,11 +570,33 @@ export async function purgeSession(
   key: string,
   base: string = "",
 ): Promise<boolean> {
-  const body = await request<{ purged: boolean }>(
+  const response = await fetchGatewayResponse(
     `${base}/api/sessions/${encodeURIComponent(key)}/purge`,
     token,
   );
-  return body.purged;
+  const body = await response.json() as {
+    purged?: boolean;
+    blocked_by_automations?: boolean;
+    automations?: Array<{ name?: string }>;
+    error?: string;
+  };
+  if (body.purged === true) return true;
+  if (body.blocked_by_automations) {
+    const names = Array.from(new Set(
+      (body.automations ?? [])
+        .map((automation) => automation.name?.trim())
+        .filter((name): name is string => Boolean(name)),
+    ));
+    const detail = names.length > 0 ? `：${names.join("、")}` : "";
+    throw new ApiError(
+      response.status,
+      `该会话仍关联正在使用的自动化任务${detail}。请先在“自动化”中删除任务。`,
+    );
+  }
+  throw new ApiError(
+    response.status,
+    body.error || "本地服务未确认永久删除，请刷新后重试",
+  );
 }
 
 export async function purgeProject(
@@ -1245,9 +1280,6 @@ export async function deleteModelConfiguration(
   name: string,
   base: string = "",
 ): Promise<SettingsPayload> {
-  if (isProtectedBuiltinModelPreset(name)) {
-    throw new Error("系统内置模型通道不能删除");
-  }
   const query = new URLSearchParams();
   query.set("name", name);
   return request<SettingsPayload>(

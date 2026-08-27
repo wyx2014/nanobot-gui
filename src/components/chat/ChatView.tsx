@@ -177,6 +177,7 @@ export default function ChatView({
   const isConversationLoading = shouldShowConversationLoading(
     activeConvId,
     historyConversationId,
+    historyLoading,
   );
   const canonicalThreadResource = useThreadResourceStore((state) => (
     activeConvId

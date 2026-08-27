@@ -108,7 +108,7 @@ nanobot-gui/
               architecture.svg
 ```
 
-`source/ai-berkshire/` 内的文件必须从上游原样复制。`team.yaml`、`adapter.md` 和 `upstream.json` 属于TPACowork适配层，不属于上游源码。
+`source/ai-berkshire/` 内的文件必须从上游原样复制。`team.yaml`、`adapter.md` 和 `upstream.json` 属于TPCowork适配层，不属于上游源码。
 
 第一版只复制 19 个 canonical `skills/*.md`，不复制由其生成的 `codex-skills/` 和 `codex-prompts/`，避免保存三份相同来源。
 
@@ -155,7 +155,7 @@ nanobot 不得依赖 GUI 工程的相对目录层级，也不得依赖上游开�
 
 ## 4. 团队清单
 
-`team.yaml` 是TPACowork自己的适配清单，不改写原始 Skill。
+`team.yaml` 是TPCowork自己的适配清单，不改写原始 Skill。
 
 建议结构：
 
@@ -202,19 +202,9 @@ workflows:
     source: skills/investment-team.md
     mode: team
     featured: true
-  - id: earnings-team
-    name: 团队财报复盘
-    source: skills/earnings-team.md
-    mode: team
-    featured: true
-  - id: investment-research
-    name: 公司深度研究
-    source: skills/investment-research.md
-    mode: lead
-    featured: true
 ```
 
-完整清单应登记全部 19 个工作流。`mode` 只描述调度方式，不改变对应 Markdown 内容。
+`workflows` 只登记当前团队实际可执行的入口。上游同步的其他 `skills/*.md` 保留为只读能力资料，不计入团队工作流数量，也不在没有选择器和对应运行时 DAG 的情况下对外宣称可执行。
 
 ## 5. 原始 Skill 适配规则
 
@@ -294,7 +284,7 @@ type ToolboxTab = "expert-teams" | "skills" | "mcp" | "skill-store";
 
 - 团队名称和封面。
 - 一句话说明。
-- `4 位专家`、`19 个工作流`。
+- `4 位专家`、`1 套固定工作流`。
 - `内置`、`已启用`、`依赖正常/部分可选依赖不可用`。
 - “查看团队”和“启动团队”。
 
@@ -306,7 +296,7 @@ type ToolboxTab = "expert-teams" | "skills" | "mcp" | "skill-store";
 
 - 团队介绍。
 - Team Lead 和 4 位成员的职责。
-- 主要工作流和全部工作流列表。
+- 固定入口工作流及其执行方式。
 - 数据源与质量控制说明。
 - 依赖检查结果。
 - 版本和上游来源信息。
@@ -513,7 +503,7 @@ API 不返回原始文件绝对路径。封面通过 gateway 的受控资源接�
 
 1. 读取并校验 `team.yaml`。
 2. 加载 `adapter.md`。
-3. 按工作流路由加载对应的原始 Markdown。
+3. 加载 `entry_workflow` 指向的原始 Markdown。
 4. 将团队资源根目录加入本次运行的只读访问范围。
 5. 将报告目录加入本次运行的可写范围。
 6. 将团队声明的内置 Skill 加入本轮精确 Skill scope；禁止为发现 Skill 扫描 Home 或项目外目录。
@@ -523,7 +513,7 @@ API 不返回原始文件绝对路径。封面通过 gateway 的受控资源接�
 
 资产投研团队 · 个股研究默认绑定 `ifind` 和 `juyuan` 和 `caihui`三个MCP。三个MCP按字段覆盖互补；单一来源失败时先切换另一绑定结构化数据源，均不可用或仍缺字段时再使用交易所、公司公告、监管披露和公开网页。不得用固定取数次数代替数据完整性判断。
 
-不能把 19 个工作流全量永久塞入每轮上下文。应先注入工作流摘要，由 Team Lead 选择后再加载全文。
+每轮只注入 `entry_workflow` 指向的固定工作流。上游随包保留的其他 Skill 不进入团队工作流计数，也不由 Team Lead 在运行中切换。
 
 ### 9.2 并发
 
@@ -584,7 +574,7 @@ API 不返回原始文件绝对路径。封面通过 gateway 的受控资源接�
 ## 11. 报告与文件产物
 
 - 最终报告默认生成 Markdown。
-- 后续 PDF/HTML 转换继续走TPACowork统一文件生成和预览链路。
+- 后续 PDF/HTML 转换继续走TPCowork统一文件生成和预览链路。
 - WebSocket `file_edit` 和 `team_run_completed.report_files` 都应指向同一 canonical 文件。
 - 点击文件统一在右侧预览，不直接打开裸文件路径。
 - 报告文件名需要清理非法字符，并兼容 Windows。

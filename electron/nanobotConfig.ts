@@ -14,9 +14,11 @@ import fs from 'fs/promises';
 import { app } from 'electron';
 import {
   DEFAULT_DESKTOP_MODEL_SERVICE,
+  discoverDesktopDefaultModels,
   type DesktopDefaultModelServiceConfig,
 } from '../src/config/defaultModelService';
 import { DEFAULT_WORKSPACE_DIRECTORY_NAME } from '../src/config/appDirectories';
+import { LEGACY_ASSET_DEEPSEEK_MODEL_PRESET_ID } from '../src/config/builtinModelServices';
 import {
   desktopMcpConfigCredentialReferences,
   getDesktopMcpCredentials,
@@ -40,6 +42,18 @@ const IFIND_MCP_NAMES = [
 ] as const;
 const DESKTOP_MCP_DEFAULTS_STATE_VERSION = 1;
 const DESKTOP_MCP_DEFAULTS_STATE_FILE = 'desktop-mcp-defaults.json';
+let desktopModelCatalogRefresh: Promise<string[] | null> | null = null;
+
+function refreshDesktopModelCatalog(): Promise<string[] | null> {
+  if (!desktopModelCatalogRefresh) {
+    desktopModelCatalogRefresh = discoverDesktopDefaultModels().catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`[nanobotConfig] Built-in model catalog refresh failed; using cached/fallback models: ${message}`);
+      return null;
+    });
+  }
+  return desktopModelCatalogRefresh;
+}
 
 function encodeMcpUrlCredential(value: string): string {
   // nanobot resolves ${ENV_VAR} after loading config.json. Encoding the `$`
@@ -269,19 +283,41 @@ export interface NanobotConfigInput {
 
 export function buildDesktopDefaultModelConfig(
   service: DesktopDefaultModelServiceConfig = DEFAULT_DESKTOP_MODEL_SERVICE,
+  models: readonly string[] = [],
 ) {
   const required: Array<[string, string]> = [
     ['providerId', service.providerId],
     ['providerLabel', service.providerLabel],
     ['apiKey', service.apiKey],
     ['apiBase', service.apiBase],
-    ['model', service.model],
-    ['presetId', service.presetId],
   ];
   const missing = required.find(([, value]) => !value.trim());
   if (missing) {
     throw new Error(`Default desktop model service is missing ${missing[0]}`);
   }
+  if (!service.fallbackModels.length || service.fallbackModels.some((model) => !model.trim())) {
+    throw new Error('Default desktop model service has invalid fallbackModels');
+  }
+  if (!service.preferredDefaultModel.trim()) {
+    throw new Error('Default desktop model service is missing preferredDefaultModel');
+  }
+
+  const normalizedModels = Array.from(new Set(models.map((model) => model.trim()).filter(Boolean)));
+  const usedPresetNames = new Set<string>();
+  const modelPresets = Object.fromEntries(normalizedModels.map((model) => {
+    const presetName = desktopModelPresetName(service.providerId, model, usedPresetNames);
+    usedPresetNames.add(presetName);
+    return [presetName, {
+      label: `${service.providerLabel} / ${model}`,
+      provider: service.providerId,
+      model,
+      capabilities: ['text'],
+    }];
+  }));
+  const preferredPreset = Object.entries(modelPresets).find(
+    ([, preset]) => preset.model === service.preferredDefaultModel,
+  );
+  const firstPreset = preferredPreset ?? Object.entries(modelPresets)[0];
 
   return {
     providers: {
@@ -292,25 +328,41 @@ export function buildDesktopDefaultModelConfig(
         apiType: service.apiType,
       },
     },
-    model_presets: {
-      [service.presetId]: {
-        label: `${service.providerLabel} / ${service.model}`,
-        provider: service.providerId,
-        model: service.model,
-        capabilities: ['text'],
-      },
-    },
-    model_defaults: {
-      text: service.presetId,
-    },
-    agents: {
-      defaults: {
-        modelPreset: service.presetId,
-        model: service.model,
-        provider: service.providerId,
-      },
-    },
+    model_presets: modelPresets,
+    ...(firstPreset
+      ? {
+          model_defaults: { text: firstPreset[0] },
+          agents: {
+            defaults: {
+              modelPreset: firstPreset[0],
+              model: firstPreset[1].model,
+              provider: service.providerId,
+            },
+          },
+        }
+      : {}),
   };
+}
+
+function desktopModelPresetName(
+  providerId: string,
+  model: string,
+  usedNames: ReadonlySet<string>,
+): string {
+  const normalized = `${providerId}-${model}`
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^[-_]+|[-_]+$/g, '') || `${providerId}-model`;
+  const candidate = normalized.slice(0, 48).replace(/[-_]+$/g, '');
+  if (!usedNames.has(candidate)) return candidate;
+
+  let hash = 0x811c9dc5;
+  for (const character of model) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  const suffix = (hash >>> 0).toString(16).padStart(8, '0');
+  return `${candidate.slice(0, 39).replace(/[-_]+$/g, '')}-${suffix}`;
 }
 
 function hasProviderConnection(value: unknown): boolean {
@@ -327,16 +379,16 @@ function hasProviderConnection(value: unknown): boolean {
 }
 
 /**
- * Keep the deployment-managed provider and its model channel present in every
- * profile. The first version that introduces the provider also selects it as
- * the text default; once present, a user's later default-model choice remains
- * untouched.
+ * Keep the deployment-managed provider present and reconcile its model channels
+ * with the latest successfully fetched catalog. A failed refresh preserves the
+ * last known list. User defaults remain untouched while their model still exists.
  */
 export function buildDesktopManagedModelPatch(
   existing: Record<string, unknown>,
   service: DesktopDefaultModelServiceConfig = DEFAULT_DESKTOP_MODEL_SERVICE,
+  catalogModels: readonly string[] | null = null,
 ) {
-  const managed = buildDesktopDefaultModelConfig(service);
+  const managed = buildDesktopDefaultModelConfig(service, catalogModels ?? []);
   const existingProviders = (existing.providers ?? {}) as Record<string, unknown>;
   const camelPresets = (existing.modelPresets ?? {}) as Record<string, unknown>;
   const snakePresets = (existing.model_presets ?? {}) as Record<string, unknown>;
@@ -349,7 +401,32 @@ export function buildDesktopManagedModelPatch(
   } | undefined;
   const textDefault = existingDefaults.text;
   const hasManagedProvider = Boolean(existingProviders[service.providerId]);
-  const hasManagedPreset = Boolean(existingPresets[service.presetId]);
+  const existingManagedPresets = Object.entries(existingPresets).filter(([, value]) => (
+    value
+    && typeof value === 'object'
+    && (value as Record<string, unknown>).provider === service.providerId
+  ));
+  const existingManagedPresetByModel = new Map(existingManagedPresets.flatMap(([name, value]) => {
+    if (name === LEGACY_ASSET_DEEPSEEK_MODEL_PRESET_ID) return [];
+    const model = (value as Record<string, unknown>).model;
+    return typeof model === 'string' && model.trim() ? [[model, name] as const] : [];
+  }));
+  const discoveredModels = catalogModels === null
+    ? null
+    : Array.from(new Set(catalogModels.map((model) => model.trim()).filter(Boolean)));
+  const discoveredModelSet = discoveredModels ? new Set(discoveredModels) : null;
+  const usedPresetNames = new Set(Object.keys(existingPresets));
+  const discoveredPresetByModel = new Map<string, string>();
+  for (const model of discoveredModels ?? []) {
+    const existingName = existingManagedPresetByModel.get(model);
+    if (existingName) {
+      discoveredPresetByModel.set(model, existingName);
+      continue;
+    }
+    const name = desktopModelPresetName(service.providerId, model, usedPresetNames);
+    usedPresetNames.add(name);
+    discoveredPresetByModel.set(model, name);
+  }
   const implicitProvider = existingAgents?.defaults?.provider;
   const implicitProviderConfig = typeof implicitProvider === 'string'
     ? existingProviders[implicitProvider] as Record<string, unknown> | undefined
@@ -362,33 +439,69 @@ export function buildDesktopManagedModelPatch(
   const namedDefaultConfigured = typeof namedDefaultProvider === 'string'
     && namedDefaultProvider !== 'auto'
     && hasProviderConnection(existingProviders[namedDefaultProvider]);
+  const namedDefaultSurvivesCatalog = namedDefaultProvider !== service.providerId
+    || discoveredModelSet === null
+    || (
+      textDefault !== LEGACY_ASSET_DEEPSEEK_MODEL_PRESET_ID
+      && typeof namedDefaultPreset?.model === 'string'
+      && discoveredModelSet.has(namedDefaultPreset.model)
+    );
+  const implicitManagedModelSurvivesCatalog = implicitProvider !== service.providerId
+    || discoveredModelSet === null
+    || (
+      typeof existingAgents?.defaults?.model === 'string'
+      && discoveredModelSet.has(existingAgents.defaults.model)
+    );
   const hasUsableTextDefault = textDefault === 'default'
     ? Boolean(
         existingAgents?.defaults?.model
         && typeof implicitProvider === 'string'
         && implicitProvider !== 'auto'
         && implicitProviderConfigured
+        && implicitManagedModelSurvivesCatalog
       )
-    : Boolean(namedDefaultPreset && namedDefaultConfigured);
-  // Adding the built-in service to an existing profile must not replace a
-  // working user-selected model. Empty or invalid profiles still receive the
-  // deployment default.
-  const shouldActivateManagedDefault = !hasUsableTextDefault;
+    : Boolean(namedDefaultPreset && namedDefaultConfigured && namedDefaultSurvivesCatalog);
+  const firstDiscoveredModel = discoveredModels?.includes(service.preferredDefaultModel)
+    ? service.preferredDefaultModel
+    : discoveredModels?.[0];
+  const firstDiscoveredPreset = firstDiscoveredModel
+    ? discoveredPresetByModel.get(firstDiscoveredModel)
+    : undefined;
+  const shouldActivateManagedDefault = !hasUsableTextDefault && Boolean(firstDiscoveredPreset);
   const migratedPresets = Object.fromEntries(
     Object.entries(camelPresets).filter(([name]) => !(name in snakePresets)),
   );
   const migratedDefaults = Object.fromEntries(
     Object.entries(camelDefaults).filter(([name]) => !(name in snakeDefaults)),
   );
+  const modelPresetPatch: Record<string, unknown> = { ...migratedPresets };
+  if (discoveredModelSet !== null) {
+    for (const [name, value] of existingManagedPresets) {
+      const model = (value as Record<string, unknown>).model;
+      if (
+        name === LEGACY_ASSET_DEEPSEEK_MODEL_PRESET_ID
+        || typeof model !== 'string'
+        || !discoveredModelSet.has(model)
+      ) {
+        modelPresetPatch[name] = undefined;
+      }
+    }
+    for (const model of discoveredModels ?? []) {
+      if (existingManagedPresetByModel.has(model)) continue;
+      const presetName = discoveredPresetByModel.get(model);
+      if (!presetName) continue;
+      modelPresetPatch[presetName] = {
+        label: `${service.providerLabel} / ${model}`,
+        provider: service.providerId,
+        model,
+        capabilities: ['text'],
+      };
+    }
+  }
 
   return {
-    // Existing user edits are preserved. A missing provider or channel is
-    // restored, making the built-in service durable without resetting it.
     providers: hasManagedProvider ? {} : managed.providers,
-    model_presets: {
-      ...migratedPresets,
-      ...(hasManagedPreset ? {} : managed.model_presets),
-    },
+    model_presets: modelPresetPatch,
     // Remove legacy duplicate aliases after migrating their values. Pydantic's
     // AliasChoices prefers modelPresets when both keys exist, which otherwise
     // hides canonical model_presets entries and can make startup validation fail.
@@ -398,14 +511,44 @@ export function buildDesktopManagedModelPatch(
       ? {
           model_defaults: {
             ...migratedDefaults,
-            ...managed.model_defaults,
+            text: firstDiscoveredPreset,
           },
-          agents: managed.agents,
+          agents: {
+            defaults: {
+              modelPreset: firstDiscoveredPreset,
+              model: firstDiscoveredModel,
+              provider: service.providerId,
+            },
+          },
         }
       : Object.keys(migratedDefaults).length > 0
         ? { model_defaults: migratedDefaults }
         : {}),
   };
+}
+
+export function resolveDesktopManagedModels(
+  existing: Record<string, unknown>,
+  refreshedModels: readonly string[] | null,
+  service: DesktopDefaultModelServiceConfig = DEFAULT_DESKTOP_MODEL_SERVICE,
+): string[] {
+  if (refreshedModels !== null) {
+    return Array.from(new Set(refreshedModels.map((model) => model.trim()).filter(Boolean)));
+  }
+
+  const cachedModels = Object.values({
+    ...((existing.modelPresets ?? {}) as Record<string, unknown>),
+    ...((existing.model_presets ?? {}) as Record<string, unknown>),
+  }).flatMap((value) => {
+    if (!value || typeof value !== 'object') return [];
+    const preset = value as Record<string, unknown>;
+    return preset.provider === service.providerId
+      && typeof preset.model === 'string'
+      && preset.model.trim()
+      ? [preset.model.trim()]
+      : [];
+  });
+  return Array.from(new Set([...cachedModels, ...service.fallbackModels]));
 }
 
 function hasConfiguredProviderCredential(
@@ -432,7 +575,7 @@ function isLegacyDesktopAsrPreset(value: unknown): boolean {
  * Remove the voice model that older GUI builds added automatically.
  *
  * This migration only matches the exact uncredentialed StepFun preset that
- * TPACowork used to create. Any user-configured voice provider (including a
+ * TPCowork used to create. Any user-configured voice provider (including a
  * credentialed StepFun setup) remains untouched. Profiles without a voice
  * provider are explicitly disabled so nanobot does not synthesize a fallback
  * ASR model while loading settings.
@@ -627,7 +770,13 @@ export async function syncNanobotConfig(cfg: NanobotConfigInput): Promise<boolea
       },
     },
   };
-  const managedModelPatch = buildDesktopManagedModelPatch(existing);
+  const refreshedManagedModels = await refreshDesktopModelCatalog();
+  const managedModels = resolveDesktopManagedModels(existing, refreshedManagedModels);
+  const managedModelPatch = buildDesktopManagedModelPatch(
+    existing,
+    DEFAULT_DESKTOP_MODEL_SERVICE,
+    managedModels,
+  );
   const activatesManagedDefault = 'agents' in managedModelPatch;
   Object.assign(
     patch,

@@ -7,6 +7,7 @@ export interface Toast {
   title: string;
   message?: string;
   duration?: number;
+  onClick?: () => void;
 }
 
 interface ToastState {

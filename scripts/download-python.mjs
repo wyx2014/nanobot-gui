@@ -26,6 +26,14 @@ const repoRoot = path.resolve(__dirname, '..');
 const embeddedPythonDir = path.join(repoRoot, 'embedded-python');
 const destDir = path.join(embeddedPythonDir, 'runtime');
 const hostKey = `${process.platform}-${process.arch}`;
+const RUNTIME_MARKER_NAME = '.tpcowork-runtime.json';
+const PREVIOUS_RUNTIME_MARKER_NAME = '.tpacowork-runtime.json';
+const SOURCE_MARKER_NAME = '.tpcowork-nanobot-source.sha256';
+const PREVIOUS_SOURCE_MARKER_NAME = '.tpacowork-nanobot-source.sha256';
+
+function environmentValue(name, previousName) {
+  return process.env[name] || process.env[previousName];
+}
 
 function optionValue(name) {
   const exactIndex = process.argv.indexOf(name);
@@ -56,17 +64,28 @@ if (!tarball) {
 }
 
 const assetMetadata = runtimeAssetMetadata(targetKey);
-const runtimeRepository = process.env.TPACOWORK_RUNTIME_REPOSITORY
+const runtimeRepository = environmentValue(
+  'TPCOWORK_RUNTIME_REPOSITORY',
+  'TPACOWORK_RUNTIME_REPOSITORY',
+)
   || process.env.GITHUB_REPOSITORY
   || githubRepositoryFromRemote()
   || DEFAULT_RUNTIME_REPOSITORY;
 const defaultAssetBaseUrl = `https://github.com/${runtimeRepository}/releases/download/${assetMetadata.releaseTag}`;
-const runtimeArchiveUrl = process.env.TPACOWORK_WINDOWS_RUNTIME_URL
+const configuredRuntimeArchiveUrl = environmentValue(
+  'TPCOWORK_WINDOWS_RUNTIME_URL',
+  'TPACOWORK_WINDOWS_RUNTIME_URL',
+);
+const configuredRuntimeChecksumUrl = environmentValue(
+  'TPCOWORK_WINDOWS_RUNTIME_SHA256_URL',
+  'TPACOWORK_WINDOWS_RUNTIME_SHA256_URL',
+);
+const runtimeArchiveUrl = configuredRuntimeArchiveUrl
   || `${defaultAssetBaseUrl}/${assetMetadata.archive}`;
-const runtimeChecksumUrl = process.env.TPACOWORK_WINDOWS_RUNTIME_SHA256_URL
+const runtimeChecksumUrl = configuredRuntimeChecksumUrl
   || `${runtimeArchiveUrl}.sha256`;
-const hasExplicitRuntimeArchiveUrl = Boolean(process.env.TPACOWORK_WINDOWS_RUNTIME_URL);
-const hasExplicitRuntimeChecksumUrl = Boolean(process.env.TPACOWORK_WINDOWS_RUNTIME_SHA256_URL);
+const hasExplicitRuntimeArchiveUrl = Boolean(configuredRuntimeArchiveUrl);
+const hasExplicitRuntimeChecksumUrl = Boolean(configuredRuntimeChecksumUrl);
 
 if (process.argv.includes('--print-config')) {
   console.log(JSON.stringify({
@@ -88,8 +107,8 @@ if (!fs.existsSync(nanobotPyproject)) {
 }
 
 const dependencySpecSha256 = canonicalFileSha256(nanobotPyproject);
-const runtimeMarkerPath = path.join(destDir, '.tpacowork-runtime.json');
-const sourceMarkerPath = path.join(destDir, '.tpacowork-nanobot-source.sha256');
+const runtimeMarkerPath = path.join(destDir, RUNTIME_MARKER_NAME);
+const sourceMarkerPath = path.join(destDir, SOURCE_MARKER_NAME);
 const expectedRuntimeMarker = {
   target: targetKey,
   pythonVersion: PYTHON_VERSION,
@@ -116,6 +135,23 @@ function readJson(filePath) {
   }
 }
 
+function readRuntimeMarker(rootDir) {
+  return readJson(path.join(rootDir, RUNTIME_MARKER_NAME))
+    || readJson(path.join(rootDir, PREVIOUS_RUNTIME_MARKER_NAME));
+}
+
+function readSourceMarker(rootDir) {
+  for (const markerName of [SOURCE_MARKER_NAME, PREVIOUS_SOURCE_MARKER_NAME]) {
+    try {
+      const digest = fs.readFileSync(path.join(rootDir, markerName), 'utf8').trim();
+      if (digest) return digest;
+    } catch {
+      // Continue with the previous brand's marker during upgrades.
+    }
+  }
+  return '';
+}
+
 function markerMatches(marker) {
   return marker != null
     && Object.entries(expectedRuntimeMarker).every(([name, value]) => marker[name] === value);
@@ -130,14 +166,7 @@ function writeRuntimeMarker() {
 }
 
 function installedSourceMatches(rootDir = destDir) {
-  try {
-    return fs.readFileSync(
-      path.join(rootDir, '.tpacowork-nanobot-source.sha256'),
-      'utf8',
-    ).trim() === expectedSourceDigest;
-  } catch {
-    return false;
-  }
+  return readSourceMarker(rootDir) === expectedSourceDigest;
 }
 
 function writeSourceMarker() {
@@ -158,7 +187,7 @@ function runtimePaths(rootDir) {
 
 function runtimeValidationErrors(rootDir) {
   const errors = [];
-  const marker = readJson(path.join(rootDir, '.tpacowork-runtime.json'));
+  const marker = readRuntimeMarker(rootDir);
   if (!markerMatches(marker)) {
     errors.push(`runtime marker does not match ${targetKey} / Python ${PYTHON_VERSION}`);
   }
@@ -175,7 +204,7 @@ function installNanobot({ includeDependencies }) {
   const args = ['install', '--quiet', '--no-compile', '--no-cache-dir'];
   if (!includeDependencies) args.push('--no-deps', '--force-reinstall');
   args.push(includeDependencies ? `${nanobotSrc}[desktop]` : nanobotSrc);
-  // TPACowork launches `nanobot desktop-gateway`, which deliberately does not
+  // TPCowork launches `nanobot desktop-gateway`, which deliberately does not
   // serve nanobot's browser WebUI (`webui_static_dist=False`). Skipping that
   // unrelated Hatch hook also avoids invoking npm/npm.cmd while assembling a
   // relocatable Windows runtime.
@@ -224,7 +253,7 @@ function pruneRuntime(rootDir) {
 
 async function downloadFile(url, destination, extraHeaders = {}) {
   const headers = {
-    'User-Agent': 'TPACowork-runtime-preparer',
+    'User-Agent': 'TPCowork-runtime-preparer',
     ...extraHeaders,
   };
   const response = await fetch(url, { headers, redirect: 'follow' });
@@ -238,7 +267,8 @@ async function downloadFile(url, destination, extraHeaders = {}) {
 }
 
 async function downloadRuntimeAsset({ assetName, destination, explicitUrl, url }) {
-  const token = process.env.TPACOWORK_RUNTIME_TOKEN || process.env.GH_TOKEN;
+  const token = environmentValue('TPCOWORK_RUNTIME_TOKEN', 'TPACOWORK_RUNTIME_TOKEN')
+    || process.env.GH_TOKEN;
   if (!token || explicitUrl) {
     await downloadFile(
       url,
@@ -256,7 +286,7 @@ async function downloadRuntimeAsset({ assetName, destination, explicitUrl, url }
     'X-GitHub-Api-Version': '2022-11-28',
   };
   const releaseResponse = await fetch(releaseApiUrl, { headers: {
-    'User-Agent': 'TPACowork-runtime-preparer',
+    'User-Agent': 'TPCowork-runtime-preparer',
     ...apiHeaders,
   } });
   if (!releaseResponse.ok) {
@@ -283,6 +313,8 @@ async function installPrebuiltWindowsRuntime() {
   }
   const existingErrors = fs.existsSync(destDir) ? runtimeValidationErrors(destDir) : ['runtime is absent'];
   if (existingErrors.length === 0) {
+    writeRuntimeMarker();
+    writeSourceMarker();
     console.log(`Verified prebuilt Python runtime for ${targetKey}; skipping download.`);
     pruneRuntime(destDir);
     return;
@@ -328,6 +360,8 @@ async function installPrebuiltWindowsRuntime() {
 
     if (fs.existsSync(destDir)) fs.rmSync(destDir, { recursive: true, force: true });
     fs.renameSync(extractedDir, destDir);
+    writeRuntimeMarker();
+    writeSourceMarker();
     pruneRuntime(destDir);
     console.log(`Installed verified prebuilt Python ${PYTHON_VERSION} runtime for ${targetKey}.`);
   } finally {
@@ -340,7 +374,7 @@ async function buildRuntimeOnHost() {
     throw new Error(`Cannot execute ${targetKey} Python on host ${hostKey}.`);
   }
 
-  const currentMarker = readJson(runtimeMarkerPath);
+  const currentMarker = readRuntimeMarker(destDir);
   if (fs.existsSync(pythonBin) && markerMatches(currentMarker)) {
     if (!fs.existsSync(installedNanobotDir)) {
       console.log('nanobot is missing from the cached runtime; installing desktop dependencies...');

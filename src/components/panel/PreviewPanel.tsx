@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { clipboardBridge, shellBridge } from '@/lib/ipc-factory';
 import { usePreviewStore } from '@/stores/previewStore';
 import { useI18n } from '@/i18n';
@@ -79,10 +79,12 @@ export default function PreviewPanel() {
   const [content, setContent] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [htmlFrameReady, setHtmlFrameReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const htmlRevealFrameRef = useRef<number | null>(null);
 
   const rendererType = previewArtifact ? artifactPreviewKind(previewArtifact) : 'unsupported';
   const fileName = previewArtifact?.name || '';
@@ -103,6 +105,7 @@ export default function PreviewPanel() {
 
     const loadFile = async () => {
       setLoading(true);
+      setHtmlFrameReady(false);
       setError(null);
       setActionError(null);
       setContent(null);
@@ -141,10 +144,30 @@ export default function PreviewPanel() {
     loadFile();
     return () => {
       cancelled = true;
+      if (htmlRevealFrameRef.current !== null) {
+        window.cancelAnimationFrame(htmlRevealFrameRef.current);
+        htmlRevealFrameRef.current = null;
+      }
       if (blobUrl?.startsWith('blob:')) URL.revokeObjectURL(blobUrl);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- t is stable from i18n singleton
   }, [previewArtifact, rendererType, reloadKey]);
+
+  const handleHtmlFrameLoad = () => {
+    if (htmlRevealFrameRef.current !== null) {
+      window.cancelAnimationFrame(htmlRevealFrameRef.current);
+    }
+
+    // iframe `load` fires after the document is parsed, but the first composed
+    // frame may still be pending. Keep the loading surface for one painted
+    // frame so a blank iframe is never exposed on slower machines.
+    htmlRevealFrameRef.current = window.requestAnimationFrame(() => {
+      htmlRevealFrameRef.current = window.requestAnimationFrame(() => {
+        htmlRevealFrameRef.current = null;
+        setHtmlFrameReady(true);
+      });
+    });
+  };
 
   const runAction = async (action: () => Promise<void>) => {
     setActionError(null);
@@ -308,8 +331,34 @@ export default function PreviewPanel() {
       ) : null}
 
       {/* Content */}
-      <div className="flex-1 min-h-0 overflow-hidden">
-        {loading ? (
+      <div
+        className="relative flex-1 min-h-0 overflow-hidden"
+        aria-busy={loading || (rendererType === 'html' && !error && !htmlFrameReady)}
+      >
+        {rendererType === 'html' ? (
+          error ? (
+            <div className="flex flex-col items-center justify-center h-full p-4 text-center">
+              <p className="text-[13px] text-red-500">{error}</p>
+            </div>
+          ) : (
+            <>
+              {content !== null ? (
+                <iframe
+                  srcDoc={content}
+                  title={fileName}
+                  sandbox="allow-scripts"
+                  onLoad={handleHtmlFrameLoad}
+                  className="h-full w-full border-0 bg-white"
+                />
+              ) : null}
+              {loading || content === null || !htmlFrameReady ? (
+                <div className="absolute inset-0 z-10 bg-[#f5f3ee] dark:bg-[#202020]">
+                  <PreviewLoadingIndicator />
+                </div>
+              ) : null}
+            </>
+          )
+        ) : loading ? (
           <PreviewLoadingIndicator />
         ) : error ? (
           <div className="flex flex-col items-center justify-center h-full p-4 text-center">
@@ -343,13 +392,6 @@ export default function PreviewPanel() {
               <MarkdownRenderer content={content} />
             </div>
           </ScrollArea>
-        ) : rendererType === 'html' && content !== null ? (
-          <iframe
-            srcDoc={content}
-            title={fileName}
-            sandbox="allow-scripts"
-            className="w-full h-full border-0 bg-white"
-          />
         ) : rendererType === 'code' && content !== null ? (
           <ScrollArea className="h-full bg-[#fbfaf7]">
             <SyntaxHighlighter

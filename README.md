@@ -1,10 +1,10 @@
 <div align="center">
 
-# TPACowork (TPACowork)
+# TPCowork (TPCowork)
 
 **本地运行的 AI 桌面办公助手**
 
-TPACowork 是一个 Electron 桌面客户端，负责对话界面、设置、工具箱、文件预览和本地状态管理；真正的 Agent 循环、模型调用、记忆、工具执行、MCP、会话持久化由内置的 Python `nanobot` gateway 承接。
+TPCowork 是一个 Electron 桌面客户端，负责对话界面、设置、工具箱、文件预览和本地状态管理；真正的 Agent 循环、模型调用、记忆、工具执行、MCP、会话持久化由内置的 Python `nanobot` gateway 承接。
 
 </div>
 
@@ -145,20 +145,20 @@ Windows 打包分为两种模式：
 首次从 Mac 打 Windows 包前，在 GitHub Actions 手动运行 `Build Windows Python runtime`，并填写要嵌入的 nanobot 分支、标签或提交。工作流会发布一个不参与应用自动更新的 prerelease，并写入以下稳定资产：
 
 ```text
-tpacowork-python-3.12.9-win32-x64-desktop-v2-bytecode.zip
-tpacowork-python-3.12.9-win32-x64-desktop-v2-bytecode.zip.sha256
-tpacowork-python-3.12.9-win32-x64-desktop-v2-bytecode.zip.json
+tpcowork-python-3.12.9-win32-x64-desktop-v2-bytecode.zip
+tpcowork-python-3.12.9-win32-x64-desktop-v2-bytecode.zip.sha256
+tpcowork-python-3.12.9-win32-x64-desktop-v2-bytecode.zip.json
 ```
 
 默认从 `wyx2014/nanobot-gui` Release 下载；仓库或下载地址不同时可覆盖：
 
 ```bash
-TPACOWORK_RUNTIME_REPOSITORY=owner/repository npm run build:win
+TPCOWORK_RUNTIME_REPOSITORY=owner/repository npm run build:win
 
 # 私有/镜像资产也可以直接指定
-TPACOWORK_WINDOWS_RUNTIME_URL=https://example.com/runtime.zip \
-TPACOWORK_WINDOWS_RUNTIME_SHA256_URL=https://example.com/runtime.zip.sha256 \
-TPACOWORK_RUNTIME_TOKEN=token \
+TPCOWORK_WINDOWS_RUNTIME_URL=https://example.com/runtime.zip \
+TPCOWORK_WINDOWS_RUNTIME_SHA256_URL=https://example.com/runtime.zip.sha256 \
+TPCOWORK_RUNTIME_TOKEN=token \
 npm run build:win
 ```
 
@@ -275,7 +275,7 @@ dist/installers/          # electron-builder 输出
 
 ```bash
 npm run test
-TPACOWORK_RUNTIME_TOKEN=YOUR_GITHUB_TOKEN npm run build:win
+TPCOWORK_RUNTIME_TOKEN=YOUR_GITHUB_TOKEN npm run build:win
 ```
 
 重点测试：

@@ -4,9 +4,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const DEV_BUNDLE_ID = 'com.tparuyi.app.dev';
-const DEV_APP_NAME = 'TPACowork Dev';
+const DEV_APP_NAME = 'TPCowork Dev';
 const MICROPHONE_USAGE =
-  'TPACowork需要使用麦克风，将录音通过默认语音识别模型转换为输入文字。';
+  'TPCowork需要使用麦克风，将录音通过默认语音识别模型转换为输入文字。';
 
 if (process.platform !== 'darwin') {
   console.log('[prepare-electron-dev] Non-macOS platform, skipping app identity setup.');

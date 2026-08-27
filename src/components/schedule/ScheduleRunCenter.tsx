@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react';
 import {
   Check,
   ChevronDown,
+  ChevronRight,
   CircleAlert,
-  ExternalLink,
   Filter,
   History,
   LoaderCircle,
@@ -19,10 +19,7 @@ import { useScheduleStore } from '@/stores/scheduleStore';
 import { Select } from '@/components/ui/select';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import type { ScheduledTask, ScheduledTaskRun } from '@/types/schedule';
-import {
-  isScheduleRunConversationTitle,
-  useOpenScheduleRun,
-} from './useOpenScheduleRun';
+import { isScheduleRunConversationTitle } from './useOpenScheduleRun';
 
 type RunFilter = 'all' | 'running' | 'completed' | 'error' | 'unread';
 
@@ -77,12 +74,13 @@ export default function ScheduleRunCenter() {
   const { t, locale } = useI18n();
   const tasks = useScheduleStore((state) => state.tasks);
   const deleteRun = useScheduleStore((state) => state.deleteRun);
+  const markRunViewed = useScheduleStore((state) => state.markRunViewed);
   const conversations = useChatStore((state) => state.conversations);
-  const openScheduleRun = useOpenScheduleRun();
+  const openRunDetail = useScheduleStore((state) => state.openRunDetail);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<RunFilter>('all');
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
-  const [openingRunId, setOpeningRunId] = useState<string | null>(null);
+  const [confirmingRunId, setConfirmingRunId] = useState<string | null>(null);
   const [deletingRunId, setDeletingRunId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<RunEntry | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
@@ -134,15 +132,23 @@ export default function ScheduleRunCenter() {
   };
 
   const handleOpenRun = async (entry: RunEntry) => {
-    const key = `${entry.task.id}:${entry.run.id}`;
-    setOpeningRunId(key);
+    const { task, run } = entry;
+    if (run.resultType !== 'none' || run.status === 'running') {
+      openRunDetail(task.id, run.runId?.trim() || run.id);
+      return;
+    }
+    if (run.viewedAt) return;
+
+    const key = `${task.id}:${run.id}`;
+    setConfirmingRunId(key);
     setOpenError(null);
     try {
-      await openScheduleRun(entry.run, entry.task.name);
+      await markRunViewed(task.id, run);
     } catch (error) {
-      setOpenError(error instanceof Error ? error.message : String(error));
+      const message = error instanceof Error ? error.message : String(error);
+      setOpenError(`${t.schedule.reminderConfirmFailed}: ${message}`);
     } finally {
-      setOpeningRunId(null);
+      setConfirmingRunId(null);
     }
   };
 
@@ -272,8 +278,10 @@ export default function ScheduleRunCenter() {
                           completed: t.schedule.runCompletedSummary,
                           error: t.schedule.runStatusError,
                         });
-                      const canOpen = Boolean(sessionKey);
                       const unread = (run.status === 'completed' || run.status === 'error') && !run.viewedAt;
+                      const confirmationOnly = run.resultType === 'none' && run.status !== 'running';
+                      const confirmed = confirmationOnly && Boolean(run.viewedAt);
+                      const confirming = confirmingRunId === rowKey;
 
                       return (
                         <div
@@ -282,17 +290,18 @@ export default function ScheduleRunCenter() {
                           className={cn(
                             'group flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors',
                             index > 0 && 'border-t border-[#f0ede7] dark:border-white/[0.07]',
-                            canOpen && 'hover:bg-[#faf8f4] dark:hover:bg-[#292929]',
+                            'hover:bg-[#faf8f4] dark:hover:bg-[#292929]',
                           )}
                         >
                           <button
                             type="button"
-                            data-schedule-run-open={rowKey}
-                            onClick={() => canOpen && void handleOpenRun(entry)}
-                            disabled={!canOpen || openingRunId === rowKey || deletingRunId === rowKey}
+                            data-schedule-run-open={confirmationOnly ? undefined : rowKey}
+                            data-schedule-run-confirm={confirmationOnly ? rowKey : undefined}
+                            onClick={() => void handleOpenRun(entry)}
+                            disabled={deletingRunId === rowKey || confirming || confirmed}
                             className={cn(
                               'flex min-w-0 flex-1 items-center gap-3 text-left',
-                              !canOpen && 'cursor-default',
+                              confirmed && 'cursor-default',
                             )}
                           >
                             <span className={cn(
@@ -322,16 +331,30 @@ export default function ScheduleRunCenter() {
                             <span className="shrink-0 text-[12px] text-[#aaa69e] dark:text-[#77736c]">
                               {formatRunTime(run.startedAt, locale)}
                             </span>
-                            {openingRunId === rowKey
-                              ? <LoaderCircle className="h-4 w-4 shrink-0 animate-spin text-[#d97757]" />
-                              : canOpen && <ExternalLink className="h-4 w-4 shrink-0 text-[#b0aca3]" strokeWidth={1.7} />}
+                            {confirmationOnly ? (
+                              <span
+                                data-schedule-run-confirm-state={confirmed ? 'confirmed' : 'pending'}
+                                className={cn(
+                                  'inline-flex min-w-12 shrink-0 items-center justify-end gap-1.5 text-[12px] font-medium',
+                                  confirmed
+                                    ? 'text-emerald-600 dark:text-emerald-300'
+                                    : 'text-[#d97757] dark:text-[#e89576]',
+                                )}
+                              >
+                                {confirming && <LoaderCircle className="h-3.5 w-3.5 animate-spin" />}
+                                {!confirming && confirmed && <Check className="h-3.5 w-3.5" />}
+                                {confirmed ? t.schedule.reminderConfirmed : t.common.confirm}
+                              </span>
+                            ) : (
+                              <ChevronRight className="h-4 w-4 shrink-0 text-[#b0aca3]" strokeWidth={1.7} />
+                            )}
                           </button>
                           {run.status !== 'running' && (
                             <button
                               type="button"
                               data-schedule-run-delete={rowKey}
                               onClick={() => setPendingDelete(entry)}
-                              disabled={deletingRunId === rowKey || openingRunId === rowKey}
+                              disabled={deletingRunId === rowKey}
                               aria-label={`${t.schedule.deleteRun}: ${task.name}`}
                               title={t.schedule.deleteRun}
                               className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[#aaa69e] opacity-55 transition-all hover:bg-red-50 hover:text-red-500 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300/40 dark:text-[#77736c] dark:hover:bg-red-400/10 dark:hover:text-red-300"

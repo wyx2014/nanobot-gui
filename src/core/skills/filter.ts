@@ -4,7 +4,7 @@ import type { SkillMetadata } from '@/types';
  * (e.g. "clawhub" is sent to the gateway), but the UI shows a friendlier
  * name so the toolbox and the composer "+" menu stay consistent. */
 export function displaySkillName(name: string): string {
-  return name === 'clawhub' ? 'TPACoworkHub' : name;
+  return name === 'clawhub' ? 'TPCoworkHub' : name;
 }
 
 /**

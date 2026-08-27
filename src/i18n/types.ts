@@ -33,7 +33,20 @@ export interface TranslationDict {
     searchConversations: string;
     searchPlaceholder: string;
     noSearchResults: string;
+    noFilterResults: string;
     searchChats: string;
+    filterTasks: string;
+    filterStatus: string;
+    allStatuses: string;
+    statusRunning: string;
+    statusCompleted: string;
+    statusFailed: string;
+    filterTime: string;
+    allTime: string;
+    today: string;
+    recentSevenDays: string;
+    recentThirtyDays: string;
+    resetFilters: string;
     recommended: string;
     scheduledTasks: string;
     toolbox: string;
@@ -784,6 +797,18 @@ export interface TranslationDict {
     today: string;
     yesterday: string;
     runCompletedSummary: string;
+    runDetail: string;
+    startedAt: string;
+    completedAt: string;
+    duration: string;
+    runResult: string;
+    viewFullConversation: string;
+    reminderConfirmed: string;
+    reminderConfirmFailed: string;
+    conversationUnavailable: string;
+    conversationLegacyUnavailable: string;
+    conversationMissingUnavailable: string;
+    openConversationFailed: string;
   };
 
   // Updates

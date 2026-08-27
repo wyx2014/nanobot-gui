@@ -7,7 +7,9 @@ import {
   deleteScheduleRun,
   fetchThreadResource,
   fetchArchivedData,
+  fetchProviderModels,
   fetchWebuiThread,
+  purgeSession,
   registerTokenProvider,
   THREAD_HISTORY_MESSAGE_LIMIT,
 } from "./api";
@@ -18,9 +20,9 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function jsonResponse(body: unknown): Response {
+function jsonResponse(body: unknown, status: number = 200): Response {
   return new Response(JSON.stringify(body), {
-    status: 200,
+    status,
     headers: { "content-type": "application/json" },
   });
 }
@@ -71,6 +73,28 @@ describe("canonical thread history limits", () => {
 });
 
 describe("provider settings", () => {
+  it("uses the saved provider credential when a model probe omits apiKey", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      status: "available",
+      models: [{ id: "deepseek-chat" }],
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchProviderModels(
+      "gateway-token",
+      {
+        provider: "asset-deepseek",
+        apiBase: "http://model.test/v1",
+        apiType: "auto",
+      },
+      "http://127.0.0.1:8900",
+    );
+
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.searchParams.get("provider")).toBe("asset-deepseek");
+    expect(url.searchParams.has("api_key")).toBe(false);
+  });
+
   it("deletes a custom provider through the gateway", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ providers: [] }));
     vi.stubGlobal("fetch", fetchMock);
@@ -89,8 +113,8 @@ describe("provider settings", () => {
     });
   });
 
-  it("blocks deletion of the desktop-managed provider and model channel", async () => {
-    const fetchMock = vi.fn();
+  it("blocks deletion of the desktop-managed provider but allows catalog model replacement", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ providers: [] }));
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(deleteProviderSettings(
@@ -102,8 +126,8 @@ describe("provider settings", () => {
       "gateway-token",
       "asset-deepseek-r1",
       "http://127.0.0.1:8900",
-    )).rejects.toThrow("系统内置模型通道不能删除");
-    expect(fetchMock).not.toHaveBeenCalled();
+    )).resolves.toEqual({ providers: [] });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -120,6 +144,45 @@ describe("archived data management", () => {
 
     const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
     expect(url.pathname).toBe("/api/sessions/websocket%3Achat-a/archive");
+  });
+
+  it("rejects archive when the session still owns automations", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      archived: false,
+      blocked_by_automations: true,
+      automations: [{ id: "reminder-1", name: "A股开市提醒" }],
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(archiveSession(
+      "gateway-token",
+      "websocket:chat-a",
+      "http://127.0.0.1:8900",
+    )).rejects.toThrow("该会话仍关联自动化任务：A股开市提醒");
+  });
+
+  it("rejects an archive response that does not confirm success", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ archived: false })));
+
+    await expect(archiveSession(
+      "gateway-token",
+      "websocket:chat-a",
+      "http://127.0.0.1:8900",
+    )).rejects.toThrow("本地服务未确认会话归档");
+  });
+
+  it("formats automation blockers when permanent deletion is rejected", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({
+      purged: false,
+      blocked_by_automations: true,
+      automations: [{ id: "daily-1", name: "每日 AI 新闻推送" }],
+    }, 409)));
+
+    await expect(purgeSession(
+      "gateway-token",
+      "websocket:chat-a",
+      "http://127.0.0.1:8900",
+    )).rejects.toThrow("正在使用的自动化任务：每日 AI 新闻推送");
   });
 
   it("maps archived sessions and workspaces into renderer payloads", async () => {

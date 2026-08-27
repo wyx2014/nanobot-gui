@@ -510,7 +510,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       setExpertTeamsError(null);
       try {
         const status = await getNanobotStatus();
-        if (!status.ready) throw new Error(isEn ? 'TPACowork is not ready' : 'TPACowork 服务尚未就绪');
+        if (!status.ready) throw new Error(isEn ? 'TPCowork is not ready' : 'TPCowork 服务尚未就绪');
         let token = getNanobotToken();
         let base = `http://127.0.0.1:${status.port}`;
         if (!token) {
@@ -1404,7 +1404,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
         type: 'error',
         title: isEn ? 'Microphone unavailable' : '无法使用麦克风',
         message: denied
-          ? (isEn ? 'Allow microphone access in system settings and try again.' : '请在系统设置中允许TPACowork访问麦克风后重试。')
+          ? (isEn ? 'Allow microphone access in system settings and try again.' : '请在系统设置中允许TPCowork访问麦克风后重试。')
           : error instanceof Error ? error.message : String(error),
         duration: 5000,
       });
@@ -1825,7 +1825,9 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
 
   const hasAttachments = images.length > 0 || files.length > 0;
   const hasContent = text.trim().length > 0 || selectedSkills.length > 0 || selectedCliApps.length > 0 || selectedMcpPresets.length > 0 || hasAttachments;
-  const showProjectSelector = !activeConv?.workspacePath && !activeConv?.workspaceScope?.project_path;
+  const showProjectSelector = !activeConv?.scheduledTaskId
+    && !activeConv?.workspacePath
+    && !activeConv?.workspaceScope?.project_path;
   const projectSelectorPaths = useMemo(() => {
     const seen = new Set<string>();
     const paths: string[] = [];

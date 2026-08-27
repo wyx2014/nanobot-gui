@@ -1,4 +1,5 @@
 import { notificationBridge } from '@/lib/ipc-factory';
+import { format, getI18n } from '@/i18n';
 import { useSettingsStore } from '@/stores/settingsStore';
 
 let permissionGranted = false;
@@ -56,12 +57,18 @@ export async function notifyTaskCompleted(
 /**
  * Send a scheduled task completion notification
  */
-export async function notifyScheduledTaskCompleted(taskName: string): Promise<void> {
+export async function notifyScheduledTaskCompleted(
+  taskName: string,
+  scheduleTaskId?: string,
+  runId?: string,
+): Promise<void> {
   if (!canSendNotification()) return;
   try {
+    const t = getI18n();
     await notificationBridge.sendNotification({
-      title: '定时任务完成',
-      body: `「${taskName}」已执行完成 ✨`,
+      title: t.schedule.title,
+      body: format(t.schedule.taskCompleted, { name: taskName }),
+      ...(scheduleTaskId && runId ? { scheduleTaskId, runId } : {}),
     });
   } catch (err) {
     console.warn('[Notification] Failed to send:', err);
@@ -71,12 +78,18 @@ export async function notifyScheduledTaskCompleted(taskName: string): Promise<vo
 /**
  * Send a scheduled task error notification
  */
-export async function notifyScheduledTaskError(taskName: string): Promise<void> {
+export async function notifyScheduledTaskError(
+  taskName: string,
+  scheduleTaskId?: string,
+  runId?: string,
+): Promise<void> {
   if (!canSendNotification()) return;
   try {
+    const t = getI18n();
     await notificationBridge.sendNotification({
-      title: '定时任务出错',
-      body: `「${taskName}」执行出错了 😢`,
+      title: t.schedule.title,
+      body: format(t.schedule.taskError, { name: taskName }),
+      ...(scheduleTaskId && runId ? { scheduleTaskId, runId } : {}),
     });
   } catch (err) {
     console.warn('[Notification] Failed to send:', err);

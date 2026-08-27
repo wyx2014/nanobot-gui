@@ -8,6 +8,7 @@ import ExpertTeamsSection from './ExpertTeamsSection';
 
 const mocks = vi.hoisted(() => ({
   fetchExpertTeams: vi.fn(),
+  fetchExpertTeamDetail: vi.fn(),
 }));
 
 vi.mock('@/core/api', async () => {
@@ -15,6 +16,7 @@ vi.mock('@/core/api', async () => {
   return {
     ...actual,
     fetchExpertTeams: mocks.fetchExpertTeams,
+    fetchExpertTeamDetail: mocks.fetchExpertTeamDetail,
   };
 });
 
@@ -61,10 +63,33 @@ beforeEach(() => {
       enabled: true,
       available: true,
       member_count: 5,
-      workflow_count: 1,
+      workflow_count: 18,
       tags: ['投研'],
       requested_concurrency: 3,
     }],
+  });
+  mocks.fetchExpertTeamDetail.mockResolvedValue({
+    id: 'asset-research-team',
+    name: '资产投研团队 · 个股研究',
+    description: '多角色协作完成单股投资研究',
+    version: '1.0.0',
+    enabled: true,
+    available: true,
+    member_count: 5,
+    workflow_count: 18,
+    tags: ['投研'],
+    requested_concurrency: 3,
+    members: [],
+    workflows: [
+      { id: 'investment-team', name: '团队深度投研', mode: 'team', featured: true },
+      { id: 'earnings-team', name: '团队财报复盘', mode: 'team', featured: true },
+      { id: 'investment-research', name: '公司深度研究', mode: 'lead', featured: true },
+      { id: 'industry-research', name: '行业深度研究', mode: 'lead', featured: true },
+      { id: 'private-company-research', name: '非上市公司研究', mode: 'lead', featured: true },
+      { id: 'portfolio-review', name: '投资组合复盘', mode: 'lead', featured: true },
+    ],
+    optional_dependencies: [],
+    source_available: true,
   });
 });
 
@@ -82,6 +107,38 @@ afterEach(() => {
 });
 
 describe('ExpertTeamsSection team selection', () => {
+  it('presents the runtime entry as one fixed workflow', async () => {
+    container = document.createElement('div');
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => {
+      root?.render(<ExpertTeamsSection />);
+    });
+
+    expect(container.textContent).toMatch(/1 套固定工作流|1 fixed workflow/);
+    expect(container.textContent).not.toMatch(/18 个工作流|18 workflows/);
+  });
+
+  it('shows only the runtime entry in details when an older gateway returns featured skills', async () => {
+    container = document.createElement('div');
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => {
+      root?.render(<ExpertTeamsSection />);
+    });
+
+    const viewTeamButton = [...container.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => /查看团队|View Team/.test(button.textContent ?? ''));
+    await act(async () => {
+      viewTeamButton?.click();
+    });
+
+    const workflows = container.querySelectorAll('[data-expert-workflow]');
+    expect(workflows).toHaveLength(1);
+    expect(workflows[0]?.textContent).toContain('团队深度投研');
+    expect(container.textContent).not.toContain('团队财报复盘');
+  });
+
   it('returns to the welcome composer with the team selected without creating a session', async () => {
     container = document.createElement('div');
     document.body.append(container);

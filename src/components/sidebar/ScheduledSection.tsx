@@ -6,7 +6,6 @@ import { useI18n } from '@/i18n';
 import { ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ScheduledTaskRun } from '@/types/schedule';
-import { useOpenScheduleRun } from '@/components/schedule/useOpenScheduleRun';
 
 const MAX_VISIBLE_RUNS = 5;
 
@@ -39,7 +38,8 @@ export default function ScheduledSection() {
   const loadTasks = useScheduleStore((s) => s.loadTasks);
   const activeConversationId = useChatStore((s) => s.activeConversationId);
   const viewMode = useSettingsStore((s) => s.viewMode);
-  const openScheduleRun = useOpenScheduleRun();
+  const openRunDetail = useScheduleStore((s) => s.openRunDetail);
+  const setViewMode = useSettingsStore((s) => s.setViewMode);
 
   const [sectionOpen, setSectionOpen] = useState(true);
   const [expandedTasks, setExpandedTasks] = useState<Record<string, boolean>>({});
@@ -56,8 +56,9 @@ export default function ScheduledSection() {
     setExpandedTasks((prev) => ({ ...prev, [taskId]: !prev[taskId] }));
   };
 
-  const handleRunClick = async (taskId: string, run: ScheduledTaskRun) => {
-    await openScheduleRun(run, tasks[taskId]?.name ?? '自动化');
+  const handleRunClick = (taskId: string, run: ScheduledTaskRun) => {
+    openRunDetail(taskId, run.runId?.trim() || run.id);
+    setViewMode('schedule');
   };
 
   return (
@@ -110,7 +111,7 @@ export default function ScheduledSection() {
                       return (
                         <button
                           key={run.id}
-                          onClick={() => void handleRunClick(task.id, run)}
+                          onClick={() => handleRunClick(task.id, run)}
                           className={cn(
                             'flex items-center gap-1.5 w-full px-2 py-1 rounded-lg text-[12.5px] font-medium tracking-[-0.01em] truncate transition-colors',
                             isActive

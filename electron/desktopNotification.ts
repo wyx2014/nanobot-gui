@@ -2,6 +2,8 @@ export interface DesktopNotificationInput {
   title: string;
   body?: string;
   conversationId?: string;
+  scheduleTaskId?: string;
+  runId?: string;
 }
 
 export interface DesktopNotificationResult {
@@ -20,7 +22,7 @@ export interface DesktopNotificationDependencies {
    * already visible and focused. */
   activeWindow?: boolean;
   create(options: { title: string; body?: string }): NativeNotificationLike;
-  activate(conversationId?: string): void;
+  activate(target: Pick<DesktopNotificationInput, 'conversationId' | 'scheduleTaskId' | 'runId'>): void;
 }
 
 const MAX_TITLE_LENGTH = 80;
@@ -43,10 +45,14 @@ export function normalizeDesktopNotificationInput(
   if (!title) return null;
   const body = compactText(raw.body, MAX_BODY_LENGTH);
   const conversationId = compactText(raw.conversationId, 160);
+  const scheduleTaskId = compactText(raw.scheduleTaskId, 160);
+  const runId = compactText(raw.runId, 160);
   return {
     title,
     ...(body ? { body } : {}),
     ...(conversationId ? { conversationId } : {}),
+    ...(scheduleTaskId ? { scheduleTaskId } : {}),
+    ...(runId ? { runId } : {}),
   };
 }
 
@@ -64,7 +70,11 @@ export function showDesktopNotification(
     title: normalized.title,
     ...(normalized.body ? { body: normalized.body } : {}),
   });
-  notification.on('click', () => dependencies.activate(normalized.conversationId));
+  notification.on('click', () => dependencies.activate({
+    ...(normalized.conversationId ? { conversationId: normalized.conversationId } : {}),
+    ...(normalized.scheduleTaskId ? { scheduleTaskId: normalized.scheduleTaskId } : {}),
+    ...(normalized.runId ? { runId: normalized.runId } : {}),
+  }));
   notification.show();
   return { shown: true };
 }

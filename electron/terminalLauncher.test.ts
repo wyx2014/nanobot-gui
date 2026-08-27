@@ -3,7 +3,7 @@ import { createWindowsTerminalLaunchSpec } from './terminalLauncher';
 
 describe('createWindowsTerminalLaunchSpec', () => {
   it('passes a Windows workspace as cwd instead of embedding it in CMD syntax', () => {
-    const cwd = 'C:\\Users\\1\\Documents\\TPACowork Projects\\123123';
+    const cwd = 'C:\\Users\\1\\Documents\\TPCowork Projects\\123123';
 
     const launch = createWindowsTerminalLaunchSpec(cwd);
 

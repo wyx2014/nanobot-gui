@@ -11,7 +11,7 @@ export const RUNTIME_TARGETS = {
 };
 
 export function runtimeArchiveName(target) {
-  return `tpacowork-python-${PYTHON_VERSION}-${target}-${RUNTIME_PROFILE}.zip`;
+  return `tpcowork-python-${PYTHON_VERSION}-${target}-${RUNTIME_PROFILE}.zip`;
 }
 
 export function runtimeReleaseTag(target) {

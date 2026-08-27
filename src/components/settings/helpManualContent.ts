@@ -57,7 +57,7 @@ export const HELP_MANUAL_CHAPTERS: HelpManualChapter[] = [
       keywords: '首次使用 API Key 默认模型 新建任务 快速开始 入门',
       body: `## 先理解一件事
 
-TPACowork 的所有任务都在本地电脑上执行，无需把文件上传到云端。通常只需先配置一个可用的文字模型，就能开始工作。
+TPCowork 的所有任务都在本地电脑上执行，无需把文件上传到云端。通常只需先配置一个可用的文字模型，就能开始工作。
 
 ## 第 1 步：配置文字模型
 
@@ -66,7 +66,7 @@ TPACowork 的所有任务都在本地电脑上执行，无需把文件上传到�
 3. 点击 **测试并获取模型**，确认服务可连接。
 4. 回到 **模型配置 → 使用 → 文字**，把其中一个模型设为默认。
 
-如果发送时没有可用密钥，TPACowork 会自动打开模型配置页。语音模型与文字模型彼此独立，不使用语音时可以暂不配置。
+如果发送时没有可用密钥，TPCowork 会自动打开模型配置页。语音模型与文字模型彼此独立，不使用语音时可以暂不配置。
 
 ## 第 2 步：决定是否选择工作区
 
@@ -106,7 +106,7 @@ TPACowork 的所有任务都在本地电脑上执行，无需把文件上传到�
       keywords: 'first run API key default model new task quick start',
       body: `## One thing to know first
 
-TPACowork runs entirely on your local computer — your files stay on your machine. In most cases, configuring one working text model is all you need to begin.
+TPCowork runs entirely on your local computer — your files stay on your machine. In most cases, configuring one working text model is all you need to begin.
 
 ## Step 1: Configure a text model
 
@@ -361,7 +361,7 @@ Stopping ends only the active run. Existing messages and artifacts remain. When 
 
 普通文件当前不会复制成远端云附件。发送后请不要立即移动、重命名或删除原文件；如果文件在受限工作区外，Agent 可能无法读取。
 
-TPACowork 可提取 PDF、DOCX、XLSX、PPTX，以及 TXT、Markdown、CSV、JSON、XML、HTML、YAML、日志和常见配置文本。单个可提取文档上限为 50 MB。旧版 DOC、XLS、PPT 建议先转换为 DOCX、XLSX、PPTX。
+TPCowork 可提取 PDF、DOCX、XLSX、PPTX，以及 TXT、Markdown、CSV、JSON、XML、HTML、YAML、日志和常见配置文本。单个可提取文档上限为 50 MB。旧版 DOC、XLS、PPT 建议先转换为 DOCX、XLSX、PPTX。
 
 ## 怎样写附件任务
 
@@ -413,7 +413,7 @@ Files appear above the composer before sending and can be removed. Attachment-on
 
 Regular documents are currently local references rather than cloud uploads. Do not move, rename, or delete the source immediately after sending. A restricted workspace may block files outside its folder.
 
-TPACowork can extract PDF, DOCX, XLSX, PPTX, TXT, Markdown, CSV, JSON, XML, HTML, YAML, logs, and common configuration text. Extractable documents are limited to 50 MB each. Convert legacy DOC, XLS, and PPT files to their newer formats first.
+TPCowork can extract PDF, DOCX, XLSX, PPTX, TXT, Markdown, CSV, JSON, XML, HTML, YAML, logs, and common configuration text. Extractable documents are limited to 50 MB each. Convert legacy DOC, XLS, and PPT files to their newer formats first.
 
 ## Write a useful file request
 
@@ -655,7 +655,7 @@ The normal delivery is an audited Markdown source and a readable HTML report wit
 
 - 在 **定时任务** 页点击 **添加自动化** 手动填写；
 - 从任务模板选择工作周报、晨间简报、AI 新闻、月度复盘、知识沉淀或邮件待办提取，并在保存前继续修改；
-- 点击 **让 TPACowork 帮我创建**，先在会话中描述需求。
+- 点击 **让 TPCowork 帮我创建**，先在会话中描述需求。
 
 一个任务包含名称、说明、执行指令、频率，以及可选的技能和工作区。
 
@@ -685,7 +685,7 @@ The normal delivery is an audited Markdown source and a readable HTML report wit
 
 自动化任务在应用内运行，因此需要：
 
-1. TPACowork 应用保持运行；
+1. TPCowork 应用保持运行；
 2. 电脑没有休眠；
 3. 模型服务和必要 MCP 凭证可用；
 4. 绑定的工作区路径仍然存在；
@@ -699,7 +699,7 @@ The normal delivery is an audited Markdown source and a readable HTML report wit
       keywords: 'automation scheduled task hourly daily weekly monthly weekdays manual pause run history cron',
       body: `## Create a task
 
-Open **Automations** and create a task manually, start from a weekly report, morning brief, AI news, monthly review, knowledge capture, or email action template, or ask TPACowork to help draft one. Templates remain fully editable before saving.
+Open **Automations** and create a task manually, start from a weekly report, morning brief, AI news, monthly review, knowledge capture, or email action template, or ask TPCowork to help draft one. Templates remain fully editable before saving.
 
 A task has a name, description, instruction, frequency, and optional skill and workspace.
 
@@ -720,7 +720,7 @@ Task cards only manage the automation itself: edit, run now, pause or resume, an
 
 ## If a task does not run
 
-TPACowork must remain running, the computer must be awake, model and MCP credentials must work, the workspace must still exist, and the task must not be paused.
+TPCowork must remain running, the computer must be awake, model and MCP credentials must work, the workspace must still exist, and the task must not be paused.
 
 Missed executions are not guaranteed to catch up after shutdown or sleep. Test important automations once with **Run now**.`,
     },
@@ -748,7 +748,7 @@ Missed executions are not guaranteed to catch up after shutdown or sleep. Test i
 
 打开 **工具箱 → 技能**：
 
-- **内置技能**：随 TPACowork 提供，可启用或禁用；
+- **内置技能**：随 TPCowork 提供，可启用或禁用；
 - **我的技能**：你创建或导入的工作区技能，可编辑管理和删除。
 
 禁用技能后，它不会出现在输入候选中，也不会参与 Agent 的技能发现。
@@ -757,7 +757,7 @@ Missed executions are not guaranteed to catch up after shutdown or sleep. Test i
 
 工具箱右上角的创建菜单提供：
 
-- **让 TPACowork 创建**：进入会话，由 Agent 帮你梳理技能；
+- **让 TPCowork 创建**：进入会话，由 Agent 帮你梳理技能；
 - **手动创建**：填写英文小写名称、触发描述和技能正文；
 - **上传文件**：导入 Markdown，推荐文件名为 SKILL.md。
 
@@ -792,7 +792,7 @@ Choose only skills relevant to the task. Project skills appear only when authori
 
 ## Create a skill
 
-Use the create menu to ask TPACowork for help, create manually, or import Markdown (preferably SKILL.md). Names use lowercase English letters, digits, and hyphens.
+Use the create menu to ask TPCowork for help, create manually, or import Markdown (preferably SKILL.md). Names use lowercase English letters, digits, and hyphens.
 
 ## Project binding
 
@@ -949,7 +949,7 @@ Do not attach every MCP to every prompt. Larger tool definitions slow initial to
 
 ## macOS 麦克风权限
 
-打包应用需要给 TPACowork 麦克风权限。开发模式下，权限可能归属于启动 Electron 的终端或 IDE；如果提示无权限，请在系统设置的“隐私与安全性 → 麦克风”中允许实际宿主应用。`,
+打包应用需要给 TPCowork 麦克风权限。开发模式下，权限可能归属于启动 Electron 的终端或 IDE；如果提示无权限，请在系统设置的“隐私与安全性 → 麦克风”中允许实际宿主应用。`,
     },
     en: {
       title: 'Models and voice input',
@@ -978,7 +978,7 @@ The composer moves through connecting, recording, and finalizing/transcribing. R
 
 ## macOS permission
 
-Packaged builds need microphone access for TPACowork. In development, permission may belong to the terminal or IDE that launched Electron. Allow the actual host under Privacy & Security → Microphone.`,
+Packaged builds need microphone access for TPCowork. In development, permission may belong to the terminal or IDE that launched Electron. Allow the actual host under Privacy & Security → Microphone.`,
     },
   },
   {

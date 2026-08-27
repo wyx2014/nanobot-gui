@@ -1,14 +1,18 @@
 /**
- * Only block the transcript while the selected conversation has never been
- * hydrated. A refresh for the conversation already on screen must leave its
- * messages visible while new runtime events arrive.
+ * Block the transcript for every real history request. Cached hydration may
+ * make a request fast, but it must not suppress loading while a slow remote
+ * refresh is still pending.
  */
 export function shouldShowConversationLoading(
   activeConversationId: string | null | undefined,
   hydratedConversationId: string | null,
+  historyLoading: boolean,
 ): boolean {
   return Boolean(
     activeConversationId
-    && hydratedConversationId !== activeConversationId,
+    && (
+      historyLoading
+      || hydratedConversationId !== activeConversationId
+    ),
   );
 }

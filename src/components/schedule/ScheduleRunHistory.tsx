@@ -1,11 +1,9 @@
 import { useI18n } from '@/i18n';
-import { ExternalLink } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ScheduledTaskRun } from '@/types/schedule';
-import {
-  formatScheduleRunDate,
-  useOpenScheduleRun,
-} from './useOpenScheduleRun';
+import { useScheduleStore } from '@/stores/scheduleStore';
+import { formatScheduleRunDate } from './useOpenScheduleRun';
 
 function formatTimeAgo(timestamp: number, agoTemplate: string): string {
   const diff = Date.now() - timestamp;
@@ -29,11 +27,7 @@ interface Props {
 
 export default function ScheduleRunHistory({ runs, taskName }: Props) {
   const { t } = useI18n();
-  const openScheduleRun = useOpenScheduleRun();
-
-  const handleViewConversation = async (run: ScheduledTaskRun) => {
-    await openScheduleRun(run, taskName);
-  };
+  const openRunDetail = useScheduleStore((state) => state.openRunDetail);
 
   if (runs.length === 0) {
     return (
@@ -50,9 +44,11 @@ export default function ScheduleRunHistory({ runs, taskName }: Props) {
         const isUnread = (run.status === 'completed' || run.status === 'error') && !run.viewedAt;
 
         return (
-          <div
+          <button
+            type="button"
             key={run.id}
-            className="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-[#f5f3ee] transition-colors"
+            onClick={() => openRunDetail(run.scheduledTaskId, run.runId?.trim() || run.id)}
+            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-[#f5f3ee] dark:hover:bg-[#292929]"
           >
             <span
               className={cn(
@@ -85,16 +81,8 @@ export default function ScheduleRunHistory({ runs, taskName }: Props) {
               </div>
             </div>
 
-            {(run.sessionKey || run.conversationId) && (
-              <button
-                onClick={() => void handleViewConversation(run)}
-                className="text-[#656358] hover:text-[#d97757] p-1 shrink-0"
-                title={t.schedule.viewConversation}
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
+            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[#aaa69e]" />
+          </button>
         );
       })}
     </div>

@@ -8,9 +8,27 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { useBrowserStore } from '@/stores/browserStore';
 import RightPanel from './RightPanel';
 
-vi.mock('./ConversationWorkbench', () => ({
-  default: () => <div data-testid="conversation-workbench">Workbench</div>,
-}));
+const mocks = vi.hoisted(() => ({ workbenchMountCount: 0 }));
+
+vi.mock('./ConversationWorkbench', async () => {
+  const { useState } = await vi.importActual<typeof import('react')>('react');
+  function MockConversationWorkbench({ showInitialLoading }: { showInitialLoading?: boolean }) {
+    const [mountId] = useState(() => ++mocks.workbenchMountCount);
+    const [initialLoading] = useState(showInitialLoading);
+    return (
+      <div
+        data-testid="conversation-workbench"
+        data-mount-id={mountId}
+        data-initial-loading={String(Boolean(initialLoading))}
+      >
+        Workbench
+      </div>
+    );
+  }
+  return {
+    default: MockConversationWorkbench,
+  };
+});
 
 vi.mock('./PreviewPanel', () => ({
   default: () => <div data-testid="preview-panel">Preview</div>,
@@ -34,6 +52,7 @@ function render() {
 }
 
 beforeEach(() => {
+  mocks.workbenchMountCount = 0;
   useSettingsStore.setState({ viewMode: 'chat', rightPanelCollapsed: false });
   useChatStore.setState({
     activeConversationId: 'chat-1',
@@ -74,6 +93,43 @@ describe('RightPanel pinned conversation summary', () => {
     act(() => useSettingsStore.getState().setRightPanelCollapsed(true));
     expect(view.querySelector('[data-pinned-summary-host]')).toBeNull();
     expect(view.querySelector('[data-testid="conversation-workbench"]')).toBeNull();
+  });
+
+  it('remounts conversation details when the active conversation changes', () => {
+    useChatStore.setState((state) => ({
+      conversations: {
+        ...state.conversations,
+        'chat-2': {
+          id: 'chat-2',
+          title: 'Second chat',
+          messages: [],
+          createdAt: 2,
+          updatedAt: 2,
+          status: 'idle',
+        },
+      },
+    }));
+    const view = render();
+    const firstMount = view.querySelector('[data-testid="conversation-workbench"]')
+      ?.getAttribute('data-mount-id');
+
+    act(() => useChatStore.getState().switchConversation('chat-2'));
+
+    const secondMount = view.querySelector('[data-testid="conversation-workbench"]')
+      ?.getAttribute('data-mount-id');
+    expect(secondMount).not.toBe(firstMount);
+    expect(view.querySelector('[data-testid="conversation-workbench"]')
+      ?.getAttribute('data-initial-loading')).toBe('true');
+  });
+
+  it('reopens the same conversation summary without an initial loader', () => {
+    const view = render();
+
+    act(() => useSettingsStore.getState().setRightPanelCollapsed(true));
+    act(() => useSettingsStore.getState().setRightPanelCollapsed(false));
+
+    expect(view.querySelector('[data-testid="conversation-workbench"]')
+      ?.getAttribute('data-initial-loading')).toBe('false');
   });
 
   it('replaces the rail with the existing preview and preserves full-width expansion', () => {

@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({
   app: {
-    getPath: vi.fn(() => '/tmp/tpacowork-test'),
+    getPath: vi.fn(() => '/tmp/tpcowork-test'),
   },
 }));
 
@@ -13,8 +13,10 @@ import {
   buildDesktopManagedMcpServerPatch,
   buildDesktopDefaultModelConfig,
   buildDesktopManagedModelPatch,
+  resolveDesktopManagedModels,
   buildDesktopVoiceCleanupPatch,
 } from './nanobotConfig';
+import { discoverDesktopDefaultModels } from '../src/config/defaultModelService';
 
 describe('desktop default MCP servers', () => {
   const emptyCredentials = {
@@ -26,7 +28,7 @@ describe('desktop default MCP servers', () => {
 
   it('contains the built-in finance connectors without embedding keys', () => {
     const servers = buildDesktopDefaultMcpServers(
-      '/tmp/tpacowork-test/.nanobot',
+      '/tmp/tpcowork-test/.nanobot',
       emptyCredentials,
     );
 
@@ -55,12 +57,12 @@ describe('desktop default MCP servers', () => {
       type: 'stdio',
       command: 'npx',
       args: ['-y', '@playwright/mcp@0.0.78'],
-      cwd: path.join('/tmp/tpacowork-test/.nanobot', 'mcp', 'playwright'),
+      cwd: path.join('/tmp/tpcowork-test/.nanobot', 'mcp', 'playwright'),
     });
   });
 
   it('persists deployment credentials as runtime environment references', () => {
-    const servers = buildDesktopDefaultMcpServers('/tmp/tpacowork-test/.nanobot', {
+    const servers = buildDesktopDefaultMcpServers('/tmp/tpcowork-test/.nanobot', {
       juyuanToken: 'token with spaces',
       caihuiApiKey: 'caihui-key',
       ifindApiKey: 'ifind-key',
@@ -94,7 +96,7 @@ describe('desktop default MCP servers', () => {
           headers: { Authorization: 'Bearer personal-key' },
         },
       },
-      '/tmp/tpacowork-test/.nanobot',
+      '/tmp/tpcowork-test/.nanobot',
       {
         juyuanToken: 'shared-token',
         caihuiApiKey: 'shared-caihui',
@@ -121,7 +123,7 @@ describe('desktop default MCP servers', () => {
     };
     const configured = buildDesktopManagedMcpServerPatch(
       existing,
-      '/tmp/tpacowork-test/.nanobot',
+      '/tmp/tpcowork-test/.nanobot',
       {
         juyuanToken: '',
         caihuiApiKey: 'shared-caihui',
@@ -132,7 +134,7 @@ describe('desktop default MCP servers', () => {
     );
     const unconfigured = buildDesktopManagedMcpServerPatch(
       existing,
-      '/tmp/tpacowork-test/.nanobot',
+      '/tmp/tpcowork-test/.nanobot',
       emptyCredentials,
       { installMissing: false },
     );
@@ -154,13 +156,13 @@ describe('desktop default MCP servers', () => {
 
     expect(buildDesktopManagedMcpServerPatch(
       {},
-      '/tmp/tpacowork-test/.nanobot',
+      '/tmp/tpcowork-test/.nanobot',
       credentials,
       { installMissing: false },
     )).toEqual({});
     expect(buildDesktopManagedMcpServerPatch(
       {},
-      '/tmp/tpacowork-test/.nanobot',
+      '/tmp/tpcowork-test/.nanobot',
       credentials,
       { installMissing: true },
     )).toHaveProperty('caihui_mcp');
@@ -174,12 +176,13 @@ describe('desktop default model service', () => {
     apiKey: 'test-key',
     apiBase: 'http://model.test/v1/',
     apiType: 'auto' as const,
-    model: 'deepseek-r1',
-    presetId: 'asset-deepseek-r1',
+    fallbackModels: ['deepseek-r1', 'deepseek_v4_flash'],
+    preferredDefaultModel: 'deepseek_v4_flash',
   };
+  const fallbackModels = [...service.fallbackModels];
 
-  it('creates a custom provider, text preset, and matching defaults', () => {
-    const config = buildDesktopDefaultModelConfig(service);
+  it('creates model channels from the discovered catalog and prefers v4 flash', () => {
+    const config = buildDesktopDefaultModelConfig(service, fallbackModels);
 
     expect(config.providers['asset-deepseek']).toEqual({
       label: '资产DeepSeek',
@@ -187,33 +190,79 @@ describe('desktop default model service', () => {
       apiBase: 'http://model.test/v1',
       apiType: 'auto',
     });
-    expect(config.model_presets['asset-deepseek-r1']).toMatchObject({
+    expect(config.model_presets['asset-deepseek-deepseek-r1']).toMatchObject({
       provider: 'asset-deepseek',
       model: 'deepseek-r1',
       capabilities: ['text'],
     });
-    expect(config.model_defaults.text).toBe('asset-deepseek-r1');
+    expect(config.model_presets['asset-deepseek-deepseek_v4_flash']).toMatchObject({
+      provider: 'asset-deepseek',
+      model: 'deepseek_v4_flash',
+    });
+    expect(config.model_defaults.text).toBe('asset-deepseek-deepseek_v4_flash');
     expect(config.agents.defaults).toMatchObject({
-      modelPreset: 'asset-deepseek-r1',
-      model: 'deepseek-r1',
+      modelPreset: 'asset-deepseek-deepseek_v4_flash',
+      model: 'deepseek_v4_flash',
       provider: 'asset-deepseek',
     });
   });
 
-  it('installs and activates the managed service for an empty profile', () => {
-    const patch = buildDesktopManagedModelPatch({}, service);
+  it('fetches and deduplicates the current catalog with the managed credential', async () => {
+    const fetchCatalog = vi.fn(async (input: string, init: {
+      headers: Record<string, string>;
+      signal: AbortSignal;
+    }) => {
+      expect(input).toBe('http://model.test/v1/models');
+      expect(init.headers.Authorization).toBe('Bearer test-key');
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: [
+            { id: 'deepseek-r1' },
+            { id: 'deepseek_v4_flash' },
+            { id: 'deepseek_v4_flash' },
+          ],
+        }),
+      };
+    });
+
+    await expect(discoverDesktopDefaultModels(service, fetchCatalog)).resolves.toEqual(fallbackModels);
+  });
+
+  it('installs the external-network fallback catalog for an empty profile', () => {
+    const patch = buildDesktopManagedModelPatch({}, service, fallbackModels);
 
     expect(patch.providers['asset-deepseek']).toMatchObject({
       label: '资产DeepSeek',
       apiKey: 'test-key',
       apiBase: 'http://model.test/v1',
     });
-    expect(patch.model_presets['asset-deepseek-r1']).toMatchObject({
+    expect(patch.model_presets['asset-deepseek-deepseek-r1']).toMatchObject({
       provider: 'asset-deepseek',
       model: 'deepseek-r1',
     });
-    expect(patch.model_defaults?.text).toBe('asset-deepseek-r1');
-    expect(patch.agents?.defaults.modelPreset).toBe('asset-deepseek-r1');
+    expect(patch.model_presets['asset-deepseek-deepseek_v4_flash']).toMatchObject({
+      provider: 'asset-deepseek',
+      model: 'deepseek_v4_flash',
+    });
+    expect(patch.model_defaults?.text).toBe('asset-deepseek-deepseek_v4_flash');
+    expect(patch.agents?.defaults.modelPreset).toBe('asset-deepseek-deepseek_v4_flash');
+  });
+
+  it('keeps cached models and adds fallbacks when the internal catalog is unreachable', () => {
+    const models = resolveDesktopManagedModels({
+      model_presets: {
+        cached: { provider: 'asset-deepseek', model: 'deepseek-v5-preview' },
+        unrelated: { provider: 'custom', model: 'custom-model' },
+      },
+    }, null, service);
+
+    expect(models).toEqual([
+      'deepseek-v5-preview',
+      'deepseek-r1',
+      'deepseek_v4_flash',
+    ]);
   });
 
   it('adds the managed service without replacing an existing valid default', () => {
@@ -224,10 +273,11 @@ describe('desktop default model service', () => {
       },
       modelDefaults: { text: 'existing' },
       agents: { defaults: { model: 'old-model', provider: 'custom' } },
-    }, service);
+    }, service, fallbackModels);
 
     expect(patch.providers).toHaveProperty('asset-deepseek');
-    expect(patch.model_presets).toHaveProperty('asset-deepseek-r1');
+    expect(patch.model_presets).toHaveProperty('asset-deepseek-deepseek-r1');
+    expect(patch.model_presets).toHaveProperty('asset-deepseek-deepseek_v4_flash');
     expect(patch.model_presets).toHaveProperty('existing');
     expect(patch.model_defaults).toEqual({ text: 'existing' });
     expect(patch).not.toHaveProperty('agents');
@@ -247,12 +297,12 @@ describe('desktop default model service', () => {
           provider: 'auto',
         },
       },
-    }, service);
+    }, service, fallbackModels);
 
-    expect(patch.model_defaults?.text).toBe('asset-deepseek-r1');
+    expect(patch.model_defaults?.text).toBe('asset-deepseek-deepseek_v4_flash');
     expect(patch.agents?.defaults).toMatchObject({
-      modelPreset: 'asset-deepseek-r1',
-      model: 'deepseek-r1',
+      modelPreset: 'asset-deepseek-deepseek_v4_flash',
+      model: 'deepseek_v4_flash',
       provider: 'asset-deepseek',
     });
   });
@@ -269,15 +319,71 @@ describe('desktop default model service', () => {
       },
       modelDefaults: { text: 'preferred' },
       agents: { defaults: { model: 'preferred-model', provider: 'custom' } },
-    }, service);
+    }, service, fallbackModels);
 
     expect(patch.providers).toEqual({});
-    expect(patch.model_presets).toEqual({
-      'asset-deepseek-r1': { provider: 'asset-deepseek', model: 'deepseek-r1' },
-      preferred: { provider: 'custom', model: 'preferred-model' },
-    });
+    expect(patch.model_presets['asset-deepseek-r1']).toBeUndefined();
+    expect(patch.model_presets).toHaveProperty('preferred');
+    expect(patch.model_presets).toHaveProperty('asset-deepseek-deepseek-r1');
+    expect(patch.model_presets).toHaveProperty('asset-deepseek-deepseek_v4_flash');
     expect(patch.model_defaults).toEqual({ text: 'preferred' });
     expect(patch).not.toHaveProperty('agents');
+  });
+
+  it('migrates the old system-selected R1 default to the preferred v4 flash model', () => {
+    const patch = buildDesktopManagedModelPatch({
+      providers: {
+        'asset-deepseek': { apiKey: 'test-key', apiBase: 'http://model.test/v1' },
+      },
+      model_presets: {
+        'asset-deepseek-r1': { provider: 'asset-deepseek', model: 'deepseek-r1' },
+      },
+      model_defaults: { text: 'asset-deepseek-r1' },
+      agents: { defaults: { model: 'deepseek-r1', provider: 'asset-deepseek' } },
+    }, service, fallbackModels);
+
+    expect(patch.model_presets['asset-deepseek-r1']).toBeUndefined();
+    expect(patch.model_presets).toHaveProperty('asset-deepseek-deepseek-r1');
+    expect(patch.model_defaults?.text).toBe('asset-deepseek-deepseek_v4_flash');
+    expect(patch.agents?.defaults.model).toBe('deepseek_v4_flash');
+  });
+
+  it('keeps a current dynamic catalog unchanged across startup refreshes', () => {
+    const patch = buildDesktopManagedModelPatch({
+      providers: {
+        'asset-deepseek': { apiKey: 'test-key', apiBase: 'http://model.test/v1' },
+      },
+      model_presets: {
+        'asset-deepseek-chat': { provider: 'asset-deepseek', model: 'deepseek-chat' },
+        'asset-deepseek-reasoner': { provider: 'asset-deepseek', model: 'deepseek-reasoner' },
+      },
+      model_defaults: { text: 'asset-deepseek-chat' },
+      agents: { defaults: { model: 'deepseek-chat', provider: 'asset-deepseek' } },
+    }, service, ['deepseek-chat', 'deepseek-reasoner']);
+
+    expect(patch.model_presets).toEqual({});
+    expect(patch.model_defaults).not.toBeDefined();
+    expect(patch).not.toHaveProperty('agents');
+  });
+
+  it('removes retired models and moves a retired managed default to v4 flash', () => {
+    const patch = buildDesktopManagedModelPatch({
+      providers: {
+        'asset-deepseek': { apiKey: 'test-key', apiBase: 'http://model.test/v1' },
+      },
+      model_presets: {
+        current: { provider: 'asset-deepseek', model: 'deepseek-r1' },
+        retired: { provider: 'asset-deepseek', model: 'deepseek-v3-retired' },
+      },
+      model_defaults: { text: 'retired' },
+      agents: { defaults: { model: 'deepseek-v3-retired', provider: 'asset-deepseek' } },
+    }, service, ['deepseek-r1', 'deepseek_v4_flash', 'deepseek-v5']);
+
+    expect(patch.model_presets.retired).toBeUndefined();
+    expect(patch.model_presets).toHaveProperty('asset-deepseek-deepseek_v4_flash');
+    expect(patch.model_presets).toHaveProperty('asset-deepseek-deepseek-v5');
+    expect(patch.model_defaults?.text).toBe('asset-deepseek-deepseek_v4_flash');
+    expect(patch.agents?.defaults.model).toBe('deepseek_v4_flash');
   });
 
   it('migrates duplicate camelCase root aliases into canonical snake_case keys', () => {
@@ -294,7 +400,7 @@ describe('desktop default model service', () => {
       modelDefaults: { text: 'asset-deepseek-r1' },
       model_defaults: { speechToText: 'speech' },
       agents: { defaults: { model: 'deepseek-r1', provider: 'asset-deepseek' } },
-    }, service);
+    }, service, null);
 
     expect(patch.model_presets).toHaveProperty('asset-deepseek-r1');
     expect(patch.modelPresets).toBeUndefined();
@@ -309,8 +415,8 @@ describe('desktop default model service', () => {
       apiKey: '',
       apiBase: 'http://model.test/v1',
       apiType: 'auto',
-      model: 'deepseek-r1',
-      presetId: 'asset-deepseek-r1',
+      fallbackModels,
+      preferredDefaultModel: 'deepseek_v4_flash',
     })).toThrow('Default desktop model service is missing apiKey');
   });
 });

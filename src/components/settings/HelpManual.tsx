@@ -137,7 +137,7 @@ export default function HelpManual({ onClose }: { onClose: () => void }) {
       <section
         role="dialog"
         aria-modal="true"
-        aria-label={isEnglish ? 'TPACowork User Manual' : 'TPACowork 使用手册'}
+        aria-label={isEnglish ? 'TPCowork User Manual' : 'TPCowork 使用手册'}
         className="relative flex h-[min(820px,calc(100vh-var(--window-titlebar-safe-top)-48px))] w-[min(1180px,calc(100vw-48px))] overflow-hidden rounded-[22px] border border-black/5 bg-[#fbfaf7] shadow-lg dark:border-white/10 dark:bg-[#232323]"
       >
         <aside className="flex w-[248px] shrink-0 flex-col border-r border-[#e6e0d7] bg-[#f5f3ee] dark:border-white/10 dark:bg-[#292929]">
@@ -151,7 +151,7 @@ export default function HelpManual({ onClose }: { onClose: () => void }) {
                   {isEnglish ? 'User Manual' : '使用手册'}
                 </div>
                 <div className="mt-0.5 truncate text-[11px] text-[#8a867c] dark:text-[#aaa69e]">
-                  {isEnglish ? 'Learn TPACowork by task' : '按任务快速找到答案'}
+                  {isEnglish ? 'Learn TPCowork by task' : '按任务快速找到答案'}
                 </div>
               </div>
             </div>

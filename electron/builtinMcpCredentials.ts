@@ -11,10 +11,10 @@
  * environment-backed defaults.
  */
 
-declare const __TPACOWORK_BUILTIN_JUYUAN_MCP_TOKEN__: string | undefined;
-declare const __TPACOWORK_BUILTIN_CAIHUI_MCP_API_KEY__: string | undefined;
-declare const __TPACOWORK_BUILTIN_IFIND_MCP_API_KEY__: string | undefined;
-declare const __TPACOWORK_BUILTIN_ANYSEARCH_API_KEY__: string | undefined;
+declare const __TPCOWORK_BUILTIN_JUYUAN_MCP_TOKEN__: string | undefined;
+declare const __TPCOWORK_BUILTIN_CAIHUI_MCP_API_KEY__: string | undefined;
+declare const __TPCOWORK_BUILTIN_IFIND_MCP_API_KEY__: string | undefined;
+declare const __TPCOWORK_BUILTIN_ANYSEARCH_API_KEY__: string | undefined;
 
 export const DESKTOP_MCP_CREDENTIAL_ENV = Object.freeze({
   juyuanToken: 'JUYUAN_MCP_TOKEN',
@@ -32,17 +32,17 @@ export interface DesktopMcpCredentials {
 
 function compiledCredentials(): DesktopMcpCredentials {
   return {
-    juyuanToken: typeof __TPACOWORK_BUILTIN_JUYUAN_MCP_TOKEN__ === 'string'
-      ? __TPACOWORK_BUILTIN_JUYUAN_MCP_TOKEN__.trim()
+    juyuanToken: typeof __TPCOWORK_BUILTIN_JUYUAN_MCP_TOKEN__ === 'string'
+      ? __TPCOWORK_BUILTIN_JUYUAN_MCP_TOKEN__.trim()
       : '',
-    caihuiApiKey: typeof __TPACOWORK_BUILTIN_CAIHUI_MCP_API_KEY__ === 'string'
-      ? __TPACOWORK_BUILTIN_CAIHUI_MCP_API_KEY__.trim()
+    caihuiApiKey: typeof __TPCOWORK_BUILTIN_CAIHUI_MCP_API_KEY__ === 'string'
+      ? __TPCOWORK_BUILTIN_CAIHUI_MCP_API_KEY__.trim()
       : '',
-    ifindApiKey: typeof __TPACOWORK_BUILTIN_IFIND_MCP_API_KEY__ === 'string'
-      ? __TPACOWORK_BUILTIN_IFIND_MCP_API_KEY__.trim()
+    ifindApiKey: typeof __TPCOWORK_BUILTIN_IFIND_MCP_API_KEY__ === 'string'
+      ? __TPCOWORK_BUILTIN_IFIND_MCP_API_KEY__.trim()
       : '',
-    anysearchApiKey: typeof __TPACOWORK_BUILTIN_ANYSEARCH_API_KEY__ === 'string'
-      ? __TPACOWORK_BUILTIN_ANYSEARCH_API_KEY__.trim()
+    anysearchApiKey: typeof __TPCOWORK_BUILTIN_ANYSEARCH_API_KEY__ === 'string'
+      ? __TPCOWORK_BUILTIN_ANYSEARCH_API_KEY__.trim()
       : '',
   };
 }

@@ -11,7 +11,11 @@ vi.mock('@/lib/ipc-factory', () => ({
 }));
 
 import { useSettingsStore } from '@/stores/settingsStore';
-import { initNotifications, notifyTaskCompleted } from './notifications';
+import {
+  initNotifications,
+  notifyScheduledTaskCompleted,
+  notifyTaskCompleted,
+} from './notifications';
 
 describe('desktop notification preference', () => {
   beforeEach(async () => {
@@ -34,5 +38,16 @@ describe('desktop notification preference', () => {
     await notifyTaskCompleted('测试任务', 'chat-1');
 
     expect(notificationMocks.sendNotification).toHaveBeenCalledOnce();
+  });
+
+  it('sends a task-aware scheduled completion notification', async () => {
+    await notifyScheduledTaskCompleted('找李家平安排任务', 'task-1', 'run-7');
+
+    expect(notificationMocks.sendNotification).toHaveBeenCalledWith({
+      title: expect.any(String),
+      body: expect.stringContaining('找李家平安排任务'),
+      scheduleTaskId: 'task-1',
+      runId: 'run-7',
+    });
   });
 });

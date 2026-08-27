@@ -14,7 +14,7 @@ afterEach(() => {
 
 describe('startup log', () => {
   it('keeps launch timing lines on disk and redacts secrets', () => {
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'tpacowork-startup-log-'));
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'tpcowork-startup-log-'));
     temporaryDirectories.push(directory);
     const filePath = path.join(directory, 'startup.log');
     const log = new StartupLog(filePath);
@@ -23,7 +23,7 @@ describe('startup log', () => {
     log.append('bridge', 'python-spawned', [], new Date('2026-08-17T00:00:01Z'));
 
     const output = fs.readFileSync(filePath, 'utf8');
-    expect(output).toContain('=== TPACowork launch 2026-08-17T00:00:00.000Z');
+    expect(output).toContain('=== TPCowork launch 2026-08-17T00:00:00.000Z');
     expect(output).toContain('[main] window-ready token=[REDACTED]');
     expect(output).toContain('[bridge] python-spawned');
     expect(output).not.toContain('desktop-secret');

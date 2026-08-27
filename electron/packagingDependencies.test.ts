@@ -44,8 +44,8 @@ const runtimeStartupCacheScript = fs.readFileSync(
 );
 
 describe('packaged dependency boundary', () => {
-  it('ships only the Node module required by the Electron main process', () => {
-    expect(Object.keys(packageManifest.dependencies ?? {}).sort()).toEqual(['ws']);
+  it('does not ship Node modules after removing the device-link bridge', () => {
+    expect(Object.keys(packageManifest.dependencies ?? {}).sort()).toEqual([]);
   });
 
   it('does not restore unused heavyweight dependencies', () => {
@@ -86,7 +86,7 @@ describe('packaged dependency boundary', () => {
   it('resets the installation marker only for a real uninstall', () => {
     expect(packageManifest.build?.nsis?.include).toBe('build/installer.nsh');
     expect(installerInclude).toContain('${ifNot} ${isUpdated}');
-    expect(installerInclude).toContain('Delete "$APPDATA\\tpacowork\\.installation-id"');
+    expect(installerInclude).toContain('Delete "$APPDATA\\tpcowork\\.installation-id"');
   });
 
   it('ships relocatable bytecode for the desktop startup hot path', () => {

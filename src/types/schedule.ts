@@ -13,6 +13,8 @@ export type ScheduleFrequency =
   | 'manual';
 export type ScheduledTaskStatus = 'active' | 'paused' | 'completed';
 export type ScheduledRunStatus = 'running' | 'completed' | 'error';
+export type ScheduleRunResultType = 'conversation' | 'none';
+export type ScheduleRunUnavailableReason = 'legacy' | 'missing';
 
 export interface ScheduleConfig {
   frequency: ScheduleFrequency;
@@ -68,9 +70,13 @@ export interface ScheduledTaskRun {
   runId?: string;
   scheduledTaskId: string;
   /** Associated conversation ID for viewing results */
-  conversationId: string;
+  conversationId?: string;
   /** Backend session key for this run. New runs use a per-run cron session. */
   sessionKey?: string;
+  /** Explicit gateway contract. A session key alone must not be treated as availability. */
+  resultType?: ScheduleRunResultType;
+  conversationAvailable?: boolean;
+  unavailableReason?: ScheduleRunUnavailableReason;
   startedAt: number;
   completedAt?: number;
   status: ScheduledRunStatus;

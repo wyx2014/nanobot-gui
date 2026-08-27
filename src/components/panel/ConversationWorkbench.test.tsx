@@ -3,11 +3,22 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { initLanguage } from "@/i18n";
+import { fetchThreadResource } from "@/core/api";
 import { fetchSessionArtifacts } from "@/core/sessionArtifacts";
+import type { ThreadResource } from "@/core/types";
 import { useChatStore } from "@/stores/chatStore";
 import { useConversationWorkbenchStore } from "@/stores/conversationWorkbenchStore";
+import { useThreadResourceStore } from "@/stores/threadResourceStore";
 import { useTurnPlanStore } from "@/stores/turnPlanStore";
 import ConversationWorkbench from "./ConversationWorkbench";
+
+vi.mock("@/core/api", async () => {
+  const actual = await vi.importActual<typeof import("@/core/api")>("@/core/api");
+  return {
+    ...actual,
+    fetchThreadResource: vi.fn(() => new Promise(() => {})),
+  };
+});
 
 vi.mock("@/core/sessionArtifacts", async () => {
   const actual = await vi.importActual<typeof import("@/core/sessionArtifacts")>(
@@ -24,11 +35,13 @@ let root: Root | undefined;
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-function renderWorkbench() {
+function renderWorkbench(showInitialLoading?: boolean) {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  act(() => root?.render(<ConversationWorkbench />));
+  act(() => root?.render(
+    <ConversationWorkbench showInitialLoading={showInitialLoading} />,
+  ));
   return container;
 }
 
@@ -66,6 +79,10 @@ beforeEach(() => {
     planByConversation: {},
     currentTurnByConversation: {},
   });
+  useThreadResourceStore.setState({
+    resourcesBySession: {},
+    resyncRequiredBySession: {},
+  });
 });
 
 afterEach(() => {
@@ -80,11 +97,20 @@ describe("ConversationWorkbench progress activity", () => {
     const view = renderWorkbench();
 
     expect(view.querySelector('[data-conversation-summary]')).not.toBeNull();
+    expect(view.querySelector('[data-testid="conversation-details-loading"]')).not.toBeNull();
     expect(view.querySelectorAll('[data-summary-section]')).toHaveLength(2);
     expect(view.querySelector('[data-summary-section="progress"]')).not.toBeNull();
     expect(view.querySelector('[data-summary-section="artifacts"]')).not.toBeNull();
     expect(view.textContent).not.toContain("Session workbench");
     expect(view.textContent).not.toContain("Browser");
+  });
+
+  it("silently refreshes when reopening the same conversation summary", () => {
+    const view = renderWorkbench(false);
+
+    expect(vi.mocked(fetchSessionArtifacts)).toHaveBeenCalledTimes(1);
+    expect(view.querySelector('[data-testid="conversation-details-loading"]')).toBeNull();
+    expect(view.querySelector('[data-conversation-summary]')?.getAttribute("aria-busy")).toBe("false");
   });
 
   it("shows a generic planning state instead of tool steps before a plan arrives", () => {
@@ -146,6 +172,41 @@ describe("ConversationWorkbench progress activity", () => {
     renderWorkbench();
 
     expect(vi.mocked(fetchSessionArtifacts)).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps loading active while a cached thread resource refreshes remotely", () => {
+    const resource: ThreadResource = {
+      schema_version: 3,
+      project_id: "project-progress",
+      session_id: "session-progress",
+      session_key: "websocket:chat-progress",
+      last_event_seq: 1,
+      snapshot_revision: 1,
+      runtime_snapshot_revision: 1,
+      runtime_epoch: "epoch-progress",
+      thread_status: { type: "idle" },
+      active_turn: null,
+      latest_turn: null,
+      messages: [],
+      plan: null,
+      artifact_revision: 0,
+      artifacts: [],
+      from_event_seq: 0,
+      to_event_seq: 1,
+      events: [],
+      has_more: false,
+      resync_required: false,
+    };
+    useThreadResourceStore.setState({
+      resourcesBySession: { "websocket:chat-progress": resource },
+      resyncRequiredBySession: {},
+    });
+
+    const view = renderWorkbench();
+
+    expect(vi.mocked(fetchThreadResource)).toHaveBeenCalledTimes(1);
+    expect(view.querySelector('[data-conversation-summary]')?.getAttribute("aria-busy")).toBe("true");
+    expect(view.querySelector('[data-testid="conversation-details-loading"]')).not.toBeNull();
   });
 
   it("does not keep artifact polling alive after the canonical plan is terminal", () => {

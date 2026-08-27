@@ -8,10 +8,19 @@ import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { useToastStore } from '@/stores/toastStore';
 import { usePromptHubStore } from '@/stores/promptHubStore';
 import { useI18n } from '@/i18n';
-import { Archive, Clock, Wrench, Settings, Download, Pencil, Folder, HelpCircle, ChevronRight, MoreHorizontal, Plus, SquarePen, FolderOpen, FolderClosed, X, Search, LogOut, UserRound } from 'lucide-react';
+import { Archive, Check, Clock, Wrench, Settings, Download, Pencil, Funnel, Folder, HelpCircle, ChevronRight, MoreHorizontal, Plus, SquarePen, FolderOpen, FolderClosed, X, Search, LogOut, UserRound } from 'lucide-react';
 import NewWorkspaceDialog from '@/components/common/NewWorkspaceDialog';
 import WindowModalBackdrop from '@/components/common/WindowModalBackdrop';
-import { matchesConversationSearch, matchesProjectSearch } from '@/components/sidebar/conversationSearch';
+import {
+  matchesConversationFilters,
+  matchesConversationSearch,
+  matchesProjectSearch,
+} from '@/components/sidebar/conversationSearch';
+import type {
+  ConversationFilters,
+  ConversationStatusFilter,
+  ConversationTimeFilter,
+} from '@/components/sidebar/conversationSearch';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
@@ -68,6 +77,7 @@ const PROJECT_MENU_WIDTH = 150;
 const PROJECT_MENU_HEIGHT = 215;
 const DIAGNOSTICS_TRIGGER_CLICKS = 5;
 const DIAGNOSTICS_CLICK_GAP_MS = 1_200;
+const DEFAULT_CONVERSATION_FILTERS: ConversationFilters = { status: 'all', time: 'all' };
 
 async function getProjectSkillsAuth(): Promise<{ token: string; baseUrl: string }> {
   const status = await getNanobotStatus();
@@ -129,6 +139,11 @@ export default function Sidebar() {
   const [skillSearch, setSkillSearch] = useState('');
   const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
   const [conversationSearch, setConversationSearch] = useState('');
+  const [conversationFilterOpen, setConversationFilterOpen] = useState(false);
+  const [conversationFilters, setConversationFilters] = useState<ConversationFilters>(DEFAULT_CONVERSATION_FILTERS);
+  const [sidebarConversationFilterOpen, setSidebarConversationFilterOpen] = useState(false);
+  const [sidebarConversationFilterMenuPos, setSidebarConversationFilterMenuPos] = useState<{ left: number; top: number } | null>(null);
+  const [sidebarConversationFilters, setSidebarConversationFilters] = useState<ConversationFilters>(DEFAULT_CONVERSATION_FILTERS);
   const [selectedSearchIndex, setSelectedSearchIndex] = useState(0);
   const [draftSkillBindings, setDraftSkillBindings] = useState<string[]>([]);
   const [promptHubUsername, setPromptHubUsername] = useState('');
@@ -137,6 +152,8 @@ export default function Sidebar() {
   const diagnosticsClicksRef = useRef({ count: 0, lastClickAt: 0 });
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const conversationSearchRef = useRef<HTMLInputElement>(null);
+  const conversationFilterRef = useRef<HTMLDivElement>(null);
+  const sidebarConversationFilterRef = useRef<HTMLDivElement>(null);
 
   const [showArchiveToast, setShowArchiveToast] = useState(false);
   const archiveToastTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -145,11 +162,15 @@ export default function Sidebar() {
 
   const closeConversationSearch = useCallback(() => {
     setConversationSearch('');
+    setConversationFilterOpen(false);
+    setConversationFilters(DEFAULT_CONVERSATION_FILTERS);
     setSelectedSearchIndex(0);
     setConversationSearchOpen(false);
   }, []);
 
   const openConversationSearch = useCallback(() => {
+    setSidebarConversationFilterOpen(false);
+    setSidebarConversationFilterMenuPos(null);
     setSelectedSearchIndex(0);
     setConversationSearchOpen(true);
   }, []);
@@ -161,10 +182,37 @@ export default function Sidebar() {
   }, [conversationSearchOpen]);
 
   useEffect(() => {
+    if (!conversationFilterOpen && !sidebarConversationFilterOpen) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (conversationFilterOpen && !conversationFilterRef.current?.contains(target)) {
+        setConversationFilterOpen(false);
+      }
+      if (sidebarConversationFilterOpen && !sidebarConversationFilterRef.current?.contains(target)) {
+        setSidebarConversationFilterOpen(false);
+        setSidebarConversationFilterMenuPos(null);
+      }
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [conversationFilterOpen, sidebarConversationFilterOpen]);
+
+  useEffect(() => {
     const handleSearchShortcut = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && conversationSearchOpen) {
         event.preventDefault();
+        if (conversationFilterOpen) {
+          setConversationFilterOpen(false);
+          return;
+        }
         closeConversationSearch();
+        return;
+      }
+
+      if (event.key === 'Escape' && sidebarConversationFilterOpen) {
+        event.preventDefault();
+        setSidebarConversationFilterOpen(false);
+        setSidebarConversationFilterMenuPos(null);
         return;
       }
 
@@ -176,7 +224,7 @@ export default function Sidebar() {
 
     window.addEventListener('keydown', handleSearchShortcut);
     return () => window.removeEventListener('keydown', handleSearchShortcut);
-  }, [closeConversationSearch, conversationSearchOpen, openConversationSearch]);
+  }, [closeConversationSearch, conversationFilterOpen, conversationSearchOpen, openConversationSearch, sidebarConversationFilterOpen]);
 
   // Inline rename state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -308,6 +356,27 @@ export default function Sidebar() {
     };
   }, [gatewayProjects, projectNames, recentWorkspacePaths, sortedConvs]);
 
+  const hasActiveSidebarConversationFilters = sidebarConversationFilters.status !== 'all'
+    || sidebarConversationFilters.time !== 'all';
+
+  const sidebarConversationGroups = useMemo(() => {
+    if (!hasActiveSidebarConversationFilters) return conversationGroups;
+
+    return {
+      projects: conversationGroups.projects
+        .map((project) => ({
+          ...project,
+          conversations: project.conversations.filter((conversation) => (
+            matchesConversationFilters(conversation, sidebarConversationFilters)
+          )),
+        }))
+        .filter((project) => project.conversations.length > 0),
+      unprojected: conversationGroups.unprojected.filter((conversation) => (
+        matchesConversationFilters(conversation, sidebarConversationFilters)
+      )),
+    };
+  }, [conversationGroups, hasActiveSidebarConversationFilters, sidebarConversationFilters]);
+
   // Default to the first (most recently used) project expanded and the rest
   // collapsed. Re-evaluated whenever the project list changes so projects
   // arriving in later sync batches also start collapsed; projects the user has
@@ -360,13 +429,69 @@ export default function Sidebar() {
           [entry.projectName, entry.projectPath],
         )
       ))
-      : searchConversationEntries;
+      : searchConversationEntries.filter((entry) => (
+        matchesConversationFilters(entry.conversation, conversationFilters)
+      ));
 
-    return matchingEntries.slice(0, 9);
-  }, [conversationSearch, searchConversationEntries]);
+    return matchingEntries.slice(0, 30);
+  }, [conversationFilters, conversationSearch, searchConversationEntries]);
+
+  const hasActiveConversationFilters = conversationFilters.status !== 'all'
+    || conversationFilters.time !== 'all';
+
+  const statusFilterOptions: Array<{ value: ConversationStatusFilter; label: string }> = [
+    { value: 'all', label: t.sidebar.allStatuses },
+    { value: 'running', label: t.sidebar.statusRunning },
+    { value: 'completed', label: t.sidebar.statusCompleted },
+    { value: 'error', label: t.sidebar.statusFailed },
+  ];
+
+  const timeFilterOptions: Array<{ value: ConversationTimeFilter; label: string }> = [
+    { value: 'all', label: t.sidebar.allTime },
+    { value: 'today', label: t.sidebar.today },
+    { value: '7-days', label: t.sidebar.recentSevenDays },
+    { value: '30-days', label: t.sidebar.recentThirtyDays },
+  ];
+
+  const selectConversationStatusFilter = (status: ConversationStatusFilter) => {
+    setConversationSearch('');
+    setConversationFilters((current) => ({ ...current, status }));
+    setSelectedSearchIndex(0);
+  };
+
+  const selectConversationTimeFilter = (time: ConversationTimeFilter) => {
+    setConversationSearch('');
+    setConversationFilters((current) => ({ ...current, time }));
+    setSelectedSearchIndex(0);
+  };
+
+  const resetConversationFilters = () => {
+    setConversationFilters(DEFAULT_CONVERSATION_FILTERS);
+    setSelectedSearchIndex(0);
+  };
+
+  const updateConversationSearch = (value: string) => {
+    setConversationSearch(value);
+    if (value.trim()) setConversationFilters(DEFAULT_CONVERSATION_FILTERS);
+    setSelectedSearchIndex(0);
+  };
+
+  const selectSidebarConversationStatusFilter = (status: ConversationStatusFilter) => {
+    setSidebarConversationFilters((current) => ({ ...current, status }));
+  };
+
+  const selectSidebarConversationTimeFilter = (time: ConversationTimeFilter) => {
+    setSidebarConversationFilters((current) => ({ ...current, time }));
+  };
+
+  const resetSidebarConversationFilters = () => {
+    setSidebarConversationFilters(DEFAULT_CONVERSATION_FILTERS);
+  };
 
   const hasVisibleConversations = conversationGroups.projects.length > 0
     || conversationGroups.unprojected.length > 0;
+  const hasVisibleSidebarConversations = sidebarConversationGroups.projects.length > 0
+    || sidebarConversationGroups.unprojected.length > 0;
 
   const workspaceSkills = useMemo(
     () => skills.filter((skill) => skill.tags?.[0] === 'workspace'),
@@ -593,15 +718,15 @@ export default function Sidebar() {
     // Ignore Enter while an IME (Chinese, Japanese, Korean) is composing:
     // confirming a candidate must not jump into a conversation.
     if (event.nativeEvent.isComposing || event.keyCode === 229) return;
-    const selectableCount = searchResults.length + 1;
-    const currentIndex = Math.min(selectedSearchIndex, selectableCount - 1);
+    const selectableCount = searchResults.length;
+    const currentIndex = Math.min(selectedSearchIndex, Math.max(selectableCount - 1, 0));
 
-    if (event.key === 'ArrowDown') {
+    if (event.key === 'ArrowDown' && selectableCount > 0) {
       event.preventDefault();
       setSelectedSearchIndex((currentIndex + 1) % selectableCount);
       return;
     }
-    if (event.key === 'ArrowUp') {
+    if (event.key === 'ArrowUp' && selectableCount > 0) {
       event.preventDefault();
       setSelectedSearchIndex((currentIndex - 1 + selectableCount) % selectableCount);
       return;
@@ -610,10 +735,6 @@ export default function Sidebar() {
       event.preventDefault();
       const result = searchResults[currentIndex];
       if (result) openSearchResult(result.conversation.id);
-      else {
-        closeConversationSearch();
-        startNewChat();
-      }
       return;
     }
 
@@ -711,19 +832,131 @@ export default function Sidebar() {
           >
             <span className="truncate">{t.common.appName}</span>
           </button>
-          <button
-            onClick={openConversationSearch}
-            className={cn(
-              'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#656358] transition-colors hover:bg-[#e8e5de] hover:text-[#29261b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d97757]/35 dark:text-[#c4c0b6] dark:hover:bg-[#383838] dark:hover:text-white',
-              conversationSearchOpen && 'bg-[#e8e5de] text-[#29261b] dark:bg-[#383838] dark:text-white',
-            )}
-            aria-label={t.sidebar.searchConversations}
-            aria-keyshortcuts="Meta+K Control+K"
-            aria-pressed={conversationSearchOpen}
-            title={`${t.sidebar.searchConversations} (${isMacOS() ? '⌘K' : 'Ctrl+K'})`}
-          >
-            <Search className="h-[18px] w-[18px]" strokeWidth={1.8} />
-          </button>
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              onClick={openConversationSearch}
+              className={cn(
+                'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#656358] transition-colors hover:bg-[#e8e5de] hover:text-[#29261b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d97757]/35 dark:text-[#c4c0b6] dark:hover:bg-[#383838] dark:hover:text-white',
+                conversationSearchOpen && 'bg-[#e8e5de] text-[#29261b] dark:bg-[#383838] dark:text-white',
+              )}
+              aria-label={t.sidebar.searchConversations}
+              aria-keyshortcuts="Meta+K Control+K"
+              aria-pressed={conversationSearchOpen}
+              title={`${t.sidebar.searchConversations} (${isMacOS() ? '⌘K' : 'Ctrl+K'})`}
+            >
+              <Search className="h-[18px] w-[18px]" strokeWidth={1.8} />
+            </button>
+
+            <div ref={sidebarConversationFilterRef} className="relative">
+              <button
+                type="button"
+                onClick={(event) => {
+                  if (sidebarConversationFilterOpen) {
+                    setSidebarConversationFilterOpen(false);
+                    setSidebarConversationFilterMenuPos(null);
+                    return;
+                  }
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  setSidebarConversationFilterMenuPos({
+                    left: rect.right + 8,
+                    top: rect.bottom + 4,
+                  });
+                  setSidebarConversationFilterOpen(true);
+                }}
+                className={cn(
+                  'relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#656358] transition-colors hover:bg-[#e8e5de] hover:text-[#29261b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d97757]/35 dark:text-[#c4c0b6] dark:hover:bg-[#383838] dark:hover:text-white',
+                  sidebarConversationFilterOpen && 'bg-[#e8e5de] text-[#29261b] dark:bg-[#383838] dark:text-white',
+                )}
+                aria-label={t.sidebar.filterTasks}
+                aria-haspopup="menu"
+                aria-expanded={sidebarConversationFilterOpen}
+                aria-controls="sidebar-conversation-filter-menu"
+                title={t.sidebar.filterTasks}
+                data-testid="sidebar-conversation-filter-trigger"
+              >
+                <Funnel className="h-[17px] w-[17px]" strokeWidth={1.65} />
+                {hasActiveSidebarConversationFilters && (
+                  <span
+                    data-testid="sidebar-conversation-filter-active-dot"
+                    className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-[#d97757]"
+                  />
+                )}
+              </button>
+
+              {sidebarConversationFilterOpen && sidebarConversationFilterMenuPos && (
+                <div
+                  id="sidebar-conversation-filter-menu"
+                  role="menu"
+                  aria-label={t.sidebar.filterTasks}
+                  data-testid="sidebar-conversation-filter-menu"
+                  className="fixed z-[90] max-h-[calc(100vh-96px)] w-56 overflow-y-auto rounded-xl border border-[#e8e4dd] bg-white py-1.5 shadow-[0_4px_20px_rgba(0,0,0,0.12)] animate-in fade-in slide-in-from-left-1 duration-150 dark:border-white/10 dark:bg-[#303030]"
+                  style={sidebarConversationFilterMenuPos}
+                >
+                  <div className="px-3 pb-1 pt-1 text-[12px] font-medium text-[#8c8982] dark:text-[#aaa69d]">
+                    {t.sidebar.filterStatus}
+                  </div>
+                  <div>
+                    {statusFilterOptions.map((option) => {
+                      const selected = sidebarConversationFilters.status === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={selected}
+                          onClick={() => selectSidebarConversationStatusFilter(option.value)}
+                          className={cn(
+                            'flex h-8 w-full items-center px-3 text-left text-[13px] text-[#292929] outline-none transition-colors hover:bg-[#f5f3ee] focus-visible:bg-[#f5f3ee] dark:text-[#eeeae2] dark:hover:bg-white/[0.07]',
+                            selected && 'bg-[#f2f0eb] font-medium dark:bg-white/[0.09]',
+                          )}
+                        >
+                          <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                          {selected && <Check className="h-4 w-4 shrink-0 text-emerald-500" strokeWidth={2.2} />}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mx-3 my-1.5 h-px bg-[#e9e7e2] dark:bg-white/10" />
+                  <div className="px-3 pb-1 text-[12px] font-medium text-[#8c8982] dark:text-[#aaa69d]">
+                    {t.sidebar.filterTime}
+                  </div>
+                  <div>
+                    {timeFilterOptions.map((option) => {
+                      const selected = sidebarConversationFilters.time === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={selected}
+                          onClick={() => selectSidebarConversationTimeFilter(option.value)}
+                          className={cn(
+                            'flex h-8 w-full items-center px-3 text-left text-[13px] text-[#292929] outline-none transition-colors hover:bg-[#f5f3ee] focus-visible:bg-[#f5f3ee] dark:text-[#eeeae2] dark:hover:bg-white/[0.07]',
+                            selected && 'bg-[#f2f0eb] font-medium dark:bg-white/[0.09]',
+                          )}
+                        >
+                          <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                          {selected && <Check className="h-4 w-4 shrink-0 text-emerald-500" strokeWidth={2.2} />}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mx-3 my-1.5 h-px bg-[#e9e7e2] dark:bg-white/10" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={resetSidebarConversationFilters}
+                    disabled={!hasActiveSidebarConversationFilters}
+                    className="flex h-8 w-full items-center px-3 text-left text-[13px] text-[#5f5d57] outline-none transition-colors hover:bg-[#f5f3ee] focus-visible:bg-[#f5f3ee] disabled:cursor-default disabled:text-[#bbb8b1] disabled:hover:bg-transparent dark:text-[#d2cec6] dark:hover:bg-white/[0.07] dark:disabled:text-[#777]"
+                  >
+                    {t.sidebar.resetFilters}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </header>
 
@@ -774,7 +1007,16 @@ export default function Sidebar() {
 
       {/* Conversation List */}
       <ScrollArea className="flex-1 min-h-0 px-2">
-        {!hasVisibleConversations ? (
+        {hasActiveSidebarConversationFilters && !hasVisibleSidebarConversations ? (
+          <section className="py-1">
+            <div className="px-3 pb-1.5 text-[13px] font-semibold leading-5 tracking-[-0.01em] text-[#8a867c]">
+              {t.sidebar.recents}
+            </div>
+            <div className="px-3 py-2 text-[14px] text-[#8a867c] dark:text-[#aaa69d]">
+              {t.sidebar.noFilterResults}
+            </div>
+          </section>
+        ) : !hasVisibleConversations ? (
           <div className="px-4 py-3">
             <p className="text-[14px] text-[#8a867c] dark:text-[#aaa69d]">
               {t.sidebar.noSessionsYet}
@@ -782,7 +1024,7 @@ export default function Sidebar() {
           </div>
         ) : (
           <div className="space-y-4 py-1">
-            {conversationGroups.projects.length > 0 && (
+            {sidebarConversationGroups.projects.length > 0 && (
               <section>
                 <div className="flex items-center justify-between px-3 pb-1.5">
                   <div className="text-[13px] font-semibold leading-5 tracking-[-0.01em] text-[#8a867c]">{t.sidebar.projects}</div>
@@ -834,7 +1076,7 @@ export default function Sidebar() {
                   </div>
                 </div>
                 <div className="space-y-0.5">
-                  {conversationGroups.projects.map((project) => {
+                  {sidebarConversationGroups.projects.map((project) => {
                     const collapsed = collapsedProjects.has(project.key);
                     const showAll = expandedProjects.has(project.key);
                     const visible = showAll ? project.conversations : project.conversations.slice(0, PROJECT_VISIBLE_LIMIT);
@@ -902,11 +1144,11 @@ export default function Sidebar() {
               </section>
             )}
 
-            {conversationGroups.unprojected.length > 0 && (
+            {sidebarConversationGroups.unprojected.length > 0 && (
               <section>
                 <div className="px-3 pb-1.5 text-[13px] font-semibold leading-5 tracking-[-0.01em] text-[#8a867c]">{t.sidebar.recents}</div>
                 <div className="space-y-px">
-                  {conversationGroups.unprojected.map((conv) => renderConversationButton(conv))}
+                  {sidebarConversationGroups.unprojected.map((conv) => renderConversationButton(conv))}
                 </div>
               </section>
             )}
@@ -961,45 +1203,157 @@ export default function Sidebar() {
 
       {conversationSearchOpen && createPortal(
         <div
-          className="window-modal-viewport fixed inset-0 z-[10000] flex items-start justify-center px-6 pt-[9vh]"
+          className="window-modal-viewport fixed inset-0 z-[10000] flex items-center justify-center px-4 py-6 sm:px-6"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) closeConversationSearch();
           }}
         >
           <WindowModalBackdrop
             data-testid="conversation-search-backdrop"
+            className="bg-black/50 dark:bg-black/65"
           />
           <div
             role="dialog"
             aria-modal="true"
             aria-label={t.sidebar.searchConversations}
             data-testid="conversation-search-dialog"
-            className="relative flex max-h-[min(720px,82vh)] w-full max-w-[760px] flex-col overflow-hidden rounded-[28px] border border-black/5 bg-[#fbfbfa] shadow-lg dark:border-white/10 dark:bg-[#272727]"
+            className="relative flex h-[72vh] min-h-[420px] w-full max-w-[720px] max-h-[840px] flex-col overflow-hidden rounded-[28px] border border-black/[0.06] bg-[#fdfdfc] shadow-[0_28px_90px_rgba(0,0,0,0.24)] dark:border-white/10 dark:bg-[#272727]"
           >
-            <div className="shrink-0 px-7 pb-4 pt-5">
-              <input
-                ref={conversationSearchRef}
-                value={conversationSearch}
-                onChange={(event) => {
-                  setConversationSearch(event.target.value);
-                  setSelectedSearchIndex(0);
-                }}
-                onKeyDown={handleSearchKeyDown}
-                placeholder={t.sidebar.searchPlaceholder}
-                className="h-10 w-full bg-transparent text-[22px] font-medium tracking-[-0.02em] text-[#34322d] outline-none placeholder:text-[#9d9a94] dark:text-[#f3f0e8] dark:placeholder:text-[#8b8b8b]"
-                aria-label={t.sidebar.searchConversations}
-                aria-controls="conversation-search-results"
-                aria-activedescendant={`conversation-search-option-${Math.min(selectedSearchIndex, searchResults.length)}`}
-                autoComplete="off"
-                spellCheck={false}
-              />
+            <div className="flex shrink-0 items-center gap-3 px-6 pb-4 pt-6">
+              <label className="flex h-12 min-w-0 flex-1 items-center gap-2.5 rounded-xl bg-[#f3f3f2] px-3.5 ring-[#d97757]/30 transition-shadow focus-within:ring-2 dark:bg-[#343434]">
+                <Search
+                  aria-hidden="true"
+                  className="h-5 w-5 shrink-0 text-[#4f4f4d] dark:text-[#c7c5c0]"
+                  strokeWidth={1.8}
+                />
+                <input
+                  ref={conversationSearchRef}
+                  value={conversationSearch}
+                  onChange={(event) => updateConversationSearch(event.target.value)}
+                  onKeyDown={handleSearchKeyDown}
+                  placeholder={t.sidebar.searchPlaceholder}
+                  className="h-full min-w-0 flex-1 bg-transparent text-[16px] font-normal text-[#292929] outline-none placeholder:text-[#aaa9a6] dark:text-[#f3f0e8] dark:placeholder:text-[#888]"
+                  aria-label={t.sidebar.searchConversations}
+                  aria-controls="conversation-search-results"
+                  aria-activedescendant={searchResults.length > 0
+                    ? `conversation-search-option-${Math.min(selectedSearchIndex, searchResults.length - 1)}`
+                    : undefined}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </label>
+              <div ref={conversationFilterRef} className="relative shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setConversationFilterOpen((open) => !open)}
+                  className={cn(
+                    'relative flex h-10 w-10 items-center justify-center rounded-lg text-[#494947] transition-colors hover:bg-[#f1f1ef] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d97757]/35 dark:text-[#d8d5cf] dark:hover:bg-[#383838]',
+                    conversationFilterOpen && 'bg-[#f1f1ef] dark:bg-[#383838]',
+                  )}
+                  aria-label={t.sidebar.filterTasks}
+                  aria-haspopup="menu"
+                  aria-expanded={conversationFilterOpen}
+                  aria-controls="conversation-filter-menu"
+                  title={t.sidebar.filterTasks}
+                  data-testid="conversation-filter-trigger"
+                >
+                  <Funnel className="h-5 w-5" strokeWidth={1.8} />
+                  {hasActiveConversationFilters && (
+                    <span
+                      data-testid="conversation-filter-active-dot"
+                      className="absolute right-1 top-1 h-2 w-2 rounded-full border border-[#fdfdfc] bg-red-500 dark:border-[#272727]"
+                    />
+                  )}
+                </button>
+
+                {conversationFilterOpen && (
+                  <div
+                    id="conversation-filter-menu"
+                    role="menu"
+                    aria-label={t.sidebar.filterTasks}
+                    data-testid="conversation-filter-menu"
+                    className="absolute right-0 top-[calc(100%+8px)] z-30 max-h-[calc(72vh-88px)] w-[280px] overflow-y-auto rounded-2xl border border-black/[0.07] bg-[#fdfdfc] p-3 shadow-[0_18px_48px_rgba(0,0,0,0.18)] dark:border-white/10 dark:bg-[#303030]"
+                  >
+                    <div className="px-2 pb-1.5 text-[13px] font-medium text-[#8c8982] dark:text-[#aaa69d]">
+                      {t.sidebar.filterStatus}
+                    </div>
+                    <div className="space-y-0.5">
+                      {statusFilterOptions.map((option) => {
+                        const selected = conversationFilters.status === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            role="menuitemradio"
+                            aria-checked={selected}
+                            onClick={() => selectConversationStatusFilter(option.value)}
+                            className={cn(
+                              'flex h-10 w-full items-center rounded-lg px-3 text-left text-[15px] text-[#292929] outline-none transition-colors hover:bg-[#f0f0ee] focus-visible:ring-2 focus-visible:ring-[#d97757]/30 dark:text-[#eeeae2] dark:hover:bg-white/[0.07]',
+                              selected && 'bg-[#ededeb] font-semibold dark:bg-white/[0.09]',
+                            )}
+                          >
+                            <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                            {selected && <Check className="h-4.5 w-4.5 shrink-0 text-emerald-500" strokeWidth={2.2} />}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="my-3 h-px bg-[#e9e7e2] dark:bg-white/10" />
+                    <div className="px-2 pb-1.5 text-[13px] font-medium text-[#8c8982] dark:text-[#aaa69d]">
+                      {t.sidebar.filterTime}
+                    </div>
+                    <div className="space-y-0.5">
+                      {timeFilterOptions.map((option) => {
+                        const selected = conversationFilters.time === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            role="menuitemradio"
+                            aria-checked={selected}
+                            onClick={() => selectConversationTimeFilter(option.value)}
+                            className={cn(
+                              'flex h-10 w-full items-center rounded-lg px-3 text-left text-[15px] text-[#292929] outline-none transition-colors hover:bg-[#f0f0ee] focus-visible:ring-2 focus-visible:ring-[#d97757]/30 dark:text-[#eeeae2] dark:hover:bg-white/[0.07]',
+                              selected && 'bg-[#ededeb] font-semibold dark:bg-white/[0.09]',
+                            )}
+                          >
+                            <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                            {selected && <Check className="h-4.5 w-4.5 shrink-0 text-emerald-500" strokeWidth={2.2} />}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="my-3 h-px bg-[#e9e7e2] dark:bg-white/10" />
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={resetConversationFilters}
+                      disabled={!hasActiveConversationFilters}
+                      className="flex h-9 w-full items-center rounded-lg px-3 text-left text-[14px] text-[#5f5d57] outline-none transition-colors hover:bg-[#f0f0ee] focus-visible:ring-2 focus-visible:ring-[#d97757]/30 disabled:cursor-default disabled:text-[#bbb8b1] disabled:hover:bg-transparent dark:text-[#d2cec6] dark:hover:bg-white/[0.07] dark:disabled:text-[#777]"
+                    >
+                      {t.sidebar.resetFilters}
+                    </button>
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={closeConversationSearch}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-[#494947] transition-colors hover:bg-[#f1f1ef] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d97757]/35 dark:text-[#d8d5cf] dark:hover:bg-[#383838]"
+                aria-label={t.common.close}
+                title={t.common.close}
+              >
+                <X className="h-5 w-5" strokeWidth={1.8} />
+              </button>
             </div>
 
-            <div className="min-h-0 overflow-y-auto px-2 pb-4">
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
               <section aria-labelledby="conversation-search-heading">
                 <div
                   id="conversation-search-heading"
-                  className="px-5 pb-2 pt-1 text-[14px] font-semibold text-[#8a867c] dark:text-[#aaa69d]"
+                  className="px-2 pb-2 pt-1 text-[14px] font-semibold text-[#85837e] dark:text-[#aaa69d]"
                 >
                   {t.sidebar.searchChats}
                 </div>
@@ -1015,62 +1369,33 @@ export default function Sidebar() {
                         onMouseEnter={() => setSelectedSearchIndex(index)}
                         onClick={() => openSearchResult(entry.conversation.id)}
                         className={cn(
-                          'flex h-12 w-full items-center gap-3 rounded-2xl px-5 text-left transition-colors',
+                          'flex h-12 w-full items-center gap-3 rounded-lg px-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d97757]/30',
                           selected
-                            ? 'bg-[#ececeb] text-[#29261b] dark:bg-[#3a3a3a] dark:text-[#f3f0e8]'
-                            : 'text-[#4b4944] hover:bg-[#f1f1ef] dark:text-[#dedad2] dark:hover:bg-[#333]',
+                            ? 'bg-[#f0f0ee] text-[#222] dark:bg-[#3a3a3a] dark:text-[#f3f0e8]'
+                            : 'text-[#272725] hover:bg-[#f4f4f2] dark:text-[#dedad2] dark:hover:bg-[#333]',
                         )}
                       >
-                        <span className="min-w-0 flex-1 truncate text-[15px] font-medium">
+                        <span className="min-w-0 flex-1 truncate text-[16px] font-normal">
                           {entry.conversation.title}
                         </span>
                         {entry.projectName && (
-                          <span className="max-w-[150px] shrink-0 truncate text-[14px] text-[#9b9891] dark:text-[#989898]">
-                            {entry.projectName}
+                          <span className="flex min-w-0 max-w-[42%] shrink-0 items-center gap-2 text-[#858581] dark:text-[#999]">
+                            <Folder className="h-4 w-4 shrink-0" strokeWidth={1.7} />
+                            <span className="truncate text-[14px]">{entry.projectName}</span>
                           </span>
                         )}
-                        <kbd className="shrink-0 rounded-lg bg-[#e4e4e2] px-2 py-1 text-[12px] font-medium leading-none text-[#85827c] dark:bg-[#454545] dark:text-[#b8b8b8]">
-                          {isMacOS() ? `⌘${index + 1}` : `Ctrl+${index + 1}`}
-                        </kbd>
                       </button>
                     );
                   }) : (
-                    <div className="px-5 py-4 text-[14px] text-[#8a867c] dark:text-[#aaa69d]">
-                      {conversationSearch.trim() ? t.sidebar.noSearchResults : t.sidebar.noSessionsYet}
+                    <div className="px-3 py-8 text-center text-[14px] text-[#8a867c] dark:text-[#aaa69d]">
+                      {hasActiveConversationFilters
+                        ? t.sidebar.noFilterResults
+                        : conversationSearch.trim()
+                          ? t.sidebar.noSearchResults
+                          : t.sidebar.noSessionsYet}
                     </div>
                   )}
                 </div>
-              </section>
-
-              <section className="mt-3" aria-labelledby="conversation-search-recommended">
-                <div
-                  id="conversation-search-recommended"
-                  className="px-5 pb-2 pt-1 text-[14px] font-semibold text-[#8a867c] dark:text-[#aaa69d]"
-                >
-                  {t.sidebar.recommended}
-                </div>
-                <button
-                  id={`conversation-search-option-${searchResults.length}`}
-                  role="option"
-                  aria-selected={selectedSearchIndex === searchResults.length}
-                  onMouseEnter={() => setSelectedSearchIndex(searchResults.length)}
-                  onClick={() => {
-                    closeConversationSearch();
-                    startNewChat();
-                  }}
-                  className={cn(
-                    'flex h-12 w-full items-center gap-3 rounded-2xl px-5 text-left transition-colors',
-                    selectedSearchIndex === searchResults.length
-                      ? 'bg-[#ececeb] text-[#29261b] dark:bg-[#3a3a3a] dark:text-[#f3f0e8]'
-                      : 'text-[#4b4944] hover:bg-[#f1f1ef] dark:text-[#dedad2] dark:hover:bg-[#333]',
-                  )}
-                >
-                  <SquarePen className="h-[18px] w-[18px] shrink-0" strokeWidth={1.8} />
-                  <span className="min-w-0 flex-1 truncate text-[15px] font-medium">{t.sidebar.newTask}</span>
-                  <kbd className="shrink-0 rounded-lg bg-[#e4e4e2] px-2 py-1 text-[12px] font-medium leading-none text-[#85827c] dark:bg-[#454545] dark:text-[#b8b8b8]">
-                    {isMacOS() ? '⌘N' : 'Ctrl+N'}
-                  </kbd>
-                </button>
               </section>
             </div>
           </div>

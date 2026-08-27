@@ -1,14 +1,14 @@
 # 显式用户记忆与持久个人档案 Spec
 
 > 状态：Proposed
-> 目标版本：TPACowork 0.6.x
+> 目标版本：TPCowork 0.6.x
 > 适用范围：`nanobot` gateway、Session Event Journal、`state.sqlite`、Dream、`USER.md`、上下文构建、记忆工具及 GUI 管理入口
 > 解决问题：用户明确说“请记住……”后无法立即持久化，重启或切换会话后丢失
 > 最后更新：2026-08-04
 
 ## 1. 文档目的
 
-当前 TPACowork 已经具备全局 `USER.md`、Dream、项目记忆、历史归档和临时
+当前 TPCowork 已经具备全局 `USER.md`、Dream、项目记忆、历史归档和临时
 `my` scratchpad，但缺少一条“用户明确要求记住后，立即、可靠、可撤销地写入长期个人
 记忆”的正式链路。
 
@@ -432,12 +432,12 @@ interface UserMemoryInput {
 建议受管区格式：
 
 ```markdown
-<!-- BEGIN TPACOWORK MANAGED USER PROFILE -->
+<!-- BEGIN TPCOWORK MANAGED USER PROFILE -->
 ## Confirmed profile
 
 - Name: 王耀彬
 - Preferred language: 中文
-<!-- END TPACOWORK MANAGED USER PROFILE -->
+<!-- END TPCOWORK MANAGED USER PROFILE -->
 ```
 
 受管区域之外的用户手写内容予以保留。

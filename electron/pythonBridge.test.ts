@@ -19,7 +19,7 @@ vi.mock('electron', () => ({
     get isPackaged() {
       return appIsPackaged;
     },
-    getPath: vi.fn(() => '/tmp/tpacowork-test'),
+    getPath: vi.fn(() => '/tmp/tpcowork-test'),
   },
   BrowserWindow: { getAllWindows: vi.fn(() => []) },
 }));
@@ -225,7 +225,7 @@ describe('PythonBridge lifecycle', () => {
       await bridge.start();
 
       expect(spawn.mock.calls[0][2]).toMatchObject({
-        cwd: '/tmp/tpacowork-test/workspace',
+        cwd: '/tmp/tpcowork-test/workspace',
       });
       expect(spawn.mock.calls[0][2]?.env?.PYTHONPATH).toBeUndefined();
       expect(spawn.mock.calls[0][0]).toBe('/tmp/resources/python/bin/python3');

@@ -71,20 +71,3 @@ members:
     description: 分析管理层、治理、下行风险与永久损失概率；优先核查同花顺公告和风险新闻。
 workflows:
   - { id: investment-team, name: 团队深度投研, source: skills/investment-team.md, mode: team, featured: true }
-  - { id: earnings-team, name: 团队财报复盘, source: skills/earnings-team.md, mode: team, featured: true }
-  - { id: investment-research, name: 公司深度研究, source: skills/investment-research.md, mode: lead, featured: true }
-  - { id: industry-research, name: 行业深度研究, source: skills/industry-research.md, mode: lead, featured: true }
-  - { id: private-company-research, name: 非上市公司研究, source: skills/private-company-research.md, mode: lead, featured: true }
-  - { id: portfolio-review, name: 投资组合复盘, source: skills/portfolio-review.md, mode: lead, featured: true }
-  - { id: deep-company-series, name: 公司系列深挖, source: skills/deep-company-series.md, mode: lead, featured: false }
-  - { id: dyp-ask, name: 段永平视角问答, source: skills/dyp-ask.md, mode: lead, featured: false }
-  - { id: earnings-review, name: 财报复盘, source: skills/earnings-review.md, mode: lead, featured: false }
-  - { id: financial-data, name: 财务数据规范, source: skills/financial-data.md, mode: lead, featured: false }
-  - { id: industry-funnel, name: 行业漏斗筛选, source: skills/industry-funnel.md, mode: lead, featured: false }
-  - { id: investment-checklist, name: 投资检查清单, source: skills/investment-checklist.md, mode: lead, featured: false }
-  - { id: management-deep-dive, name: 管理层深度研究, source: skills/management-deep-dive.md, mode: lead, featured: false }
-  - { id: news-pulse, name: 新闻脉搏, source: skills/news-pulse.md, mode: lead, featured: false }
-  - { id: quality-screen, name: 公司质量筛选, source: skills/quality-screen.md, mode: lead, featured: false }
-  - { id: thesis-drift, name: 投资逻辑漂移检查, source: skills/thesis-drift.md, mode: lead, featured: false }
-  - { id: thesis-tracker, name: 投资逻辑跟踪, source: skills/thesis-tracker.md, mode: lead, featured: false }
-  - { id: wechat-article, name: 公众号文章, source: skills/wechat-article.md, mode: lead, featured: false }

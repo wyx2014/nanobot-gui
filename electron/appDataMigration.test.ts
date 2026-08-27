@@ -15,7 +15,7 @@ import {
 const temporaryDirectories: string[] = [];
 
 function temporaryDirectory(): string {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'tpacowork-migration-'));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'tpcowork-migration-'));
   temporaryDirectories.push(directory);
   return directory;
 }
@@ -27,11 +27,11 @@ afterEach(() => {
 });
 
 describe('application data migration', () => {
-  it('uses the tpacowork application data directory', () => {
+  it('uses the tpcowork application data directory', () => {
     expect(applicationUserDataPath(path.join('/Users', 'demo', 'Library', 'Application Support')))
-      .toBe(path.join('/Users', 'demo', 'Library', 'Application Support', 'tpacowork'));
-    expect(defaultWorkspacePath(path.join('/Users', 'demo', 'Library', 'Application Support', 'tpacowork')))
-      .toBe(path.join('/Users', 'demo', 'Library', 'Application Support', 'tpacowork', 'workspace'));
+      .toBe(path.join('/Users', 'demo', 'Library', 'Application Support', 'tpcowork'));
+    expect(defaultWorkspacePath(path.join('/Users', 'demo', 'Library', 'Application Support', 'tpcowork')))
+      .toBe(path.join('/Users', 'demo', 'Library', 'Application Support', 'tpcowork', 'workspace'));
   });
 
   it('moves the legacy application data directory and removes the old path', () => {
@@ -42,13 +42,29 @@ describe('application data migration', () => {
 
     const result = migrateLegacyApplicationData(appDataRoot);
     const workspaceResult = migrateLegacyDefaultWorkspace(applicationUserDataPath(appDataRoot));
-    const migratedConfig = path.join(appDataRoot, 'tpacowork', 'workspace', '.nanobot', 'config.json');
+    const migratedConfig = path.join(appDataRoot, 'tpcowork', 'workspace', '.nanobot', 'config.json');
 
     expect(result.status).toBe('moved');
     expect(workspaceResult.status).toBe('moved');
     expect(fs.existsSync(path.join(appDataRoot, 'tparuyi'))).toBe(false);
-    expect(fs.existsSync(path.join(appDataRoot, 'tpacowork', 'nanobot-workspace'))).toBe(false);
+    expect(fs.existsSync(path.join(appDataRoot, 'tpcowork', 'nanobot-workspace'))).toBe(false);
     expect(fs.readFileSync(migratedConfig, 'utf8')).toBe('{"model":"demo"}');
+  });
+
+  it('moves TPACowork application data into the TPCowork directory', () => {
+    const appDataRoot = temporaryDirectory();
+    const previousConfig = path.join(appDataRoot, 'tpacowork', 'workspace', '.nanobot', 'config.json');
+    fs.mkdirSync(path.dirname(previousConfig), { recursive: true });
+    fs.writeFileSync(previousConfig, '{"model":"previous"}');
+
+    const result = migrateLegacyApplicationData(appDataRoot);
+
+    expect(result.status).toBe('moved');
+    expect(fs.existsSync(path.join(appDataRoot, 'tpacowork'))).toBe(false);
+    expect(fs.readFileSync(
+      path.join(appDataRoot, 'tpcowork', 'workspace', '.nanobot', 'config.json'),
+      'utf8',
+    )).toBe('{"model":"previous"}');
   });
 
   it('renames the legacy default workspace without replacing its filesystem identity', () => {
@@ -109,24 +125,40 @@ describe('application data migration', () => {
       .toBe('legacy');
   });
 
-  it('renames the user project root to TPACowork Projects', () => {
+  it('renames the user project root to TPCowork Projects', () => {
     const documentsRoot = temporaryDirectory();
     const legacyProject = path.join(documentsRoot, 'TpaRuyi Projects', '年度报告');
     fs.mkdirSync(legacyProject, { recursive: true });
     fs.writeFileSync(path.join(legacyProject, 'README.md'), '# migrated');
 
     const result = migrateLegacyUserProjects(documentsRoot);
-    const migratedProject = path.join(documentsRoot, 'TPACowork Projects', '年度报告');
+    const migratedProject = path.join(documentsRoot, 'TPCowork Projects', '年度报告');
 
     expect(result.status).toBe('moved');
     expect(fs.existsSync(path.join(documentsRoot, 'TpaRuyi Projects'))).toBe(false);
     expect(fs.readFileSync(path.join(migratedProject, 'README.md'), 'utf8')).toBe('# migrated');
   });
 
+  it('moves TPACowork Projects into TPCowork Projects', () => {
+    const documentsRoot = temporaryDirectory();
+    const previousProject = path.join(documentsRoot, 'TPACowork Projects', '历史项目');
+    fs.mkdirSync(previousProject, { recursive: true });
+    fs.writeFileSync(path.join(previousProject, 'README.md'), '# previous');
+
+    const result = migrateLegacyUserProjects(documentsRoot);
+
+    expect(result.status).toBe('moved');
+    expect(fs.existsSync(path.join(documentsRoot, 'TPACowork Projects'))).toBe(false);
+    expect(fs.readFileSync(
+      path.join(documentsRoot, 'TPCowork Projects', '历史项目', 'README.md'),
+      'utf8',
+    )).toBe('# previous');
+  });
+
   it('rewrites durable session and event paths after directory migration', () => {
     const workspace = temporaryDirectory();
     const oldProjects = path.join(workspace, 'TpaRuyi Projects');
-    const newProjects = path.join(workspace, 'TPACowork Projects');
+    const newProjects = path.join(workspace, 'TPCowork Projects');
     const sessionFile = path.join(workspace, 'sessions', 'websocket_chat.jsonl');
     const transcriptFile = path.join(workspace, '.nanobot', 'webui', 'websocket_chat.jsonl');
     const lifecycleFile = path.join(workspace, '.nanobot', 'lifecycle.jsonl');

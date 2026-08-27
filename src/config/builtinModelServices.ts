@@ -7,14 +7,9 @@
 export const ASSET_DEEPSEEK_MODEL_SERVICE = Object.freeze({
   providerId: 'asset-deepseek',
   providerLabel: '资产DeepSeek',
-  model: 'deepseek-r1',
-  presetId: 'asset-deepseek-r1',
 });
+export const LEGACY_ASSET_DEEPSEEK_MODEL_PRESET_ID = 'asset-deepseek-r1';
 
 export function isProtectedBuiltinModelProvider(provider: string): boolean {
   return provider === ASSET_DEEPSEEK_MODEL_SERVICE.providerId;
-}
-
-export function isProtectedBuiltinModelPreset(preset: string): boolean {
-  return preset === ASSET_DEEPSEEK_MODEL_SERVICE.presetId;
 }

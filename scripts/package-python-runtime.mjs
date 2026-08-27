@@ -21,6 +21,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 const nanobotSourceDir = path.resolve(repoRoot, '..', 'nanobot');
 const nanobotPyproject = path.join(nanobotSourceDir, 'pyproject.toml');
+const RUNTIME_MARKER_NAME = '.tpcowork-runtime.json';
+const PREVIOUS_RUNTIME_MARKER_NAME = '.tpacowork-runtime.json';
+const SOURCE_MARKER_NAME = '.tpcowork-nanobot-source.sha256';
+const PREVIOUS_SOURCE_MARKER_NAME = '.tpacowork-nanobot-source.sha256';
 
 function optionValue(name) {
   const exactIndex = process.argv.indexOf(name);
@@ -37,12 +41,30 @@ function readJson(filePath) {
   }
 }
 
+function readRuntimeMarker(rootDir) {
+  return readJson(path.join(rootDir, RUNTIME_MARKER_NAME))
+    || readJson(path.join(rootDir, PREVIOUS_RUNTIME_MARKER_NAME));
+}
+
+function readSourceMarker(rootDir) {
+  for (const markerName of [SOURCE_MARKER_NAME, PREVIOUS_SOURCE_MARKER_NAME]) {
+    try {
+      const digest = fs.readFileSync(path.join(rootDir, markerName), 'utf8').trim();
+      if (digest) return digest;
+    } catch {
+      // Continue with the previous brand's marker during upgrades.
+    }
+  }
+  return '';
+}
+
 const target = optionValue('--target') || WINDOWS_RUNTIME_TARGET;
 const runtimeDir = path.resolve(optionValue('--runtime-dir') || path.join(repoRoot, 'embedded-python', 'runtime'));
 const outputDir = path.resolve(optionValue('--output-dir') || path.join(repoRoot, 'dist', 'python-runtime'));
 const metadata = runtimeAssetMetadata(target);
-const marker = readJson(path.join(runtimeDir, '.tpacowork-runtime.json'));
-const sourceDigestPath = path.join(runtimeDir, '.tpacowork-nanobot-source.sha256');
+const marker = readRuntimeMarker(runtimeDir);
+const runtimeMarkerPath = path.join(runtimeDir, RUNTIME_MARKER_NAME);
+const sourceDigestPath = path.join(runtimeDir, SOURCE_MARKER_NAME);
 const pythonBin = target.startsWith('win32-')
   ? path.join(runtimeDir, 'python.exe')
   : path.join(runtimeDir, 'bin', 'python3');
@@ -68,12 +90,7 @@ if (!/^[a-f0-9]{64}$/i.test(marker?.dependencySpecSha256 || '')) {
 }
 if (!fs.existsSync(pythonBin)) errors.push(`missing target interpreter: ${pythonBin}`);
 if (!fs.existsSync(installedNanobotDir)) errors.push(`missing installed nanobot: ${installedNanobotDir}`);
-let runtimeNanobotSourceSha256 = '';
-try {
-  runtimeNanobotSourceSha256 = fs.readFileSync(sourceDigestPath, 'utf8').trim();
-} catch {
-  // Reported below.
-}
+const runtimeNanobotSourceSha256 = readSourceMarker(runtimeDir);
 if (!/^[a-f0-9]{64}$/i.test(runtimeNanobotSourceSha256)) {
   errors.push('runtime is missing a valid nanobot source digest');
 } else if (fs.existsSync(nanobotPyproject)
@@ -89,6 +106,9 @@ if (`${process.platform}-${process.arch}` !== target) {
   console.error(`Runtime archives must be produced on their target host (${target}).`);
   process.exit(1);
 }
+
+fs.writeFileSync(runtimeMarkerPath, `${JSON.stringify(marker, null, 2)}\n`, 'utf8');
+fs.writeFileSync(sourceDigestPath, `${runtimeNanobotSourceSha256}\n`, 'utf8');
 
 function nanobotSourceSha256ForCheckout() {
   return nanobotSourceSha256(nanobotSourceDir);

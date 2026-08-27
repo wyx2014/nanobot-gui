@@ -14,7 +14,7 @@ interface NewWorkspaceDialogProps {
 
 /**
  * Shared "create a new workspace" dialog: asks for a name, creates a folder
- * under ~/Documents/TPACowork Projects, then reports the path back. Used by the
+ * under ~/Documents/TPCowork Projects, then reports the path back. Used by the
  * composer's folder selector and the sidebar "workspaces" header "+" button so
  * both entries behave identically.
  */

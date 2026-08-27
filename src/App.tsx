@@ -14,6 +14,7 @@ import { getNanobotClient, getNanobotConnectionStatus, getNanobotToken, getNanob
 import { projectNameFromPath } from '@/core/workspace';
 import { useChatStore } from '@/stores/chatStore';
 import { useScheduleStore } from '@/stores/scheduleStore';
+import { startScheduleRunMonitor } from '@/core/scheduleRunMonitor';
 
 // Initialize platform detection at module load time (before any component renders)
 // so that isWindows()/isMacOS() return correct values immediately
@@ -41,7 +42,6 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { usePreviewStore } from '@/stores/previewStore';
 import { useBrowserStore } from '@/stores/browserStore';
 import { renderMermaidPng } from '@/core/mermaid';
-import { usePromptHubStore } from '@/stores/promptHubStore';
 import FirstRunWelcome from '@/components/onboarding/FirstRunWelcome';
 import { shouldShowInstallationGuide } from '@/components/onboarding/installationGuide';
 import { useAppNavigationHistory } from '@/hooks/useAppNavigationHistory';
@@ -130,9 +130,8 @@ function App() {
   const { t } = useI18n();
   const gatewayBootstrapRef = useRef<Promise<void> | null>(null);
   const startupHydrationScheduledRef = useRef(false);
+  const stopScheduleRunMonitorRef = useRef<(() => void) | null>(null);
   const artifactPreviewOpen = previewArtifact !== null;
-  const promptHubBaseUrl = usePromptHubStore((s) => s.baseUrl);
-  const promptHubToken = usePromptHubStore((s) => s.token);
   const guideShown = useSettingsStore((s) => s.guideShown);
   const guideInstallationId = useSettingsStore((s) => s.guideInstallationId);
   const guideOpen = useSettingsStore((s) => s.guideOpen);
@@ -158,6 +157,11 @@ function App() {
       return;
     }
     return useSettingsStore.persist.onFinishHydration(() => setSettingsHydrated(true));
+  }, []);
+
+  useEffect(() => () => {
+    stopScheduleRunMonitorRef.current?.();
+    stopScheduleRunMonitorRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -296,15 +300,6 @@ function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [goBack, goForward, keyboardShortcuts]);
 
-  useEffect(() => {
-    void ipc.invoke('device-link:configure', {
-      baseUrl: promptHubBaseUrl,
-      token: promptHubToken ?? '',
-    }).catch((error) => {
-      console.warn('[App] PromptHub device link configure failed:', error);
-    });
-  }, [promptHubBaseUrl, promptHubToken]);
-
   useEffect(() => ipc.on('mermaid:render', async ({ id, code }: { id: string; code: string }) => {
     try {
       const image = await renderMermaidPng(code, `pdf-${id}`);
@@ -333,6 +328,15 @@ function App() {
         });
       }
       useSettingsStore.getState().setViewMode('chat');
+    },
+  ), []);
+
+  useEffect(() => ipc.on(
+    'notification:open-schedule-run',
+    ({ scheduleTaskId, runId }: { scheduleTaskId?: string; runId?: string }) => {
+      if (!scheduleTaskId || !runId) return;
+      useScheduleStore.getState().openRunDetail(scheduleTaskId, runId);
+      useSettingsStore.getState().setViewMode('schedule');
     },
   ), []);
 
@@ -422,7 +426,7 @@ function App() {
     let cancelled = false;
     eventBridge.listen('nanobot-error', (msg: string) => {
       useToastStore.getState().addToast({
-        title: 'TPACowork 错误',
+        title: 'TPCowork 错误',
         message: msg,
         type: 'error',
         duration: 5000,
@@ -643,6 +647,8 @@ function App() {
       }, 300);
       scheduleStartupTask(async () => {
         await useScheduleStore.getState().loadTasks();
+        stopScheduleRunMonitorRef.current?.();
+        stopScheduleRunMonitorRef.current = startScheduleRunMonitor();
         console.log('[App] Scheduled tasks sync completed');
       }, 500);
       scheduleStartupTask(async () => {

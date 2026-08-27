@@ -35,7 +35,11 @@ export default function ToastContainer() {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="window-toast-container fixed right-4 z-[100] flex flex-col gap-2 pointer-events-none" aria-live="polite" role="status">
+    <div
+      className="window-toast-container window-titlebar-no-drag fixed right-4 z-[100] flex flex-col gap-2 pointer-events-none"
+      aria-live="polite"
+      role="status"
+    >
       {toasts.map((toast) => {
         const Icon = iconMap[toast.type];
         const colors = colorMap[toast.type];
@@ -43,8 +47,22 @@ export default function ToastContainer() {
         return (
           <div
             key={toast.id}
+            role={toast.onClick ? 'button' : undefined}
+            tabIndex={toast.onClick ? 0 : undefined}
+            onClick={() => {
+              if (!toast.onClick) return;
+              toast.onClick();
+              removeToast(toast.id);
+            }}
+            onKeyDown={(event) => {
+              if (!toast.onClick || (event.key !== 'Enter' && event.key !== ' ')) return;
+              event.preventDefault();
+              toast.onClick();
+              removeToast(toast.id);
+            }}
             className={cn(
               'pointer-events-auto flex items-start gap-2.5 px-4 py-3 rounded-xl border shadow-lg max-w-[360px] animate-in slide-in-from-right-5 fade-in duration-200',
+              toast.onClick && 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d97757]/40',
               colors.bg
             )}
           >
@@ -60,8 +78,18 @@ export default function ToastContainer() {
               )}
             </div>
             <button
-              onClick={() => removeToast(toast.id)}
-              className={cn('p-0.5 rounded hover:bg-black/5 shrink-0', colors.icon)}
+              type="button"
+              aria-label="Close"
+              onClick={(event) => {
+                event.stopPropagation();
+                removeToast(toast.id);
+              }}
+              onPointerDown={(event) => event.stopPropagation()}
+              onKeyDown={(event) => event.stopPropagation()}
+              className={cn(
+                'grid h-7 w-7 shrink-0 place-items-center rounded-md hover:bg-black/5',
+                colors.icon,
+              )}
             >
               <X className="h-3.5 w-3.5" />
             </button>

@@ -6,6 +6,8 @@ import {
   LEGACY_APPLICATION_DATA_DIRECTORY_NAME,
   LEGACY_DEFAULT_WORKSPACE_DIRECTORY_NAME,
   LEGACY_USER_PROJECTS_DIRECTORY_NAME,
+  PREVIOUS_APPLICATION_DATA_DIRECTORY_NAME,
+  PREVIOUS_USER_PROJECTS_DIRECTORY_NAME,
   USER_PROJECTS_DIRECTORY_NAME,
 } from '../src/config/appDirectories';
 
@@ -106,10 +108,15 @@ export function applicationUserDataPath(appDataRoot: string): string {
 }
 
 export function migrateLegacyApplicationData(appDataRoot: string): DirectoryMigrationResult {
-  return migrateDirectory(
+  const previousResult = migrateDirectory(
+    path.join(appDataRoot, PREVIOUS_APPLICATION_DATA_DIRECTORY_NAME),
+    applicationUserDataPath(appDataRoot),
+  );
+  const legacyResult = migrateDirectory(
     path.join(appDataRoot, LEGACY_APPLICATION_DATA_DIRECTORY_NAME),
     applicationUserDataPath(appDataRoot),
   );
+  return previousResult.status !== 'not-found' ? previousResult : legacyResult;
 }
 
 export function defaultWorkspacePath(userDataRoot: string): string {
@@ -144,10 +151,15 @@ export function migrateLegacyDefaultWorkspace(userDataRoot: string): DirectoryMi
 }
 
 export function migrateLegacyUserProjects(documentsRoot: string): DirectoryMigrationResult {
-  return migrateDirectory(
+  const previousResult = migrateDirectory(
+    path.join(documentsRoot, PREVIOUS_USER_PROJECTS_DIRECTORY_NAME),
+    path.join(documentsRoot, USER_PROJECTS_DIRECTORY_NAME),
+  );
+  const legacyResult = migrateDirectory(
     path.join(documentsRoot, LEGACY_USER_PROJECTS_DIRECTORY_NAME),
     path.join(documentsRoot, USER_PROJECTS_DIRECTORY_NAME),
   );
+  return previousResult.status !== 'not-found' ? previousResult : legacyResult;
 }
 
 function persistedReferenceFiles(root: string): string[] {

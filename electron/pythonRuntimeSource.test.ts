@@ -14,7 +14,7 @@ import {
 const temporaryDirectories: string[] = [];
 
 function createNanobotFixture(lineEnding: string) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tpacowork-runtime-source-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tpcowork-runtime-source-'));
   temporaryDirectories.push(root);
   fs.mkdirSync(path.join(root, 'nanobot'));
   fs.writeFileSync(

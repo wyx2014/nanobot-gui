@@ -6,7 +6,7 @@
 
 ## 1. 改造结论
 
-TPACowork 原有 ToolStep 展示方式全部废弃，不再保留：
+TPCowork 原有 ToolStep 展示方式全部废弃，不再保留：
 
 - “进行中 N steps / 已完成 N steps”整块摘要。
 - 整个 ToolStep 统一展开或收起。
@@ -29,7 +29,7 @@ ThinkingBlock
 
 ## 2. Hope Agent 真实依据
 
-本规范以以下文件为准，不再根据截图或原有 TPACowork UI 推测：
+本规范以以下文件为准，不再根据截图或原有 TPCowork UI 推测：
 
 | Hope Agent 文件 | 复刻内容 |
 | --- | --- |
@@ -41,7 +41,7 @@ ThinkingBlock
 | `message/MessageTimeline.tsx` | 单列时间线；只有最后一个活跃 item 有动态 marker |
 
 Hope Agent 同时支持 bubble 与 timeline 模式；其默认偏好为 timeline。本次复刻
-采用默认 timeline 模式，而不是将 TPACowork 旧 ToolStep 套进 Hope 风格外观。
+采用默认 timeline 模式，而不是将 TPCowork 旧 ToolStep 套进 Hope 风格外观。
 
 ## 3. 数据边界
 
@@ -52,7 +52,7 @@ Agent 执行权威仍属于 nanobot gateway：
 - GUI 只生成展示 block，不执行工具、不推断虚假工具结果。
 - `call_id` 是工具 start/end/error 原地更新的稳定身份。
 
-与 Hope Agent 一致，TPACowork 展示 gateway 已经交付给客户端的
+与 Hope Agent 一致，TPCowork 展示 gateway 已经交付给客户端的
 `reasoning_delta → message.thinking` 内容；它只能出现在可折叠 ThinkingBlock
 中，不能混入 assistant 最终回答正文。gateway 明确标记为 `narration` 的公开
 行动说明继续保留为独立的 ThinkingBlock。没有 thinking 内容时才只显示泛化
@@ -122,7 +122,7 @@ activity run 内由 `taskNarrativeTimeline.ts` 保持：
 - active item 有两层 ping 和一个 pulse dot；其他 item 无循环动画。
 - 工具完成、等待下一轮模型输出时，只增加一个三点 loading tail。
 
-## 6. TPACowork 文件映射
+## 6. TPCowork 文件映射
 
 | 文件 | 责任 |
 | --- | --- |
@@ -179,9 +179,9 @@ activity run 内由 `taskNarrativeTimeline.ts` 保持：
 
 仅允许以下由架构边界造成的差异：
 
-1. TPACowork 使用 nanobot gateway/SQLite 消息投影，不复制 Hope 的 Rust schema。
+1. TPCowork 使用 nanobot gateway/SQLite 消息投影，不复制 Hope 的 Rust schema。
 2. 只展示 gateway 已交付给 renderer 的 thinking，不尝试获取 provider 未返回的隐藏推理。
 3. 工具名称和参数来自 nanobot 的 `display` 元数据，文案可能与 Hope 内置工具表不同。
-4. 使用 TPACowork 现有主题 token，但组件尺寸、层级、状态和动效规则保持一致。
+4. 使用 TPCowork 现有主题 token，但组件尺寸、层级、状态和动效规则保持一致。
 
 除以上四点，不保留原 ToolStep 的交互方式。

@@ -23,6 +23,7 @@ export function useOpenScheduleRun() {
   const markRunViewed = useScheduleStore((state) => state.markRunViewed);
 
   return useCallback(async (run: ScheduledTaskRun, taskName: string) => {
+    if (run.resultType === 'none') return false;
     const sessionKey = run.sessionKey ?? run.conversationId;
     if (!sessionKey) return false;
 

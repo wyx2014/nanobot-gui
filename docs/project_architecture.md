@@ -1,6 +1,6 @@
-# TPACowork 架构
+# TPCowork 架构
 
-## 一、主系统：TPACowork Harness
+## 一、主系统：TPCowork Harness
 
 ### 1. Gateway Interface
 - 输入渠道：

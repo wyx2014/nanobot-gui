@@ -15,7 +15,7 @@ describe('workspace project helpers', () => {
 
   it('uses the final path segment as project name', () => {
     expect(projectNameFromPath('/Users/me/nanobot-gui/')).toBe('nanobot-gui');
-    expect(projectNameFromPath('C:\\Users\\1\\Documents\\TPACowork Projects\\123123\\')).toBe('123123');
+    expect(projectNameFromPath('C:\\Users\\1\\Documents\\TPCowork Projects\\123123\\')).toBe('123123');
   });
 
   it('treats workspace as the default workspace, not a visible project', () => {

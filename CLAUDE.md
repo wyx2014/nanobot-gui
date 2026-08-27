@@ -1,8 +1,8 @@
-# TPACowork（TPACowork）项目说明
+# TPCowork（TPCowork）项目说明
 
 ## 项目概览
 
-TPACowork 是一个本地运行的 AI 桌面办公助手。当前项目定位是 Electron 桌面 GUI：负责桌面体验、聊天界面、设置、工具箱、定时任务和文件预览；真正的 Agent 运行时由内置 Python `nanobot` gateway 承接。
+TPCowork 是一个本地运行的 AI 桌面办公助手。当前项目定位是 Electron 桌面 GUI：负责桌面体验、聊天界面、设置、工具箱、定时任务和文件预览；真正的 Agent 运行时由内置 Python `nanobot` gateway 承接。
 
 当前版本：`0.5.9`
 

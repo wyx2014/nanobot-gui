@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   Check,
@@ -85,7 +85,11 @@ function dirnameOf(path: string): string {
   return normalized.slice(0, idx);
 }
 
-export default function ConversationWorkbench() {
+export default function ConversationWorkbench({
+  showInitialLoading = true,
+}: {
+  showInitialLoading?: boolean;
+}) {
   const { locale, t } = useI18n();
   const activeConversationId = useChatStore((state) => state.activeConversationId);
   const conversationStatus = useChatStore((state) => (
@@ -153,8 +157,25 @@ export default function ConversationWorkbench() {
       : 0
   ));
   const openArtifact = usePreviewStore((state) => state.openArtifact);
-  const [artifacts, setArtifacts] = useState<SessionArtifact[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [blockInitialLoad] = useState(showInitialLoading);
+  const [artifacts, setArtifacts] = useState<SessionArtifact[]>(() => (
+    activeConversationId && threadResource?.artifacts.length
+      ? normalizeSessionArtifactRecords(
+          getGatewayBaseUrl(),
+          threadResource.session_key,
+          threadResource.artifacts,
+          workspacePath,
+          {
+            projectId: threadResource.project_id,
+            sessionId: threadResource.session_id,
+          },
+        )
+      : []
+  ));
+  const [loading, setLoading] = useState(() => (
+    Boolean(activeConversationId) && blockInitialLoad
+  ));
+  const [refreshing, setRefreshing] = useState(false);
   const previewArtifact = usePreviewStore((state) => state.previewArtifact);
   const [error, setError] = useState<string | null>(null);
   const requestSequence = useRef(0);
@@ -162,24 +183,13 @@ export default function ConversationWorkbench() {
   const shouldPollActiveTurn = turnPlan
     ? progress.isActive
     : conversationStatus === 'running';
-  const canonicalArtifacts = useMemo(() => {
-    if (!activeConversationId || !threadResource) return null;
-    return normalizeSessionArtifactRecords(
-      getGatewayBaseUrl(),
-      threadResource.session_key,
-      threadResource.artifacts,
-      workspacePath,
-      {
-        projectId: threadResource.project_id,
-        sessionId: threadResource.session_id,
-      },
-    );
-  }, [activeConversationId, threadResource, workspacePath]);
-
-  const refreshArtifacts = useCallback(async () => {
+  const refreshArtifacts = useCallback(async (
+    mode: 'blocking' | 'background' | 'silent' = 'blocking',
+  ) => {
     if (!activeConversationId) return;
     const requestId = ++requestSequence.current;
-    setLoading(true);
+    if (mode === 'background') setRefreshing(true);
+    else if (mode === 'blocking') setLoading(true);
     setError(null);
     try {
       const key = conversationIdToSessionKey(activeConversationId);
@@ -218,22 +228,20 @@ export default function ConversationWorkbench() {
     } finally {
       if (requestId === requestSequence.current) {
         setLoading(false);
+        setRefreshing(false);
       }
     }
   }, [activeConversationId, projectId, sessionId, t.panel.artifactsLoadFailed, workspacePath]);
 
   useEffect(() => {
     requestSequence.current += 1;
-    setArtifacts([]);
     setError(null);
-    if (canonicalArtifacts) {
-      setArtifacts(canonicalArtifacts);
-      setLoading(false);
-      return;
+    if (blockInitialLoad) setArtifacts([]);
+    setLoading(Boolean(activeConversationId) && blockInitialLoad);
+    if (activeConversationId) {
+      void refreshArtifacts(blockInitialLoad ? 'blocking' : 'silent');
     }
-    setLoading(!!activeConversationId);
-    if (activeConversationId) void refreshArtifacts();
-  }, [activeConversationId, canonicalArtifacts, refreshArtifacts]);
+  }, [activeConversationId, blockInitialLoad, refreshArtifacts]);
 
   useEffect(() => {
     if (artifactRevisionConversation.current !== activeConversationId) {
@@ -241,7 +249,7 @@ export default function ConversationWorkbench() {
       return;
     }
     if (!activeConversationId || artifactRevision === 0) return;
-    void refreshArtifacts();
+    void refreshArtifacts('background');
   }, [activeConversationId, artifactRevision, refreshArtifacts]);
 
   useEffect(() => {
@@ -251,7 +259,7 @@ export default function ConversationWorkbench() {
       || (!shouldPollActiveTurn && !hasStagingArtifact)
     ) return;
     const timer = window.setInterval(() => {
-      void refreshArtifacts();
+      void refreshArtifacts('background');
     }, POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
   }, [activeConversationId, artifacts, refreshArtifacts, shouldPollActiveTurn]);
@@ -285,8 +293,19 @@ export default function ConversationWorkbench() {
   return (
     <div
       data-conversation-summary
-      className="flex max-h-[min(72vh,680px)] min-h-0 flex-col overflow-hidden rounded-[20px] border border-[#dcd8d0] bg-[#fbfaf7] shadow-lg dark:border-white/10 dark:bg-[#222] dark:shadow-lg"
+      aria-busy={loading || refreshing}
+      className="relative flex max-h-[min(72vh,680px)] min-h-0 flex-col overflow-hidden rounded-[20px] border border-[#dcd8d0] bg-[#fbfaf7] shadow-lg dark:border-white/10 dark:bg-[#222] dark:shadow-lg"
     >
+      {loading ? (
+        <div
+          data-testid="conversation-details-loading"
+          className="absolute inset-0 z-10 flex min-h-36 items-center justify-center bg-[#fbfaf7]/80 dark:bg-[#222]/80"
+          role="status"
+          aria-live="polite"
+        >
+          <Loader2 className="h-4 w-4 animate-spin text-[#d97757]" />
+        </div>
+      ) : null}
       <section
         data-summary-section="progress"
         className="shrink-0 px-4 py-4"
@@ -373,6 +392,12 @@ export default function ConversationWorkbench() {
             {artifacts.length ? (
               <span className="text-[11px] text-[#9a968c] dark:text-[#88847c]">{artifacts.length}</span>
             ) : null}
+            {refreshing ? (
+              <Loader2
+                data-testid="conversation-details-refreshing"
+                className="h-3 w-3 animate-spin text-[#d97757]"
+              />
+            ) : null}
           </div>
           <div className="flex items-center gap-0.5">
             <button
@@ -388,17 +413,13 @@ export default function ConversationWorkbench() {
         </div>
 
         <div className="no-scrollbar min-h-0 max-h-[300px] overflow-y-auto px-3 pb-4">
-          {loading && !artifacts.length ? (
-            <div className="flex h-24 items-center justify-center">
-              <Loader2 className="h-4 w-4 animate-spin text-[#d97757]" />
-            </div>
-          ) : error && !artifacts.length ? (
+          {error && !artifacts.length ? (
             <div className="mx-1 rounded-xl border border-red-100 bg-red-50/70 px-3 py-3 text-center">
               <p className="text-[12px] text-red-600">{t.panel.artifactsLoadFailed}</p>
               <p className="mt-1 break-words text-[10.5px] leading-4 text-red-500">{error}</p>
               <button
                 type="button"
-                onClick={() => void refreshArtifacts()}
+                onClick={() => void refreshArtifacts('blocking')}
                 className="mt-2 text-[11px] font-medium text-red-600 underline underline-offset-2"
               >
                 {t.panel.artifactsRetry}

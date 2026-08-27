@@ -261,6 +261,27 @@ describe('ChatInput welcome layout', () => {
     expect(composer?.contains(projectSelector ?? null)).toBe(true);
   });
 
+  it('hides the project selector for scheduled-task conversations', async () => {
+    useChatStore.setState({
+      activeConversationId: 'scheduled-conversation',
+      conversations: {
+        'scheduled-conversation': {
+          id: 'scheduled-conversation',
+          title: '每日 AI 新闻推送',
+          messages: [],
+          createdAt: 1,
+          updatedAt: 1,
+          status: 'idle',
+          scheduledTaskId: 'daily-ai-news',
+        },
+      },
+    });
+
+    const view = await renderChatInput('chat');
+
+    expect(view.querySelector('[data-codex-project-selector]')).toBeNull();
+  });
+
   it('does not resurrect a removed workspace from stale cached conversations', async () => {
     useChatStore.setState({
       activeConversationId: null,
@@ -287,7 +308,7 @@ describe('ChatInput welcome layout', () => {
   });
 
   it('uses only the final folder name when selecting a Windows workspace', async () => {
-    const windowsPath = 'C:\\Users\\1\\Documents\\TPACowork Projects\\123123';
+    const windowsPath = 'C:\\Users\\1\\Documents\\TPCowork Projects\\123123';
     const onWorkspaceScopeChange = vi.fn();
     mocks.openFolderDialog.mockResolvedValue(windowsPath);
     const view = await renderChatInput('welcome', () => true, { onWorkspaceScopeChange });

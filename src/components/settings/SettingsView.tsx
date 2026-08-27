@@ -64,10 +64,7 @@ import { usePromptHubStore } from "@/stores/promptHubStore";
 import { submitPromptHubFeedback } from "@/core/prompthubApi";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useToastStore } from "@/stores/toastStore";
-import {
-  ASSET_DEEPSEEK_MODEL_SERVICE,
-  isProtectedBuiltinModelProvider,
-} from "@/config/builtinModelServices";
+import { isProtectedBuiltinModelProvider } from "@/config/builtinModelServices";
 import { Button } from "@/components/ui/button";
 import ConfirmDialog from "@/components/common/ConfirmDialog";
 import { Input } from "@/components/ui/input";
@@ -594,13 +591,11 @@ export function SettingsView({
       "provider-update",
       async () => {
         const existingPresets = settings?.model_presets.filter((preset) => !preset.is_default && preset.provider === data.provider) ?? [];
+        const originalTextDefault = settings?.model_defaults.text ?? null;
+        const originalTextDefaultPreset = settings?.model_presets.find(
+          (preset) => preset.name === originalTextDefault,
+        );
         const targetModels = Array.from(new Set(data.models.map((model) => model.trim()).filter(Boolean)));
-        if (
-          isProtectedBuiltinModelProvider(data.provider) &&
-          !targetModels.includes(ASSET_DEEPSEEK_MODEL_SERVICE.model)
-        ) {
-          targetModels.unshift(ASSET_DEEPSEEK_MODEL_SERVICE.model);
-        }
         let payload = await withGatewayAuth((authToken, base) =>
           updateProviderSettings(
             authToken,
@@ -618,7 +613,11 @@ export function SettingsView({
         for (const preset of existingPresets) {
           if (!targetModels.includes(preset.model)) {
             payload = await withGatewayAuth((authToken, base) =>
-              deleteModelConfiguration(authToken, preset.name, base),
+              deleteModelConfiguration(
+                authToken,
+                preset.name,
+                base,
+              ),
             );
           }
         }
@@ -626,18 +625,21 @@ export function SettingsView({
         for (const model of targetModels) {
           const existing = existingPresets.find((preset) => preset.model === model);
           if (existing) {
-            payload = await withGatewayAuth((authToken, base) =>
-              updateModelConfiguration(
-                authToken,
-                {
-                  name: existing.name,
-                  label: `${data.providerName} / ${model}`,
-                  provider: data.provider,
-                  model,
-                },
-                base,
-              ),
-            );
+            const expectedLabel = `${data.providerName} / ${model}`;
+            if (existing.label !== expectedLabel) {
+              payload = await withGatewayAuth((authToken, base) =>
+                updateModelConfiguration(
+                  authToken,
+                  {
+                    name: existing.name,
+                    label: expectedLabel,
+                    provider: data.provider,
+                    model,
+                  },
+                  base,
+                ),
+              );
+            }
           } else {
             payload = await withGatewayAuth((authToken, base) =>
               createModelConfiguration(
@@ -651,6 +653,27 @@ export function SettingsView({
               ),
             );
           }
+        }
+
+        const originalDefaultStillExists = originalTextDefault
+          ? payload.model_presets.some((preset) => preset.name === originalTextDefault)
+          : false;
+        const replacementDefault = originalTextDefaultPreset?.provider === data.provider
+          ? payload.model_presets.find(
+              (preset) => preset.provider === data.provider && targetModels.includes(preset.model),
+            )?.name
+          : undefined;
+        const nextTextDefault = originalDefaultStillExists
+          ? originalTextDefault
+          : replacementDefault;
+        if (nextTextDefault && payload.model_defaults.text !== nextTextDefault) {
+          payload = await withGatewayAuth((authToken, base) =>
+            updateModelDefault(
+              authToken,
+              { capability: "text", name: nextTextDefault },
+              base,
+            ),
+          );
         }
 
         payload.providers = payload.providers.map((provider) =>
@@ -679,8 +702,9 @@ export function SettingsView({
     );
 
   const probeModelService = async (data: {
+    provider?: string;
     apiBase: string;
-    apiKey: string;
+    apiKey?: string;
     apiType: ProviderForm["apiType"];
   }) => {
     let models: string[] = [];
@@ -691,7 +715,7 @@ export function SettingsView({
           fetchProviderModels(
             authToken,
             {
-              provider: "custom",
+              provider: data.provider ?? "custom",
               apiBase: data.apiBase.trim(),
               apiKey: data.apiKey,
               apiType: data.apiType,
@@ -1139,8 +1163,8 @@ function HelpFeedbackSection({ onOpenFeedback, isEnglish }: { onOpenFeedback: ()
           className="rounded-xl border border-[#e8e4dd] bg-[#f7f7f8] px-5 py-4 text-[13px] leading-6 text-[#6f6f73] dark:border-[#3a3a3a] dark:bg-[#2a2a2a] dark:text-[#c5c1b8] motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-1 motion-safe:duration-200"
         >
           {isEnglish
-            ? "If you run into any issues while using TPACowork, please reach out to the TPA Asset Information Technology Department: Wang Yaobin (ext. 3397), Zhang Zhiqing (ext. 3346)."
-            : "如您在使用 TPACowork 时遇到任何问题，欢迎联系太平资产信息科技部：王耀彬（分机 3397）、张志庆（分机 3346）。"}
+            ? "If you run into any issues while using TPCowork, please reach out to the TPA Asset Information Technology Department: Wang Yaobin (ext. 3397), Zhang Zhiqing (ext. 3346)."
+            : "如您在使用 TPCowork 时遇到任何问题，欢迎联系太平资产信息科技部：王耀彬（分机 3397）、张志庆（分机 3346）。"}
         </div>
       ) : null}
     </div>
@@ -1307,8 +1331,9 @@ function ModelManagerSection({
   }) => Promise<void>;
   onDeleteModelService: (provider: string) => Promise<void>;
   onProbeModelService: (data: {
+    provider?: string;
     apiBase: string;
-    apiKey: string;
+    apiKey?: string;
     apiType: ProviderForm["apiType"];
   }) => Promise<string[]>;
   onSelectDefault: (capability: ModelCapability, presetName: string) => void;
@@ -1449,6 +1474,7 @@ function ModelManagerSection({
   const probeAddProviderModels = () => {
     if (!addForm.apiBase.trim()) return;
     void onProbeModelService({
+      provider: "custom",
       apiBase: addForm.apiBase,
       apiKey: addForm.apiKey,
       apiType: addForm.apiType,
@@ -1476,8 +1502,9 @@ function ModelManagerSection({
   const probeEditProviderModels = () => {
     if (!editForm.apiBase.trim()) return;
     void onProbeModelService({
+      provider: selectedProviderInfo?.name,
       apiBase: editForm.apiBase,
-      apiKey: editForm.apiKey,
+      apiKey: editForm.apiKey.trim() || undefined,
       apiType: editForm.apiType,
     }).then((models) => {
       if (models.length) {

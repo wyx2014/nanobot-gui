@@ -44,7 +44,7 @@ describe('Markdown PDF document', () => {
   });
 
   it('embeds only report-local raster images as self-contained data', () => {
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'tpacowork-report-'));
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'tpcowork-report-'));
     const assets = path.join(directory, 'assets');
     fs.mkdirSync(assets);
     fs.writeFileSync(
@@ -88,13 +88,13 @@ describe('Markdown PDF document', () => {
       async () => ({ png: 'aGVsbG8=', width: 320, height: 160 }),
     );
 
-    expect(html).toContain('Generated from Markdown by TPACowork');
+    expect(html).toContain('Generated from Markdown by TPCowork');
     expect(html).toContain('data:image/png;base64,aGVsbG8=');
     expect(html).not.toContain('graph TD');
     expect(html).not.toContain('EXPERT RESEARCH');
     expect(html).not.toContain('专家团队');
     expect(html).not.toContain('AI 多角色交叉研究');
-    expect(html).toContain('本文档由 TPACowork 根据当前任务内容生成。');
+    expect(html).toContain('本文档由 TPCowork 根据当前任务内容生成。');
   });
 
   it('builds a rich research-report shell with offline data visualizations', async () => {
@@ -133,7 +133,7 @@ describe('Markdown PDF document', () => {
     expect(html).toContain('id="dashboard"');
     expect(html).toContain('多维评分概览');
     expect(html).toContain('trend-figure');
-    expect(html).toContain('TPACOWORK · EXPERT RESEARCH');
+    expect(html).toContain('TPCOWORK · EXPERT RESEARCH');
     expect(html).toContain('专家团队 · 多角色研究、交叉质证与数据审计');
     expect(html).toContain('AI 多角色交叉研究');
     expect(html).not.toContain('cdn.jsdelivr.net');

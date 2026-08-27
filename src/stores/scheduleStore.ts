@@ -25,9 +25,27 @@ import type {
   ScheduledTaskRun,
 } from '../types/schedule';
 
-function tasksById(tasks: ScheduledTask[]): Record<string, ScheduledTask> {
-  return Object.fromEntries(tasks.map((task) => [task.id, task]));
+function runKey(run: ScheduledTaskRun): string {
+  return run.runId?.trim() || run.id;
 }
+
+function tasksById(
+  tasks: ScheduledTask[],
+  current: Record<string, ScheduledTask> = {},
+): Record<string, ScheduledTask> {
+  return Object.fromEntries(tasks.map((task) => {
+    const currentRuns = new Map(
+      (current[task.id]?.runs ?? []).map((run) => [runKey(run), run]),
+    );
+    const runs = task.runs.map((run) => {
+      const viewedAt = currentRuns.get(runKey(run))?.viewedAt;
+      return viewedAt && !run.viewedAt ? { ...run, viewedAt } : run;
+    });
+    return [task.id, { ...task, runs }];
+  }));
+}
+
+let scheduleMutationRevision = 0;
 
 async function gatewayAuth(): Promise<{ token: string; baseUrl: string }> {
   let token = getNanobotToken();
@@ -38,7 +56,7 @@ async function gatewayAuth(): Promise<{ token: string; baseUrl: string }> {
     status = await getNanobotStatus();
   }
   if (!status.ready || !token) {
-    throw new Error('TPACowork 服务还没有准备好。');
+    throw new Error('TPCowork 服务还没有准备好。');
   }
   return { token, baseUrl: `http://127.0.0.1:${status.port}` };
 }
@@ -67,6 +85,7 @@ interface ScheduleState {
   showEditor: boolean;
   editingTaskId: string | null;
   editorDraft: ScheduleTaskDraft | null;
+  activeRunDetail: { taskId: string; runId: string } | null;
 }
 
 interface ScheduleActions {
@@ -96,6 +115,8 @@ interface ScheduleActions {
   setSelectedTaskId: (id: string | null) => void;
   openEditor: (taskId?: string, draft?: ScheduleTaskDraft) => void;
   closeEditor: () => void;
+  openRunDetail: (taskId: string, runId: string) => void;
+  closeRunDetail: () => void;
 }
 
 export type ScheduleStore = ScheduleState & ScheduleActions;
@@ -110,10 +131,13 @@ export const useScheduleStore = create<ScheduleStore>()(
     showEditor: false,
     editingTaskId: null,
     editorDraft: null,
+    activeRunDetail: null,
 
     applyPayload: (payload) => {
       set((state) => {
-        state.tasks = tasksById(payload.tasks);
+        // A viewed run is monotonic. Keep it when an older poll response races
+        // with the mark-viewed mutation that archived a one-time reminder.
+        state.tasks = tasksById(payload.tasks, state.tasks);
         state.error = null;
         if (state.selectedTaskId && !state.tasks[state.selectedTaskId]) {
           state.selectedTaskId = null;
@@ -121,17 +145,27 @@ export const useScheduleStore = create<ScheduleStore>()(
         if (state.activeTaskId && !state.tasks[state.activeTaskId]) {
           state.activeTaskId = null;
         }
+        if (state.activeRunDetail) {
+          const task = state.tasks[state.activeRunDetail.taskId];
+          const hasRun = task?.runs.some((run) => (
+            (run.runId?.trim() || run.id) === state.activeRunDetail?.runId
+          ));
+          if (!hasRun) state.activeRunDetail = null;
+        }
       });
     },
 
     loadTasks: async () => {
+      const mutationRevisionAtStart = scheduleMutationRevision;
       set((state) => {
         state.loading = true;
         state.error = null;
       });
       try {
         const payload = await withScheduleAuth((token, baseUrl) => fetchScheduleTasks(token, baseUrl));
-        get().applyPayload(payload);
+        if (mutationRevisionAtStart === scheduleMutationRevision) {
+          get().applyPayload(payload);
+        }
       } catch (err) {
         set((state) => {
           state.error = err instanceof Error ? err.message : String(err);
@@ -145,6 +179,7 @@ export const useScheduleStore = create<ScheduleStore>()(
 
     createTask: async (data) => {
       const payload = await withScheduleAuth((token, baseUrl) => createScheduleTask(token, data, baseUrl));
+      scheduleMutationRevision += 1;
       get().applyPayload(payload);
       const created = payload.tasks.find((task) => task.name === data.name && task.prompt === data.prompt);
       return created?.id ?? '';
@@ -152,26 +187,31 @@ export const useScheduleStore = create<ScheduleStore>()(
 
     updateTask: async (id, data) => {
       const payload = await withScheduleAuth((token, baseUrl) => updateScheduleTask(token, id, data, baseUrl));
+      scheduleMutationRevision += 1;
       get().applyPayload(payload);
     },
 
     deleteTask: async (id) => {
       const payload = await withScheduleAuth((token, baseUrl) => deleteScheduleTask(token, id, baseUrl));
+      scheduleMutationRevision += 1;
       get().applyPayload(payload);
     },
 
     pauseTask: async (id) => {
       const payload = await withScheduleAuth((token, baseUrl) => pauseScheduleTask(token, id, baseUrl));
+      scheduleMutationRevision += 1;
       get().applyPayload(payload);
     },
 
     resumeTask: async (id) => {
       const payload = await withScheduleAuth((token, baseUrl) => resumeScheduleTask(token, id, baseUrl));
+      scheduleMutationRevision += 1;
       get().applyPayload(payload);
     },
 
     runTaskNow: async (id) => {
       const payload = await withScheduleAuth((token, baseUrl) => runScheduleTaskNow(token, id, baseUrl));
+      scheduleMutationRevision += 1;
       get().applyPayload(payload);
     },
 
@@ -180,7 +220,6 @@ export const useScheduleStore = create<ScheduleStore>()(
     getUnviewedRunCount: () => Object.values(get().tasks).reduce((count, task) => (
       count + task.runs.filter((run) => (
         (run.status === 'completed' || run.status === 'error')
-        && Boolean(run.sessionKey || run.conversationId)
         && !run.viewedAt
       )).length
     ), 0),
@@ -189,6 +228,7 @@ export const useScheduleStore = create<ScheduleStore>()(
       const runId = run.runId ?? run.id;
       if (!runId || run.status === 'running' || run.viewedAt) return;
       const payload = await withScheduleAuth((token, baseUrl) => markScheduleRunViewed(token, taskId, runId, baseUrl));
+      scheduleMutationRevision += 1;
       get().applyPayload(payload);
     },
 
@@ -196,6 +236,7 @@ export const useScheduleStore = create<ScheduleStore>()(
       const runId = run.runId ?? run.id;
       if (!runId || run.status === 'running') return;
       const payload = await withScheduleAuth((token, baseUrl) => deleteScheduleRun(token, taskId, runId, baseUrl));
+      scheduleMutationRevision += 1;
       get().applyPayload(payload);
     },
 
@@ -224,6 +265,18 @@ export const useScheduleStore = create<ScheduleStore>()(
         state.showEditor = false;
         state.editingTaskId = null;
         state.editorDraft = null;
+      });
+    },
+
+    openRunDetail: (taskId, runId) => {
+      set((state) => {
+        state.activeRunDetail = { taskId, runId };
+      });
+    },
+
+    closeRunDetail: () => {
+      set((state) => {
+        state.activeRunDetail = null;
       });
     },
   })),

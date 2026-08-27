@@ -131,7 +131,7 @@ export const shellBridge = {
 };
 
 export const notificationBridge = {
-  sendNotification: async (options: string | { title: string; body?: string; conversationId?: string }): Promise<{ shown: boolean; reason?: string }> => {
+  sendNotification: async (options: string | { title: string; body?: string; conversationId?: string; scheduleTaskId?: string; runId?: string }): Promise<{ shown: boolean; reason?: string }> => {
     return window.ipc.invoke('notification:send', options);
   },
   isPermissionGranted: async (): Promise<boolean> => {

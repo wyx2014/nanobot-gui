@@ -1,5 +1,35 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { useWorkspaceStore } from './workspaceStore';
+import { migratePersistedWorkspacePaths, useWorkspaceStore } from './workspaceStore';
+
+describe('workspaceStore project-root migration', () => {
+  it('rewrites legacy managed roots and deduplicates the current path', () => {
+    expect(migratePersistedWorkspacePaths({
+      recentPaths: [
+        '/Users/test/Documents/TPACowork Projects/研究',
+        '/Users/test/Documents/TPCowork Projects/研究',
+        '/Users/test/custom-workspace',
+      ],
+      projectNames: {
+        '/Users/test/Documents/TPACowork Projects/研究': '旧名称',
+        '/Users/test/Documents/TPCowork Projects/研究': '当前名称',
+      },
+      projectSkillBindings: {
+        '/Users/test/Documents/TpaRuyi Projects/研究': ['research-skill'],
+      },
+    })).toEqual({
+      recentPaths: [
+        '/Users/test/Documents/TPCowork Projects/研究',
+        '/Users/test/custom-workspace',
+      ],
+      projectNames: {
+        '/Users/test/Documents/TPCowork Projects/研究': '当前名称',
+      },
+      projectSkillBindings: {
+        '/Users/test/Documents/TPCowork Projects/研究': ['research-skill'],
+      },
+    });
+  });
+});
 
 describe('workspaceStore removal', () => {
   beforeEach(() => {

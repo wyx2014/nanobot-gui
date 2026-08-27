@@ -54,11 +54,11 @@ export default function InlinePermissionRequest({
   const getDescription = () => {
     switch (type) {
       case 'workspace':
-        return 'TPCowork需要访问这个文件夹';
+        return 'TP Cowork 需要访问这个文件夹';
       case 'shell':
-        return 'TPCowork需要执行命令';
+        return 'TP Cowork 需要执行命令';
       case 'file-write':
-        return 'TPCowork需要修改文件';
+        return 'TP Cowork 需要修改文件';
     }
   };
 

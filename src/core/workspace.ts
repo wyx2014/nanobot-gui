@@ -1,7 +1,10 @@
 import type { WorkspaceAccessMode, WorkspaceScopePayload } from '@/core/types';
 import {
   DEFAULT_WORKSPACE_DIRECTORY_NAME,
+  LEGACY_USER_PROJECTS_DIRECTORY_NAME,
   LEGACY_DEFAULT_WORKSPACE_DIRECTORY_NAME,
+  PREVIOUS_USER_PROJECTS_DIRECTORY_NAME,
+  USER_PROJECTS_DIRECTORY_NAME,
 } from '@/config/appDirectories';
 
 interface WorkspaceBoundConversation {
@@ -28,6 +31,22 @@ export function projectNameFromPath(path: string): string {
 
 export function normalizeProjectPath(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+$/, '');
+}
+
+/**
+ * Rewrite only the two retired TP Cowork-managed project-root segments.
+ * Arbitrary user-selected folders are left untouched.
+ */
+export function migrateLegacyUserProjectPath(path: string): string {
+  return normalizeProjectPath(path)
+    .split('/')
+    .map((segment) => (
+      segment === PREVIOUS_USER_PROJECTS_DIRECTORY_NAME
+      || segment === LEGACY_USER_PROJECTS_DIRECTORY_NAME
+        ? USER_PROJECTS_DIRECTORY_NAME
+        : segment
+    ))
+    .join('/');
 }
 
 function projectPathComparisonKey(path: string): string {

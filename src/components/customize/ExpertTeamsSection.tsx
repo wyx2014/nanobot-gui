@@ -135,7 +135,7 @@ function memberText(
 
 async function getAuth(): Promise<{ token: string; baseUrl: string }> {
   const status = await getNanobotStatus();
-  if (!status.ready) throw new Error('TPCowork 服务尚未就绪');
+  if (!status.ready) throw new Error('TP Cowork 服务尚未就绪');
   const baseUrl = `http://127.0.0.1:${status.port}`;
   const token = getNanobotToken();
   if (token) return { token, baseUrl };
@@ -357,7 +357,7 @@ export default function ExpertTeamsSection() {
               <CheckCircle2 className="h-4 w-4" />
               {isEnglish ? 'Runtime Dependencies' : '运行依赖'}
             </div>
-            <p className="mt-2 text-xs leading-5 text-[#777368]">{isEnglish ? 'Teams reuse the current TPCowork model, web search, built-in iFinD skill, and configured MCP services; an alternative bound source is used when one is unavailable.' : '团队复用当前 Cowork 的模型、联网搜索、内置 聚源、同花顺、财汇MCP；单一来源不可用时自动换用另一绑定来源。'}</p>
+            <p className="mt-2 text-xs leading-5 text-[#777368]">{isEnglish ? 'Teams reuse the current TP Cowork model, web search, built-in iFinD skill, and configured MCP services; an alternative bound source is used when one is unavailable.' : '团队复用当前 TP Cowork 的模型、联网搜索、内置 聚源、同花顺、财汇MCP；单一来源不可用时自动换用另一绑定来源。'}</p>
           </div>
         </section>
       </div>

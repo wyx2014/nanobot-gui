@@ -56,7 +56,7 @@ async function gatewayAuth(): Promise<{ token: string; baseUrl: string }> {
     status = await getNanobotStatus();
   }
   if (!status.ready || !token) {
-    throw new Error('TPCowork 服务还没有准备好。');
+    throw new Error('TP Cowork 服务还没有准备好。');
   }
   return { token, baseUrl: `http://127.0.0.1:${status.port}` };
 }

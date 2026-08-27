@@ -510,7 +510,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       setExpertTeamsError(null);
       try {
         const status = await getNanobotStatus();
-        if (!status.ready) throw new Error(isEn ? 'TPCowork is not ready' : 'TPCowork 服务尚未就绪');
+        if (!status.ready) throw new Error(isEn ? 'TP Cowork is not ready' : 'TP Cowork 服务尚未就绪');
         let token = getNanobotToken();
         let base = `http://127.0.0.1:${status.port}`;
         if (!token) {
@@ -1404,7 +1404,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
         type: 'error',
         title: isEn ? 'Microphone unavailable' : '无法使用麦克风',
         message: denied
-          ? (isEn ? 'Allow microphone access in system settings and try again.' : '请在系统设置中允许TPCowork访问麦克风后重试。')
+          ? (isEn ? 'Allow microphone access in system settings and try again.' : '请在系统设置中允许 TP Cowork 访问麦克风后重试。')
           : error instanceof Error ? error.message : String(error),
         duration: 5000,
       });

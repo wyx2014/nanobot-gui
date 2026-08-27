@@ -602,6 +602,19 @@ export default function Sidebar() {
     }
   };
 
+  const openProjectLocation = async (path: string) => {
+    try {
+      await shellBridge.openPath(path);
+    } catch (error) {
+      addToast({
+        type: 'error',
+        title: isEnglish ? 'Could not open workspace' : '无法打开工作空间',
+        message: error instanceof Error ? error.message : String(error),
+        duration: 5000,
+      });
+    }
+  };
+
   const requestRemoveProject = (path: string) => {
     const project = conversationGroups.projects.find((item) => item.path === path);
     const projectName = project?.name ?? projectNames[path] ?? projectNameFromPath(path);
@@ -1447,7 +1460,7 @@ export default function Sidebar() {
         >
           <button
             onClick={() => {
-              void shellBridge.revealItemInDir(projectMenu.path);
+              void openProjectLocation(projectMenu.path);
               setProjectMenu(null);
             }}
             className="flex items-center gap-2 w-full px-3 py-1.5 text-[13px] text-[#3d3929] hover:bg-[#f0ede6]"

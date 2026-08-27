@@ -99,7 +99,7 @@ export default function NanobotDiagnosticsDialog({
 
   const labels = isEnglish
     ? {
-        title: 'TPCowork startup diagnostics',
+        title: 'TP Cowork startup diagnostics',
         description: 'Recording starts with the app. Opening this panel does not change or restart the service.',
         refresh: 'Refresh',
         copy: 'Copy diagnostics',
@@ -111,7 +111,7 @@ export default function NanobotDiagnosticsDialog({
         readFailed: 'Could not read diagnostics',
       }
     : {
-        title: 'TPCowork 启动诊断日志',
+        title: 'TP Cowork 启动诊断日志',
         description: '日志从应用启动时就持续记录；打开此面板不会改变或重启服务。',
         refresh: '刷新',
         copy: '复制诊断日志',

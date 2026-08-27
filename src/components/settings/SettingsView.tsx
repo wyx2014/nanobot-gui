@@ -1163,8 +1163,8 @@ function HelpFeedbackSection({ onOpenFeedback, isEnglish }: { onOpenFeedback: ()
           className="rounded-xl border border-[#e8e4dd] bg-[#f7f7f8] px-5 py-4 text-[13px] leading-6 text-[#6f6f73] dark:border-[#3a3a3a] dark:bg-[#2a2a2a] dark:text-[#c5c1b8] motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-1 motion-safe:duration-200"
         >
           {isEnglish
-            ? "If you run into any issues while using TPCowork, please reach out to the TPA Asset Information Technology Department: Wang Yaobin (ext. 3397), Zhang Zhiqing (ext. 3346)."
-            : "如您在使用 TPCowork 时遇到任何问题，欢迎联系太平资产信息科技部：王耀彬（分机 3397）、张志庆（分机 3346）。"}
+            ? "If you run into any issues while using TP Cowork, please reach out to the TPA Asset Information Technology Department: Wang Yaobin (ext. 3397), Zhang Zhiqing (ext. 3346)."
+            : "如您在使用 TP Cowork 时遇到任何问题，欢迎联系太平资产信息科技部：王耀彬（分机 3397）、张志庆（分机 3346）。"}
         </div>
       ) : null}
     </div>

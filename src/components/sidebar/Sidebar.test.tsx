@@ -1,12 +1,13 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Sidebar from './Sidebar';
 import { useChatStore } from '@/stores/chatStore';
 import { useScheduleStore } from '@/stores/scheduleStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { usePromptHubStore } from '@/stores/promptHubStore';
+import { shellBridge } from '@/lib/ipc-factory';
 
 let container: HTMLDivElement | undefined;
 let root: Root | undefined;
@@ -89,7 +90,7 @@ describe('Sidebar conversation search', () => {
   it('opens a command dialog and keeps the project path out of the sidebar', () => {
     const view = renderSidebar();
 
-    expect(view.textContent).toContain('TPCowork');
+    expect(view.textContent).toContain('TP Cowork');
     expect(view.textContent).toContain('nanobot-gui');
     expect(view.textContent).not.toContain('/Users/test/nanobot-gui');
     expect(view.querySelector('input[placeholder="搜索任务"]')).toBeNull();
@@ -243,6 +244,25 @@ describe('Sidebar homepage conversation filters', () => {
 });
 
 describe('Sidebar workspace creation', () => {
+  it('opens a workspace directory instead of trying to reveal it as a file', async () => {
+    const openPath = vi.spyOn(shellBridge, 'openPath').mockResolvedValue();
+    const reveal = vi.spyOn(shellBridge, 'revealItemInDir').mockResolvedValue();
+    const view = renderSidebar();
+
+    act(() => view.querySelector<HTMLButtonElement>('[aria-label="工作空间操作"]')?.click());
+    const openLocation = [...document.body.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent?.trim() === '打开位置');
+    expect(openLocation).not.toBeUndefined();
+
+    await act(async () => {
+      openLocation?.click();
+      await Promise.resolve();
+    });
+
+    expect(openPath).toHaveBeenCalledWith('/Users/test/nanobot-gui');
+    expect(reveal).not.toHaveBeenCalled();
+  });
+
   it('shows a newly created blank workspace before the first message is sent', async () => {
     const view = renderSidebar();
     const addWorkspaceButton = view.querySelector<HTMLButtonElement>('button[aria-label="新建工作空间"]');

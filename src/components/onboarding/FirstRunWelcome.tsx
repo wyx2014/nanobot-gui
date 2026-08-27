@@ -260,7 +260,7 @@ export default function FirstRunWelcome({ onContinue }: FirstRunWelcomeProps) {
                   <div className="absolute inset-1 rounded-[24px] bg-[#3f8ff7]/25 blur-xl dark:bg-[#5d4bf8]/25" />
                   <img
                     src={appIcon}
-                    alt="TPCowork"
+                    alt="TP Cowork"
                     draggable={false}
                     className="relative h-20 w-20 rounded-[22px] object-cover shadow-[0_12px_35px_rgba(49,113,224,0.22)] dark:ring-1 dark:ring-white/10 dark:shadow-[0_14px_42px_rgba(0,0,0,0.48)]"
                   />

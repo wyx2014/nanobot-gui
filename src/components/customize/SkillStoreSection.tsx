@@ -18,7 +18,7 @@ import { useI18n } from '@/i18n';
 
 async function getSkillsAuth(): Promise<{ token: string; baseUrl: string }> {
   const status = await getNanobotStatus();
-  if (!status.ready) throw new Error('TPCowork 服务尚未就绪');
+  if (!status.ready) throw new Error('TP Cowork 服务尚未就绪');
   const baseUrl = `http://127.0.0.1:${status.port}`;
   const token = getNanobotToken();
   if (token) return { token, baseUrl };

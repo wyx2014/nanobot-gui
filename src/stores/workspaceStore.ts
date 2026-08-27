@@ -2,7 +2,12 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { authorizeWorkspace, revokeWorkspace } from '../core/safety/pathSafety';
 import { getBaseName } from '../utils/pathUtils';
-import { normalizeProjectPath, sameWorkspacePath, visibleProjectPath } from '@/core/workspace';
+import {
+  migrateLegacyUserProjectPath,
+  normalizeProjectPath,
+  sameWorkspacePath,
+  visibleProjectPath,
+} from '@/core/workspace';
 import type { ProjectPayload } from '@/core/types';
 
 interface WorkspaceState {
@@ -28,6 +33,43 @@ interface WorkspaceActions {
 }
 
 export type WorkspaceStore = WorkspaceState & WorkspaceActions;
+
+function migratePathKeyedRecord(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const migrated: Record<string, unknown> = {};
+  for (const [path, entry] of Object.entries(value)) {
+    const nextPath = migrateLegacyUserProjectPath(path);
+    // A value already stored under the current path wins over its legacy alias.
+    if (!(nextPath in migrated) || nextPath === normalizeProjectPath(path)) {
+      migrated[nextPath] = entry;
+    }
+  }
+  return migrated;
+}
+
+/** Upgrade renderer-local workspace aliases after the managed root was renamed. */
+export function migratePersistedWorkspacePaths(persistedState: unknown): unknown {
+  if (!persistedState || typeof persistedState !== 'object' || Array.isArray(persistedState)) {
+    return persistedState;
+  }
+  const state = persistedState as Record<string, unknown>;
+  const recentPaths: string[] = [];
+  if (Array.isArray(state.recentPaths)) {
+    for (const path of state.recentPaths) {
+      if (typeof path !== 'string') continue;
+      const migrated = migrateLegacyUserProjectPath(path);
+      if (!recentPaths.some((candidate) => sameWorkspacePath(candidate, migrated))) {
+        recentPaths.push(migrated);
+      }
+    }
+  }
+  return {
+    ...state,
+    recentPaths,
+    projectNames: migratePathKeyedRecord(state.projectNames),
+    projectSkillBindings: migratePathKeyedRecord(state.projectSkillBindings),
+  };
+}
 
 export const useWorkspaceStore = create<WorkspaceStore>()(
   persist(
@@ -139,7 +181,8 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
     }),
     {
       name: 'ruyi-workspace',
-      version: 1,
+      version: 2,
+      migrate: (persistedState) => migratePersistedWorkspacePaths(persistedState) as WorkspaceStore,
       // Only persist recentPaths — currentPath is now derived from active conversation
       partialize: (state) => ({
         recentPaths: state.recentPaths,

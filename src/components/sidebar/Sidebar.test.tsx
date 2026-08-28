@@ -2,6 +2,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Sidebar from './Sidebar';
+import { formatSidebarConversationTime } from './conversationTime';
 import { useChatStore } from '@/stores/chatStore';
 import { useScheduleStore } from '@/stores/scheduleStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -84,6 +85,7 @@ afterEach(() => {
   container?.remove();
   container = undefined;
   root = undefined;
+  vi.useRealTimers();
 });
 
 describe('Sidebar conversation search', () => {
@@ -101,9 +103,13 @@ describe('Sidebar conversation search', () => {
     expect(backdrop?.classList.contains('window-titlebar-safe-top')).toBe(true);
     expect(dialog?.parentElement?.classList.contains('window-modal-viewport')).toBe(true);
     expect(dialog?.parentElement?.classList.contains('items-center')).toBe(true);
-    expect(dialog?.classList.contains('max-w-[720px]')).toBe(true);
-    expect(dialog?.classList.contains('h-[72vh]')).toBe(true);
-    expect(dialog?.querySelector('input[placeholder="搜索任务"]')).not.toBeNull();
+    expect(dialog?.classList.contains('max-w-[620px]')).toBe(true);
+    expect(dialog?.classList.contains('h-[64vh]')).toBe(true);
+    const searchField = dialog?.querySelector<HTMLElement>('[data-testid="conversation-search-field"]');
+    const searchInput = dialog?.querySelector<HTMLInputElement>('input[placeholder="搜索任务"]');
+    expect(searchField?.classList.contains('h-9')).toBe(true);
+    expect(searchField?.className).not.toContain('focus-within:ring');
+    expect(searchInput?.classList.contains('text-[14px]')).toBe(true);
     expect(dialog?.textContent).toContain('最近任务');
     expect(dialog?.querySelector('button[aria-label="关闭"]')).not.toBeNull();
     expect(dialog?.querySelector('svg.lucide-folder')).not.toBeNull();
@@ -134,46 +140,11 @@ describe('Sidebar conversation search', () => {
     expect(document.body.querySelector('[data-testid="conversation-search-dialog"]')).toBeNull();
   });
 
-  it('filters by real conversation status and marks the filter icon while active', () => {
-    useChatStore.setState((state) => ({
-      conversations: {
-        ...state.conversations,
-        beta: { ...state.conversations.beta, status: 'running' },
-      },
-    }));
+  it('keeps the search dialog keyword-only without filter controls', () => {
     renderSidebar();
     const dialog = openSearchDialog();
-    const trigger = dialog?.querySelector<HTMLButtonElement>('[data-testid="conversation-filter-trigger"]');
-
-    expect(trigger).not.toBeNull();
-    act(() => trigger?.click());
-    const menu = dialog?.querySelector<HTMLElement>('[data-testid="conversation-filter-menu"]');
-    expect(menu?.textContent).toContain('筛选状态');
-    expect(menu?.textContent).toContain('筛选时间');
-
-    act(() => buttonWithText(menu!, '进行中')?.click());
-
-    expect(dialog?.textContent).not.toContain('Alpha 方案');
-    expect(dialog?.textContent).toContain('Beta 报告');
-    expect(trigger?.querySelector('[data-testid="conversation-filter-active-dot"]')).not.toBeNull();
-
-    act(() => buttonWithText(menu!, '重置筛选条件')?.click());
-
-    expect(dialog?.textContent).toContain('Alpha 方案');
-    expect(dialog?.textContent).toContain('Beta 报告');
-    expect(trigger?.querySelector('[data-testid="conversation-filter-active-dot"]')).toBeNull();
-  });
-
-  it('shows the filter empty state below recent tasks and keeps keyword search independent', () => {
-    renderSidebar();
-    const dialog = openSearchDialog();
-    const trigger = dialog?.querySelector<HTMLButtonElement>('[data-testid="conversation-filter-trigger"]');
-    act(() => trigger?.click());
-    const menu = dialog?.querySelector<HTMLElement>('[data-testid="conversation-filter-menu"]');
-
-    act(() => buttonWithText(menu!, '失败')?.click());
-    expect(dialog?.textContent).toContain('最近任务');
-    expect(dialog?.textContent).toContain('没有匹配的任务');
+    expect(dialog?.querySelector('[data-testid="conversation-filter-trigger"]')).toBeNull();
+    expect(dialog?.querySelector('[data-testid="conversation-filter-menu"]')).toBeNull();
 
     const input = dialog?.querySelector<HTMLInputElement>('input[placeholder="搜索任务"]');
     act(() => {
@@ -184,11 +155,63 @@ describe('Sidebar conversation search', () => {
 
     expect(dialog?.textContent).toContain('Alpha 方案');
     expect(dialog?.textContent).not.toContain('Beta 报告');
-    expect(trigger?.querySelector('[data-testid="conversation-filter-active-dot"]')).toBeNull();
   });
 });
 
 describe('Sidebar homepage conversation filters', () => {
+  it('shows relative times from each conversation last activity without changing title styling', () => {
+    const now = Date.now();
+    useChatStore.setState((state) => ({
+      conversations: {
+        ...state.conversations,
+        alpha: { ...state.conversations.alpha, updatedAt: now - 2 * 60_000 },
+        beta: { ...state.conversations.beta, updatedAt: now - 2 * 3_600_000 },
+      },
+    }));
+
+    const view = renderSidebar();
+    const alphaTime = view.querySelector<HTMLTimeElement>('[data-conversation-relative-time="alpha"]');
+    const betaTime = view.querySelector<HTMLTimeElement>('[data-conversation-relative-time="beta"]');
+    const alphaTitle = [...view.querySelectorAll<HTMLElement>('span')]
+      .find((element) => element.textContent === 'Alpha 方案');
+
+    expect(alphaTime?.textContent).toBe('2分钟前');
+    expect(betaTime?.textContent).toBe('2小时前');
+    expect(alphaTime?.className).toContain('text-[12px]');
+    expect(alphaTime?.className).toContain('text-[#98958e]');
+    expect(alphaTitle?.className).toContain('text-[14px]');
+  });
+
+  it('refreshes relative times from user and window events instead of polling', () => {
+    vi.useFakeTimers();
+    const now = Date.UTC(2026, 7, 27, 12, 0, 0);
+    vi.setSystemTime(now);
+    useChatStore.setState((state) => ({
+      conversations: {
+        ...state.conversations,
+        alpha: { ...state.conversations.alpha, updatedAt: now - 20_000 },
+      },
+    }));
+
+    const view = renderSidebar();
+    const alphaTime = view.querySelector<HTMLTimeElement>('[data-conversation-relative-time="alpha"]');
+    expect(alphaTime?.textContent).toBe('刚刚');
+
+    act(() => vi.advanceTimersByTime(2 * 60_000));
+    expect(alphaTime?.textContent).toBe('刚刚');
+
+    act(() => view.querySelector<HTMLButtonElement>('[aria-keyshortcuts]')?.click());
+    expect(alphaTime?.textContent).toBe('2分钟前');
+
+    act(() => vi.advanceTimersByTime(2 * 3_600_000));
+    act(() => window.dispatchEvent(new Event('focus')));
+    expect(alphaTime?.textContent).toBe('2小时前');
+
+    act(() => vi.advanceTimersByTime(3_600_000));
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    expect(alphaTime?.textContent).toBe('3小时前');
+  });
+
   it('filters workspace and recent conversations from the homepage control', () => {
     useChatStore.setState((state) => ({
       conversations: {
@@ -240,6 +263,17 @@ describe('Sidebar homepage conversation filters', () => {
     const dialog = openSearchDialog();
     expect(dialog?.textContent).toContain('Alpha 方案');
     expect(dialog?.textContent).toContain('Beta 报告');
+  });
+});
+
+describe('formatSidebarConversationTime', () => {
+  const now = Date.UTC(2026, 7, 27, 12, 0, 0);
+
+  it('formats the requested Chinese relative-time ranges', () => {
+    expect(formatSidebarConversationTime(now - 20_000, now)).toBe('刚刚');
+    expect(formatSidebarConversationTime(now - 2 * 60_000, now)).toBe('2分钟前');
+    expect(formatSidebarConversationTime(now - 2 * 3_600_000, now)).toBe('2小时前');
+    expect(formatSidebarConversationTime(now - 10 * 86_400_000, now)).toBe('10天前');
   });
 });
 

@@ -184,6 +184,29 @@ function findStreamingAssistantIndex(
   return null;
 }
 
+/** Reopen an answer row when a provider briefly interleaves reasoning frames
+ * inside the same transport stream. The stream identity is stronger than the
+ * local open/closed cursor used to separate genuine multi-stage answers. */
+function findAssistantStreamIndex(
+  prev: UIMessage[],
+  streamId: string | undefined,
+  turnId?: string,
+): number | null {
+  if (!streamId) return null;
+  for (let index = prev.length - 1; index >= 0; index -= 1) {
+    const message = prev[index];
+    if (message.role === "user") break;
+    if (
+      message.role === "assistant"
+      && message.kind !== "trace"
+      && message.isStreaming
+      && message.streamId === streamId
+      && sameTurn(message, turnId)
+    ) return index;
+  }
+  return null;
+}
+
 function runtimeSnapshotForClient(
   client: ReturnType<typeof getNanobotClient> | null,
   chatId: string | null,
@@ -1483,6 +1506,11 @@ export function useNanobotStream(
         targetIndex = null;
       }
 
+      let resumedByStreamId = false;
+      if (targetIndex === null) {
+        targetIndex = findAssistantStreamIndex(next, streamId, turnId);
+        resumedByStreamId = targetIndex !== null;
+      }
       if (targetIndex === null) {
         targetIndex = findActiveAssistantPlaceholderIndex(next, turnId);
       }
@@ -1508,6 +1536,26 @@ export function useNanobotStream(
           },
         ];
         targetIndex = next.length - 1;
+      }
+
+      if (resumedByStreamId) {
+        const placeholderIndex = findActiveAssistantPlaceholderIndex(next, turnId);
+        const placeholder = placeholderIndex === null ? undefined : next[placeholderIndex];
+        if (placeholderIndex !== null && placeholderIndex > targetIndex && placeholder?.reasoning) {
+          const target = next[targetIndex];
+          next = replaceMessageAt(next.slice(0, placeholderIndex), targetIndex, {
+            ...target,
+            reasoning: (target.reasoning ?? "") + placeholder.reasoning,
+            reasoningStreaming: placeholder.reasoningStreaming,
+            reasoningStartedAt: target.reasoningStartedAt ?? placeholder.reasoningStartedAt,
+            reasoningCompletedAt: placeholder.reasoningStreaming
+              ? undefined
+              : placeholder.reasoningCompletedAt ?? target.reasoningCompletedAt,
+            reasoningDurationMs: placeholder.reasoningStreaming
+              ? undefined
+              : (target.reasoningDurationMs ?? 0) + (placeholder.reasoningDurationMs ?? 0),
+          });
+        }
       }
 
       const target = next[targetIndex];

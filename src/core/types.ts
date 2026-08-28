@@ -669,6 +669,8 @@ export interface ProviderModelInfo {
   owned_by?: string | null;
   context_window?: number | null;
   capabilities?: ModelCapability[];
+  model_type?: string | null;
+  capability_source?: ModelCapabilitySource;
 }
 
 export interface ProviderModelsPayload {
@@ -691,6 +693,11 @@ export type ModelCapability =
   | "text"
   | "speech_to_text"
   | "text_to_speech";
+
+export type ModelCapabilitySource =
+  | "manual"
+  | "provider"
+  | "heuristic";
 
 export interface SettingsPayload {
   surface?: RuntimeSurface;
@@ -728,6 +735,7 @@ export interface SettingsPayload {
     temperature: number;
     reasoning_effort: string | null;
     capabilities: ModelCapability[];
+    capability_source?: ModelCapabilitySource;
   }>;
   model_defaults: Record<ModelCapability, string | null>;
   provider_mutation?: {
@@ -1133,6 +1141,7 @@ export interface ModelConfigurationCreate {
   provider: string;
   model: string;
   capabilities?: ModelCapability[];
+  capabilitySource?: ModelCapabilitySource;
 }
 
 export interface ModelConfigurationUpdate {
@@ -1142,6 +1151,7 @@ export interface ModelConfigurationUpdate {
   model?: string;
   contextWindowTokens?: number;
   capabilities?: ModelCapability[];
+  capabilitySource?: ModelCapabilitySource;
 }
 
 export interface ModelDefaultUpdate {

@@ -10,6 +10,15 @@ export type ThemeMode = 'system' | 'light' | 'dark';
 export type ShortcutId = 'newChat' | 'focusComposer' | 'toggleSidebar' | 'openToolbox' | 'openSettings';
 export type KeyboardShortcuts = Record<ShortcutId, string>;
 
+export const DEFAULT_FALLBACK_MODEL = 'deepseek_v4_flash';
+
+export interface GatewayTextModelOption {
+  presetName: string;
+  provider: string;
+  model: string;
+  label: string;
+}
+
 export const DEFAULT_KEYBOARD_SHORTCUTS: KeyboardShortcuts = {
   newChat: 'Mod+N',
   focusComposer: 'Mod+K',
@@ -82,19 +91,6 @@ export const PROVIDER_CONFIGS = {
     capabilities: {
       webSearch: { type: 'parameter', paramName: 'enable_search', paramValue: true },
       imageGen: true,
-    },
-  },
-  anthropic: {
-    name: 'Anthropic',
-    baseUrl: 'https://api.anthropic.com',
-    format: 'anthropic',
-    models: [
-      { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-      { id: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
-      { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
-    ],
-    capabilities: {
-      webSearch: { type: 'tool', toolSpec: { type: 'web_search_20250305', name: 'web_search', max_uses: 5 } },
     },
   },
   openai: {
@@ -225,6 +221,9 @@ interface SettingsState {
   customModel: string;
   apiKey: string;
   baseUrl: string;
+  gatewayTextModels: GatewayTextModelOption[];
+  activeTextModelPreset: string | null;
+  gatewayTextModelsHydrated: boolean;
   theme: ThemeMode;
   showSettings: boolean;
   sidebarCollapsed: boolean;
@@ -302,6 +301,10 @@ interface SettingsActions {
   setCustomModel: (model: string) => void;
   setApiKey: (key: string) => void;
   setBaseUrl: (url: string) => void;
+  setGatewayTextModels: (
+    models: GatewayTextModelOption[],
+    activePreset: string | null,
+  ) => void;
   setTheme: (theme: ThemeMode) => void;
   toggleSettings: () => void;
   toggleSidebar: () => void;
@@ -382,9 +385,9 @@ export function getEffectiveModel(state: SettingsState): string {
   if (state.model === '__custom__') {
     if (state.customModel) return state.customModel;
     // Fallback: use current provider's first model
-    return AVAILABLE_MODELS[state.provider]?.[0]?.id || AVAILABLE_MODELS.anthropic[0].id;
+    return AVAILABLE_MODELS[state.provider]?.[0]?.id || DEFAULT_FALLBACK_MODEL;
   }
-  return state.model;
+  return state.model || DEFAULT_FALLBACK_MODEL;
 }
 
 /** Check if a model ID belongs to the current provider */
@@ -417,12 +420,15 @@ export type SettingsStore = SettingsState & SettingsActions;
 export const useSettingsStore = create<SettingsStore>()(
   persist(
     (set) => ({
-      provider: 'qiniu' as LLMProvider,
+      provider: 'custom' as LLMProvider,
       apiFormat: 'openai-compatible' as ApiFormat,
-      model: 'deepseek/deepseek-v3.2-251201',
-      customModel: '',
+      model: DEFAULT_FALLBACK_MODEL,
+      customModel: DEFAULT_FALLBACK_MODEL,
       apiKey: '',
-      baseUrl: 'https://api.qnaigc.com',
+      baseUrl: '',
+      gatewayTextModels: [],
+      activeTextModelPreset: null,
+      gatewayTextModelsHydrated: false,
       theme: 'system',
       showSettings: false,
       sidebarCollapsed: false,
@@ -489,6 +495,11 @@ export const useSettingsStore = create<SettingsStore>()(
       setCustomModel: (model) => set({ customModel: model }),
       setApiKey: (key) => set({ apiKey: key }),
       setBaseUrl: (url) => set({ baseUrl: url }),
+      setGatewayTextModels: (gatewayTextModels, activeTextModelPreset) => set({
+        gatewayTextModels,
+        activeTextModelPreset,
+        gatewayTextModelsHydrated: true,
+      }),
       setTheme: (theme) => set({ theme }),
       toggleSettings: () => set((s) => ({ showSettings: !s.showSettings })),
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
@@ -598,9 +609,17 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: 'ruyi-settings',
-      version: 8,
+      version: 9,
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
+        if (version < 9 && state.provider === 'anthropic') {
+          state.provider = 'custom';
+          state.apiFormat = 'openai-compatible';
+          state.model = DEFAULT_FALLBACK_MODEL;
+          state.customModel = DEFAULT_FALLBACK_MODEL;
+          state.apiKey = '';
+          state.baseUrl = '';
+        }
         if (version < 8 && state.guideInstallationId === undefined) {
           state.guideInstallationId = '';
         }
@@ -696,10 +715,12 @@ export const useSettingsStore = create<SettingsStore>()(
         // Runtime fix: reset provider unavailable in current edition
         const availableProviders = getAvailableProviders();
         if (!availableProviders.includes(state.provider)) {
-          state.provider = 'anthropic' as LLMProvider;
-          state.apiFormat = 'anthropic' as ApiFormat;
-          state.model = 'claude-sonnet-4-6';
-          state.baseUrl = PROVIDER_CONFIGS.anthropic.baseUrl;
+          state.provider = 'custom' as LLMProvider;
+          state.apiFormat = 'openai-compatible' as ApiFormat;
+          state.model = DEFAULT_FALLBACK_MODEL;
+          state.customModel = DEFAULT_FALLBACK_MODEL;
+          state.apiKey = '';
+          state.baseUrl = '';
         }
         const cfg = PROVIDER_CONFIGS[state.provider];
         // Runtime fix: stale baseUrl from provider-switch bug
@@ -712,7 +733,7 @@ export const useSettingsStore = create<SettingsStore>()(
         }
         // Runtime fix: stale model='__custom__' from provider-switch bug
         if (state.provider !== 'custom' && state.model === '__custom__') {
-          state.model = cfg?.models[0]?.id ?? 'claude-sonnet-4-6';
+          state.model = cfg?.models[0]?.id ?? DEFAULT_FALLBACK_MODEL;
         }
         // Runtime fix: validate persisted model ID still exists for this provider
         if (state.provider !== 'custom' && state.model !== '__custom__' && cfg?.models.length) {

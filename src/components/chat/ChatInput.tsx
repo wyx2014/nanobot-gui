@@ -8,7 +8,7 @@ import { uint8ArrayToBase64 } from '@/utils/base64';
 import { getBaseName, IMAGE_MIME_MAP, isLocalFilePath } from '@/utils/pathUtils';
 import { isImageFile } from '@/components/chat/FileAttachment';
 import { useChatStore, useActiveConversation } from '@/stores/chatStore';
-import { useSettingsStore, getEffectiveModel, AVAILABLE_MODELS } from '@/stores/settingsStore';
+import { DEFAULT_FALLBACK_MODEL, useSettingsStore, getEffectiveModel } from '@/stores/settingsStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { usePermissionStore } from '@/stores/permissionStore';
 import { useToastStore } from '@/stores/toastStore';
@@ -20,7 +20,13 @@ import type { ImageAttachment } from '@/types';
 import type { OutboundCliAppMention, OutboundMcpPresetMention, OutboundSkillScope } from '@/core/types';
 import type { CliAppInfo, ExpertTeamBinding, ExpertTeamSummary, McpPresetInfo, SlashCommand, WorkspaceScopePayload } from '@/core/types';
 import { fetchExpertTeams, fetchMcpPresets } from '@/core/api';
-import { getNanobotClient, getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/nanobotClient';
+import {
+  getNanobotClient,
+  getNanobotStatus,
+  getNanobotToken,
+  refreshNanobotAuth,
+  switchGatewayTextModelDefault,
+} from '@/core/nanobotClient';
 import {
   TranscriptionRequestError,
   VoiceStreamError,
@@ -67,6 +73,10 @@ interface ShortcutCategory {
   icon: any;
   labelKey: 'shortcutDataAnalysis' | 'shortcutOffice';
   options: ShortcutOption[];
+}
+
+function modelDisplayName(model: string): string {
+  return model.split('/').filter(Boolean).pop() ?? model;
 }
 
 const SHORTCUT_CATEGORIES: ShortcutCategory[] = [
@@ -410,8 +420,9 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   const draftKey = useMemo(() => draftStorageKey(activeConv?.id, variant), [activeConv?.id, variant]);
   const queueKey = useMemo(() => queueStorageKey(activeConv?.id, variant), [activeConv?.id, variant]);
   const currentModel = useSettingsStore((s) => getEffectiveModel(s));
-  const provider = useSettingsStore((s) => s.provider);
-  const setModel = useSettingsStore((s) => s.setModel);
+  const gatewayTextModels = useSettingsStore((s) => s.gatewayTextModels);
+  const activeTextModelPreset = useSettingsStore((s) => s.activeTextModelPreset);
+  const gatewayTextModelsHydrated = useSettingsStore((s) => s.gatewayTextModelsHydrated);
   const openSystemSettings = useSettingsStore((s) => s.openSystemSettings);
   const voiceInputAvailable = useSettingsStore((s) => s.voiceInputAvailable);
   const voiceMaxDurationSec = useSettingsStore((s) => s.voiceMaxDurationSec);
@@ -428,11 +439,35 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   // Chat-only derived state
   const isRunning = activeConv?.status === 'running';
   const isStreaming = isStreamingProp ?? (!isWelcome && isRunning);
-  const availableModels = AVAILABLE_MODELS[provider] ?? [];
-  const modelDisplay = availableModels.find((m) => m.id === currentModel)?.label
-    ?? (currentModel ? currentModel.split('/').pop()?.split('-').slice(0, 2).join(' ') : 'Claude');
+  const activeTextModel = gatewayTextModels.find((model) => (
+    model.presetName === activeTextModelPreset
+  ));
+  const activeTextModelId = activeTextModel?.model ?? currentModel ?? DEFAULT_FALLBACK_MODEL;
+  const modelDisplay = modelDisplayName(activeTextModelId);
   const [showModelPicker, setShowModelPicker] = useState(false);
+  const [switchingModelPreset, setSwitchingModelPreset] = useState<string | null>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
+
+  const selectTextModel = async (presetName: string) => {
+    if (switchingModelPreset || presetName === activeTextModelPreset) {
+      setShowModelPicker(false);
+      return;
+    }
+    setSwitchingModelPreset(presetName);
+    try {
+      await switchGatewayTextModelDefault(presetName);
+      setShowModelPicker(false);
+    } catch (error) {
+      addToast({
+        type: 'error',
+        title: isEn ? 'Model switch failed' : '模型切换失败',
+        message: error instanceof Error ? error.message : String(error),
+        duration: 5000,
+      });
+    } finally {
+      setSwitchingModelPreset(null);
+    }
+  };
 
   const handleShortcut = (type: string) => {
     setActiveCategory(type);
@@ -1946,6 +1981,50 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     );
   };
 
+  const renderModelPicker = () => (
+    <div className="relative" ref={modelPickerRef}>
+      <button
+        data-codex-model-picker
+        onClick={() => {
+          if (!gatewayTextModelsHydrated) return;
+          if (!gatewayTextModels.length) {
+            openSystemSettings('ai-services');
+            return;
+          }
+          setShowModelPicker(!showModelPicker);
+        }}
+        disabled={!gatewayTextModelsHydrated || switchingModelPreset !== null}
+        title={activeTextModelId}
+        className="btn-ghost flex items-center gap-1 px-2.5 py-1.5 text-[14px] text-[#3d3929] font-medium hover:text-[#29261b] hover:bg-[#eeeeea] rounded-lg transition-colors"
+      >
+        <span className="max-w-44 truncate">{modelDisplay}</span>
+        {switchingModelPreset
+          ? <Loader2 className="h-3 w-3 animate-spin" />
+          : <ChevronDown className={cn('h-3 w-3 transition-transform', showModelPicker && 'rotate-180')} />}
+      </button>
+      {showModelPicker && gatewayTextModels.length > 0 && (
+        <div data-codex-model-menu className="absolute bottom-full right-0 z-50 mb-1.5 max-h-72 w-72 overflow-y-auto rounded-lg border border-[#dedbd3] bg-white py-1 shadow-lg">
+          {gatewayTextModels.map((model) => (
+            <button
+              key={model.presetName}
+              onClick={() => void selectTextModel(model.presetName)}
+              disabled={switchingModelPreset !== null}
+              className={cn(
+                'w-full flex items-center justify-between px-3 py-1.5 text-[12px] transition-colors text-left',
+                model.presetName === activeTextModelPreset
+                  ? 'text-[#d97757] font-medium bg-[#d97757]/5'
+                  : 'text-[#29261b] hover:bg-[#f5f3ee]'
+              )}
+            >
+              <span className="min-w-0 truncate" title={model.model}>{modelDisplayName(model.model)}</span>
+              {model.presetName === activeTextModelPreset && <Check className="ml-2 h-3.5 w-3.5 shrink-0 text-[#d97757]" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
   const projectSelector = showProjectSelector ? (
     <div
       data-codex-project-selector
@@ -2216,6 +2295,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                 {voiceInputAvailable ? renderVoiceControl() : null}
                 {renderSelectedExpertTeam()}
                 <div className="flex-1" />
+                {renderModelPicker()}
 
                 <button
                   data-codex-submit
@@ -2259,38 +2339,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
 
                 <div className="flex items-center gap-2">
                   {/* Model picker dropdown */}
-                  <div className="relative" ref={modelPickerRef}>
-                    <button
-                      data-codex-model-picker
-                      onClick={() => setShowModelPicker(!showModelPicker)}
-                      className="btn-ghost flex items-center gap-1 px-2.5 py-1.5 text-[14px] text-[#3d3929] font-medium hover:text-[#29261b] hover:bg-[#eeeeea] rounded-lg transition-colors"
-                    >
-                      {modelDisplay}
-                      <ChevronDown className={cn('h-3 w-3 transition-transform', showModelPicker && 'rotate-180')} />
-                    </button>
-                    {showModelPicker && availableModels.length > 0 && (
-                      <div data-codex-model-menu className="absolute bottom-full right-0 mb-1.5 w-56 bg-white rounded-xl border border-[#dedbd3] shadow-lg py-1 z-50">
-                        {availableModels.map((m) => (
-                          <button
-                            key={m.id}
-                            onClick={() => {
-                              setModel(m.id);
-                              setShowModelPicker(false);
-                            }}
-                            className={cn(
-                              'w-full flex items-center justify-between px-3 py-1.5 text-[12px] transition-colors text-left',
-                              m.id === currentModel
-                                ? 'text-[#d97757] font-medium bg-[#d97757]/5'
-                                : 'text-[#29261b] hover:bg-[#f5f3ee]'
-                            )}
-                          >
-                            <span>{m.label}</span>
-                            {m.id === currentModel && <Check className="h-3.5 w-3.5 text-[#d97757]" />}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  {renderModelPicker()}
 
                   {/* Send / Stop Button */}
                   {isStreaming ? (

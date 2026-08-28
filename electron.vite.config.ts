@@ -1,6 +1,7 @@
 import { resolve } from 'path'
 import { defineConfig, externalizeDepsPlugin, loadEnv } from 'electron-vite'
 import react from '@vitejs/plugin-react'
+import { version } from './package.json'
 
 const BUILTIN_MCP_BUILD_CONSTANTS = {
   __TPCOWORK_BUILTIN_JUYUAN_MCP_TOKEN__: 'JUYUAN_MCP_TOKEN',
@@ -74,7 +75,7 @@ export default defineConfig(({ mode }) => {
       },
       plugins: [react()],
       define: {
-        __APP_VERSION__: JSON.stringify(process.env.npm_package_version || '0.0.0')
+        __APP_VERSION__: JSON.stringify(version)
       }
     },
   }

@@ -16,7 +16,6 @@ const PRESET_GROUP_KEYS = [
   { key: 'volcengine', labelKey: 'volcengine' as const },
   { key: 'bailian', labelKey: 'bailian' as const },
   { key: 'deepseek', labelKey: 'deepseek' as const },
-  { key: 'anthropic', labelKey: 'anthropic' as const },
   { key: 'openai', labelKey: 'openaiCompatible' as const },
   { key: 'qiniu', labelKey: 'qiniuCloud' as const },
   { key: 'local', labelKey: 'localModels' as const },

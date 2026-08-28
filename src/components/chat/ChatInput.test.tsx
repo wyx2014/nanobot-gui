@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   requestMicrophoneAccess: vi.fn(),
   openMicrophoneSettings: vi.fn(),
   openFolderDialog: vi.fn(),
+  switchGatewayTextModelDefault: vi.fn(),
 }));
 
 vi.mock('@/core/nanobotClient', async () => {
@@ -38,6 +39,7 @@ vi.mock('@/core/nanobotClient', async () => {
     }),
     getNanobotStatus: vi.fn().mockResolvedValue({ ready: true, port: 8900, tokenSecret: 'secret' }),
     getNanobotToken: vi.fn().mockReturnValue('token'),
+    switchGatewayTextModelDefault: mocks.switchGatewayTextModelDefault,
   };
 });
 
@@ -90,6 +92,24 @@ let root: Root | undefined;
 
 beforeEach(() => {
   useSettingsStore.setState({
+    provider: 'qiniu',
+    model: 'deepseek/deepseek-v3.2-251201',
+    gatewayTextModels: [
+      {
+        presetName: 'qiniu-deepseek',
+        provider: 'qiniu',
+        model: 'deepseek/deepseek-v3.2-251201',
+        label: 'DeepSeek V3.2',
+      },
+      {
+        presetName: 'qiniu-kimi',
+        provider: 'qiniu',
+        model: 'moonshotai/kimi-k2.5',
+        label: 'Kimi K2.5',
+      },
+    ],
+    activeTextModelPreset: 'qiniu-deepseek',
+    gatewayTextModelsHydrated: true,
     voiceInputAvailable: true,
     voiceMaxDurationSec: 120,
   });
@@ -123,6 +143,16 @@ beforeEach(() => {
     installed_count: 1,
   });
   mocks.setExpertTeam.mockImplementation(async (_chatId, team) => team);
+  mocks.switchGatewayTextModelDefault.mockImplementation(async (presetName: string) => {
+    const selected = useSettingsStore.getState().gatewayTextModels.find((model) => (
+      model.presetName === presetName
+    ));
+    if (!selected) throw new Error('unknown model preset');
+    useSettingsStore.setState({
+      activeTextModelPreset: selected.presetName,
+      model: selected.model,
+    });
+  });
   mocks.stopPcmVoiceRecorder.mockResolvedValue({
     dataUrl: 'data:audio/wav;base64,UklGRg==',
     durationMs: 1200,
@@ -259,6 +289,33 @@ describe('ChatInput welcome layout', () => {
     const projectSelector = view.querySelector<HTMLElement>('[data-codex-project-selector]');
     expect(projectSelector?.dataset.composerProjectSelectorPlacement).toBe('inside');
     expect(composer?.contains(projectSelector ?? null)).toBe(true);
+  });
+
+  it('shows the current model on the welcome composer and supports switching it', async () => {
+    useSettingsStore.setState({
+      provider: 'qiniu',
+      model: 'deepseek/deepseek-v3.2-251201',
+    });
+    const view = await renderChatInput('welcome');
+    const picker = view.querySelector<HTMLButtonElement>(
+      '[data-welcome-composer-toolbar] [data-codex-model-picker]',
+    );
+
+    expect(picker).not.toBeNull();
+    expect(picker?.textContent).toBe('deepseek-v3.2-251201');
+    expect(picker?.title).toBe('deepseek/deepseek-v3.2-251201');
+
+    act(() => picker?.click());
+    const kimi = [...view.querySelectorAll<HTMLButtonElement>('[data-codex-model-menu] button')]
+      .find((button) => button.textContent?.includes('kimi-k2.5'));
+    expect(kimi).toBeDefined();
+    expect(kimi?.textContent).toBe('kimi-k2.5');
+    expect(kimi?.querySelector('span')?.title).toBe('moonshotai/kimi-k2.5');
+
+    await act(async () => kimi?.click());
+    expect(mocks.switchGatewayTextModelDefault).toHaveBeenCalledWith('qiniu-kimi');
+    expect(useSettingsStore.getState().model).toBe('moonshotai/kimi-k2.5');
+    expect(view.querySelector('[data-codex-model-menu]')).toBeNull();
   });
 
   it('hides the project selector for scheduled-task conversations', async () => {

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useSettingsStore } from '@/stores/settingsStore';
 import HelpManual from './HelpManual';
 
-vi.mock('@/utils/version', () => ({ APP_VERSION: '0.5.9' }));
+vi.mock('@/utils/version', () => ({ APP_VERSION: '0.0.1' }));
 
 let container: HTMLDivElement;
 let root: Root;

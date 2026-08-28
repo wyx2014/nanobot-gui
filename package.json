@@ -1,7 +1,7 @@
 {
   "name": "tpcowork",
   "private": false,
-  "version": "0.5.9",
+  "version": "0.0.1",
   "description": "TPCowork - AI Desktop Office Assistant",
   "main": "./out/main/index.cjs",
   "type": "module",
@@ -22,11 +22,13 @@
     "sync:expert-team": "node scripts/sync-expert-team.mjs",
     "prepare-python": "node scripts/download-python.mjs",
     "prepare-python:win": "node scripts/download-python.mjs --target win32-x64",
+    "prepare-python:linux": "node scripts/download-python.mjs --target linux-x64",
     "package-python:win": "node scripts/package-python-runtime.mjs --target win32-x64",
+    "package-python:linux": "node scripts/package-python-runtime.mjs --target linux-x64",
     "build:win": "npm run validate:builtin-mcp && npm run prepare-python:win && npm run electron:build && electron-builder --win nsis --config",
     "build:win:portable": "npm run validate:builtin-mcp && npm run prepare-python:win && npm run electron:build && electron-builder --win portable --config",
     "build:mac": "npm run validate:builtin-mcp && npm run prepare-python && npm run electron:build && electron-builder --mac --config",
-    "build:linux": "npm run validate:builtin-mcp && npm run prepare-python && npm run electron:build && electron-builder --linux --config"
+    "build:linux": "npm run validate:builtin-mcp && npm run prepare-python:linux && npm run electron:build && electron-builder --linux AppImage --config"
   },
   "build": {
     "appId": "com.tparuyi.app",
@@ -83,6 +85,10 @@
       "icon": "TPCowork-3_512x512.png"
     },
     "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Utility",
       "icon": "TPCowork-3_512x512.png"
     },
     "nsis": {

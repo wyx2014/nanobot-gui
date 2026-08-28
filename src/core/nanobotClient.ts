@@ -427,9 +427,13 @@ export async function getNanobotSessionInfo(conversationId: string): Promise<{
 // ─── Session Synchronization ────────────────────────────────────────────────
 
 import type { ChatSummary, SettingsPayload, UIMessage, ToolProgressEvent } from './types';
-import type { Conversation, Message, MessageContent, MessageMediaAttachment, ToolCall } from '@/types';
+import type { Conversation, LLMProvider, Message, MessageContent, MessageMediaAttachment, ToolCall } from '@/types';
 import { useChatStore } from '@/stores/chatStore';
-import { useSettingsStore } from '@/stores/settingsStore';
+import {
+  getAvailableProviders,
+  useSettingsStore,
+  type GatewayTextModelOption,
+} from '@/stores/settingsStore';
 import {
   listProjects,
   listSessions,
@@ -437,6 +441,7 @@ import {
   fetchWebuiThread,
   fetchSessionRuntimeSnapshot,
   fetchSettings,
+  updateModelDefault,
   registerTokenProvider,
 } from './api';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -1055,7 +1060,8 @@ export function mapGatewayProviderNameForGui(
   if (providers.find((provider) => provider.name === providerName)?.custom) {
     return 'custom';
   }
-  return providerName === 'dashscope' ? 'bailian' : providerName;
+  const mapped = providerName === 'dashscope' ? 'bailian' : providerName;
+  return getAvailableProviders().includes(mapped as LLMProvider) ? mapped : 'custom';
 }
 
 export function isGatewayVoiceInputAvailable(payload: SettingsPayload): boolean {
@@ -1072,6 +1078,89 @@ export function isGatewayVoiceInputAvailable(payload: SettingsPayload): boolean 
   );
 }
 
+export function gatewayTextModelOptions(payload: SettingsPayload): GatewayTextModelOption[] {
+  const activePreset = payload.model_defaults.text ?? payload.agent.model_preset ?? 'default';
+  const providerLabels = new Map(
+    payload.providers.map((provider) => [provider.name, provider.label] as const),
+  );
+  const textPresets = payload.model_presets
+    .filter((preset) => preset.capabilities.includes('text'))
+    .sort((left, right) => {
+      const activeOrder = Number(right.name === activePreset) - Number(left.name === activePreset);
+      if (activeOrder !== 0) return activeOrder;
+      return Number(left.is_default) - Number(right.is_default);
+    });
+  const seenModels = new Set<string>();
+
+  return textPresets.flatMap((preset) => {
+    const key = `${preset.provider}\u0000${preset.model}`;
+    if (seenModels.has(key)) return [];
+    seenModels.add(key);
+    const providerLabel = providerLabels.get(preset.provider) ?? preset.provider;
+    return [{
+      presetName: preset.name,
+      provider: preset.provider,
+      model: preset.model,
+      label: preset.is_default
+        ? `${providerLabel} / ${preset.model}`
+        : preset.label?.trim() || `${providerLabel} / ${preset.model}`,
+    }];
+  });
+}
+
+export function applyGatewaySettingsPayloadToStore(payload: SettingsPayload): void {
+  const store = useSettingsStore.getState();
+  const guiProvider = mapGatewayProviderNameForGui(
+    payload.agent.provider,
+    payload.providers,
+  );
+
+  store.setProvider(guiProvider as Parameters<typeof store.setProvider>[0]);
+  store.setModel(payload.agent.model);
+  store.setGatewayTextModels(
+    gatewayTextModelOptions(payload),
+    payload.model_defaults.text ?? payload.agent.model_preset ?? 'default',
+  );
+
+  const providerObj = payload.providers.find((provider) => provider.name === payload.agent.provider);
+  if (providerObj) {
+    store.setApiKey(providerObj.configured ? '********' : '');
+    store.setBaseUrl(providerObj.api_base || providerObj.default_api_base || '');
+  }
+
+  store.setTemperature(payload.agent.temperature);
+  store.setEnableThinking(payload.agent.reasoning_effort === 'medium');
+  store.setUseBuiltinWebSearch(payload.web.enable);
+  store.setWebSearchProvider(payload.web_search.provider as Parameters<typeof store.setWebSearchProvider>[0]);
+  store.setWebSearchBaseUrl(payload.web_search.base_url || '');
+  store.setVoiceInputAvailable(isGatewayVoiceInputAvailable(payload));
+  store.setVoiceMaxDurationSec(payload.transcription.max_duration_sec);
+  store.setSandboxEnabled(payload.advanced.restrict_to_workspace);
+  store.setAllowPrivateNetworks(payload.advanced.webui_allow_local_service_access);
+}
+
+export async function switchGatewayTextModelDefault(presetName: string): Promise<void> {
+  const normalizedPreset = presetName.trim();
+  if (!normalizedPreset) throw new Error('Model configuration is missing.');
+
+  const status = await getNanobotStatus();
+  if (!status.ready) throw new Error('TP Cowork backend process is not ready yet.');
+  let token = getNanobotToken();
+  let baseUrl = `http://127.0.0.1:${status.port}`;
+  if (!token) {
+    const refreshed = await refreshNanobotAuth();
+    token = refreshed.token;
+    baseUrl = refreshed.baseUrl;
+  }
+
+  const payload = await updateModelDefault(
+    token,
+    { capability: 'text', name: normalizedPreset },
+    baseUrl,
+  );
+  applyGatewaySettingsPayloadToStore(payload);
+}
+
 export async function syncGatewaySettingsToStore(): Promise<void> {
   try {
     const status = await getNanobotStatus();
@@ -1080,40 +1169,7 @@ export async function syncGatewaySettingsToStore(): Promise<void> {
     const token = getNanobotToken();
     const baseUrl = `http://127.0.0.1:${status.port}`;
     const payload = await fetchSettings(token, baseUrl);
-    const store = useSettingsStore.getState();
-
-    // Dynamic OpenAI-compatible services are represented by "custom" in the
-    // renderer store. The gateway keeps the real provider id as its authority.
-    const guiProvider = mapGatewayProviderNameForGui(
-      payload.agent.provider,
-      payload.providers,
-    );
-
-    store.setProvider(guiProvider as unknown as Parameters<typeof store.setProvider>[0]);
-    store.setModel(payload.agent.model);
-
-    // Find provider API key & base url
-    const providerObj = payload.providers.find(p => p.name === payload.agent.provider);
-    if (providerObj) {
-      if (providerObj.configured) {
-        store.setApiKey('********');
-      } else {
-        store.setApiKey('');
-      }
-      store.setBaseUrl(providerObj.api_base || providerObj.default_api_base || '');
-    }
-
-    store.setTemperature(payload.agent.temperature);
-    store.setEnableThinking(payload.agent.reasoning_effort === 'medium');
-
-    store.setUseBuiltinWebSearch(payload.web.enable);
-    store.setWebSearchProvider(payload.web_search.provider as unknown as Parameters<typeof store.setWebSearchProvider>[0]);
-    store.setWebSearchBaseUrl(payload.web_search.base_url || '');
-    store.setVoiceInputAvailable(isGatewayVoiceInputAvailable(payload));
-    store.setVoiceMaxDurationSec(payload.transcription.max_duration_sec);
-
-    store.setSandboxEnabled(payload.advanced.restrict_to_workspace);
-    store.setAllowPrivateNetworks(payload.advanced.webui_allow_local_service_access);
+    applyGatewaySettingsPayloadToStore(payload);
   } catch (err) {
     console.error('[nanobotClient] syncGatewaySettingsToStore error:', err);
   }

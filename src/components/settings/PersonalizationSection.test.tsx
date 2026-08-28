@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PersonalizationSection } from "./SettingsView";
 
-vi.mock("@/utils/version", () => ({ APP_VERSION: "0.5.9" }));
+vi.mock("@/utils/version", () => ({ APP_VERSION: "0.0.1" }));
 
 const mocks = vi.hoisted(() => ({
   fetchPersonalization: vi.fn(),

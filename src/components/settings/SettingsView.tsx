@@ -17,6 +17,7 @@ import {
   Loader2,
   MessageSquare,
   Mic,
+  Plus,
   RefreshCw,
   RotateCcw,
   Save,
@@ -46,14 +47,15 @@ import {
 } from "@/core/api";
 import {
   bootstrapNanobotGateway,
+  applyGatewaySettingsPayloadToStore,
   getNanobotStatus,
   getNanobotToken,
   refreshNanobotAuth,
-  syncGatewaySettingsToStore,
 } from "@/core/nanobotClient";
 import type {
   SettingsPayload,
   ModelCapability,
+  ProviderModelInfo,
   WebuiDefaultAccessMode,
   PersonalizationPayload,
 } from "@/core/types";
@@ -72,6 +74,13 @@ import { Select } from "@/components/ui/select";
 import { Toggle } from "@/components/ui/toggle";
 import { Textarea } from "@/components/ui/textarea";
 import { shellBridge } from "@/lib/ipc-factory";
+import {
+  modelProfilesById,
+  modelServiceEntries,
+  selectableProviderModels,
+  type ModelProbeSummary,
+  type ModelServiceEntry,
+} from "./modelCapabilities";
 import { DEFAULT_KEYBOARD_SHORTCUTS, type FontSizeSetting, type ThemeMode, type ShortcutId } from "@/stores/settingsStore";
 
 type TabKey =
@@ -218,6 +227,30 @@ function StatusPill({ ok, children }: { ok: boolean; children: string }) {
   );
 }
 
+function ModelProbeResult({
+  summary,
+  isEnglish,
+}: {
+  summary: ModelProbeSummary | null;
+  isEnglish: boolean;
+}) {
+  if (!summary) return null;
+  const excluded = summary.total - summary.selectable;
+  return (
+    <div
+      data-model-probe-result
+      className="flex items-start gap-2 rounded-md bg-[#f1f5f1] px-3 py-2 text-xs leading-5 text-[#526456]"
+    >
+      <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
+      <span>
+        {isEnglish
+          ? `${summary.selectable} compatible models kept, ${excluded} non-chat models excluded; ${summary.providerClassified} classified from provider metadata.`
+          : `保留 ${summary.selectable} 个文字/语音模型，排除 ${excluded} 个图片、向量或其他模型；其中 ${summary.providerClassified} 个依据供应商字段分类。`}
+      </span>
+    </div>
+  );
+}
+
 function Field({
   label,
   hint,
@@ -228,7 +261,7 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <label className="grid gap-1.5">
+    <label className="grid content-start gap-1.5">
       <span className="text-sm font-medium text-[#403b2f] dark:text-[#ddd8cf]">{label}</span>
       {children}
       {hint ? <span className="text-xs leading-5 text-[#8b8578] dark:text-[#918d85]">{hint}</span> : null}
@@ -365,6 +398,7 @@ export function SettingsView({
 
   const applyPayload = useCallback((payload: SettingsPayload) => {
     setSettings(payload);
+    applyGatewaySettingsPayloadToStore(payload);
     const activeProvider = payload.agent.provider || payload.providers[0]?.name || "";
     const provider = payload.providers.find((item) => item.name === activeProvider) ?? payload.providers[0];
     if (provider) {
@@ -498,7 +532,6 @@ export function SettingsView({
     async (payload: SettingsPayload) => {
       applyPayload(payload);
       onModelNameChange?.(payload.agent.model);
-      await syncGatewaySettingsToStore();
     },
     [applyPayload, onModelNameChange],
   );
@@ -508,7 +541,7 @@ export function SettingsView({
     apiBase: string;
     apiKey: string;
     apiType: ProviderForm["apiType"];
-    models: string[];
+    models: ModelServiceEntry[];
   }) => {
     let completed = false;
     await withAction(
@@ -539,7 +572,8 @@ export function SettingsView({
             data.providerName.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
           shouldRollbackProvider =
             payload.provider_mutation?.created ?? !previousConfiguredProviders.has(providerKey);
-          for (const model of data.models) {
+          for (const modelEntry of data.models) {
+            const model = modelEntry.model;
             payload = await withGatewayAuth((authToken, base) =>
               createModelConfiguration(
                 authToken,
@@ -547,6 +581,8 @@ export function SettingsView({
                   label: `${data.providerName} / ${model}`,
                   provider: providerKey,
                   model,
+                  capabilities: modelEntry.capabilities,
+                  capabilitySource: modelEntry.capabilitySource,
                 },
                 base,
               ),
@@ -585,7 +621,7 @@ export function SettingsView({
     apiBase: string;
     apiKey: string;
     apiType: ProviderForm["apiType"];
-    models: string[];
+    models: ModelServiceEntry[];
   }) =>
     withAction(
       "provider-update",
@@ -595,7 +631,14 @@ export function SettingsView({
         const originalTextDefaultPreset = settings?.model_presets.find(
           (preset) => preset.name === originalTextDefault,
         );
-        const targetModels = Array.from(new Set(data.models.map((model) => model.trim()).filter(Boolean)));
+        const targetModels = Array.from(
+          new Map(
+            data.models
+              .filter((model) => model.model.trim())
+              .map((model) => [model.model.trim(), { ...model, model: model.model.trim() }]),
+          ).values(),
+        );
+        const targetModelNames = targetModels.map((model) => model.model);
         let payload = await withGatewayAuth((authToken, base) =>
           updateProviderSettings(
             authToken,
@@ -611,7 +654,7 @@ export function SettingsView({
         );
 
         for (const preset of existingPresets) {
-          if (!targetModels.includes(preset.model)) {
+          if (!targetModelNames.includes(preset.model)) {
             payload = await withGatewayAuth((authToken, base) =>
               deleteModelConfiguration(
                 authToken,
@@ -622,11 +665,16 @@ export function SettingsView({
           }
         }
 
-        for (const model of targetModels) {
+        for (const modelEntry of targetModels) {
+          const model = modelEntry.model;
           const existing = existingPresets.find((preset) => preset.model === model);
           if (existing) {
             const expectedLabel = `${data.providerName} / ${model}`;
-            if (existing.label !== expectedLabel) {
+            const capabilitiesChanged = modelEntry.capabilities !== undefined
+              && modelEntry.capabilities.join(",") !== existing.capabilities.join(",");
+            const sourceChanged = modelEntry.capabilitySource !== undefined
+              && modelEntry.capabilitySource !== existing.capability_source;
+            if (existing.label !== expectedLabel || capabilitiesChanged || sourceChanged) {
               payload = await withGatewayAuth((authToken, base) =>
                 updateModelConfiguration(
                   authToken,
@@ -635,6 +683,8 @@ export function SettingsView({
                     label: expectedLabel,
                     provider: data.provider,
                     model,
+                    capabilities: modelEntry.capabilities,
+                    capabilitySource: modelEntry.capabilitySource,
                   },
                   base,
                 ),
@@ -648,6 +698,8 @@ export function SettingsView({
                   label: `${data.providerName} / ${model}`,
                   provider: data.provider,
                   model,
+                  capabilities: modelEntry.capabilities,
+                  capabilitySource: modelEntry.capabilitySource,
                 },
                 base,
               ),
@@ -660,7 +712,10 @@ export function SettingsView({
           : false;
         const replacementDefault = originalTextDefaultPreset?.provider === data.provider
           ? payload.model_presets.find(
-              (preset) => preset.provider === data.provider && targetModels.includes(preset.model),
+              (preset) =>
+                preset.provider === data.provider
+                && targetModelNames.includes(preset.model)
+                && preset.capabilities.includes("text"),
             )?.name
           : undefined;
         const nextTextDefault = originalDefaultStillExists
@@ -707,7 +762,7 @@ export function SettingsView({
     apiKey?: string;
     apiType: ProviderForm["apiType"];
   }) => {
-    let models: string[] = [];
+    let models: ProviderModelInfo[] = [];
     await withAction(
       "provider-probe",
       async () => {
@@ -726,7 +781,7 @@ export function SettingsView({
         if (payload.status !== "available") {
           throw new Error(payload.message || "模型列表获取失败");
         }
-        models = payload.models.map((model) => model.id).filter(Boolean);
+        models = payload.models.filter((model) => Boolean(model.id));
         if (!models.length) {
           throw new Error("模型服务没有返回可用模型");
         }
@@ -1319,7 +1374,7 @@ function ModelManagerSection({
     apiBase: string;
     apiKey: string;
     apiType: ProviderForm["apiType"];
-    models: string[];
+    models: ModelServiceEntry[];
   }) => Promise<boolean>;
   onUpdateModelService: (data: {
     provider: string;
@@ -1327,7 +1382,7 @@ function ModelManagerSection({
     apiBase: string;
     apiKey: string;
     apiType: ProviderForm["apiType"];
-    models: string[];
+    models: ModelServiceEntry[];
   }) => Promise<void>;
   onDeleteModelService: (provider: string) => Promise<void>;
   onProbeModelService: (data: {
@@ -1335,19 +1390,20 @@ function ModelManagerSection({
     apiBase: string;
     apiKey?: string;
     apiType: ProviderForm["apiType"];
-  }) => Promise<string[]>;
+  }) => Promise<ProviderModelInfo[]>;
   onSelectDefault: (capability: ModelCapability, presetName: string) => void;
   initialCapability: ModelCapability;
   isEnglish: boolean;
 }) {
   const copy = isEnglish ? {
     use: "Use", connect: "Connect", add: "Add Model Service", back: "Back to List",
-    current: "Automatically selected", setDefault: "Set as Default", addToCategory: "Add to This Category",
+    current: "Current default", setDefault: "Set as Default", addToCategory: "Add to This Category",
+    defaults: "Default models", servicesSummary: "{services} services · {models} models",
     empty: "No model configuration is available for this purpose. Add a model service from Connect first.",
     addCustom: "Add Custom Model Service", editCustom: "Configure Model Service", customHint: "Connect another model API provider using the OpenAI-compatible protocol.",
     providerName: "Provider Name", protocol: "Connection Protocol", protocolHint: "OpenAI-compatible custom services are currently supported.",
     apiAddress: "API Base URL", apiHint: "Enter base_url, for example https://api.example.com/v1.", key: "API Key", keyPlaceholder: "Enter API key (saved globally)",
-    models: "Models", modelsHint: "Separate models with commas or line breaks.", probe: "Test and Fetch Models", saveConnection: "Save Connection", save: "Save Configuration", cancel: "Cancel", leaveBlank: "Leave blank to keep unchanged",
+    models: "Models", modelsHint: "Provider-declared capabilities are preserved; image, embedding, rerank, and other incompatible models are excluded.", probe: "Test and Fetch Models", saveConnection: "Save Connection", save: "Save Configuration", cancel: "Cancel", leaveBlank: "Leave blank to keep unchanged",
     customServices: "Connected Model Services", customServicesHint: "Manage connected model APIs. Fetched models are classified automatically by capability.", none: "No Model Services Connected", noneHint: "Add a provider such as OpenAI or DeepSeek to create and manage its model connections.", configured: "Configured", pending: "Pending", apiType: "API type:", notConfigured: "Not set", channels: "Model channels", configure: "Configure", delete: "Delete", deleteTitle: "Delete model service?", deleteConfirm: "Delete Service",
   } : null;
   const [subTab, setSubTab] = useState<"use" | "access">("use");
@@ -1367,6 +1423,10 @@ function ModelManagerSection({
     apiType: "auto" as ProviderForm["apiType"],
     models: "",
   });
+  const [addModelProfiles, setAddModelProfiles] = useState<Record<string, ProviderModelInfo>>({});
+  const [editModelProfiles, setEditModelProfiles] = useState<Record<string, ProviderModelInfo>>({});
+  const [addProbeSummary, setAddProbeSummary] = useState<ModelProbeSummary | null>(null);
+  const [editProbeSummary, setEditProbeSummary] = useState<ModelProbeSummary | null>(null);
   const [pendingDeleteProvider, setPendingDeleteProvider] = useState<{
     name: string;
     label: string;
@@ -1389,6 +1449,18 @@ function ModelManagerSection({
       { value: "responses", label: "Responses API" },
     ]
     : apiTypeOptions;
+  const modelManagerTabs = [
+    {
+      key: "use" as const,
+      label: copy?.use ?? "使用",
+      icon: MessageSquare,
+    },
+    {
+      key: "access" as const,
+      label: copy?.connect ?? "接入",
+      icon: Link,
+    },
+  ];
 
   const connectedProviders = useMemo(
     () => settings.providers.filter(
@@ -1435,6 +1507,12 @@ function ModelManagerSection({
         : [],
     [selectedProviderInfo, settings.model_presets],
   );
+  const connectedModelCount = useMemo(
+    () => uniqueModelPresets(settings.model_presets.filter(
+      (preset) => !preset.is_default && connectedProviders.some((provider) => provider.name === preset.provider),
+    )).length,
+    [connectedProviders, settings.model_presets],
+  );
 
   useEffect(() => {
     if (!selectedProviderInfo) return;
@@ -1445,6 +1523,12 @@ function ModelManagerSection({
       apiType: selectedProviderInfo.api_type ?? "auto",
       models: providerPresets.map((preset) => preset.model).join("\n"),
     });
+    setEditModelProfiles(modelProfilesById(providerPresets.map((preset) => ({
+      id: preset.model,
+      capabilities: preset.capabilities,
+      capability_source: preset.capability_source,
+    }))));
+    setEditProbeSummary(null);
   }, [selectedProviderInfo, providerPresets]);
 
   useEffect(() => {
@@ -1455,7 +1539,7 @@ function ModelManagerSection({
   }, [subTab, setSelectedProvider]);
 
   const submitAddProvider = () => {
-    const models = addForm.models.split(/[，,\n]/).map((item) => item.trim()).filter(Boolean);
+    const models = modelServiceEntries(addForm.models, addModelProfiles);
     if (!addForm.providerName.trim() || !addForm.apiBase.trim() || models.length === 0) return;
     void onCreateModelService({
       providerName: addForm.providerName.trim(),
@@ -1468,6 +1552,8 @@ function ModelManagerSection({
       setAddOpen(false);
       setSelectedProvider("");
       setAddForm({ providerName: "", apiBase: "", apiKey: "", apiType: "auto", models: "" });
+      setAddModelProfiles({});
+      setAddProbeSummary(null);
     });
   };
 
@@ -1479,15 +1565,22 @@ function ModelManagerSection({
       apiKey: addForm.apiKey,
       apiType: addForm.apiType,
     }).then((models) => {
-      if (models.length) {
-        setAddForm((form) => ({ ...form, models: models.join(", ") }));
+      const selectable = selectableProviderModels(models);
+      setAddModelProfiles(modelProfilesById(models));
+      setAddProbeSummary({
+        total: models.length,
+        selectable: selectable.length,
+        providerClassified: models.filter((model) => model.capability_source === "provider").length,
+      });
+      if (selectable.length) {
+        setAddForm((form) => ({ ...form, models: selectable.map((model) => model.id).join("\n") }));
       }
     });
   };
 
   const submitEditProvider = () => {
     if (!selectedProviderInfo) return;
-    const models = editForm.models.split(/[，,\n]/).map((item) => item.trim()).filter(Boolean);
+    const models = modelServiceEntries(editForm.models, editModelProfiles);
     if (!editForm.providerName.trim() || !editForm.apiBase.trim() || models.length === 0) return;
     void onUpdateModelService({
       provider: selectedProviderInfo.name,
@@ -1507,8 +1600,15 @@ function ModelManagerSection({
       apiKey: editForm.apiKey.trim() || undefined,
       apiType: editForm.apiType,
     }).then((models) => {
-      if (models.length) {
-        setEditForm((form) => ({ ...form, models: models.join("\n") }));
+      const selectable = selectableProviderModels(models);
+      setEditModelProfiles(modelProfilesById(models));
+      setEditProbeSummary({
+        total: models.length,
+        selectable: selectable.length,
+        providerClassified: models.filter((model) => model.capability_source === "provider").length,
+      });
+      if (selectable.length) {
+        setEditForm((form) => ({ ...form, models: selectable.map((model) => model.id).join("\n") }));
       }
     });
   };
@@ -1525,229 +1625,286 @@ function ModelManagerSection({
     void onDeleteModelService(providerName);
   };
 
+  const activeCapability = localizedCapabilities.find((capability) => capability.value === selectedCapability) ?? localizedCapabilities[0];
+
   return (
-    <div data-model-manager className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <div data-model-segmented className="inline-flex rounded-lg bg-[#f2f2f3] p-1">
-          {[
-            ["use", copy?.use ?? "使用"],
-            ["access", copy?.connect ?? "接入"],
-          ].map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setSubTab(key as "use" | "access")}
-              data-model-segment
-              data-active={subTab === key ? "true" : "false"}
-              className={cn(
-                "rounded-md px-4 py-1.5 text-sm font-medium transition-colors",
-                subTab === key ? "bg-white text-[#202020] shadow-sm" : "text-[#6f6f73] hover:text-[#202020]",
-              )}
-            >
-              {label}
-            </button>
-          ))}
+    <div data-model-manager className="space-y-5">
+      <div data-model-page-tabs className="flex min-h-11 items-end justify-between gap-4 border-b border-[#e9e8e5]">
+        <div role="tablist" aria-label={isEnglish ? "Model configuration" : "模型配置"} className="flex items-end gap-6">
+          {modelManagerTabs.map((tab) => {
+            const Icon = tab.icon;
+            const active = subTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setSubTab(tab.key)}
+                data-model-page-tab
+                data-active={active ? "true" : "false"}
+                className={cn(
+                  "relative flex items-center gap-2 px-0.5 pb-3 text-sm font-medium transition-colors after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full after:bg-transparent",
+                  active
+                    ? "text-[#202020] after:bg-[#d97757]"
+                    : "text-[#78777c] hover:text-[#202020]",
+                )}
+              >
+                <Icon className="h-4 w-4" strokeWidth={1.8} />
+                {tab.label}
+              </button>
+            );
+          })}
         </div>
-        {subTab === "access" ? (
-          !addOpen && !selectedProviderInfo ? (
-            <Button data-model-primary-action className="bg-[#202020] text-white hover:bg-[#333]" onClick={() => setAddOpen(true)}>
-              {copy?.add ?? "添加模型服务"}
-            </Button>
-          ) : (
-            <Button data-model-secondary-action variant="outline" className="border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]" onClick={() => { setAddOpen(false); setSelectedProvider(""); }}>
-              {copy?.back ?? "返回列表"}
-            </Button>
-          )
+        {subTab === "access" && !addOpen && !selectedProviderInfo ? (
+          <Button
+            data-model-primary-action
+            size="sm"
+            className="mb-2 bg-[#202020] text-white hover:bg-[#333]"
+            onClick={() => setAddOpen(true)}
+          >
+            <Plus className="h-4 w-4" />
+            {copy?.add ?? "添加模型服务"}
+          </Button>
         ) : null}
       </div>
 
       {subTab === "use" ? (
-        <div className="space-y-3">
-          {/* Compact capability switch between conversation and speech models. */}
-          <div data-model-segmented className="inline-flex rounded-lg bg-[#f2f2f3] p-1">
-            {localizedCapabilities.map((capability) => (
-              <button
-                key={capability.value}
-                type="button"
-                onClick={() => setSelectedCapability(capability.value)}
-                data-model-segment
-                data-active={selectedCapability === capability.value ? "true" : "false"}
-                className={cn(
-                  "rounded-md px-4 py-1.5 text-sm font-medium transition-colors",
-                  selectedCapability === capability.value
-                    ? "bg-white text-[#202020] shadow-sm"
-                    : "text-[#6f6f73] hover:text-[#202020]",
-                )}
-              >
-                {capability.label}
-              </button>
-            ))}
+        <section className="space-y-4" aria-labelledby="model-defaults-heading">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <h3 id="model-defaults-heading" data-model-heading className="text-[15px] font-semibold text-[#202020]">
+                {copy?.defaults ?? "默认模型"}
+              </h3>
+              <p data-model-secondary className="mt-1 text-[13px] leading-5 text-[#77777d]">
+                {activeCapability.description}
+              </p>
+            </div>
+            <div
+              data-model-capability-picker
+              role="tablist"
+              aria-label={isEnglish ? "Model purpose" : "模型用途"}
+              className="grid w-full shrink-0 grid-cols-2 gap-1 rounded-lg bg-[#f1f1f2] p-1 sm:w-auto"
+            >
+              {localizedCapabilities.map((capability) => {
+                const Icon = capability.value === "speech_to_text" ? Mic : MessageSquare;
+                const active = selectedCapability === capability.value;
+                return (
+                  <button
+                    key={capability.value}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setSelectedCapability(capability.value)}
+                    data-model-capability-option
+                    data-active={active ? "true" : "false"}
+                    className={cn(
+                      "flex min-h-8 items-center justify-center gap-2 rounded-md px-3 text-xs font-medium transition-colors",
+                      active
+                        ? "bg-white text-[#202020] shadow-sm"
+                        : "text-[#737278] hover:bg-white/60 hover:text-[#202020]",
+                    )}
+                  >
+                    <Icon className="h-3.5 w-3.5" strokeWidth={1.8} />
+                    {capability.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
+
           {visiblePresets.length ? (
-            <div className="grid gap-3 md:grid-cols-2">
+            <div role="radiogroup" aria-label={activeCapability.label} className="grid gap-3 md:grid-cols-2">
               {visiblePresets.map((preset) => {
                 const provider = settings.providers.find((item) => item.name === preset.provider);
                 const active = settings.model_defaults[selectedCapability] === preset.name;
-                const supportsCapability = preset.capabilities.includes(selectedCapability);
+                const isSavingDefault = saving[`model-default:${selectedCapability}`];
                 return (
-                  <div
+                  <button
                     key={preset.name}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    aria-label={`${preset.label}, ${active ? (copy?.current ?? "当前默认") : (copy?.setDefault ?? "设为默认")}`}
+                    onClick={() => {
+                      if (!active) onSelectDefault(selectedCapability, preset.name);
+                    }}
+                    disabled={isSavingDefault}
                     data-model-preset-card
+                    data-model-default-action
                     data-active={active ? "true" : "false"}
                     className={cn(
-                      "rounded-lg border bg-white p-4 text-left transition-colors hover:border-[#cfcfd2]",
-                      active ? "border-[#202020] shadow-sm" : "border-[#e6e6e8]",
+                      "group min-h-[132px] rounded-lg border p-4 text-left transition-all",
+                      active
+                        ? "border-[#d97757] bg-[#fff9f6] shadow-[0_1px_2px_rgba(65,52,44,0.08)]"
+                        : "border-[#e5e4e1] bg-white hover:border-[#c9c6c0] hover:bg-[#fcfbfa]",
+                      isSavingDefault && "cursor-wait",
                     )}
                   >
-                    {supportsCapability && selectedCapability !== "text_to_speech" ? (
-                      <button
-                        type="button"
-                        onClick={() => onSelectDefault(selectedCapability, preset.name)}
-                        disabled={saving[`model-default:${selectedCapability}`]}
-                        data-model-default-action
-                        data-active={active ? "true" : "false"}
+                    <span className="flex items-start justify-between gap-3">
+                      <span className="flex min-w-0 items-start gap-3">
+                        <span
+                          data-model-icon
+                          className={cn(
+                            "grid h-9 w-9 shrink-0 place-items-center rounded-md",
+                            active ? "bg-[#f8e7df] text-[#b65f41]" : "bg-[#f1f1f0] text-[#6f6d68]",
+                          )}
+                        >
+                          <Cpu className="h-4 w-4" strokeWidth={1.8} />
+                        </span>
+                        <span className="min-w-0">
+                          <span data-model-title className="block truncate text-sm font-semibold text-[#202020]">{preset.label}</span>
+                          <span data-model-secondary className="mt-1 block truncate text-xs text-[#77777d]">{provider?.label || preset.provider}</span>
+                        </span>
+                      </span>
+                      <span
+                        data-model-selection
                         className={cn(
-                          "mb-2 flex w-full items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors",
+                          "grid h-5 w-5 shrink-0 place-items-center rounded-full border transition-colors",
                           active
-                            ? "border-[#202020] bg-[#202020] text-white hover:bg-[#333]"
-                            : "border-[#e6e6e8] bg-[#fafafa] text-[#202020] hover:border-[#cfcfd2] hover:bg-[#f5f5f5]",
-                          saving[`model-default:${selectedCapability}`] && "cursor-wait opacity-60",
+                            ? "border-[#d97757] bg-[#d97757] text-white"
+                            : "border-[#d5d3ce] bg-white text-transparent group-hover:border-[#aaa69e]",
                         )}
                       >
-                        {saving[`model-default:${selectedCapability}`] ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : active ? (
-                          <Check className="h-3.5 w-3.5" />
-                        ) : null}
-                        <span>{active ? (copy?.current ?? "当前默认") : (copy?.setDefault ?? "设为默认")}</span>
-                      </button>
-                    ) : null}
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div data-model-title className="truncate text-sm font-semibold text-[#202020]">{preset.label}</div>
-                        <div data-model-secondary className="mt-1 truncate text-xs text-[#6f6f73]">{provider?.label || preset.provider}</div>
-                      </div>
-                    </div>
-                    <div data-model-id className="mt-3 truncate text-[13px] text-[#444]">{preset.model}</div>
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      {preset.capabilities.map((capability) => (
-                        <span data-model-capability key={capability} className="rounded-full bg-[#f3f3f4] px-2 py-0.5 text-[10px] text-[#666]">
-                          {localizedCapabilities.find((item) => item.value === capability)?.label || capability}
+                        {isSavingDefault ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" strokeWidth={2.5} />}
+                      </span>
+                    </span>
+                    <span className="mt-4 flex items-end justify-between gap-3 border-t border-[#eeece9] pt-3">
+                      <span data-model-id className="min-w-0 truncate font-mono text-[11px] text-[#5d5b57]">{preset.model}</span>
+                      {active ? (
+                        <span data-model-current-label className="shrink-0 text-[11px] font-medium text-[#b65f41]">
+                          {copy?.current ?? "当前默认"}
                         </span>
-                      ))}
-                    </div>
-                  </div>
+                      ) : (
+                        <span data-model-secondary className="shrink-0 text-[11px] text-[#8b8985] opacity-0 transition-opacity group-hover:opacity-100">
+                          {copy?.setDefault ?? "设为默认"}
+                        </span>
+                      )}
+                    </span>
+                  </button>
                 );
               })}
             </div>
           ) : (
-            <div data-model-empty className="rounded-lg border border-dashed border-[#dedede] bg-[#fafafa] p-8 text-center text-sm text-[#6f6f73]">
-              {copy?.empty ?? "当前没有可分类的模型配置，请先在“接入”中添加模型服务。"}
+            <div data-model-empty className="rounded-lg border border-dashed border-[#dcdad5] bg-[#faf9f7] px-6 py-10 text-center">
+              <Cpu className="mx-auto h-5 w-5 text-[#9a9790]" strokeWidth={1.7} />
+              <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-[#6f6f73]">
+                {copy?.empty ?? "当前没有可分类的模型配置，请先在“接入”中添加模型服务。"}
+              </p>
+              <Button data-model-secondary-action variant="outline" size="sm" className="mt-4 border-[#dfddd8] bg-white" onClick={() => setSubTab("access")}>
+                <Link className="h-3.5 w-3.5" />
+                {copy?.connect ?? "接入"}
+              </Button>
             </div>
           )}
-        </div>
+        </section>
       ) : addOpen ? (
-        <div className="space-y-6">
-          <div className="flex items-center gap-3">
+        <section className="space-y-4" aria-labelledby="add-model-service-heading">
+          <div className="flex items-start gap-3">
             <button
               type="button"
               onClick={() => setAddOpen(false)}
               data-model-back-button
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#e6e6e8] text-[#6f6f73] hover:bg-[#f5f5f7] hover:text-[#202020] transition-colors"
+              className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[#e1dfdb] text-[#6f6f73] transition-colors hover:bg-[#f5f4f2] hover:text-[#202020]"
+              aria-label={copy?.back ?? "返回列表"}
+              title={copy?.back ?? "返回列表"}
             >
               <ArrowLeft className="h-4 w-4" />
             </button>
             <div>
-              <h3 data-model-heading className="text-lg font-semibold text-[#202020]">{copy?.addCustom ?? "添加自定义模型服务"}</h3>
-              <p data-model-secondary className="text-xs text-[#6f6f73]">{copy?.customHint ?? "通过 OpenAI-compatible 协议接入其他大模型 API 提供商。"}</p>
+              <h3 id="add-model-service-heading" data-model-heading className="text-[15px] font-semibold text-[#202020]">{copy?.addCustom ?? "添加自定义模型服务"}</h3>
+              <p data-model-secondary className="mt-1 text-[13px] leading-5 text-[#77777d]">{copy?.customHint ?? "通过 OpenAI-compatible 协议接入其他大模型 API 提供商。"}</p>
             </div>
           </div>
 
-          <div data-model-form-card className="rounded-xl border border-[#e6e6e8] bg-white p-6 space-y-4">
-            <Field label={copy?.providerName ?? "自定义供应商名称"}>
-              <Input value={addForm.providerName} onChange={(event) => setAddForm({ ...addForm, providerName: event.target.value })} />
-            </Field>
-            <Field label={copy?.protocol ?? "接入协议"} hint={copy?.protocolHint ?? "当前支持 OpenAI-compatible 自定义服务。"}>
-              <Select value={addForm.apiType} onChange={(value) => setAddForm({ ...addForm, apiType: value as ProviderForm["apiType"] })} options={localizedApiTypeOptions} />
-            </Field>
+          <div data-model-form-card className="space-y-5 rounded-lg border border-[#e5e3df] bg-[#fcfbfa] p-5">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label={copy?.providerName ?? "自定义供应商名称"}>
+                <Input value={addForm.providerName} onChange={(event) => setAddForm({ ...addForm, providerName: event.target.value })} />
+              </Field>
+              <Field label={copy?.protocol ?? "接入协议"} hint={copy?.protocolHint ?? "当前支持 OpenAI-compatible 自定义服务。"}>
+                <Select value={addForm.apiType} onChange={(value) => setAddForm({ ...addForm, apiType: value as ProviderForm["apiType"] })} options={localizedApiTypeOptions} />
+              </Field>
+            </div>
             <Field label={copy?.apiAddress ?? "API 地址"} hint={copy?.apiHint ?? "填写 base_url，例如 https://api.example.com/v1。"}>
               <Input placeholder="base_url (https://...)" value={addForm.apiBase} onChange={(event) => setAddForm({ ...addForm, apiBase: event.target.value })} />
             </Field>
             <Field label={copy?.key ?? "密钥"}>
               <Input type="password" placeholder={copy?.keyPlaceholder ?? "输入 API Key（全局保存）"} value={addForm.apiKey} onChange={(event) => setAddForm({ ...addForm, apiKey: event.target.value })} />
             </Field>
-            <Field label={copy?.models ?? "模型列表"} hint={copy?.modelsHint ?? "逗号或换行分隔。保存后会为每个模型创建可选择的模型通道。"}>
-              <Textarea placeholder="gpt-4o, deepseek-chat" value={addForm.models} onChange={(event) => setAddForm({ ...addForm, models: event.target.value })} className="min-h-[80px]" />
+            <Field label={copy?.models ?? "模型列表"} hint={copy?.modelsHint ?? "优先采用供应商声明的能力字段；图片、向量、重排等不兼容模型不会创建为文字模型。"}>
+              <Textarea placeholder="gpt-4o, deepseek-chat" value={addForm.models} onChange={(event) => setAddForm({ ...addForm, models: event.target.value })} className="min-h-[92px] resize-y" />
             </Field>
-            <div className="flex items-center gap-3 pt-2">
-              <Button data-model-secondary-action variant="outline" className="border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]" onClick={probeAddProviderModels} disabled={saving["provider-probe"] || !addForm.apiBase.trim()}>
-                {saving["provider-probe"] ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            <ModelProbeResult summary={addProbeSummary} isEnglish={isEnglish} />
+            <div data-model-form-actions className="flex flex-wrap items-center gap-2 border-t border-[#e7e5e1] pt-4">
+              <Button data-model-secondary-action variant="outline" size="sm" className="border-[#dfddd8] bg-white text-[#30302e] hover:bg-[#f5f4f2]" onClick={probeAddProviderModels} disabled={saving["provider-probe"] || !addForm.apiBase.trim()}>
+                {saving["provider-probe"] ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                 {copy?.probe ?? "测试并获取模型"}
               </Button>
-              <Button data-model-primary-action className="bg-[#202020] text-white hover:bg-[#333]" onClick={submitAddProvider} disabled={saving["provider-create"]}>
-                {saving["provider-create"] ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                {copy?.saveConnection ?? "保存接入"}
-              </Button>
-              <Button data-model-secondary-action variant="outline" className="border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]" onClick={() => setAddOpen(false)}>
-                {copy?.cancel ?? "取消"}
-              </Button>
+              <div className="ml-auto flex items-center gap-2">
+                <Button data-model-secondary-action variant="ghost" size="sm" className="text-[#66645f] hover:bg-[#efede9]" onClick={() => setAddOpen(false)}>
+                  {copy?.cancel ?? "取消"}
+                </Button>
+                <Button data-model-primary-action size="sm" className="bg-[#202020] text-white hover:bg-[#333]" onClick={submitAddProvider} disabled={saving["provider-create"]}>
+                  {saving["provider-create"] ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  {copy?.saveConnection ?? "保存接入"}
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
+        </section>
       ) : selectedProviderInfo ? (
-        <div className="space-y-6">
-          <div className="flex items-center gap-3">
+        <section className="space-y-4" aria-labelledby="edit-model-service-heading">
+          <div className="flex items-start gap-3">
             <button
               type="button"
               onClick={() => setSelectedProvider("")}
               data-model-back-button
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#e6e6e8] text-[#6f6f73] hover:bg-[#f5f5f7] hover:text-[#202020] transition-colors"
+              className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[#e1dfdb] text-[#6f6f73] transition-colors hover:bg-[#f5f4f2] hover:text-[#202020]"
+              aria-label={copy?.back ?? "返回列表"}
+              title={copy?.back ?? "返回列表"}
             >
               <ArrowLeft className="h-4 w-4" />
             </button>
-            <div>
-              <h3 data-model-heading className="text-lg font-semibold text-[#202020]">{copy?.editCustom ?? "配置模型服务"}</h3>
-              <p data-model-secondary className="text-xs text-[#6f6f73]">{isEnglish ? "Update provider details, API base URL, credentials, and models." : "修改供应商信息、API 地址、密钥和模型列表。"}</p>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 id="edit-model-service-heading" data-model-heading className="truncate text-[15px] font-semibold text-[#202020]">{copy?.editCustom ?? "配置模型服务"}</h3>
+                {selectedProviderIsProtected ? (
+                  <span data-model-builtin-badge className="inline-flex shrink-0 rounded-full bg-[#f1eee8] px-2 py-0.5 text-[11px] font-medium text-[#6f6758]">
+                    {isEnglish ? "Built-in" : "系统内置"}
+                  </span>
+                ) : null}
+              </div>
+              <p data-model-secondary className="mt-1 text-[13px] leading-5 text-[#77777d]">{isEnglish ? "Update provider details, API base URL, credentials, and models." : "修改供应商信息、API 地址、密钥和模型列表。"}</p>
             </div>
           </div>
 
-          <div data-model-form-card className="rounded-xl border border-[#e6e6e8] bg-white p-6 space-y-4">
-            <Field label={copy?.providerName ?? "自定义供应商名称"}>
-              <Input value={editForm.providerName} onChange={(event) => setEditForm({ ...editForm, providerName: event.target.value })} />
-            </Field>
-            <Field label={copy?.protocol ?? "接入协议"} hint={copy?.protocolHint ?? "当前支持 OpenAI-compatible 自定义服务。"}>
-              <Select value={editForm.apiType} onChange={(value) => setEditForm({ ...editForm, apiType: value as ProviderForm["apiType"] })} options={localizedApiTypeOptions} />
-            </Field>
+          <div data-model-form-card className="space-y-5 rounded-lg border border-[#e5e3df] bg-[#fcfbfa] p-5">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label={copy?.providerName ?? "自定义供应商名称"}>
+                <Input value={editForm.providerName} onChange={(event) => setEditForm({ ...editForm, providerName: event.target.value })} />
+              </Field>
+              <Field label={copy?.protocol ?? "接入协议"} hint={copy?.protocolHint ?? "当前支持 OpenAI-compatible 自定义服务。"}>
+                <Select value={editForm.apiType} onChange={(value) => setEditForm({ ...editForm, apiType: value as ProviderForm["apiType"] })} options={localizedApiTypeOptions} />
+              </Field>
+            </div>
             <Field label={copy?.apiAddress ?? "API 地址"} hint={copy?.apiHint ?? "填写 base_url，例如 https://api.example.com/v1。"}>
               <Input placeholder="base_url (https://...)" value={editForm.apiBase} onChange={(event) => setEditForm({ ...editForm, apiBase: event.target.value })} />
             </Field>
             <Field label={copy?.key ?? "密钥"} hint={selectedProviderInfo.api_key_hint ? `${isEnglish ? "Current" : "当前"}：${selectedProviderInfo.api_key_hint}` : (copy?.leaveBlank ?? "留空表示不修改已有密钥。")}>
               <Input type="password" placeholder={copy?.keyPlaceholder ?? "输入 API Key（全局保存）"} value={editForm.apiKey} onChange={(event) => setEditForm({ ...editForm, apiKey: event.target.value })} />
             </Field>
-            <Field label={copy?.models ?? "模型列表"} hint={copy?.modelsHint ?? "逗号或换行分隔。保存后会同步该服务下的模型通道。"}>
-              <Textarea placeholder="gpt-4o, deepseek-chat" value={editForm.models} onChange={(event) => setEditForm({ ...editForm, models: event.target.value })} className="min-h-[80px]" />
+            <Field label={copy?.models ?? "模型列表"} hint={copy?.modelsHint ?? "优先采用供应商声明的能力字段；图片、向量、重排等不兼容模型不会创建为文字模型。"}>
+              <Textarea placeholder="gpt-4o, deepseek-chat" value={editForm.models} onChange={(event) => setEditForm({ ...editForm, models: event.target.value })} className="min-h-[92px] resize-y" />
             </Field>
-            <div className="flex items-center gap-3 pt-2">
-              <Button data-model-secondary-action variant="outline" className="border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]" onClick={probeEditProviderModels} disabled={saving["provider-probe"] || !editForm.apiBase.trim()}>
-                {saving["provider-probe"] ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                {copy?.probe ?? "测试并获取模型"}
-              </Button>
-              <Button data-model-primary-action className="bg-[#202020] text-white hover:bg-[#333]" onClick={submitEditProvider} disabled={saving["provider-update"]}>
-                {saving["provider-update"] ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                {copy?.save ?? "保存配置"}
-              </Button>
-              <Button data-model-secondary-action variant="outline" className="border-[#e5e5e5] bg-white text-[#202020] hover:bg-[#f5f5f5]" onClick={() => setSelectedProvider("")}>
-                {copy?.cancel ?? "取消"}
-              </Button>
-              {selectedProviderIsProtected ? (
-                <span data-model-builtin-badge className="ml-auto inline-flex items-center rounded-full bg-[#f1eee8] px-3 py-1.5 text-xs font-medium text-[#6f6758]">
-                  {isEnglish ? "Built-in · Cannot delete" : "系统内置 · 不可删除"}
-                </span>
-              ) : (
+            <ModelProbeResult summary={editProbeSummary} isEnglish={isEnglish} />
+            <div data-model-form-actions className="flex flex-wrap items-center gap-2 border-t border-[#e7e5e1] pt-4">
+              {!selectedProviderIsProtected ? (
                 <Button
-                  variant="outline"
+                  variant="ghost"
+                  size="sm"
                   data-model-delete-action
-                  className="ml-auto border-red-200 bg-white text-red-600 hover:bg-red-50 hover:text-red-700"
+                  className="text-red-600 hover:bg-red-50 hover:text-red-700"
                   onClick={() => setPendingDeleteProvider({
                     name: selectedProviderInfo.name,
                     label: selectedProviderInfo.label,
@@ -1758,101 +1915,116 @@ function ModelManagerSection({
                   {saving[`provider-delete:${selectedProviderInfo.name}`] ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                   {copy?.delete ?? "删除"}
                 </Button>
-              )}
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <div data-model-access-summary className="rounded-lg bg-[#f7f7f8] p-4">
-            <div data-model-title className="text-[15px] font-semibold text-[#202020]">{copy?.customServices ?? "已接入模型服务"}</div>
-            <div data-model-secondary className="mt-1 text-[13px] text-[#6f6f73]">
-              {copy?.customServicesHint ?? "管理已接入的模型 API；获取到的模型会按文字、语音识别和语音合成自动分类。"}
-            </div>
-          </div>
-
-          {!connectedProviders.length ? (
-            <div data-model-empty className="rounded-xl border border-dashed border-[#e6e6e8] bg-white p-12 text-center">
-              <div data-model-empty-icon className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#fafafa] text-[#6f6f73]">
-                <Cpu className="h-6 w-6" />
-              </div>
-              <h3 data-model-title className="mt-4 text-sm font-semibold text-[#202020]">{copy?.none ?? "暂无接入的模型服务"}</h3>
-              <p data-model-secondary className="mt-1 text-sm text-[#6f6f73] max-w-sm mx-auto">
-                {copy?.noneHint ?? "添加自定义供应商（如 OpenAI、DeepSeek 等）后，可以为它们创建模型通道并在此管理。"}
-              </p>
-              <div className="mt-6">
-                <Button data-model-primary-action className="bg-[#202020] text-white hover:bg-[#333]" onClick={() => setAddOpen(true)}>
-                  {copy?.add ?? "添加模型服务"}
+              ) : null}
+              <Button data-model-secondary-action variant="outline" size="sm" className={cn("border-[#dfddd8] bg-white text-[#30302e] hover:bg-[#f5f4f2]", !selectedProviderIsProtected && "ml-1")} onClick={probeEditProviderModels} disabled={saving["provider-probe"] || !editForm.apiBase.trim()}>
+                {saving["provider-probe"] ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                {copy?.probe ?? "测试并获取模型"}
+              </Button>
+              <div className="ml-auto flex items-center gap-2">
+                <Button data-model-secondary-action variant="ghost" size="sm" className="text-[#66645f] hover:bg-[#efede9]" onClick={() => setSelectedProvider("")}>
+                  {copy?.cancel ?? "取消"}
+                </Button>
+                <Button data-model-primary-action size="sm" className="bg-[#202020] text-white hover:bg-[#333]" onClick={submitEditProvider} disabled={saving["provider-update"]}>
+                  {saving["provider-update"] ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  {copy?.save ?? "保存配置"}
                 </Button>
               </div>
             </div>
+          </div>
+        </section>
+      ) : (
+        <section className="space-y-4" aria-labelledby="connected-model-services-heading">
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <h3 id="connected-model-services-heading" data-model-heading className="text-[15px] font-semibold text-[#202020]">{copy?.customServices ?? "已接入模型服务"}</h3>
+              <p data-model-secondary className="mt-1 text-[13px] leading-5 text-[#77777d]">
+                {copy?.customServicesHint ?? "管理已接入的模型 API；获取到的模型会按文字和语音识别自动分类。"}
+              </p>
+            </div>
+            {connectedProviders.length ? (
+              <span data-model-secondary className="shrink-0 text-xs text-[#8b8985]">
+                {(copy?.servicesSummary ?? "{services} 项服务 · {models} 个模型")
+                  .replace("{services}", String(connectedProviders.length))
+                  .replace("{models}", String(connectedModelCount))}
+              </span>
+            ) : null}
+          </div>
+
+          {!connectedProviders.length ? (
+            <div data-model-empty className="rounded-lg border border-dashed border-[#dcdad5] bg-[#faf9f7] px-6 py-10 text-center">
+              <div data-model-empty-icon className="mx-auto grid h-10 w-10 place-items-center rounded-lg bg-white text-[#77746e] shadow-[inset_0_0_0_1px_#e9e6e1]">
+                <Cpu className="h-5 w-5" strokeWidth={1.7} />
+              </div>
+              <h3 data-model-title className="mt-3 text-sm font-semibold text-[#202020]">{copy?.none ?? "暂无接入的模型服务"}</h3>
+              <p data-model-secondary className="mx-auto mt-1 max-w-sm text-[13px] leading-6 text-[#6f6f73]">
+                {copy?.noneHint ?? "添加自定义供应商（如 OpenAI、DeepSeek 等）后，可以为它们创建模型通道并在此管理。"}
+              </p>
+              <Button data-model-primary-action size="sm" className="mt-4 bg-[#202020] text-white hover:bg-[#333]" onClick={() => setAddOpen(true)}>
+                <Plus className="h-4 w-4" />
+                {copy?.add ?? "添加模型服务"}
+              </Button>
+            </div>
           ) : (
-            <div className="space-y-3">
-              {connectedProviders.map((provider) => {
+            <div data-model-provider-list className="overflow-hidden rounded-lg border border-[#e5e3df] bg-white">
+              {connectedProviders.map((provider, index) => {
                 const presets = uniqueModelPresets(settings.model_presets.filter(
-                  (preset) => !preset.is_default && preset.provider === provider.name
+                  (preset) => !preset.is_default && preset.provider === provider.name,
                 ));
                 const protectedProvider = isProtectedBuiltinModelProvider(provider.name);
                 return (
-                  <div
+                  <article
                     key={provider.name}
                     data-model-provider-card
-                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-[#e6e6e8] bg-white p-5 transition-all duration-200 hover:border-[#cfcfd2] hover:shadow-sm"
+                    className={cn(
+                      "flex flex-col gap-4 p-4 transition-colors hover:bg-[#fcfbfa] sm:flex-row sm:items-center",
+                      index > 0 && "border-t border-[#eceae6]",
+                    )}
                   >
-                    <div className="min-w-0 flex-1 space-y-2">
-                      <div className="flex items-center gap-3">
-                        <h4 data-model-title className="truncate text-base font-semibold text-[#202020]">
-                          {provider.label}
-                        </h4>
-                        {protectedProvider ? (
-                          <span data-model-builtin-badge className="inline-flex shrink-0 rounded-full bg-[#f1eee8] px-2 py-0.5 text-xs font-medium text-[#6f6758]">
-                            {isEnglish ? "Built-in" : "系统内置"}
-                          </span>
-                        ) : null}
-                        {provider.configured ? (
-                          <span data-model-status="configured" className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                            {copy?.configured ?? "已配置"}
-                          </span>
-                        ) : (
-                          <span data-model-status="pending" className="inline-flex items-center gap-1 rounded-full bg-[#f4f4f5] px-2 py-0.5 text-xs font-medium text-[#71717a]">
-                            <span className="h-1.5 w-1.5 rounded-full bg-[#d4d4d8]" />
-                            {copy?.pending ?? "待配置"}
-                          </span>
-                        )}
+                    <div className="flex min-w-0 flex-1 items-start gap-3">
+                      <div data-model-icon className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-[#f1f1f0] text-[#6f6d68]">
+                        <Link className="h-4 w-4" strokeWidth={1.8} />
                       </div>
-
-                      <div data-model-meta className="grid gap-x-6 gap-y-1 sm:grid-cols-2 text-xs text-[#6f6f73]">
-                        <div className="truncate">
-                          <span data-model-meta-label className="text-[#a1a1a9] mr-1.5">{copy?.apiType ?? "接口类型:"}</span>
-                          {provider.api_type || (isEnglish ? "Auto detect" : "自动检测")}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 data-model-title className="truncate text-sm font-semibold text-[#202020]">{provider.label}</h4>
+                          {protectedProvider ? (
+                            <span data-model-builtin-badge className="inline-flex shrink-0 rounded-full bg-[#f1eee8] px-2 py-0.5 text-[10px] font-medium text-[#6f6758]">
+                              {isEnglish ? "Built-in" : "系统内置"}
+                            </span>
+                          ) : null}
+                          <span
+                            data-model-status={provider.configured ? "configured" : "pending"}
+                            className={cn(
+                              "inline-flex items-center gap-1 text-[11px] font-medium",
+                              provider.configured ? "text-emerald-700" : "text-[#85837e]",
+                            )}
+                          >
+                            <span className={cn("h-1.5 w-1.5 rounded-full", provider.configured ? "bg-emerald-500" : "bg-[#c9c6c0]")} />
+                            {provider.configured ? (copy?.configured ?? "已配置") : (copy?.pending ?? "待配置")}
+                          </span>
                         </div>
-                        <div className="truncate">
-                          <span data-model-meta-label className="text-[#a1a1a9] mr-1.5">{copy?.apiAddress ?? "API 地址:"}</span>
-                          {provider.api_base || provider.default_api_base || copy?.notConfigured || "未设置"}
+                        <div data-model-meta className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-[#77777d]">
+                          <span>{provider.api_type || (isEnglish ? "Auto detect" : "自动检测")}</span>
+                          <span className="min-w-0 truncate font-mono text-[10px] text-[#8b8985]">
+                            {provider.api_base || provider.default_api_base || copy?.notConfigured || "未设置"}
+                          </span>
                         </div>
-                      </div>
-
-                      {presets.length > 0 && (
-                        <div className="pt-1">
-                          <div className="flex flex-wrap gap-1 items-center">
-                            <span data-model-meta-label className="text-[11px] font-semibold text-[#a1a1a9] mr-2">{copy?.channels ?? "模型通道"} ({presets.length}):</span>
-                            {presets.slice(0, 8).map((p) => (
-                              <span data-model-channel key={p.name} className="inline-block rounded bg-[#f1f1f2] px-1.5 py-0.5 text-[11px] text-[#444] truncate max-w-[150px]">
-                                {p.model}
+                        {presets.length ? (
+                          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                            {presets.slice(0, 4).map((preset) => (
+                              <span data-model-channel key={preset.name} className="max-w-[150px] truncate rounded-md bg-[#f3f2f0] px-2 py-0.5 font-mono text-[10px] text-[#5f5d59]">
+                                {preset.model}
                               </span>
                             ))}
-                            {presets.length > 8 && (
-                              <span data-model-secondary className="text-[11px] text-[#888] font-medium pl-1">
-                                +{presets.length - 8}
-                              </span>
-                            )}
+                            {presets.length > 4 ? (
+                              <span data-model-secondary className="text-[10px] text-[#8b8985]">+{presets.length - 4}</span>
+                            ) : null}
                           </div>
-                        </div>
-                      )}
+                        ) : null}
+                      </div>
                     </div>
 
-                    <div data-model-provider-actions className="flex shrink-0 items-center justify-end gap-2 border-t border-[#f4f4f5] pt-3 sm:border-0 sm:pt-0">
+                    <div data-model-provider-actions className="flex shrink-0 items-center justify-end gap-1.5 border-t border-[#efede9] pt-3 sm:border-0 sm:pt-0">
                       {!protectedProvider ? (
                         <button
                           type="button"
@@ -1863,30 +2035,31 @@ function ModelManagerSection({
                           })}
                           disabled={saving[`provider-delete:${provider.name}`]}
                           data-model-delete-action
-                          className="flex items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50 disabled:cursor-wait disabled:opacity-60"
+                          className="grid h-8 w-8 place-items-center rounded-md text-[#9b5c50] transition-colors hover:bg-red-50 hover:text-red-700 disabled:cursor-wait disabled:opacity-60"
+                          aria-label={`${copy?.delete ?? "删除"} ${provider.label}`}
+                          title={copy?.delete ?? "删除"}
                         >
                           {saving[`provider-delete:${provider.name}`] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                          {copy?.delete ?? "删除"}
                         </button>
                       ) : null}
-                      <button
+                      <Button
                         type="button"
-                        onClick={() => {
-                          setSelectedProvider(provider.name);
-                        }}
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSelectedProvider(provider.name)}
                         data-model-secondary-action
-                        className="flex items-center justify-center gap-1.5 rounded-lg border border-[#e6e6e8] bg-white px-4 py-2 text-xs font-semibold text-[#202020] transition-colors hover:bg-[#fafafa]"
+                        className="border-[#dfddd8] bg-white text-xs text-[#30302e] hover:bg-[#f5f4f2]"
                       >
                         <SlidersHorizontal className="h-3.5 w-3.5" />
                         {copy?.configure ?? "配置服务"}
-                      </button>
+                      </Button>
                     </div>
-                  </div>
+                  </article>
                 );
               })}
             </div>
           )}
-        </div>
+        </section>
       )}
       <ConfirmDialog
         open={pendingDeleteProvider !== null}

@@ -4,7 +4,7 @@
 
 TPCowork 是一个本地运行的 AI 桌面办公助手。当前项目定位是 Electron 桌面 GUI：负责桌面体验、聊天界面、设置、工具箱、定时任务和文件预览；真正的 Agent 运行时由内置 Python `nanobot` gateway 承接。
 
-当前版本：`0.5.9`
+当前版本：`0.0.1`
 
 应用 ID：`com.tparuyi.app`
 
@@ -131,7 +131,7 @@ venv/bin/pip install -e ".[desktop]"
 
 - macOS arm64/x64 standalone Python 已支持。
 - Windows x64 standalone Python 已支持。
-- Linux 打包脚本存在，但 `scripts/download-python.mjs` 里还没有配置 Linux standalone Python target。
+- Linux x64 standalone Python 和 AppImage 打包已支持。
 
 ## 项目结构
 

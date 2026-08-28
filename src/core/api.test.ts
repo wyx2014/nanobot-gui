@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   archiveSession,
+  createModelConfiguration,
   deleteModelConfiguration,
   deleteProviderSettings,
   deleteScheduleRun,
@@ -73,6 +74,27 @@ describe("canonical thread history limits", () => {
 });
 
 describe("provider settings", () => {
+  it("persists provider-declared model capabilities when creating a preset", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ model_presets: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createModelConfiguration(
+      "gateway-token",
+      {
+        label: "Step chat",
+        provider: "stepfun",
+        model: "opaque-model-id",
+        capabilities: ["text"],
+        capabilitySource: "provider",
+      },
+      "http://127.0.0.1:8900",
+    );
+
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.searchParams.get("capabilities")).toBe("text");
+    expect(url.searchParams.get("capability_source")).toBe("provider");
+  });
+
   it("uses the saved provider credential when a model probe omits apiKey", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
       status: "available",

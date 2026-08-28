@@ -2,30 +2,6 @@ import type { ModelPreset } from '@/types/marketplace';
 
 export const modelPresets: ModelPreset[] = [
   {
-    id: 'claude-sonnet',
-    name: 'Claude Sonnet 4.6',
-    provider: 'anthropic',
-    apiFormat: 'anthropic',
-    model: 'claude-sonnet-4-6',
-    description: '速度与智能的最佳平衡，适合大多数任务',
-  },
-  {
-    id: 'claude-opus',
-    name: 'Claude Opus 4.6',
-    provider: 'anthropic',
-    apiFormat: 'anthropic',
-    model: 'claude-opus-4-6',
-    description: '最强模型，适合复杂推理和编程',
-  },
-  {
-    id: 'claude-haiku',
-    name: 'Claude Haiku 4.5',
-    provider: 'anthropic',
-    apiFormat: 'anthropic',
-    model: 'claude-haiku-4-5-20251001',
-    description: '快速响应，适合简单任务和高频调用',
-  },
-  {
     id: 'gpt-4o',
     name: 'GPT-4o',
     provider: 'openai',

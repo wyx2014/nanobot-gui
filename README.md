@@ -120,7 +120,7 @@ npm run build:win
 # Windows 免安装版
 npm run build:win:portable
 
-# Linux 当前脚本还未配置 standalone Python target，需补齐后再用
+# Linux AppImage
 npm run build:linux
 ```
 
@@ -142,6 +142,11 @@ Windows 打包分为两种模式：
 - 在 Windows x64 上运行：本机下载 Python 3.12.9 standalone，并安装 nanobot 及 Windows 依赖。
 - 在 macOS 上运行：从 GitHub Release 下载 Windows CI 预制的完整 `win32-x64` runtime，校验 SHA-256、目标平台、Python 版本、依赖摘要和 nanobot 源码摘要后只负责组装。任何一项不匹配都会终止打包，不会回退使用 Mac Python。
 
+Linux 打包采用同一套模式：
+
+- 在 Linux x64 上运行：本机下载 Python 3.12.9 standalone，并安装 nanobot 及 Linux 依赖。
+- 在 macOS 上运行：从 GitHub Release 下载 Linux CI 预制的完整 `linux-x64` runtime，通过全部校验后组装 AppImage。
+
 首次从 Mac 打 Windows 包前，在 GitHub Actions 手动运行 `Build Windows Python runtime`，并填写要嵌入的 nanobot 分支、标签或提交。工作流会发布一个不参与应用自动更新的 prerelease，并写入以下稳定资产：
 
 ```text
@@ -160,6 +165,23 @@ TPCOWORK_WINDOWS_RUNTIME_URL=https://example.com/runtime.zip \
 TPCOWORK_WINDOWS_RUNTIME_SHA256_URL=https://example.com/runtime.zip.sha256 \
 TPCOWORK_RUNTIME_TOKEN=token \
 npm run build:win
+```
+
+首次异机打 Linux 包前，在 GitHub Actions 手动运行 `Build Linux Python runtime`。Linux runtime 会发布为保留 Unix 权限和符号链接的归档：
+
+```text
+tpcowork-python-3.12.9-linux-x64-desktop-v2-bytecode.tar.gz
+tpcowork-python-3.12.9-linux-x64-desktop-v2-bytecode.tar.gz.sha256
+tpcowork-python-3.12.9-linux-x64-desktop-v2-bytecode.tar.gz.json
+```
+
+Linux 私有或镜像资产可单独覆盖：
+
+```bash
+TPCOWORK_LINUX_RUNTIME_URL=https://example.com/runtime.tar.gz \
+TPCOWORK_LINUX_RUNTIME_SHA256_URL=https://example.com/runtime.tar.gz.sha256 \
+TPCOWORK_RUNTIME_TOKEN=token \
+npm run build:linux
 ```
 
 打包配置会把这些资源放入安装包：
@@ -184,6 +206,7 @@ npm run build             # TypeScript + Vite 构建
 npm run electron:build    # Electron main/preload/renderer 构建
 npm run build:mac         # 打 macOS 包
 npm run build:win         # 打 Windows 包
+npm run build:linux       # 打 Linux AppImage
 npm run test              # 跑测试
 npm run test:watch        # 测试监听
 npm run test:coverage     # 覆盖率

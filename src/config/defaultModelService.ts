@@ -17,13 +17,29 @@ export interface DesktopDefaultModelServiceConfig {
   preferredDefaultModel: string;
 }
 
+const RETIRED_DESKTOP_MODEL_IDS = new Set(['deepseek-r1']);
+
+export function isRetiredDesktopModel(model: string): boolean {
+  const normalized = model.trim().toLowerCase();
+  const leafModelId = normalized.split('/').at(-1) ?? normalized;
+  return RETIRED_DESKTOP_MODEL_IDS.has(leafModelId);
+}
+
+export function normalizeDesktopModelCatalog(models: readonly string[]): string[] {
+  return Array.from(new Set(
+    models
+      .map((model) => model.trim())
+      .filter((model) => model && !isRetiredDesktopModel(model)),
+  ));
+}
+
 export const DEFAULT_DESKTOP_MODEL_SERVICE = Object.freeze({
   providerId: ASSET_DEEPSEEK_MODEL_SERVICE.providerId,
   providerLabel: ASSET_DEEPSEEK_MODEL_SERVICE.providerLabel,
   apiKey: 'sk-rsjkBOmdfQtzfc382d4e8cC1F5084dEb819c30FcD6C23a4f',
   apiBase: 'http://192.168.0.228:1025/v1',
   apiType: 'auto',
-  fallbackModels: ['deepseek-r1', 'deepseek_v4_flash'],
+  fallbackModels: ['deepseek_v4_flash'],
   preferredDefaultModel: 'deepseek_v4_flash',
 } satisfies DesktopDefaultModelServiceConfig);
 
@@ -66,7 +82,7 @@ export async function discoverDesktopDefaultModels(
         : Array.isArray(container.models)
           ? container.models
           : [];
-    const models = Array.from(new Set(rows.flatMap((row) => {
+    const models = normalizeDesktopModelCatalog(rows.flatMap((row) => {
       const modelId = typeof row === 'string'
         ? row
         : row && typeof row === 'object' && 'id' in row
@@ -74,7 +90,7 @@ export async function discoverDesktopDefaultModels(
           : '';
       const normalized = modelId.trim();
       return normalized ? [normalized] : [];
-    })));
+    }));
     if (!models.length) {
       throw new Error('model catalog returned no models');
     }

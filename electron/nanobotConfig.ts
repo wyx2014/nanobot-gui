@@ -15,6 +15,7 @@ import { app } from 'electron';
 import {
   DEFAULT_DESKTOP_MODEL_SERVICE,
   discoverDesktopDefaultModels,
+  normalizeDesktopModelCatalog,
   type DesktopDefaultModelServiceConfig,
 } from '../src/config/defaultModelService';
 import { DEFAULT_WORKSPACE_DIRECTORY_NAME } from '../src/config/appDirectories';
@@ -302,7 +303,7 @@ export function buildDesktopDefaultModelConfig(
     throw new Error('Default desktop model service is missing preferredDefaultModel');
   }
 
-  const normalizedModels = Array.from(new Set(models.map((model) => model.trim()).filter(Boolean)));
+  const normalizedModels = normalizeDesktopModelCatalog(models);
   const usedPresetNames = new Set<string>();
   const modelPresets = Object.fromEntries(normalizedModels.map((model) => {
     const presetName = desktopModelPresetName(service.providerId, model, usedPresetNames);
@@ -388,7 +389,10 @@ export function buildDesktopManagedModelPatch(
   service: DesktopDefaultModelServiceConfig = DEFAULT_DESKTOP_MODEL_SERVICE,
   catalogModels: readonly string[] | null = null,
 ) {
-  const managed = buildDesktopDefaultModelConfig(service, catalogModels ?? []);
+  const reconciledCatalogModels = catalogModels === null
+    ? resolveDesktopManagedModels(existing, null, service)
+    : normalizeDesktopModelCatalog(catalogModels);
+  const managed = buildDesktopDefaultModelConfig(service, reconciledCatalogModels);
   const existingProviders = (existing.providers ?? {}) as Record<string, unknown>;
   const camelPresets = (existing.modelPresets ?? {}) as Record<string, unknown>;
   const snakePresets = (existing.model_presets ?? {}) as Record<string, unknown>;
@@ -411,10 +415,8 @@ export function buildDesktopManagedModelPatch(
     const model = (value as Record<string, unknown>).model;
     return typeof model === 'string' && model.trim() ? [[model, name] as const] : [];
   }));
-  const discoveredModels = catalogModels === null
-    ? null
-    : Array.from(new Set(catalogModels.map((model) => model.trim()).filter(Boolean)));
-  const discoveredModelSet = discoveredModels ? new Set(discoveredModels) : null;
+  const discoveredModels = reconciledCatalogModels;
+  const discoveredModelSet = new Set(discoveredModels);
   const usedPresetNames = new Set(Object.keys(existingPresets));
   const discoveredPresetByModel = new Map<string, string>();
   for (const model of discoveredModels ?? []) {
@@ -440,14 +442,12 @@ export function buildDesktopManagedModelPatch(
     && namedDefaultProvider !== 'auto'
     && hasProviderConnection(existingProviders[namedDefaultProvider]);
   const namedDefaultSurvivesCatalog = namedDefaultProvider !== service.providerId
-    || discoveredModelSet === null
     || (
       textDefault !== LEGACY_ASSET_DEEPSEEK_MODEL_PRESET_ID
       && typeof namedDefaultPreset?.model === 'string'
       && discoveredModelSet.has(namedDefaultPreset.model)
     );
   const implicitManagedModelSurvivesCatalog = implicitProvider !== service.providerId
-    || discoveredModelSet === null
     || (
       typeof existingAgents?.defaults?.model === 'string'
       && discoveredModelSet.has(existingAgents.defaults.model)
@@ -461,9 +461,9 @@ export function buildDesktopManagedModelPatch(
         && implicitManagedModelSurvivesCatalog
       )
     : Boolean(namedDefaultPreset && namedDefaultConfigured && namedDefaultSurvivesCatalog);
-  const firstDiscoveredModel = discoveredModels?.includes(service.preferredDefaultModel)
+  const firstDiscoveredModel = discoveredModels.includes(service.preferredDefaultModel)
     ? service.preferredDefaultModel
-    : discoveredModels?.[0];
+    : discoveredModels[0];
   const firstDiscoveredPreset = firstDiscoveredModel
     ? discoveredPresetByModel.get(firstDiscoveredModel)
     : undefined;
@@ -475,28 +475,26 @@ export function buildDesktopManagedModelPatch(
     Object.entries(camelDefaults).filter(([name]) => !(name in snakeDefaults)),
   );
   const modelPresetPatch: Record<string, unknown> = { ...migratedPresets };
-  if (discoveredModelSet !== null) {
-    for (const [name, value] of existingManagedPresets) {
-      const model = (value as Record<string, unknown>).model;
-      if (
-        name === LEGACY_ASSET_DEEPSEEK_MODEL_PRESET_ID
-        || typeof model !== 'string'
-        || !discoveredModelSet.has(model)
-      ) {
-        modelPresetPatch[name] = undefined;
-      }
+  for (const [name, value] of existingManagedPresets) {
+    const model = (value as Record<string, unknown>).model;
+    if (
+      name === LEGACY_ASSET_DEEPSEEK_MODEL_PRESET_ID
+      || typeof model !== 'string'
+      || !discoveredModelSet.has(model)
+    ) {
+      modelPresetPatch[name] = undefined;
     }
-    for (const model of discoveredModels ?? []) {
-      if (existingManagedPresetByModel.has(model)) continue;
-      const presetName = discoveredPresetByModel.get(model);
-      if (!presetName) continue;
-      modelPresetPatch[presetName] = {
-        label: `${service.providerLabel} / ${model}`,
-        provider: service.providerId,
-        model,
-        capabilities: ['text'],
-      };
-    }
+  }
+  for (const model of discoveredModels) {
+    if (existingManagedPresetByModel.has(model)) continue;
+    const presetName = discoveredPresetByModel.get(model);
+    if (!presetName) continue;
+    modelPresetPatch[presetName] = {
+      label: `${service.providerLabel} / ${model}`,
+      provider: service.providerId,
+      model,
+      capabilities: ['text'],
+    };
   }
 
   return {
@@ -533,7 +531,7 @@ export function resolveDesktopManagedModels(
   service: DesktopDefaultModelServiceConfig = DEFAULT_DESKTOP_MODEL_SERVICE,
 ): string[] {
   if (refreshedModels !== null) {
-    return Array.from(new Set(refreshedModels.map((model) => model.trim()).filter(Boolean)));
+    return normalizeDesktopModelCatalog(refreshedModels);
   }
 
   const cachedModels = Object.values({
@@ -548,7 +546,7 @@ export function resolveDesktopManagedModels(
       ? [preset.model.trim()]
       : [];
   });
-  return Array.from(new Set([...cachedModels, ...service.fallbackModels]));
+  return normalizeDesktopModelCatalog([...cachedModels, ...service.fallbackModels]);
 }
 
 function hasConfiguredProviderCredential(

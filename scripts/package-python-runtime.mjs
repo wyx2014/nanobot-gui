@@ -144,7 +144,9 @@ fs.rmSync(manifestPath, { force: true });
 
 execFileSync(
   'tar',
-  ['-a', '-c', '-f', archivePath, '-C', runtimeDir, '.'],
+  target.startsWith('linux-')
+    ? ['-czf', archivePath, '-C', runtimeDir, '.']
+    : ['-a', '-c', '-f', archivePath, '-C', runtimeDir, '.'],
   { stdio: 'inherit' },
 );
 const archiveSha256 = await fileSha256(archivePath);

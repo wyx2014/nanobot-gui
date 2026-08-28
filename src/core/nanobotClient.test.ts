@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Message } from '@/types';
 import {
   conversationFromSessionSummary,
+  gatewayTextModelOptions,
   isGatewayVoiceInputAvailable,
   mapGatewayProviderNameForGui,
   mapWebuiThreadToGuiMessages,
@@ -25,6 +26,78 @@ describe('mapGatewayProviderNameForGui', () => {
     expect(mapGatewayProviderNameForGui('deepseek', [
       { name: 'deepseek', custom: false },
     ])).toBe('deepseek');
+  });
+
+  it('maps backend providers without a renderer preset list to custom', () => {
+    expect(mapGatewayProviderNameForGui('stepfun', [
+      { name: 'stepfun', custom: false },
+    ])).toBe('custom');
+  });
+});
+
+describe('gatewayTextModelOptions', () => {
+  it('projects the Gateway text catalog with stable preset identifiers', () => {
+    const payload = {
+      agent: {
+        model: 'step-3.7-flash',
+        provider: 'stepfun',
+        model_preset: 'step-primary',
+      },
+      model_defaults: { text: 'step-primary' },
+      providers: [
+        { name: 'stepfun', label: '阶跃星辰' },
+        { name: 'asset-deepseek', label: '资产DeepSeek' },
+      ],
+      model_presets: [
+        {
+          name: 'default',
+          label: 'Default',
+          is_default: true,
+          provider: 'asset-deepseek',
+          model: 'deepseek_v4_flash',
+          capabilities: ['text'],
+        },
+        {
+          name: 'deepseek-flash',
+          label: '资产DeepSeek / deepseek_v4_flash',
+          is_default: false,
+          provider: 'asset-deepseek',
+          model: 'deepseek_v4_flash',
+          capabilities: ['text'],
+        },
+        {
+          name: 'step-primary',
+          label: '阶跃星辰 / step-3.7-flash',
+          is_default: false,
+          provider: 'stepfun',
+          model: 'step-3.7-flash',
+          capabilities: ['text'],
+        },
+        {
+          name: 'step-asr',
+          label: 'Step ASR',
+          is_default: false,
+          provider: 'stepfun',
+          model: 'stepaudio-2.5-asr',
+          capabilities: ['speech_to_text'],
+        },
+      ],
+    } as unknown as SettingsPayload;
+
+    expect(gatewayTextModelOptions(payload)).toEqual([
+      {
+        presetName: 'step-primary',
+        provider: 'stepfun',
+        model: 'step-3.7-flash',
+        label: '阶跃星辰 / step-3.7-flash',
+      },
+      {
+        presetName: 'deepseek-flash',
+        provider: 'asset-deepseek',
+        model: 'deepseek_v4_flash',
+        label: '资产DeepSeek / deepseek_v4_flash',
+      },
+    ]);
   });
 });
 

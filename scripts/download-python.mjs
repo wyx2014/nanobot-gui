@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 
 import {
   DEFAULT_RUNTIME_REPOSITORY,
+  LINUX_RUNTIME_TARGET,
   PYTHON_STANDALONE_RELEASE,
   PYTHON_VERSION,
   RUNTIME_PROFILE,
@@ -72,14 +73,22 @@ const runtimeRepository = environmentValue(
   || githubRepositoryFromRemote()
   || DEFAULT_RUNTIME_REPOSITORY;
 const defaultAssetBaseUrl = `https://github.com/${runtimeRepository}/releases/download/${assetMetadata.releaseTag}`;
-const configuredRuntimeArchiveUrl = environmentValue(
-  'TPCOWORK_WINDOWS_RUNTIME_URL',
-  'TPACOWORK_WINDOWS_RUNTIME_URL',
-);
-const configuredRuntimeChecksumUrl = environmentValue(
-  'TPCOWORK_WINDOWS_RUNTIME_SHA256_URL',
-  'TPACOWORK_WINDOWS_RUNTIME_SHA256_URL',
-);
+const runtimeUrlEnvironmentPrefix = targetKey.startsWith('win32-')
+  ? 'WINDOWS'
+  : targetKey.startsWith('linux-')
+    ? 'LINUX'
+    : null;
+
+function targetRuntimeEnvironmentValue(suffix) {
+  if (!runtimeUrlEnvironmentPrefix) return undefined;
+  return environmentValue(
+    `TPCOWORK_${runtimeUrlEnvironmentPrefix}_RUNTIME_${suffix}`,
+    `TPACOWORK_${runtimeUrlEnvironmentPrefix}_RUNTIME_${suffix}`,
+  );
+}
+
+const configuredRuntimeArchiveUrl = targetRuntimeEnvironmentValue('URL');
+const configuredRuntimeChecksumUrl = targetRuntimeEnvironmentValue('SHA256_URL');
 const runtimeArchiveUrl = configuredRuntimeArchiveUrl
   || `${defaultAssetBaseUrl}/${assetMetadata.archive}`;
 const runtimeChecksumUrl = configuredRuntimeChecksumUrl
@@ -193,6 +202,11 @@ function runtimeValidationErrors(rootDir) {
   }
   const paths = runtimePaths(rootDir);
   if (!fs.existsSync(paths.python)) errors.push(`missing target interpreter: ${paths.python}`);
+  if (targetKey.startsWith('linux-')
+    && fs.existsSync(paths.python)
+    && (fs.statSync(paths.python).mode & 0o111) === 0) {
+    errors.push(`target interpreter is not executable: ${paths.python}`);
+  }
   if (!fs.existsSync(paths.nanobot)) errors.push(`missing installed nanobot package: ${paths.nanobot}`);
   if (!installedSourceMatches(rootDir)) {
     errors.push('nanobot source digest does not match the local sibling repository');
@@ -305,10 +319,11 @@ async function downloadRuntimeAsset({ assetName, destination, explicitUrl, url }
   });
 }
 
-async function installPrebuiltWindowsRuntime() {
-  if (targetKey !== WINDOWS_RUNTIME_TARGET) {
+async function installPrebuiltRuntime() {
+  const prebuiltTargets = new Set([WINDOWS_RUNTIME_TARGET, LINUX_RUNTIME_TARGET]);
+  if (!prebuiltTargets.has(targetKey)) {
     throw new Error(
-      `Cross-host runtime preparation is only supported for ${WINDOWS_RUNTIME_TARGET}; received ${targetKey}.`,
+      `Cross-host runtime preparation is only supported for ${[...prebuiltTargets].join(', ')}; received ${targetKey}.`,
     );
   }
   const existingErrors = fs.existsSync(destDir) ? runtimeValidationErrors(destDir) : ['runtime is absent'];
@@ -353,8 +368,8 @@ async function installPrebuiltWindowsRuntime() {
     const validationErrors = runtimeValidationErrors(extractedDir);
     if (validationErrors.length > 0) {
       throw new Error(
-        `Downloaded Windows runtime is incompatible:\n- ${validationErrors.join('\n- ')}\n`
-        + 'Rebuild the Windows runtime CI from the matching nanobot commit before packaging.',
+        `Downloaded ${targetKey} runtime is incompatible:\n- ${validationErrors.join('\n- ')}\n`
+        + `Rebuild the ${targetKey} runtime CI from the matching nanobot commit before packaging.`,
       );
     }
 
@@ -432,7 +447,7 @@ try {
   if (targetKey === hostKey) {
     await buildRuntimeOnHost();
   } else {
-    await installPrebuiltWindowsRuntime();
+    await installPrebuiltRuntime();
   }
 } catch (error) {
   console.error(`Failed to prepare Python runtime for ${targetKey}:`, error);

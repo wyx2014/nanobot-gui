@@ -58,6 +58,38 @@ describe('cross-platform Python runtime packaging', () => {
     expect(JSON.parse(raw).repository).toBe('example/previous-brand');
   });
 
+  it('pins the Linux runtime contract to Python 3.12.9 and linux-x64', () => {
+    const raw = execFileSync(
+      process.execPath,
+      [
+        path.join(process.cwd(), 'scripts', 'download-python.mjs'),
+        '--target',
+        'linux-x64',
+        '--print-config',
+      ],
+      {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          TPCOWORK_RUNTIME_REPOSITORY: 'example/tpcowork',
+          TPCOWORK_LINUX_RUNTIME_URL: 'https://runtime.example/linux.tar.gz',
+          TPCOWORK_LINUX_RUNTIME_SHA256_URL: 'https://runtime.example/linux.tar.gz.sha256',
+        },
+      },
+    );
+    const metadata = JSON.parse(raw) as Record<string, string>;
+
+    expect(metadata.target).toBe('linux-x64');
+    expect(metadata.pythonVersion).toBe('3.12.9');
+    expect(metadata.archive).toBe(
+      'tpcowork-python-3.12.9-linux-x64-desktop-v2-bytecode.tar.gz',
+    );
+    expect(metadata.checksum).toBe(`${metadata.archive}.sha256`);
+    expect(metadata.releaseTag).toContain('3.12.9-linux-x64');
+    expect(metadata.archiveUrl).toBe('https://runtime.example/linux.tar.gz');
+    expect(metadata.checksumUrl).toBe('https://runtime.example/linux.tar.gz.sha256');
+  });
+
   it('builds and publishes the prebuilt runtime on a Windows CI runner', () => {
     const workflow = fs.readFileSync(
       path.join(process.cwd(), '.github', 'workflows', 'windows-python-runtime.yml'),
@@ -70,6 +102,21 @@ describe('cross-platform Python runtime packaging', () => {
     expect(workflow).toContain('node scripts/package-python-runtime.mjs --target win32-x64');
     expect(workflow).toContain('gh release create $env:RUNTIME_TAG --prerelease');
     expect(workflow).toContain('gh release upload');
+    expect(workflow).toContain('--clobber');
+  });
+
+  it('builds and publishes the prebuilt runtime on a Linux CI runner', () => {
+    const workflow = fs.readFileSync(
+      path.join(process.cwd(), '.github', 'workflows', 'linux-python-runtime.yml'),
+      'utf8',
+    );
+
+    expect(workflow).toContain('runs-on: ubuntu-latest');
+    expect(workflow).toContain('repository: ${{ inputs.nanobot_repository }}');
+    expect(workflow).toContain('node scripts/download-python.mjs --target linux-x64');
+    expect(workflow).toContain('node scripts/package-python-runtime.mjs --target linux-x64');
+    expect(workflow).toContain('gh release create "$RUNTIME_TAG" --prerelease');
+    expect(workflow).toContain('gh release upload "$RUNTIME_TAG"');
     expect(workflow).toContain('--clobber');
   });
 

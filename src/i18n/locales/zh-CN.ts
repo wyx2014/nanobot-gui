@@ -208,7 +208,7 @@ const zhCN: TranslationDict = {
     model: '模型',
     customModelOption: '自定义模型...',
     customModelName: '自定义模型名称',
-    customModelPlaceholder: '例如: claude-sonnet-4-6',
+    customModelPlaceholder: '例如: deepseek_v4_flash',
     customModelDesc: '输入 API 支持的任意模型 ID',
     currentModel: '当前模型',
     notSet: '未设置',

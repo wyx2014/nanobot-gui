@@ -176,7 +176,7 @@ describe('desktop default model service', () => {
     apiKey: 'test-key',
     apiBase: 'http://model.test/v1/',
     apiType: 'auto' as const,
-    fallbackModels: ['deepseek-r1', 'deepseek_v4_flash'],
+    fallbackModels: ['deepseek_v4_flash'],
     preferredDefaultModel: 'deepseek_v4_flash',
   };
   const fallbackModels = [...service.fallbackModels];
@@ -190,11 +190,7 @@ describe('desktop default model service', () => {
       apiBase: 'http://model.test/v1',
       apiType: 'auto',
     });
-    expect(config.model_presets['asset-deepseek-deepseek-r1']).toMatchObject({
-      provider: 'asset-deepseek',
-      model: 'deepseek-r1',
-      capabilities: ['text'],
-    });
+    expect(config.model_presets['asset-deepseek-deepseek-r1']).toBeUndefined();
     expect(config.model_presets['asset-deepseek-deepseek_v4_flash']).toMatchObject({
       provider: 'asset-deepseek',
       model: 'deepseek_v4_flash',
@@ -222,12 +218,16 @@ describe('desktop default model service', () => {
             { id: 'deepseek-r1' },
             { id: 'deepseek_v4_flash' },
             { id: 'deepseek_v4_flash' },
+            { id: 'deepseek-r1-0528' },
           ],
         }),
       };
     });
 
-    await expect(discoverDesktopDefaultModels(service, fetchCatalog)).resolves.toEqual(fallbackModels);
+    await expect(discoverDesktopDefaultModels(service, fetchCatalog)).resolves.toEqual([
+      'deepseek_v4_flash',
+      'deepseek-r1-0528',
+    ]);
   });
 
   it('installs the external-network fallback catalog for an empty profile', () => {
@@ -238,10 +238,7 @@ describe('desktop default model service', () => {
       apiKey: 'test-key',
       apiBase: 'http://model.test/v1',
     });
-    expect(patch.model_presets['asset-deepseek-deepseek-r1']).toMatchObject({
-      provider: 'asset-deepseek',
-      model: 'deepseek-r1',
-    });
+    expect(patch.model_presets['asset-deepseek-deepseek-r1']).toBeUndefined();
     expect(patch.model_presets['asset-deepseek-deepseek_v4_flash']).toMatchObject({
       provider: 'asset-deepseek',
       model: 'deepseek_v4_flash',
@@ -254,13 +251,13 @@ describe('desktop default model service', () => {
     const models = resolveDesktopManagedModels({
       model_presets: {
         cached: { provider: 'asset-deepseek', model: 'deepseek-v5-preview' },
+        retired: { provider: 'asset-deepseek', model: 'deepseek-r1' },
         unrelated: { provider: 'custom', model: 'custom-model' },
       },
     }, null, service);
 
     expect(models).toEqual([
       'deepseek-v5-preview',
-      'deepseek-r1',
       'deepseek_v4_flash',
     ]);
   });
@@ -276,7 +273,7 @@ describe('desktop default model service', () => {
     }, service, fallbackModels);
 
     expect(patch.providers).toHaveProperty('asset-deepseek');
-    expect(patch.model_presets).toHaveProperty('asset-deepseek-deepseek-r1');
+    expect(patch.model_presets).not.toHaveProperty('asset-deepseek-deepseek-r1');
     expect(patch.model_presets).toHaveProperty('asset-deepseek-deepseek_v4_flash');
     expect(patch.model_presets).toHaveProperty('existing');
     expect(patch.model_defaults).toEqual({ text: 'existing' });
@@ -324,7 +321,7 @@ describe('desktop default model service', () => {
     expect(patch.providers).toEqual({});
     expect(patch.model_presets['asset-deepseek-r1']).toBeUndefined();
     expect(patch.model_presets).toHaveProperty('preferred');
-    expect(patch.model_presets).toHaveProperty('asset-deepseek-deepseek-r1');
+    expect(patch.model_presets).not.toHaveProperty('asset-deepseek-deepseek-r1');
     expect(patch.model_presets).toHaveProperty('asset-deepseek-deepseek_v4_flash');
     expect(patch.model_defaults).toEqual({ text: 'preferred' });
     expect(patch).not.toHaveProperty('agents');
@@ -343,7 +340,7 @@ describe('desktop default model service', () => {
     }, service, fallbackModels);
 
     expect(patch.model_presets['asset-deepseek-r1']).toBeUndefined();
-    expect(patch.model_presets).toHaveProperty('asset-deepseek-deepseek-r1');
+    expect(patch.model_presets).not.toHaveProperty('asset-deepseek-deepseek-r1');
     expect(patch.model_defaults?.text).toBe('asset-deepseek-deepseek_v4_flash');
     expect(patch.agents?.defaults.model).toBe('deepseek_v4_flash');
   });
@@ -380,6 +377,7 @@ describe('desktop default model service', () => {
     }, service, ['deepseek-r1', 'deepseek_v4_flash', 'deepseek-v5']);
 
     expect(patch.model_presets.retired).toBeUndefined();
+    expect(patch.model_presets.current).toBeUndefined();
     expect(patch.model_presets).toHaveProperty('asset-deepseek-deepseek_v4_flash');
     expect(patch.model_presets).toHaveProperty('asset-deepseek-deepseek-v5');
     expect(patch.model_defaults?.text).toBe('asset-deepseek-deepseek_v4_flash');
@@ -402,10 +400,14 @@ describe('desktop default model service', () => {
       agents: { defaults: { model: 'deepseek-r1', provider: 'asset-deepseek' } },
     }, service, null);
 
-    expect(patch.model_presets).toHaveProperty('asset-deepseek-r1');
+    expect(patch.model_presets['asset-deepseek-r1']).toBeUndefined();
+    expect(patch.model_presets).toHaveProperty('asset-deepseek-deepseek_v4_flash');
     expect(patch.modelPresets).toBeUndefined();
-    expect(patch.model_defaults).toEqual({ text: 'asset-deepseek-r1' });
+    expect(patch.model_defaults).toEqual({
+      text: 'asset-deepseek-deepseek_v4_flash',
+    });
     expect(patch.modelDefaults).toBeUndefined();
+    expect(patch.agents?.defaults.model).toBe('deepseek_v4_flash');
   });
 
   it('rejects an incomplete deployment model service', () => {

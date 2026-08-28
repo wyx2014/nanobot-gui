@@ -1233,6 +1233,9 @@ export async function createModelConfiguration(
   if (configuration.capabilities?.length) {
     query.set("capabilities", configuration.capabilities.join(","));
   }
+  if (configuration.capabilitySource !== undefined) {
+    query.set("capability_source", configuration.capabilitySource);
+  }
   return request<SettingsPayload>(
     `${base}/api/settings/model-configurations/create?${query}`,
     token,
@@ -1254,6 +1257,9 @@ export async function updateModelConfiguration(
   }
   if (configuration.capabilities !== undefined) {
     query.set("capabilities", configuration.capabilities.join(","));
+  }
+  if (configuration.capabilitySource !== undefined) {
+    query.set("capability_source", configuration.capabilitySource);
   }
   return request<SettingsPayload>(
     `${base}/api/settings/model-configurations/update?${query}`,

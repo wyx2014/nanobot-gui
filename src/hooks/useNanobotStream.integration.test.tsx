@@ -796,6 +796,99 @@ describe("useNanobotStream media progress lifecycle", () => {
     });
   });
 
+  it("keeps one reply when reasoning briefly interrupts the same answer stream", () => {
+    const turnId = "turn-interleaved-reasoning";
+    const streamId = "interleaved-answer-stream";
+    emit({
+      event: "turn_started",
+      chat_id: "chat-media-progress",
+      snapshot_revision: 1,
+      turn: {
+        id: turnId,
+        status: "inProgress",
+        started_at: 1,
+      },
+    });
+    emit({
+      event: "reasoning_delta",
+      chat_id: "chat-media-progress",
+      text: "友好回应用户",
+    });
+    emit({
+      event: "reasoning_end",
+      chat_id: "chat-media-progress",
+    });
+    emit({
+      event: "delta",
+      chat_id: "chat-media-progress",
+      text: "你好",
+      stream_id: streamId,
+    });
+    emit({
+      event: "reasoning_delta",
+      chat_id: "chat-media-progress",
+      text: "。",
+    });
+    emit({
+      event: "reasoning_end",
+      chat_id: "chat-media-progress",
+    });
+    emit({
+      event: "delta",
+      chat_id: "chat-media-progress",
+      text: "！有什么我可以帮你的吗？",
+      stream_id: streamId,
+    });
+    emit({
+      event: "stream_end",
+      chat_id: "chat-media-progress",
+      stream_id: streamId,
+      stream_kind: "answer",
+      resuming: false,
+    });
+
+    const streamingAssistant = (latest?.messages ?? []).filter(
+      (message) => message.role === "assistant" && message.kind !== "trace",
+    );
+    expect(streamingAssistant).toHaveLength(1);
+    expect(streamingAssistant[0]).toMatchObject({
+      turnId,
+      streamId,
+      content: "你好！有什么我可以帮你的吗？",
+      reasoning: "友好回应用户。",
+      isStreaming: true,
+    });
+
+    emit({
+      event: "message",
+      chat_id: "chat-media-progress",
+      text: "你好！有什么我可以帮你的吗？",
+      replace_stream: true,
+    });
+    emit({
+      event: "turn_completed",
+      chat_id: "chat-media-progress",
+      snapshot_revision: 2,
+      turn: {
+        id: turnId,
+        status: "completed",
+        started_at: 1,
+        completed_at: 3_800,
+        duration_ms: 3_799,
+      },
+    });
+
+    const finalAssistant = (latest?.messages ?? []).filter(
+      (message) => message.role === "assistant" && message.kind !== "trace",
+    );
+    expect(finalAssistant).toHaveLength(1);
+    expect(finalAssistant[0]).toMatchObject({
+      content: "你好！有什么我可以帮你的吗？",
+      reasoning: "友好回应用户。",
+      isStreaming: false,
+    });
+  });
+
   it("reconciles a late tail after stream_end into one authoritative answer", () => {
     const turnId = "turn-import-export";
     const streamId = "answer-stream";

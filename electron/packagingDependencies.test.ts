@@ -12,6 +12,9 @@ interface PackageManifest {
       compression?: string;
       target?: string[];
     };
+    linux?: {
+      target?: string[];
+    };
     nsis?: {
       include?: string;
     };
@@ -81,6 +84,17 @@ describe('packaged dependency boundary', () => {
     expect(packageManifest.scripts?.['build:win:portable'])
       .toContain('npm run prepare-python:win');
     expect(packageManifest.scripts?.['build:win:portable']).toContain('--win portable');
+  });
+
+  it('builds Linux with its target runtime and one AppImage target', () => {
+    expect(packageManifest.build?.linux?.target).toEqual(['AppImage']);
+    expect(packageManifest.scripts?.['prepare-python:linux'])
+      .toBe('node scripts/download-python.mjs --target linux-x64');
+    expect(packageManifest.scripts?.['package-python:linux'])
+      .toBe('node scripts/package-python-runtime.mjs --target linux-x64');
+    expect(packageManifest.scripts?.['build:linux'])
+      .toContain('npm run prepare-python:linux');
+    expect(packageManifest.scripts?.['build:linux']).toContain('--linux AppImage');
   });
 
   it('resets the installation marker only for a real uninstall', () => {

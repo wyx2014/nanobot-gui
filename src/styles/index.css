@@ -1094,77 +1094,92 @@ input[type="range"].slider-filled::-moz-range-thumb {
   box-shadow: none;
 }
 
-/* Model configuration has denser, more interactive content than the other
- * settings pages. Give it its own dark hierarchy instead of letting the
- * light cards, chips and actions float on the dark settings canvas. */
-.dark [data-model-segmented] {
-  background: #242422;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.075);
+/* Model configuration is a compact operational surface: quiet navigation,
+ * selectable model rows, and one continuous provider list. */
+.dark [data-model-page-tabs] {
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
-.dark [data-model-segment] {
+.dark [data-model-page-tab] {
   color: #9f9b93;
 }
 
-.dark [data-model-segment]:not([data-active="true"]):hover {
+.dark [data-model-page-tab]:hover {
+  color: #eee9df;
+}
+
+.dark [data-model-page-tab][data-active="true"] {
+  color: #fffaf2;
+}
+
+.dark [data-model-page-tab][data-active="true"]::after {
+  background: #d97757;
+}
+
+.dark [data-model-capability-picker] {
+  background: #242422;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+}
+
+.dark [data-model-capability-option] {
+  color: #9f9b93;
+}
+
+.dark [data-model-capability-option]:not([data-active="true"]):hover {
   color: #e6e1d8;
   background: #2e2d2a;
 }
 
-.dark [data-model-segment][data-active="true"] {
+.dark [data-model-capability-option][data-active="true"] {
   color: #fffaf1;
-  background: #3b3935;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
-    0 1px 3px rgba(0, 0, 0, 0.34);
+  background: #3a3835;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.34);
 }
 
-.dark [data-model-preset-card],
-.dark [data-model-provider-card],
-.dark [data-model-form-card] {
+.dark [data-model-preset-card] {
   color: #e9e4dc;
   background: #242423;
   border-color: #3d3b37;
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.025);
 }
 
-.dark [data-model-preset-card]:hover,
-.dark [data-model-provider-card]:hover {
+.dark [data-model-preset-card]:not([data-active="true"]):hover {
+  color: #fffaf2;
   background: #292825;
   border-color: #57524b;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
 }
 
 .dark [data-model-preset-card][data-active="true"] {
-  background:
-    linear-gradient(145deg, rgba(217, 119, 87, 0.11), transparent 58%),
-    #282624;
-  border-color: rgba(217, 119, 87, 0.66);
-  box-shadow:
-    inset 0 0 0 1px rgba(217, 119, 87, 0.08),
-    0 8px 24px rgba(0, 0, 0, 0.2);
-}
-
-.dark [data-model-default-action] {
-  color: #d7d2c9;
-  background: #2e2d2a;
-  border-color: #48453f;
-}
-
-.dark [data-model-default-action]:not([data-active="true"]):hover {
-  color: #fffaf2;
-  background: #373532;
-  border-color: #625c54;
-}
-
-.dark [data-model-default-action][data-active="true"] {
   color: #ffd8c8;
-  background: rgba(217, 119, 87, 0.17);
-  border-color: rgba(217, 119, 87, 0.62);
+  background: #2d2724;
+  border-color: rgba(217, 119, 87, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(217, 119, 87, 0.08);
 }
 
-.dark [data-model-default-action][data-active="true"]:hover {
-  background: rgba(217, 119, 87, 0.23);
+.dark [data-model-preset-card] > span:last-child {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.dark [data-model-preset-card] [data-model-selection] {
+  color: transparent;
+  background: #242423;
+  border-color: #5a5650;
+}
+
+.dark [data-model-preset-card][data-active="true"] [data-model-selection] {
+  color: #fff;
+  background: #d97757;
+  border-color: #d97757;
+}
+
+.dark [data-model-icon] {
+  color: #bbb6ad;
+  background: #343230;
+}
+
+.dark [data-model-preset-card][data-active="true"] [data-model-icon] {
+  color: #f0a488;
+  background: rgba(217, 119, 87, 0.14);
 }
 
 .dark [data-model-title],
@@ -1185,16 +1200,39 @@ input[type="range"].slider-filled::-moz-range-thumb {
   color: #d0cbc2;
 }
 
-.dark [data-model-capability],
 .dark [data-model-channel] {
   color: #c3beb5;
   background: #343230;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.045);
 }
 
-.dark [data-model-access-summary] {
+.dark [data-model-current-label] {
+  color: #f0a488;
+}
+
+.dark [data-model-provider-list],
+.dark [data-model-form-card] {
   background: #242423;
-  border: 1px solid rgba(255, 255, 255, 0.065);
+  border-color: #3d3b37;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+.dark [data-model-provider-card] {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.dark [data-model-provider-card]:hover {
+  background: #292825;
+}
+
+.dark [data-model-form-actions] {
+  border-color: rgba(255, 255, 255, 0.09);
+}
+
+.dark [data-model-probe-result] {
+  color: #b7c9ba;
+  background: rgba(67, 112, 78, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(105, 155, 117, 0.16);
 }
 
 .dark [data-model-empty] {
@@ -1237,14 +1275,12 @@ input[type="range"].slider-filled::-moz-range-thumb {
 
 .dark [data-model-delete-action] {
   color: #f1a4a4;
-  background: #2b2222;
-  border-color: rgba(220, 94, 94, 0.32);
+  background: transparent;
 }
 
 .dark [data-model-delete-action]:hover {
   color: #ffc0c0;
   background: #3a2626;
-  border-color: rgba(232, 112, 112, 0.48);
 }
 
 .dark [data-model-builtin-badge] {
@@ -1255,14 +1291,14 @@ input[type="range"].slider-filled::-moz-range-thumb {
 
 .dark [data-model-status="configured"] {
   color: #8fdbad;
-  background: rgba(53, 153, 96, 0.16);
-  box-shadow: inset 0 0 0 1px rgba(73, 176, 118, 0.17);
+  background: transparent;
+  box-shadow: none;
 }
 
 .dark [data-model-status="pending"] {
   color: #aaa69d;
-  background: #333230;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.055);
+  background: transparent;
+  box-shadow: none;
 }
 
 .dark [data-model-provider-actions] {

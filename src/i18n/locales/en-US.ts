@@ -208,7 +208,7 @@ const enUS: TranslationDict = {
     model: 'Model',
     customModelOption: 'Custom Model...',
     customModelName: 'Custom Model Name',
-    customModelPlaceholder: 'e.g., claude-sonnet-4-6',
+    customModelPlaceholder: 'e.g., deepseek_v4_flash',
     customModelDesc: 'Enter any model ID supported by the API',
     currentModel: 'Current Model',
     notSet: 'Not Set',

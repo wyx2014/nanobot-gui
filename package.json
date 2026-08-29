@@ -28,7 +28,7 @@
     "build:win": "npm run validate:builtin-mcp && npm run prepare-python:win && npm run electron:build && electron-builder --win nsis --config",
     "build:win:portable": "npm run validate:builtin-mcp && npm run prepare-python:win && npm run electron:build && electron-builder --win portable --config",
     "build:mac": "npm run validate:builtin-mcp && npm run prepare-python && npm run electron:build && electron-builder --mac --config",
-    "build:linux": "npm run validate:builtin-mcp && npm run prepare-python:linux && npm run electron:build && electron-builder --linux AppImage --config"
+    "build:linux": "npm run validate:builtin-mcp && npm run prepare-python:linux && npm run electron:build && electron-builder --linux AppImage --config --publish never"
   },
   "build": {
     "appId": "com.tparuyi.app",

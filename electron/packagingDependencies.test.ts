@@ -99,6 +99,7 @@ describe('packaged dependency boundary', () => {
     expect(packageManifest.scripts?.['build:linux'])
       .toContain('npm run prepare-python:linux');
     expect(packageManifest.scripts?.['build:linux']).toContain('--linux AppImage');
+    expect(packageManifest.scripts?.['build:linux']).toContain('--publish never');
   });
 
   it('resets the installation marker only for a real uninstall', () => {

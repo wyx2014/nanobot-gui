@@ -872,6 +872,7 @@ export async function syncSessionFromGateway(
       savedAt?: string;
       workspace_scope?: import('./types').WorkspaceScopePayload;
       expert_team?: import('./types').ExpertTeamBinding;
+      mcp_presets?: import('./types').UIMcpPresetAttachment[];
     } | null = null;
     let runtimeSnapshot: ThreadRuntimeSnapshot | null = null;
     if (resource) {
@@ -882,6 +883,7 @@ export async function syncSessionFromGateway(
         project_id: resource.project_id,
         workspace_scope: resource.workspace_scope,
         expert_team: resource.expert_team,
+        mcp_presets: resource.mcp_presets,
       };
     } else {
       // Compatibility fallback for an older gateway during rolling upgrades.
@@ -924,6 +926,7 @@ export async function syncSessionFromGateway(
       workspacePath: thread.workspace_scope?.project_path ?? null,
       workspaceScope: thread.workspace_scope ?? null,
       expertTeam: thread.expert_team ?? null,
+      mcpPresets: thread.mcp_presets ?? [],
       ...(options.scheduledTaskId ? { scheduledTaskId: options.scheduledTaskId } : {}),
     });
     return true;
@@ -990,6 +993,7 @@ export function conversationFromSessionSummary(
     workspacePath: session.workspaceScope?.project_path ?? existing?.workspacePath ?? null,
     workspaceScope: session.workspaceScope ?? existing?.workspaceScope ?? null,
     expertTeam: session.expertTeam ?? existing?.expertTeam ?? null,
+    mcpPresets: session.mcpPresets ?? existing?.mcpPresets ?? [],
     ...(existing?.scheduledTaskId ? { scheduledTaskId: existing.scheduledTaskId } : {}),
   };
 }

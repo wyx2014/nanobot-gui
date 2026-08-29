@@ -452,6 +452,7 @@ function App() {
       expertTeam,
       sessionId,
       projectId,
+      mcpPresets,
     ) => {
       if (sessionId || projectId) {
         useChatStore.getState().setConversationIdentity(_chatId, sessionId, projectId);
@@ -466,6 +467,9 @@ function App() {
       }
       if (expertTeam !== undefined) {
         useChatStore.getState().setConversationExpertTeam(_chatId, expertTeam);
+      }
+      if (mcpPresets !== undefined) {
+        useChatStore.getState().setConversationMcpPresets(_chatId, mcpPresets);
       }
     });
   });

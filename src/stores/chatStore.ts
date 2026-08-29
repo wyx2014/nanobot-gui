@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import type { Message, Conversation, AgentStatus, TokenUsage, ConversationStatus, ToolCall, ToolCallContext, ToolResultContent, MessageMediaAttachment } from '../types';
 import type { ExecutionStepSnapshot } from '../types/execution';
-import type { ExpertTeamBinding, ThreadRuntimeSnapshot, WorkspaceScopePayload } from '@/core/types';
+import type { ExpertTeamBinding, ThreadRuntimeSnapshot, UIMcpPresetAttachment, WorkspaceScopePayload } from '@/core/types';
 import { useWorkspaceStore } from './workspaceStore';
 import { useTaskExecutionStore } from './taskExecutionStore';
 import { useConversationWorkbenchStore } from './conversationWorkbenchStore';
@@ -119,6 +119,7 @@ interface ChatActions {
   setConversationWorkspaceScope: (convId: string, scope: WorkspaceScopePayload | null) => void;
   setConversationIdentity: (convId: string, sessionId?: string, projectId?: string) => void;
   setConversationExpertTeam: (convId: string, team: ExpertTeamBinding | null) => void;
+  setConversationMcpPresets: (convId: string, presets: UIMcpPresetAttachment[]) => void;
   archiveConversation: (id: string) => Promise<void>;
   removeConversationLocally: (id: string) => void;
   renameConversation: (id: string, title: string) => void;
@@ -210,6 +211,7 @@ export const useChatStore = create<ChatStore>()(
             workspacePath: path,
             workspaceScope: scope,
             expertTeam: options?.expertTeam ?? null,
+            mcpPresets: [],
             ...(options?.scheduledTaskId ? { scheduledTaskId: options.scheduledTaskId } : {}),
           };
           if (!options?.skipActivate) {
@@ -283,6 +285,13 @@ export const useChatStore = create<ChatStore>()(
         set((state) => {
           const conv = state.conversations[convId];
           if (conv) conv.expertTeam = team;
+        });
+      },
+
+      setConversationMcpPresets: (convId, presets) => {
+        set((state) => {
+          const conv = state.conversations[convId];
+          if (conv) conv.mcpPresets = presets;
         });
       },
 

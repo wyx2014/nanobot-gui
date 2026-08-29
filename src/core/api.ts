@@ -201,6 +201,7 @@ export async function listSessions(
     run_started_at?: number | null;
     workspace_scope?: WorkspaceScopePayload | null;
     expert_team?: import("./types").ExpertTeamBinding | null;
+    mcp_presets?: import("./types").UIMcpPresetAttachment[];
   };
   const body = await request<{ sessions: Row[] }>(
     `${base}/api/sessions`,
@@ -220,6 +221,7 @@ export async function listSessions(
     runStartedAt: s.run_started_at ?? null,
     workspaceScope: s.workspace_scope ?? null,
     expertTeam: s.expert_team ?? null,
+    mcpPresets: s.mcp_presets ?? [],
   }));
 }
 

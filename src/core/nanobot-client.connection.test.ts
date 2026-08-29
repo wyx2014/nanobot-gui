@@ -102,6 +102,42 @@ describe("NanobotClient readiness", () => {
     );
   });
 
+  it("persists MCP connectors after a session update acknowledgement", async () => {
+    const socket = new FakeSocket();
+    const client = new NanobotClient({
+      url: "ws://127.0.0.1:8900/",
+      reconnect: false,
+      socketFactory: () => socket as unknown as WebSocket,
+    });
+    client.connect();
+    socket.open();
+    socket.receive({
+      event: "ready",
+      chat_id: "default-chat",
+      client_id: "desktop",
+      agent_ready: true,
+      mcp_status: "ready",
+    });
+
+    const update = client.setMcpPresets("chat-1", [{ name: "juyuan" }]);
+    expect(socket.send).toHaveBeenLastCalledWith(JSON.stringify({
+      type: "set_mcp_presets",
+      chat_id: "chat-1",
+      mcp_presets: [{ name: "juyuan" }],
+    }));
+
+    socket.receive({
+      event: "session_updated",
+      chat_id: "chat-1",
+      scope: "metadata",
+      mcp_presets: [{ name: "juyuan", display_name: "聚源金融数据" }],
+    });
+
+    await expect(update).resolves.toEqual([
+      { name: "juyuan", display_name: "聚源金融数据" },
+    ]);
+  });
+
   it("sends browser takeover controls through the authenticated socket", () => {
     const socket = new FakeSocket();
     const client = new NanobotClient({

@@ -384,6 +384,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   const [expertTeamsLoading, setExpertTeamsLoading] = useState(true);
   const [expertTeamsError, setExpertTeamsError] = useState<string | null>(null);
   const [expertTeamUpdating, setExpertTeamUpdating] = useState(false);
+  const [mcpPresetsUpdating, setMcpPresetsUpdating] = useState(false);
   const plusMenuRef = useRef<HTMLDivElement>(null);
   const skills = useDiscoveryStore((s) => s.skills);
   const useBuiltinWebSearch = useSettingsStore((s) => s.useBuiltinWebSearch);
@@ -408,6 +409,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   // Store hooks (always called)
   const cancelStreaming = useChatStore((s) => s.cancelStreaming);
   const setConversationExpertTeam = useChatStore((s) => s.setConversationExpertTeam);
+  const setConversationMcpPresets = useChatStore((s) => s.setConversationMcpPresets);
   const addToast = useToastStore((s) => s.addToast);
   const pendingInput = useChatStore((s) => s.pendingInput);
   const setPendingInput = useChatStore((s) => s.setPendingInput);
@@ -417,6 +419,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   const selectedExpertTeam = activeConv
     ? activeConv.expertTeam ?? null
     : pendingExpertTeam;
+  const boundMcpPresets = activeConv?.mcpPresets ?? [];
   const draftKey = useMemo(() => draftStorageKey(activeConv?.id, variant), [activeConv?.id, variant]);
   const queueKey = useMemo(() => queueStorageKey(activeConv?.id, variant), [activeConv?.id, variant]);
   const currentModel = useSettingsStore((s) => getEffectiveModel(s));
@@ -785,7 +788,10 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       const query = trimmed.slice(1).toLowerCase();
       const mcpItems: SuggestionItem[] = mcpPresets
         .filter((preset) => {
-          if (selectedMcpPresets.some((selected) => selected.name === preset.name)) return false;
+          if (
+            selectedMcpPresets.some((selected) => selected.name === preset.name)
+            || boundMcpPresets.some((bound) => bound.name === preset.name)
+          ) return false;
           if (!query) return true;
           return preset.name.toLowerCase().includes(query)
             || preset.display_name.toLowerCase().includes(query)
@@ -821,7 +827,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
         }));
     }
     return [];
-  }, [text, suggestionType, mcpPresets, selectedMcpPresets, usableSkills, selectedSkills]);
+  }, [boundMcpPresets, text, suggestionType, mcpPresets, selectedMcpPresets, usableSkills, selectedSkills]);
 
   // Reset dismissed state when suggestions change
   useEffect(() => {
@@ -1491,6 +1497,31 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       .finally(() => setExpertTeamUpdating(false));
   };
 
+  const updateBoundMcpPresets = (presets: OutboundMcpPresetMention[]) => {
+    if (!activeConv?.id || isRunning || mcpPresetsUpdating) return;
+    const chatId = activeConv.id;
+    setMcpPresetsUpdating(true);
+    void Promise.resolve()
+      .then(() => getNanobotClient().setMcpPresets(chatId, presets))
+      .then((confirmedPresets) => {
+        setConversationMcpPresets(chatId, confirmedPresets);
+        textareaRef.current?.focus();
+      })
+      .catch((error) => {
+        addToast({
+          type: 'error',
+          title: isEn ? 'Failed to update connectors' : '更新会话连接器失败',
+          message: error instanceof Error ? error.message : String(error),
+          duration: 5000,
+        });
+      })
+      .finally(() => setMcpPresetsUpdating(false));
+  };
+
+  const removeBoundMcpPreset = (name: string) => {
+    updateBoundMcpPresets(boundMcpPresets.filter((preset) => preset.name !== name));
+  };
+
   const renderPlusMenu = () => {
     const filteredExpertTeams = expertTeams.filter((team) => {
       const query = expertTeamSearchQuery.trim().toLowerCase();
@@ -1752,12 +1783,16 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
               ) : (
                 <div className="max-h-48 overflow-y-auto">
                   {filteredMcpPresets.map((preset) => {
-                    const isSelected = selectedMcpPresets.some((s) => s.name === preset.name);
+                    const isBound = boundMcpPresets.some((item) => item.name === preset.name);
+                    const isSelected = isBound || selectedMcpPresets.some((s) => s.name === preset.name);
                     return (
                       <button
                         key={preset.name}
+                        disabled={isBound && (isRunning || mcpPresetsUpdating)}
                         onClick={() => {
-                          if (isSelected) {
+                          if (isBound) {
+                            removeBoundMcpPreset(preset.name);
+                          } else if (isSelected) {
                             setSelectedMcpPresets((prev) => prev.filter((p) => p.name !== preset.name));
                           } else {
                             setSelectedMcpPresets((prev) => [...prev, {
@@ -1775,7 +1810,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                           setActiveSubmenu(null);
                           textareaRef.current?.focus();
                         }}
-                        className="w-full flex items-center justify-between px-3.5 py-2 hover:bg-[#f5f3ee] transition-colors text-left cursor-pointer"
+                        className="w-full flex items-center justify-between px-3.5 py-2 hover:bg-[#f5f3ee] transition-colors text-left cursor-pointer disabled:cursor-not-allowed disabled:opacity-55"
                       >
                         <div className="flex flex-col min-w-0">
                           <span className="font-medium text-[#29261b] truncate">@{preset.display_name || preset.name}</span>
@@ -1914,6 +1949,35 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       </span>
       <span className="truncate">{selectedExpertTeam.name || selectedExpertTeam.id}</span>
     </button>
+  ) : null;
+
+  const renderBoundMcpPresets = () => boundMcpPresets.length > 0 ? (
+    <div data-bound-mcp-presets className="inline-flex min-w-0 items-center gap-1.5">
+      {boundMcpPresets.map((preset) => (
+        <button
+          type="button"
+          data-composer-action
+          data-bound-mcp-preset={preset.name}
+          key={`bound-mcp-${preset.name}`}
+          onClick={() => removeBoundMcpPreset(preset.name)}
+          disabled={isRunning || mcpPresetsUpdating}
+          aria-busy={mcpPresetsUpdating}
+          title={isEn
+            ? `Remove ${preset.display_name || preset.name} from this conversation`
+            : `从当前会话移除 ${preset.display_name || preset.name}`}
+          aria-label={isEn
+            ? `Remove connector ${preset.display_name || preset.name}`
+            : `移除连接器 ${preset.display_name || preset.name}`}
+          className="group/mcp inline-flex h-8 max-w-[180px] shrink-0 items-center gap-1.5 rounded-xl bg-[#f0efec] px-2.5 text-[13px] font-medium text-[#29261b] transition-colors hover:bg-[#e8e6e1] disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <span className="relative h-4 w-4 shrink-0">
+            <Puzzle className="absolute inset-0 h-4 w-4 text-[#656358] transition-opacity group-hover/mcp:opacity-0" />
+            <X className="absolute inset-0 h-4 w-4 text-[#656358] opacity-0 transition-opacity group-hover/mcp:opacity-100" />
+          </span>
+          <span className="truncate">{preset.display_name || preset.name}</span>
+        </button>
+      ))}
+    </div>
   ) : null;
 
   const renderVoiceControl = () => {
@@ -2294,6 +2358,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                 </div>
                 {voiceInputAvailable ? renderVoiceControl() : null}
                 {renderSelectedExpertTeam()}
+                {renderBoundMcpPresets()}
                 <div className="flex-1" />
                 {renderModelPicker()}
 
@@ -2335,6 +2400,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                   </div>
                   {voiceInputAvailable ? renderVoiceControl() : null}
                   {renderSelectedExpertTeam()}
+                  {renderBoundMcpPresets()}
                 </div>
 
                 <div className="flex items-center gap-2">

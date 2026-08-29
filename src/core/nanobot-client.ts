@@ -75,6 +75,7 @@ type SessionUpdateHandler = (
   expertTeam?: ExpertTeamBinding | null,
   sessionId?: string,
   projectId?: string,
+  mcpPresets?: OutboundMcpPresetMention[],
 ) => void;
 type RunStatusHandler = (chatId: string, startedAt: number | null) => void;
 type RuntimeSnapshotHandler = (
@@ -99,6 +100,12 @@ interface PendingNewChat {
 
 interface PendingExpertTeamUpdate {
   resolve: (team: ExpertTeamBinding | null) => void;
+  reject: (err: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+interface PendingMcpPresetsUpdate {
+  resolve: (presets: OutboundMcpPresetMention[]) => void;
   reject: (err: Error) => void;
   timer: ReturnType<typeof setTimeout>;
 }
@@ -187,6 +194,7 @@ export class NanobotClient {
   private goalStateByChatId = new Map<string, GoalStateWsPayload>();
   private pendingNewChat: PendingNewChat | null = null;
   private pendingExpertTeamUpdates = new Map<string, PendingExpertTeamUpdate>();
+  private pendingMcpPresetsUpdates = new Map<string, PendingMcpPresetsUpdate>();
   private pendingTranscriptions = new Map<string, PendingTranscription>();
   private voiceStreams = new Map<string, ActiveVoiceStream>();
   private sendQueue: Outbound[] = [];
@@ -613,6 +621,29 @@ export class NanobotClient {
     });
   }
 
+  setMcpPresets(
+    chatId: string,
+    mcpPresets: OutboundMcpPresetMention[],
+    timeoutMs: number = 5_000,
+  ): Promise<OutboundMcpPresetMention[]> {
+    if (this.pendingMcpPresetsUpdates.has(chatId)) {
+      return Promise.reject(new Error("MCP preset update already in flight"));
+    }
+    this.knownChats.add(chatId);
+    return new Promise<OutboundMcpPresetMention[]>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingMcpPresetsUpdates.delete(chatId);
+        reject(new Error("MCP preset update timed out"));
+      }, timeoutMs);
+      this.pendingMcpPresetsUpdates.set(chatId, { resolve, reject, timer });
+      this.queueSend({
+        type: "set_mcp_presets",
+        chat_id: chatId,
+        mcp_presets: mcpPresets,
+      });
+    });
+  }
+
   transcribeAudio(
     dataUrl: string,
     durationMs?: number,
@@ -863,6 +894,7 @@ export class NanobotClient {
         parsed.expert_team,
         parsed.session_id,
         parsed.project_id,
+        parsed.mcp_presets,
       );
       if (Object.prototype.hasOwnProperty.call(parsed, "expert_team")) {
         const pending = this.pendingExpertTeamUpdates.get(parsed.chat_id);
@@ -870,6 +902,14 @@ export class NanobotClient {
           clearTimeout(pending.timer);
           this.pendingExpertTeamUpdates.delete(parsed.chat_id);
           pending.resolve(parsed.expert_team ?? null);
+        }
+      }
+      if (Object.prototype.hasOwnProperty.call(parsed, "mcp_presets")) {
+        const pending = this.pendingMcpPresetsUpdates.get(parsed.chat_id);
+        if (pending) {
+          clearTimeout(pending.timer);
+          this.pendingMcpPresetsUpdates.delete(parsed.chat_id);
+          pending.resolve(parsed.mcp_presets ?? []);
         }
       }
       return;
@@ -881,6 +921,16 @@ export class NanobotClient {
         clearTimeout(pending.timer);
         this.pendingExpertTeamUpdates.delete(parsed.chat_id);
         pending.reject(new Error(`expert_team_rejected:${parsed.reason || ""}`));
+        return;
+      }
+    }
+
+    if (parsed.event === "error" && parsed.detail === "mcp_presets_rejected" && parsed.chat_id) {
+      const pending = this.pendingMcpPresetsUpdates.get(parsed.chat_id);
+      if (pending) {
+        clearTimeout(pending.timer);
+        this.pendingMcpPresetsUpdates.delete(parsed.chat_id);
+        pending.reject(new Error(`mcp_presets_rejected:${parsed.reason || ""}`));
         return;
       }
     }
@@ -930,9 +980,14 @@ export class NanobotClient {
     expertTeam?: ExpertTeamBinding | null,
     sessionId?: string,
     projectId?: string,
+    mcpPresets?: OutboundMcpPresetMention[],
   ): void {
     for (const handler of this.sessionUpdateHandlers) {
-      handler(chatId, scope, workspaceScope, expertTeam, sessionId, projectId);
+      if (mcpPresets === undefined) {
+        handler(chatId, scope, workspaceScope, expertTeam, sessionId, projectId);
+      } else {
+        handler(chatId, scope, workspaceScope, expertTeam, sessionId, projectId, mcpPresets);
+      }
     }
   }
 
@@ -977,6 +1032,11 @@ export class NanobotClient {
       pending.reject(new Error("socket closed"));
     }
     this.pendingExpertTeamUpdates.clear();
+    for (const pending of this.pendingMcpPresetsUpdates.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error("socket closed"));
+    }
+    this.pendingMcpPresetsUpdates.clear();
     for (const pending of this.pendingTranscriptions.values()) {
       clearTimeout(pending.timer);
       pending.reject(new TranscriptionRequestError("socket_closed"));

@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   fetchExpertTeams: vi.fn(),
   fetchMcpPresets: vi.fn(),
   setExpertTeam: vi.fn(),
+  setMcpPresets: vi.fn(),
   transcribeAudio: vi.fn(),
   startVoiceStream: vi.fn(),
   appendVoiceAudio: vi.fn(),
@@ -31,6 +32,7 @@ vi.mock('@/core/nanobotClient', async () => {
     ...actual,
     getNanobotClient: vi.fn().mockReturnValue({
       setExpertTeam: mocks.setExpertTeam,
+      setMcpPresets: mocks.setMcpPresets,
       transcribeAudio: mocks.transcribeAudio,
       startVoiceStream: mocks.startVoiceStream,
       appendVoiceAudio: mocks.appendVoiceAudio,
@@ -143,6 +145,7 @@ beforeEach(() => {
     installed_count: 1,
   });
   mocks.setExpertTeam.mockImplementation(async (_chatId, team) => team);
+  mocks.setMcpPresets.mockImplementation(async (_chatId, presets) => presets);
   mocks.switchGatewayTextModelDefault.mockImplementation(async (presetName: string) => {
     const selected = useSettingsStore.getState().gatewayTextModels.find((model) => (
       model.presetName === presetName
@@ -707,5 +710,32 @@ describe('ChatInput connector messages', () => {
         mcpPresets: [expect.objectContaining({ name: 'juyuan' })],
       }),
     );
+  });
+
+  it('keeps a connector visible for the conversation and removes it through the gateway', async () => {
+    const conversationId = useChatStore.getState().createConversation(null, { title: '啤酒研究' });
+    useChatStore.getState().setConversationMcpPresets(conversationId, [{
+      name: 'juyuan',
+      display_name: '聚源金融数据',
+      configured: true,
+    }]);
+    const view = await renderChatInput('chat');
+    const boundConnector = view.querySelector<HTMLButtonElement>(
+      '[data-bound-mcp-presets] button',
+    );
+
+    expect(boundConnector?.textContent).toContain('聚源金融数据');
+    expect(boundConnector?.textContent).not.toContain('本会话');
+    expect(boundConnector?.closest('[data-codex-composer-toolbar]')).not.toBeNull();
+    expect(boundConnector?.querySelector('svg.lucide-puzzle')).not.toBeNull();
+    expect(boundConnector?.querySelector('svg.lucide-x')).not.toBeNull();
+
+    await act(async () => {
+      boundConnector?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(mocks.setMcpPresets).toHaveBeenCalledWith(conversationId, []);
+    expect(useChatStore.getState().conversations[conversationId].mcpPresets).toEqual([]);
+    expect(view.querySelector('[data-bound-mcp-presets]')).toBeNull();
   });
 });

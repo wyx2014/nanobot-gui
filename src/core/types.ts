@@ -173,6 +173,7 @@ export interface ThreadResource {
   artifacts: ThreadArtifactResource[];
   workspace_scope?: WorkspaceScopePayload;
   expert_team?: ExpertTeamBinding;
+  mcp_presets?: UIMcpPresetAttachment[];
   from_event_seq: number;
   to_event_seq: number;
   events: CanonicalSessionEvent[];
@@ -527,6 +528,7 @@ export interface ChatSummary {
   runStartedAt?: number | null;
   workspaceScope?: WorkspaceScopePayload | null;
   expertTeam?: ExpertTeamBinding | null;
+  mcpPresets?: UIMcpPresetAttachment[];
 }
 
 export interface ProjectPayload {
@@ -1447,6 +1449,7 @@ export type InboundEvent =
       scope?: "metadata" | "thread" | string;
       workspace_scope?: WorkspaceScopePayload;
       expert_team?: ExpertTeamBinding | null;
+      mcp_presets?: UIMcpPresetAttachment[];
     }
   | {
       event: "team_run_started";
@@ -1580,6 +1583,7 @@ export interface WebuiThreadPersistedPayload {
   messages: UIMessage[];
   workspace_scope?: WorkspaceScopePayload;
   expert_team?: ExpertTeamBinding;
+  mcp_presets?: UIMcpPresetAttachment[];
   page?: {
     before_cursor: string | null;
     has_more_before: boolean;
@@ -1593,6 +1597,7 @@ export type Outbound =
   | { type: "attach"; chat_id: string }
   | { type: "set_workspace_scope"; chat_id: string; workspace_scope: WorkspaceScopePayload }
   | { type: "set_expert_team"; chat_id: string; expert_team: ExpertTeamBinding | null }
+  | { type: "set_mcp_presets"; chat_id: string; mcp_presets: OutboundMcpPresetMention[] }
   | {
       type: "browser_control";
       chat_id: string;

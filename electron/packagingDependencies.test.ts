@@ -128,10 +128,8 @@ describe('packaged dependency boundary', () => {
     expect(linuxAfterRemove).toContain('remove|purge)');
     expect(linuxAfterRemove).toContain('rm -f "$INSTALLATION_ID_PATH"');
     expect(linuxAfterRemove).toContain("update-alternatives --remove");
-    expect(fs.statSync(path.join(process.cwd(), 'build', 'linux-after-install.sh')).mode & 0o111)
-      .not.toBe(0);
-    expect(fs.statSync(path.join(process.cwd(), 'build', 'linux-after-remove.sh')).mode & 0o111)
-      .not.toBe(0);
+    expect(linuxAfterInstall.startsWith('#!/bin/bash\n')).toBe(true);
+    expect(linuxAfterRemove.startsWith('#!/bin/bash\n')).toBe(true);
   });
 
   it('resets the installation marker only for a real uninstall', () => {

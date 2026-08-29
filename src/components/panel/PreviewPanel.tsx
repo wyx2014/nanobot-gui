@@ -234,7 +234,7 @@ export default function PreviewPanel() {
           variant="ghost"
           size="icon"
           onClick={closePreview}
-          className="h-[30px] w-[30px] shrink-0 text-[#656358] hover:bg-[#f0ede7] hover:text-[#29261b] dark:text-[#c9c5bc] dark:hover:bg-[#3a3a3a] dark:hover:text-[#f5f2ea]"
+          className="window-titlebar-no-drag h-[30px] w-[30px] shrink-0 text-[#656358] hover:bg-[#f0ede7] hover:text-[#29261b] dark:text-[#c9c5bc] dark:hover:bg-[#3a3a3a] dark:hover:text-[#f5f2ea]"
           title={t.panel.closePreview}
           aria-label={t.panel.closePreview}
         >
@@ -252,7 +252,7 @@ export default function PreviewPanel() {
             variant="ghost"
             size="icon"
             onClick={() => setReloadKey((key) => key + 1)}
-            className="h-[30px] w-[30px] text-[#656358] hover:bg-[#f0ede7] hover:text-[#29261b] dark:text-[#c9c5bc] dark:hover:bg-[#3a3a3a] dark:hover:text-[#f5f2ea]"
+            className="window-titlebar-no-drag h-[30px] w-[30px] text-[#656358] hover:bg-[#f0ede7] hover:text-[#29261b] dark:text-[#c9c5bc] dark:hover:bg-[#3a3a3a] dark:hover:text-[#f5f2ea]"
             title={t.panel.artifactsRefresh}
             aria-label={t.panel.artifactsRefresh}
           >
@@ -264,7 +264,7 @@ export default function PreviewPanel() {
             variant="ghost"
             size="icon"
             onClick={handleOpenSystem}
-            className="h-[30px] w-[30px] text-[#656358] hover:bg-[#f0ede7] hover:text-[#29261b] dark:text-[#c9c5bc] dark:hover:bg-[#3a3a3a] dark:hover:text-[#f5f2ea]"
+            className="window-titlebar-no-drag h-[30px] w-[30px] text-[#656358] hover:bg-[#f0ede7] hover:text-[#29261b] dark:text-[#c9c5bc] dark:hover:bg-[#3a3a3a] dark:hover:text-[#f5f2ea]"
             title={t.panel.openInSystem}
             aria-label={t.panel.openInSystem}
           >
@@ -275,7 +275,7 @@ export default function PreviewPanel() {
             variant="ghost"
             size="icon"
             onClick={handleOpenInBrowser}
-            className="h-[30px] w-[30px] text-[#656358]"
+            className="window-titlebar-no-drag h-[30px] w-[30px] text-[#656358]"
             title={t.panel.openInBrowser}
             aria-label={t.panel.openInBrowser}
           >
@@ -286,7 +286,7 @@ export default function PreviewPanel() {
           variant="ghost"
           size="icon"
           onClick={handleCopyPath}
-          className="h-[30px] w-[30px] text-[#656358] hover:bg-[#f0ede7] hover:text-[#29261b] dark:text-[#c9c5bc] dark:hover:bg-[#3a3a3a] dark:hover:text-[#f5f2ea]"
+          className="window-titlebar-no-drag h-[30px] w-[30px] text-[#656358] hover:bg-[#f0ede7] hover:text-[#29261b] dark:text-[#c9c5bc] dark:hover:bg-[#3a3a3a] dark:hover:text-[#f5f2ea]"
           title={nativePath ? nativePath : displayPath}
           aria-label={locale.startsWith('zh') ? '复制路径' : 'Copy path'}
         >
@@ -297,7 +297,7 @@ export default function PreviewPanel() {
             variant="ghost"
             size="icon"
             onClick={handleOpenInFinder}
-            className="h-[30px] w-[30px] text-[#656358] hover:bg-[#f0ede7] hover:text-[#29261b] dark:text-[#c9c5bc] dark:hover:bg-[#3a3a3a] dark:hover:text-[#f5f2ea]"
+            className="window-titlebar-no-drag h-[30px] w-[30px] text-[#656358] hover:bg-[#f0ede7] hover:text-[#29261b] dark:text-[#c9c5bc] dark:hover:bg-[#3a3a3a] dark:hover:text-[#f5f2ea]"
             title={t.panel.revealInFolder}
             aria-label={t.panel.revealInFolder}
           >
@@ -309,7 +309,7 @@ export default function PreviewPanel() {
             variant="ghost"
             size="icon"
             onClick={handleDownload}
-            className="h-[30px] w-[30px] text-[#656358] hover:bg-[#f0ede7] hover:text-[#29261b] dark:text-[#c9c5bc] dark:hover:bg-[#3a3a3a] dark:hover:text-[#f5f2ea]"
+            className="window-titlebar-no-drag h-[30px] w-[30px] text-[#656358] hover:bg-[#f0ede7] hover:text-[#29261b] dark:text-[#c9c5bc] dark:hover:bg-[#3a3a3a] dark:hover:text-[#f5f2ea]"
             title={t.panel.downloadFile}
             aria-label={t.panel.downloadFile}
           >
@@ -320,7 +320,7 @@ export default function PreviewPanel() {
           variant="ghost"
           size="icon"
           onClick={toggleExpanded}
-          className="h-[30px] w-[30px] text-[#656358] hover:bg-[#f0ede7] hover:text-[#29261b] dark:text-[#c9c5bc] dark:hover:bg-[#3a3a3a] dark:hover:text-[#f5f2ea]"
+          className="window-titlebar-no-drag h-[30px] w-[30px] text-[#656358] hover:bg-[#f0ede7] hover:text-[#29261b] dark:text-[#c9c5bc] dark:hover:bg-[#3a3a3a] dark:hover:text-[#f5f2ea]"
           title={isExpanded ? '收起预览面板' : '展开预览面板'}
           aria-label={isExpanded ? '收起预览面板' : '展开预览面板'}
         >

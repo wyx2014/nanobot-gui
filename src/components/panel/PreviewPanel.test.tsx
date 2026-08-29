@@ -109,6 +109,11 @@ describe('PreviewPanel artifact viewer', () => {
     expect(header?.classList).toContain('min-h-12');
     expect(header?.classList).toContain('z-[45]');
     expect(header?.classList).not.toContain('mt-12');
+    const headerButtons = header?.querySelectorAll('button') ?? [];
+    expect(headerButtons.length).toBeGreaterThan(0);
+    expect(Array.from(headerButtons).every((button) => (
+      button.classList.contains('window-titlebar-no-drag')
+    ))).toBe(true);
 
     await act(async () => {
       (view.querySelector('[aria-label="Open in system app"]') as HTMLButtonElement).click();

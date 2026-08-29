@@ -22,7 +22,7 @@ import { getOpenDialogProperties } from './dialogOptions'
 import { acquireSingleInstanceLock, restoreAndFocusWindow } from './singleInstance'
 import { createWindowsTerminalLaunchSpec } from './terminalLauncher'
 import { showDesktopNotification, type DesktopNotificationInput } from './desktopNotification'
-import { ensureInstallationId } from './installationIdentity'
+import { ensureInstallationId, systemInstallationMarkerPath } from './installationIdentity'
 import {
   closeToTrayNoticePreferences,
   hasSeenCloseToTrayNoticeForInstallation,
@@ -104,7 +104,11 @@ const windowPreferencesPath = join(configuredUserDataPath, 'window-preferences.j
 
 function getInstallationId(): Promise<string> {
   if (!installationIdPromise) {
-    installationIdPromise = ensureInstallationId(configuredUserDataPath, app.isPackaged)
+    installationIdPromise = ensureInstallationId(
+      configuredUserDataPath,
+      app.isPackaged,
+      systemInstallationMarkerPath(process.platform, process.env.APPIMAGE),
+    )
       .catch((error) => {
         console.warn('[Main] Failed to resolve installation identity:', error);
         return `fallback-installation-${app.getVersion()}`;

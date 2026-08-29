@@ -17,6 +17,10 @@ interface PackageManifest {
       maintainer?: string;
       target?: string[];
     };
+    deb?: {
+      afterInstall?: string;
+      afterRemove?: string;
+    };
     nsis?: {
       include?: string;
     };
@@ -33,6 +37,14 @@ const electronViteConfig = fs.readFileSync(
 );
 const installerInclude = fs.readFileSync(
   path.join(process.cwd(), 'build', 'installer.nsh'),
+  'utf8',
+);
+const linuxAfterInstall = fs.readFileSync(
+  path.join(process.cwd(), 'build', 'linux-after-install.sh'),
+  'utf8',
+);
+const linuxAfterRemove = fs.readFileSync(
+  path.join(process.cwd(), 'build', 'linux-after-remove.sh'),
   'utf8',
 );
 const runtimeDownloadScript = fs.readFileSync(
@@ -106,6 +118,20 @@ describe('packaged dependency boundary', () => {
       .toContain('npm run prepare-python:linux');
     expect(packageManifest.scripts?.['build:linux']).toContain('--linux AppImage deb');
     expect(packageManifest.scripts?.['build:linux']).toContain('--publish never');
+    expect(packageManifest.build?.deb).toEqual({
+      afterInstall: 'build/linux-after-install.sh',
+      afterRemove: 'build/linux-after-remove.sh',
+    });
+    expect(linuxAfterInstall).toContain("INSTALLATION_ID_PATH='/var/lib/tpcowork/installation-id'");
+    expect(linuxAfterInstall).toContain('/proc/sys/kernel/random/uuid');
+    expect(linuxAfterInstall).toContain("update-alternatives --install");
+    expect(linuxAfterRemove).toContain('remove|purge)');
+    expect(linuxAfterRemove).toContain('rm -f "$INSTALLATION_ID_PATH"');
+    expect(linuxAfterRemove).toContain("update-alternatives --remove");
+    expect(fs.statSync(path.join(process.cwd(), 'build', 'linux-after-install.sh')).mode & 0o111)
+      .not.toBe(0);
+    expect(fs.statSync(path.join(process.cwd(), 'build', 'linux-after-remove.sh')).mode & 0o111)
+      .not.toBe(0);
   });
 
   it('resets the installation marker only for a real uninstall', () => {

@@ -79,6 +79,10 @@ jobs:
           test -z "$broken_link"
 
           dpkg-deb --info "$deb" >/dev/null
+          deb_control="$(mktemp -d)"
+          dpkg-deb --control "$deb" "$deb_control"
+          grep -q '/var/lib/tpcowork/installation-id' "$deb_control/postinst"
+          grep -q '/var/lib/tpcowork/installation-id' "$deb_control/postrm"
           deb_root="$(mktemp -d)"
           dpkg-deb --extract "$deb" "$deb_root"
           deb_python="$(find "$deb_root" -path '*/resources/python/bin/python3' -print -quit)"

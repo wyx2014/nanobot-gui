@@ -94,6 +94,10 @@
       "maintainer": "TPCowork Team",
       "icon": "TPCowork-3_512x512.png"
     },
+    "deb": {
+      "afterInstall": "build/linux-after-install.sh",
+      "afterRemove": "build/linux-after-remove.sh"
+    },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,

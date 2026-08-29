@@ -6,17 +6,14 @@ import { pipeline } from 'stream/promises';
 import { fileURLToPath } from 'url';
 
 import {
-  DEFAULT_RUNTIME_REPOSITORY,
   PYTHON_STANDALONE_RELEASE,
   PYTHON_VERSION,
   RUNTIME_PROFILE,
   RUNTIME_TARGETS,
-  WINDOWS_RUNTIME_TARGET,
   runtimeAssetMetadata,
 } from './python-runtime-config.mjs';
 import {
   canonicalFileSha256,
-  fileSha256,
   nanobotSourceSha256,
 } from './python-runtime-source.mjs';
 import { precompileDesktopStartupModules } from './python-runtime-startup-cache.mjs';
@@ -31,29 +28,11 @@ const PREVIOUS_RUNTIME_MARKER_NAME = '.tpacowork-runtime.json';
 const SOURCE_MARKER_NAME = '.tpcowork-nanobot-source.sha256';
 const PREVIOUS_SOURCE_MARKER_NAME = '.tpacowork-nanobot-source.sha256';
 
-function environmentValue(name, previousName) {
-  return process.env[name] || process.env[previousName];
-}
-
 function optionValue(name) {
   const exactIndex = process.argv.indexOf(name);
   if (exactIndex >= 0) return process.argv[exactIndex + 1];
   const prefixed = process.argv.find((arg) => arg.startsWith(`${name}=`));
   return prefixed ? prefixed.slice(name.length + 1) : undefined;
-}
-
-function githubRepositoryFromRemote() {
-  try {
-    const remote = execFileSync(
-      'git',
-      ['config', '--get', 'remote.origin.url'],
-      { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
-    ).trim();
-    const match = remote.match(/github\.com[/:]([^/]+)\/([^/]+?)(?:\.git)?$/i);
-    return match ? `${match[1]}/${match[2]}` : null;
-  } catch {
-    return null;
-  }
 }
 
 const targetKey = optionValue('--target') || hostKey;
@@ -64,49 +43,22 @@ if (!tarball) {
 }
 
 const assetMetadata = runtimeAssetMetadata(targetKey);
-const runtimeRepository = environmentValue(
-  'TPCOWORK_RUNTIME_REPOSITORY',
-  'TPACOWORK_RUNTIME_REPOSITORY',
-)
-  || process.env.GITHUB_REPOSITORY
-  || githubRepositoryFromRemote()
-  || DEFAULT_RUNTIME_REPOSITORY;
-const defaultAssetBaseUrl = `https://github.com/${runtimeRepository}/releases/download/${assetMetadata.releaseTag}`;
-const runtimeUrlEnvironmentPrefix = targetKey.startsWith('win32-')
-  ? 'WINDOWS'
-  : null;
-
-function targetRuntimeEnvironmentValue(suffix) {
-  if (!runtimeUrlEnvironmentPrefix) return undefined;
-  return environmentValue(
-    `TPCOWORK_${runtimeUrlEnvironmentPrefix}_RUNTIME_${suffix}`,
-    `TPACOWORK_${runtimeUrlEnvironmentPrefix}_RUNTIME_${suffix}`,
-  );
-}
-
-const configuredRuntimeArchiveUrl = targetRuntimeEnvironmentValue('URL');
-const configuredRuntimeChecksumUrl = targetRuntimeEnvironmentValue('SHA256_URL');
-const runtimeArchiveUrl = configuredRuntimeArchiveUrl
-  || `${defaultAssetBaseUrl}/${assetMetadata.archive}`;
-const runtimeChecksumUrl = configuredRuntimeChecksumUrl
-  || `${runtimeArchiveUrl}.sha256`;
-const hasExplicitRuntimeArchiveUrl = Boolean(configuredRuntimeArchiveUrl);
-const hasExplicitRuntimeChecksumUrl = Boolean(configuredRuntimeChecksumUrl);
 
 if (process.argv.includes('--print-config')) {
   console.log(JSON.stringify({
     ...assetMetadata,
     host: hostKey,
-    mode: targetKey === hostKey
-      ? 'build-on-host'
-      : targetKey === WINDOWS_RUNTIME_TARGET
-        ? 'download-prebuilt'
-        : 'target-host-required',
-    repository: runtimeRepository,
-    archiveUrl: runtimeArchiveUrl,
-    checksumUrl: runtimeChecksumUrl,
+    mode: targetKey === hostKey ? 'build-on-host' : 'target-host-required',
   }, null, 2));
   process.exit(0);
+}
+
+if (targetKey !== hostKey) {
+  console.error(
+    `target-host-required: ${targetKey} runtime must be prepared on its target host; `
+    + `current host is ${hostKey}.`,
+  );
+  process.exit(1);
 }
 
 const nanobotSrc = path.resolve(repoRoot, '..', 'nanobot');
@@ -281,110 +233,6 @@ async function downloadFile(url, destination, extraHeaders = {}) {
   );
 }
 
-async function downloadRuntimeAsset({ assetName, destination, explicitUrl, url }) {
-  const token = environmentValue('TPCOWORK_RUNTIME_TOKEN', 'TPACOWORK_RUNTIME_TOKEN')
-    || process.env.GH_TOKEN;
-  if (!token || explicitUrl) {
-    await downloadFile(
-      url,
-      destination,
-      token ? { Authorization: `Bearer ${token}` } : undefined,
-    );
-    return;
-  }
-
-  const releaseApiUrl = `https://api.github.com/repos/${runtimeRepository}`
-    + `/releases/tags/${encodeURIComponent(assetMetadata.releaseTag)}`;
-  const apiHeaders = {
-    Accept: 'application/vnd.github+json',
-    Authorization: `Bearer ${token}`,
-    'X-GitHub-Api-Version': '2022-11-28',
-  };
-  const releaseResponse = await fetch(releaseApiUrl, { headers: {
-    'User-Agent': 'TPCowork-runtime-preparer',
-    ...apiHeaders,
-  } });
-  if (!releaseResponse.ok) {
-    throw new Error(`GitHub release lookup failed (${releaseResponse.status}) for ${releaseApiUrl}`);
-  }
-  const release = await releaseResponse.json();
-  const asset = Array.isArray(release.assets)
-    ? release.assets.find((candidate) => candidate.name === assetName)
-    : null;
-  if (!asset?.url) {
-    throw new Error(`GitHub release asset is missing: ${assetName}`);
-  }
-  await downloadFile(asset.url, destination, {
-    ...apiHeaders,
-    Accept: 'application/octet-stream',
-  });
-}
-
-async function installPrebuiltWindowsRuntime() {
-  if (targetKey !== WINDOWS_RUNTIME_TARGET) {
-    throw new Error(
-      `${targetKey} runtime must be prepared on its target host; current host is ${hostKey}. `
-      + `Cross-host runtime preparation is only supported for ${WINDOWS_RUNTIME_TARGET}.`,
-    );
-  }
-  const existingErrors = fs.existsSync(destDir) ? runtimeValidationErrors(destDir) : ['runtime is absent'];
-  if (existingErrors.length === 0) {
-    writeRuntimeMarker();
-    writeSourceMarker();
-    console.log(`Verified prebuilt Python runtime for ${targetKey}; skipping download.`);
-    pruneRuntime(destDir);
-    return;
-  }
-
-  console.log(`Preparing prebuilt ${targetKey} runtime because: ${existingErrors.join('; ')}`);
-  console.log(`Downloading ${runtimeArchiveUrl}`);
-  fs.mkdirSync(embeddedPythonDir, { recursive: true });
-  const stageRoot = fs.mkdtempSync(path.join(embeddedPythonDir, '.runtime-stage-'));
-  const archivePath = path.join(stageRoot, assetMetadata.archive);
-  const checksumPath = path.join(stageRoot, assetMetadata.checksum);
-  const extractedDir = path.join(stageRoot, 'runtime');
-  fs.mkdirSync(extractedDir);
-
-  try {
-    await downloadRuntimeAsset({
-      assetName: assetMetadata.archive,
-      destination: archivePath,
-      explicitUrl: hasExplicitRuntimeArchiveUrl,
-      url: runtimeArchiveUrl,
-    });
-    await downloadRuntimeAsset({
-      assetName: assetMetadata.checksum,
-      destination: checksumPath,
-      explicitUrl: hasExplicitRuntimeChecksumUrl || hasExplicitRuntimeArchiveUrl,
-      url: runtimeChecksumUrl,
-    });
-    const checksumMatch = fs.readFileSync(checksumPath, 'utf8').match(/\b([a-f0-9]{64})\b/i);
-    if (!checksumMatch) throw new Error(`Invalid SHA-256 file: ${runtimeChecksumUrl}`);
-    const actualChecksum = await fileSha256(archivePath);
-    if (actualChecksum !== checksumMatch[1].toLowerCase()) {
-      throw new Error(`Runtime SHA-256 mismatch: expected ${checksumMatch[1]}, received ${actualChecksum}`);
-    }
-
-    execFileSync('tar', ['-xf', archivePath, '-C', extractedDir], { stdio: 'inherit' });
-    const validationErrors = runtimeValidationErrors(extractedDir);
-    if (validationErrors.length > 0) {
-      throw new Error(
-        `Downloaded ${targetKey} runtime is incompatible:\n- ${validationErrors.join('\n- ')}\n`
-        + `Rebuild the ${targetKey} runtime CI from the matching nanobot commit before packaging.`,
-      );
-    }
-
-    if (fs.existsSync(destDir)) fs.rmSync(destDir, { recursive: true, force: true });
-    fs.renameSync(extractedDir, destDir);
-    writeRuntimeMarker();
-    writeSourceMarker();
-    pruneRuntime(destDir);
-    console.log(`Installed verified prebuilt Python ${PYTHON_VERSION} runtime for ${targetKey}.`);
-  } finally {
-    fs.rmSync(stageRoot, { recursive: true, force: true });
-  }
-}
-
 async function buildRuntimeOnHost() {
   if (targetKey !== hostKey) {
     throw new Error(`Cannot execute ${targetKey} Python on host ${hostKey}.`);
@@ -445,11 +293,7 @@ async function buildRuntimeOnHost() {
 }
 
 try {
-  if (targetKey === hostKey) {
-    await buildRuntimeOnHost();
-  } else {
-    await installPrebuiltWindowsRuntime();
-  }
+  await buildRuntimeOnHost();
 } catch (error) {
   console.error(`Failed to prepare Python runtime for ${targetKey}:`, error);
   process.exit(1);

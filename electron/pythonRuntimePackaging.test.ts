@@ -14,48 +14,22 @@ describe('cross-platform Python runtime packaging', () => {
         'win32-x64',
         '--print-config',
       ],
-      {
-        encoding: 'utf8',
-        env: {
-          ...process.env,
-          TPCOWORK_RUNTIME_REPOSITORY: 'example/tpcowork',
-        },
-      },
+      { encoding: 'utf8' },
     );
     const metadata = JSON.parse(raw) as Record<string, string>;
 
     expect(metadata.target).toBe('win32-x64');
     expect(metadata.pythonVersion).toBe('3.12.9');
-    expect(metadata.repository).toBe('example/tpcowork');
     expect(metadata.archive).toBe(
       'tpcowork-python-3.12.9-win32-x64-desktop-v2-bytecode.zip',
     );
     expect(metadata.checksum).toBe(`${metadata.archive}.sha256`);
     expect(metadata.releaseTag).toContain('3.12.9-win32-x64');
-    expect(metadata.archiveUrl).toContain(metadata.releaseTag);
-    expect(metadata.archiveUrl).toContain(metadata.archive);
-  });
-
-  it('accepts the previous runtime repository variable during brand migration', () => {
-    const raw = execFileSync(
-      process.execPath,
-      [
-        path.join(process.cwd(), 'scripts', 'download-python.mjs'),
-        '--target',
-        'win32-x64',
-        '--print-config',
-      ],
-      {
-        encoding: 'utf8',
-        env: {
-          ...process.env,
-          TPCOWORK_RUNTIME_REPOSITORY: '',
-          TPACOWORK_RUNTIME_REPOSITORY: 'example/previous-brand',
-        },
-      },
+    expect(metadata.mode).toBe(
+      metadata.host === 'win32-x64' ? 'build-on-host' : 'target-host-required',
     );
-
-    expect(JSON.parse(raw).repository).toBe('example/previous-brand');
+    expect(metadata).not.toHaveProperty('repository');
+    expect(metadata).not.toHaveProperty('archiveUrl');
   });
 
   it('pins the Linux runtime contract to Python 3.12.9 and linux-x64', () => {
@@ -67,13 +41,7 @@ describe('cross-platform Python runtime packaging', () => {
         'linux-x64',
         '--print-config',
       ],
-      {
-        encoding: 'utf8',
-        env: {
-          ...process.env,
-          TPCOWORK_RUNTIME_REPOSITORY: 'example/tpcowork',
-        },
-      },
+      { encoding: 'utf8' },
     );
     const metadata = JSON.parse(raw) as Record<string, string>;
 
@@ -89,19 +57,29 @@ describe('cross-platform Python runtime packaging', () => {
     );
   });
 
-  it('builds and publishes the prebuilt runtime on a Windows CI runner', () => {
+  it('builds, smoke-tests, and publishes the final NSIS installer on Windows CI', () => {
     const workflow = fs.readFileSync(
       path.join(process.cwd(), '.github', 'workflows', 'windows-python-runtime.yml'),
       'utf8',
     );
 
+    expect(workflow).toContain('name: Build Windows Installer');
     expect(workflow).toContain('runs-on: windows-latest');
     expect(workflow).toContain('repository: ${{ inputs.nanobot_repository }}');
-    expect(workflow).toContain('node scripts/download-python.mjs --target win32-x64');
-    expect(workflow).toContain('node scripts/package-python-runtime.mjs --target win32-x64');
-    expect(workflow).toContain('gh release create $env:RUNTIME_TAG --prerelease');
-    expect(workflow).toContain('gh release upload');
+    expect(workflow).toContain('default: tpacowork-runtime');
+    expect(workflow).toContain('run: npm ci');
+    expect(workflow).toContain('Verify packaging contracts');
+    expect(workflow).toContain('run: npm run build:win');
+    expect(workflow).toContain('win-unpacked/resources/python/python.exe');
+    expect(workflow).toContain('import nanobot; from nanobot.cli.commands import app');
+    expect(workflow).toContain('Get-FileHash');
+    expect(workflow).toContain('actions/upload-artifact@v4');
+    expect(workflow).toContain('name: TPCowork-${{ steps.package.outputs.version }}-windows-x64');
+    expect(workflow).toContain('GH_TOKEN: ${{ github.token }}');
+    expect(workflow).toContain('gh release create $env:RELEASE_TAG --prerelease');
+    expect(workflow).toContain('gh release upload $env:RELEASE_TAG');
     expect(workflow).toContain('--clobber');
+    expect(workflow).not.toContain('node scripts/package-python-runtime.mjs');
   });
 
   it('builds, smoke-tests, and publishes the final AppImage on a Linux CI runner', () => {
@@ -134,6 +112,20 @@ describe('cross-platform Python runtime packaging', () => {
     expect(preparationScript).toContain("'target-host-required'");
     expect(preparationScript).toContain('runtime must be prepared on its target host');
     expect(preparationScript).not.toContain('TPCOWORK_LINUX_RUNTIME_URL');
+  });
+
+  it('requires Windows runtime assembly to run on a Windows x64 host', () => {
+    const preparationScript = fs.readFileSync(
+      path.join(process.cwd(), 'scripts', 'download-python.mjs'),
+      'utf8',
+    );
+
+    expect(preparationScript).toContain("'target-host-required'");
+    expect(preparationScript).toContain('runtime must be prepared on its target host');
+    expect(preparationScript).not.toContain('download-prebuilt');
+    expect(preparationScript).not.toContain('installPrebuiltWindowsRuntime');
+    expect(preparationScript).not.toContain('TPCOWORK_WINDOWS_RUNTIME_URL');
+    expect(preparationScript).not.toContain('TPACOWORK_WINDOWS_RUNTIME_URL');
   });
 
   it('does not build nanobot browser assets for the native desktop gateway', () => {

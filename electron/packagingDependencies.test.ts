@@ -85,9 +85,11 @@ describe('packaged dependency boundary', () => {
     expect(packageManifest.scripts?.['build:win'])
       .toContain('npm run prepare-python:win');
     expect(packageManifest.scripts?.['build:win']).toContain('--win nsis');
+    expect(packageManifest.scripts?.['build:win']).toContain('--publish never');
     expect(packageManifest.scripts?.['build:win:portable'])
       .toContain('npm run prepare-python:win');
     expect(packageManifest.scripts?.['build:win:portable']).toContain('--win portable');
+    expect(packageManifest.scripts?.['build:win:portable']).toContain('--publish never');
   });
 
   it('builds Linux with its target runtime and one AppImage target', () => {

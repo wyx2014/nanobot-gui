@@ -210,6 +210,16 @@ html[data-desktop-platform="linux"] .conversation-header-titlebar-inset {
   );
 }
 
+/* Panels that occupy Linux's shared title-bar row need only the trailing
+   native-controls inset; unlike the conversation header, their leading edge
+   is already scoped to the panel itself. */
+html[data-desktop-platform="linux"] .window-titlebar-trailing-inset {
+  padding-right: max(
+    1rem,
+    calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 0.5rem)
+  );
+}
+
 /* While a theme switch is in flight, suppress transitions so buttons and
    surfaces flip to the new palette in the same frame as the page background
    instead of lagging behind with an animated light->dark fade. This class is

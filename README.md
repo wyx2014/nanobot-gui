@@ -114,10 +114,10 @@ npm run electron:build
 # macOS
 npm run build:mac
 
-# Windows
+# Windows x64
 npm run build:win
 
-# Windows 免安装版
+# Windows x64 免安装版
 npm run build:win:portable
 
 # Linux x64 主机本地构建；macOS 请使用 GitHub Actions
@@ -137,10 +137,11 @@ Python runtime 固定为 Python 3.12.9。打包脚本会执行：
 3. `electron-vite build`
 4. `electron-builder`
 
-Windows 打包分为两种模式：
+Windows 安装包必须在 Windows x64 上原生构建：
 
-- 在 Windows x64 上运行：本机下载 Python 3.12.9 standalone，并安装 nanobot 及 Windows 依赖。
-- 在 macOS 上运行：从 GitHub Release 下载 Windows CI 预制的完整 `win32-x64` runtime，校验 SHA-256、目标平台、Python 版本、依赖摘要和 nanobot 源码摘要后只负责组装。任何一项不匹配都会终止打包，不会回退使用 Mac Python。
+- Windows x64 开发机可运行 `npm run build:win`，脚本会下载 Python 3.12.9 standalone，并安装 nanobot 及 Windows 依赖。
+- 在 macOS 或 Linux 上运行 `npm run build:win` 会以 `target-host-required` 终止。
+- 非 Windows 开发者应在 GitHub Actions 手动运行 `Build Windows Installer`，由 `windows-latest` 直接生成最终 NSIS 安装包。
 
 Linux AppImage 必须在 Linux x64 文件系统上构建：
 
@@ -148,25 +149,12 @@ Linux AppImage 必须在 Linux x64 文件系统上构建：
 - 在 macOS 上运行 `npm run build:linux` 会直接终止，避免大小写不敏感的文件系统破坏 Linux runtime 的符号链接。
 - macOS 开发者应在 GitHub Actions 手动运行 `Build Linux AppImage`，由 Ubuntu 22.04 原生生成最终产物。
 
-首次从 Mac 打 Windows 包前，在 GitHub Actions 手动运行 `Build Windows Python runtime`，并填写要嵌入的 nanobot 分支、标签或提交。工作流会发布一个不参与应用自动更新的 prerelease，并写入以下稳定资产：
+Windows workflow 会执行以下步骤：
 
-```text
-tpcowork-python-3.12.9-win32-x64-desktop-v2-bytecode.zip
-tpcowork-python-3.12.9-win32-x64-desktop-v2-bytecode.zip.sha256
-tpcowork-python-3.12.9-win32-x64-desktop-v2-bytecode.zip.json
-```
-
-默认从 `wyx2014/nanobot-gui` Release 下载；仓库或下载地址不同时可覆盖：
-
-```bash
-TPCOWORK_RUNTIME_REPOSITORY=owner/repository npm run build:win
-
-# 私有/镜像资产也可以直接指定
-TPCOWORK_WINDOWS_RUNTIME_URL=https://example.com/runtime.zip \
-TPCOWORK_WINDOWS_RUNTIME_SHA256_URL=https://example.com/runtime.zip.sha256 \
-TPCOWORK_RUNTIME_TOKEN=token \
-npm run build:win
-```
+1. 检出 GUI 与指定的 nanobot 分支、标签或提交。
+2. 安装 Node 依赖并校验打包约束。
+3. 在 Windows 上构建完整 Python runtime 和 NSIS 安装包，再验证内置 `python.exe` 与 nanobot 导入。
+4. 生成 SHA-256，上传 Actions artifact，并发布到 `windows-installer-<version>` prerelease。
 
 Linux workflow 会执行以下步骤：
 
@@ -184,9 +172,11 @@ IFIND_MCP_API_KEY
 ANYSEARCH_API_KEY
 ```
 
-成功后可在 Actions artifact 或对应 prerelease 下载：
+四个密钥仅注入 Windows/Linux 的实际构建步骤。成功后可在 Actions artifact 或对应 prerelease 下载：
 
 ```text
+TPCowork Setup <version>.exe
+TPCowork Setup <version>.exe.sha256
 TPCowork-<version>.AppImage
 TPCowork-<version>.AppImage.sha256
 ```

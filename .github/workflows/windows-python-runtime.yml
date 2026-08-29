@@ -1,4 +1,4 @@
-name: Build Windows Python runtime
+name: Build Windows Installer
 
 on:
   workflow_dispatch:
@@ -11,20 +11,20 @@ on:
       nanobot_ref:
         description: Branch, tag, or commit to embed
         required: true
-        default: main
+        default: tpacowork-runtime
         type: string
 
 permissions:
   contents: write
 
 concurrency:
-  group: windows-python-3.12.9-win32-x64
+  group: windows-installer-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  build-runtime:
+  build-installer:
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - name: Checkout TPCowork GUI
         uses: actions/checkout@v4
@@ -43,55 +43,84 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: nanobot-gui/package-lock.json
 
-      - name: Build complete win32-x64 runtime
+      - name: Install GUI dependencies
         working-directory: nanobot-gui
-        shell: pwsh
-        run: node scripts/download-python.mjs --target win32-x64
+        run: npm ci
 
-      - name: Smoke-test and archive runtime
+      - name: Verify packaging contracts
         working-directory: nanobot-gui
-        shell: pwsh
-        run: node scripts/package-python-runtime.mjs --target win32-x64
+        run: npm run test -- electron/pythonRuntimePackaging.test.ts electron/packagingDependencies.test.ts
 
-      - name: Read release metadata
-        id: runtime
+      - name: Build Windows installer with native Python runtime
+        working-directory: nanobot-gui
+        env:
+          JUYUAN_MCP_TOKEN: ${{ secrets.JUYUAN_MCP_TOKEN }}
+          CAIHUI_MCP_API_KEY: ${{ secrets.CAIHUI_MCP_API_KEY }}
+          IFIND_MCP_API_KEY: ${{ secrets.IFIND_MCP_API_KEY }}
+          ANYSEARCH_API_KEY: ${{ secrets.ANYSEARCH_API_KEY }}
+        run: npm run build:win
+
+      - name: Smoke-test packaged Python runtime
         working-directory: nanobot-gui
         shell: pwsh
         run: |
-          $metadata = node scripts/download-python.mjs --target win32-x64 --print-config | ConvertFrom-Json
-          "tag=$($metadata.releaseTag)" >> $env:GITHUB_OUTPUT
-          "archive=$($metadata.archive)" >> $env:GITHUB_OUTPUT
-          "checksum=$($metadata.checksum)" >> $env:GITHUB_OUTPUT
-          "manifest=$($metadata.manifest)" >> $env:GITHUB_OUTPUT
+          $python = "dist/installers/win-unpacked/resources/python/python.exe"
+          if (!(Test-Path -LiteralPath $python)) {
+            throw "Bundled Python not found: $python"
+          }
+          & $python -c "import nanobot; from nanobot.cli.commands import app; print(nanobot.__file__); print(type(app).__name__)"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Bundled Python smoke test failed"
+          }
+
+      - name: Read package metadata and checksum
+        id: package
+        working-directory: nanobot-gui
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Unable to read package version"
+          }
+          $installer = Get-ChildItem -LiteralPath "dist/installers" -File -Filter "*.exe" | Select-Object -First 1
+          if (!$installer) {
+            throw "NSIS installer not found"
+          }
+          $hash = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLower()
+          "$hash  $($installer.Name)" | Set-Content -LiteralPath "$($installer.FullName).sha256" -Encoding ascii
+          "installer_name=$($installer.Name)" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "release_tag=windows-installer-$version" >> $env:GITHUB_OUTPUT
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.runtime.outputs.archive }}
-          path: nanobot-gui/dist/python-runtime/*
+          name: TPCowork-${{ steps.package.outputs.version }}-windows-x64
+          path: |
+            nanobot-gui/dist/installers/${{ steps.package.outputs.installer_name }}
+            nanobot-gui/dist/installers/${{ steps.package.outputs.installer_name }}.sha256
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
 
-      - name: Publish stable runtime release assets
+      - name: Publish Windows installer prerelease
         working-directory: nanobot-gui
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          RUNTIME_TAG: ${{ steps.runtime.outputs.tag }}
-          RUNTIME_ARCHIVE: ${{ steps.runtime.outputs.archive }}
-          RUNTIME_CHECKSUM: ${{ steps.runtime.outputs.checksum }}
-          RUNTIME_MANIFEST: ${{ steps.runtime.outputs.manifest }}
+          RELEASE_TAG: ${{ steps.package.outputs.release_tag }}
+          INSTALLER_NAME: ${{ steps.package.outputs.installer_name }}
           NANOBOT_REF: ${{ inputs.nanobot_ref }}
         run: |
-          gh release view $env:RUNTIME_TAG 2>$null
+          gh release view $env:RELEASE_TAG 2>$null
           if ($LASTEXITCODE -ne 0) {
-            gh release create $env:RUNTIME_TAG --prerelease --target $env:GITHUB_SHA --title "TPCowork Windows Python 3.12.9 runtime" --notes "Prebuilt win32-x64 desktop runtime. Embedded nanobot ref: $env:NANOBOT_REF"
+            gh release create $env:RELEASE_TAG --prerelease --target $env:GITHUB_SHA --title "TPCowork ${{ steps.package.outputs.version }} Windows x64" --notes "Windows-built NSIS installer with embedded nanobot ref: $env:NANOBOT_REF"
           } else {
-            gh release edit $env:RUNTIME_TAG --prerelease
+            gh release edit $env:RELEASE_TAG --prerelease
           }
-          gh release upload $env:RUNTIME_TAG `
-            "dist/python-runtime/$env:RUNTIME_ARCHIVE" `
-            "dist/python-runtime/$env:RUNTIME_CHECKSUM" `
-            "dist/python-runtime/$env:RUNTIME_MANIFEST" `
+          gh release upload $env:RELEASE_TAG `
+            "dist/installers/$env:INSTALLER_NAME" `
+            "dist/installers/$env:INSTALLER_NAME.sha256" `
             --clobber

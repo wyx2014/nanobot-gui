@@ -104,6 +104,12 @@ describe('PreviewPanel artifact viewer', () => {
     expect(view.textContent).not.toContain('reports/market.txt');
     expect(view.textContent).toContain('artifact body');
 
+    const header = view.querySelector('[data-artifact-preview-header]');
+    expect(header?.classList).toContain('h-12');
+    expect(header?.classList).toContain('min-h-12');
+    expect(header?.classList).toContain('z-[45]');
+    expect(header?.classList).not.toContain('mt-12');
+
     await act(async () => {
       (view.querySelector('[aria-label="Open in system app"]') as HTMLButtonElement).click();
       (view.querySelector('[aria-label="Show in folder"]') as HTMLButtonElement).click();

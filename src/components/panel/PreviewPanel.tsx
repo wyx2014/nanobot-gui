@@ -222,11 +222,14 @@ export default function PreviewPanel() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#f5f3ee] dark:bg-[#202020]">
-      {/* Match the native title-bar height; keep artifact controls compact. */}
-      <div className={cn(
-        'flex shrink-0 items-center gap-3 border-b border-[#e5e2db] bg-[#fbfaf7]/95 px-4 dark:border-[#3d3d3d] dark:bg-[#262626]/95',
-        isWindows() ? 'mt-9 h-9 min-h-9' : 'mt-12 h-12 min-h-12',
-      )}>
+      {/* Share the renderer title-bar row with the conversation header. */}
+      <div
+        data-artifact-preview-header
+        className={cn(
+          'window-titlebar-trailing-inset relative z-[45] flex h-12 min-h-12 shrink-0 items-center gap-3 border-b border-[#e5e2db] bg-[#fbfaf7]/95 px-4 dark:border-[#3d3d3d] dark:bg-[#262626]/95',
+          isWindows() && 'mt-9',
+        )}
+      >
         <Button
           variant="ghost"
           size="icon"

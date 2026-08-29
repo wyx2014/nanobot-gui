@@ -130,7 +130,7 @@ venv/bin/pip install -e ".[desktop]"
 当前打包目标支持情况：
 
 - macOS arm64/x64 standalone Python 已支持。
-- Windows x64 standalone Python 已支持。
+- Windows x64 standalone Python 和 NSIS 安装包已支持，并由 Windows GitHub Actions 原生打包。
 - Linux x64 standalone Python 和 AppImage 已支持，并由 Ubuntu GitHub Actions 原生打包。
 
 ## 项目结构
@@ -268,7 +268,7 @@ gateway 相关 IPC：
 
 macOS 当前目标输出 `zip`。
 
-Windows 目标输出 `portable` 和 `nsis`。
+Windows 默认输出 `nsis`，也可通过 `build:win:portable` 输出免安装版；GitHub Actions 原生生成最终 NSIS 安装包。
 
 输出目录：
 

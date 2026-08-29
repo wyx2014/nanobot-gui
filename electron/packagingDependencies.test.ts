@@ -4,6 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 interface PackageManifest {
+  homepage?: string;
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
   scripts?: Record<string, string>;
@@ -13,6 +14,7 @@ interface PackageManifest {
       target?: string[];
     };
     linux?: {
+      maintainer?: string;
       target?: string[];
     };
     nsis?: {
@@ -92,15 +94,17 @@ describe('packaged dependency boundary', () => {
     expect(packageManifest.scripts?.['build:win:portable']).toContain('--publish never');
   });
 
-  it('builds Linux with its target runtime and one AppImage target', () => {
-    expect(packageManifest.build?.linux?.target).toEqual(['AppImage']);
+  it('builds native Linux AppImage and DEB packages with the embedded runtime', () => {
+    expect(packageManifest.homepage).toBe('https://github.com/wyx2014/nanobot-gui');
+    expect(packageManifest.build?.linux?.target).toEqual(['AppImage', 'deb']);
+    expect(packageManifest.build?.linux?.maintainer).toBe('TPCowork Team');
     expect(packageManifest.scripts?.['prepare-python:linux'])
       .toBe('node scripts/download-python.mjs --target linux-x64');
     expect(packageManifest.scripts?.['package-python:linux'])
       .toBe('node scripts/package-python-runtime.mjs --target linux-x64');
     expect(packageManifest.scripts?.['build:linux'])
       .toContain('npm run prepare-python:linux');
-    expect(packageManifest.scripts?.['build:linux']).toContain('--linux AppImage');
+    expect(packageManifest.scripts?.['build:linux']).toContain('--linux AppImage deb');
     expect(packageManifest.scripts?.['build:linux']).toContain('--publish never');
   });
 

@@ -1,4 +1,4 @@
-name: Build Linux AppImage
+name: Build Linux Packages
 
 on:
   workflow_dispatch:
@@ -18,11 +18,11 @@ permissions:
   contents: write
 
 concurrency:
-  group: linux-appimage-${{ github.ref }}
+  group: linux-packages-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  build-appimage:
+  build-packages:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -54,7 +54,7 @@ jobs:
         working-directory: nanobot-gui
         run: npm run test -- electron/pythonRuntimePackaging.test.ts electron/packagingDependencies.test.ts
 
-      - name: Build Linux AppImage with native Python runtime
+      - name: Build Linux packages with native Python runtime
         working-directory: nanobot-gui
         env:
           JUYUAN_MCP_TOKEN: ${{ secrets.JUYUAN_MCP_TOKEN }}
@@ -63,11 +63,14 @@ jobs:
           ANYSEARCH_API_KEY: ${{ secrets.ANYSEARCH_API_KEY }}
         run: npm run build:linux
 
-      - name: Smoke-test packaged Python runtime
+      - name: Smoke-test AppImage and DEB runtimes
         working-directory: nanobot-gui
         run: |
+          set -euo pipefail
           appimage="$(find dist/installers -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          deb="$(find dist/installers -maxdepth 1 -type f -name '*.deb' -print -quit)"
           test -n "$appimage"
+          test -n "$deb"
           chmod +x "$appimage"
           "$appimage" --appimage-extract >/dev/null
           test -x squashfs-root/resources/python/bin/python3
@@ -75,18 +78,40 @@ jobs:
           broken_link="$(find squashfs-root/resources/python -xtype l -print -quit)"
           test -z "$broken_link"
 
+          dpkg-deb --info "$deb" >/dev/null
+          deb_root="$(mktemp -d)"
+          dpkg-deb --extract "$deb" "$deb_root"
+          deb_python="$(find "$deb_root" -path '*/resources/python/bin/python3' -print -quit)"
+          test -n "$deb_python"
+          test -x "$deb_python"
+          "$deb_python" -c "import nanobot; from nanobot.cli.commands import app; print(nanobot.__file__); print(type(app).__name__)"
+          deb_runtime="$(dirname "$(dirname "$deb_python")")"
+          broken_link="$(find "$deb_runtime" -xtype l -print -quit)"
+          test -z "$broken_link"
+          desktop_entry="$(find "$deb_root/usr/share/applications" -type f -name '*.desktop' -print -quit)"
+          test -n "$desktop_entry"
+          grep -q '^Exec=' "$desktop_entry"
+
       - name: Read package metadata and checksum
         id: package
         working-directory: nanobot-gui
         run: |
+          set -euo pipefail
           appimage="$(find dist/installers -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          deb="$(find dist/installers -maxdepth 1 -type f -name '*.deb' -print -quit)"
+          test -n "$appimage"
+          test -n "$deb"
           appimage_name="$(basename "$appimage")"
+          deb_name="$(basename "$deb")"
           version="$(node -p "require('./package.json').version")"
           (cd "$(dirname "$appimage")" && sha256sum "$appimage_name" > "$appimage_name.sha256")
+          (cd "$(dirname "$deb")" && sha256sum "$deb_name" > "$deb_name.sha256")
           echo "appimage=$appimage" >> "$GITHUB_OUTPUT"
           echo "appimage_name=$appimage_name" >> "$GITHUB_OUTPUT"
+          echo "deb=$deb" >> "$GITHUB_OUTPUT"
+          echo "deb_name=$deb_name" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "release_tag=linux-appimage-$version" >> "$GITHUB_OUTPUT"
+          echo "release_tag=linux-packages-$version" >> "$GITHUB_OUTPUT"
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
@@ -95,23 +120,28 @@ jobs:
           path: |
             nanobot-gui/${{ steps.package.outputs.appimage }}
             nanobot-gui/${{ steps.package.outputs.appimage }}.sha256
+            nanobot-gui/${{ steps.package.outputs.deb }}
+            nanobot-gui/${{ steps.package.outputs.deb }}.sha256
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish Linux AppImage prerelease
+      - name: Publish Linux packages prerelease
         working-directory: nanobot-gui
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.package.outputs.release_tag }}
           APPIMAGE_NAME: ${{ steps.package.outputs.appimage_name }}
+          DEB_NAME: ${{ steps.package.outputs.deb_name }}
           NANOBOT_REF: ${{ inputs.nanobot_ref }}
         run: |
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" --prerelease --target "$GITHUB_SHA" --title "TPCowork ${{ steps.package.outputs.version }} Linux x64" --notes "Ubuntu-built AppImage with embedded nanobot ref: $NANOBOT_REF"
+            gh release create "$RELEASE_TAG" --prerelease --target "$GITHUB_SHA" --title "TPCowork ${{ steps.package.outputs.version }} Linux x64" --notes "Ubuntu-built AppImage and DEB with embedded nanobot ref: $NANOBOT_REF"
           else
             gh release edit "$RELEASE_TAG" --prerelease
           fi
           gh release upload "$RELEASE_TAG" \
             "dist/installers/$APPIMAGE_NAME" \
             "dist/installers/$APPIMAGE_NAME.sha256" \
+            "dist/installers/$DEB_NAME" \
+            "dist/installers/$DEB_NAME.sha256" \
             --clobber

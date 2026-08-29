@@ -120,7 +120,7 @@ npm run build:win
 # Windows x64 免安装版
 npm run build:win:portable
 
-# Linux x64 主机本地构建；macOS 请使用 GitHub Actions
+# Linux x64 主机本地构建 AppImage 和 DEB；macOS 请使用 GitHub Actions
 npm run build:linux
 ```
 
@@ -143,11 +143,11 @@ Windows 安装包必须在 Windows x64 上原生构建：
 - 在 macOS 或 Linux 上运行 `npm run build:win` 会以 `target-host-required` 终止。
 - 非 Windows 开发者应在 GitHub Actions 手动运行 `Build Windows Installer`，由 `windows-latest` 直接生成最终 NSIS 安装包。
 
-Linux AppImage 必须在 Linux x64 文件系统上构建：
+Linux AppImage 和 DEB 必须在 Linux x64 文件系统上构建：
 
-- 在 Linux x64 上运行：本机下载 Python 3.12.9 standalone，并安装 nanobot 及 Linux 依赖。
+- 在 Linux x64 上运行：本机下载 Python 3.12.9 standalone，安装 nanobot 及 Linux 依赖，并生成 AppImage 和 DEB。
 - 在 macOS 上运行 `npm run build:linux` 会直接终止，避免大小写不敏感的文件系统破坏 Linux runtime 的符号链接。
-- macOS 开发者应在 GitHub Actions 手动运行 `Build Linux AppImage`，由 Ubuntu 22.04 原生生成最终产物。
+- macOS 开发者应在 GitHub Actions 手动运行 `Build Linux Packages`，由 Ubuntu 22.04 原生生成最终产物。
 
 Windows workflow 会执行以下步骤：
 
@@ -160,8 +160,8 @@ Linux workflow 会执行以下步骤：
 
 1. 检出 GUI 与指定的 nanobot 分支、标签或提交。
 2. 安装 Node 依赖并在 Ubuntu 上构建完整 Linux Python runtime。
-3. 生成 AppImage，再解包验证 Python、nanobot 导入和符号链接。
-4. 生成 SHA-256，上传 Actions artifact，并发布到 `linux-appimage-<version>` prerelease。
+3. 生成 AppImage 和 DEB，再分别解包验证 Python、nanobot 导入和符号链接。
+4. 生成 SHA-256，上传 Actions artifact，并发布到 `linux-packages-<version>` prerelease。
 
 GitHub 仓库需要配置以下 Actions Repository Secrets：
 
@@ -179,7 +179,24 @@ TPCowork Setup <version>.exe
 TPCowork Setup <version>.exe.sha256
 TPCowork-<version>.AppImage
 TPCowork-<version>.AppImage.sha256
+tpcowork_<version>_amd64.deb
+tpcowork_<version>_amd64.deb.sha256
 ```
+
+Ubuntu 用户建议安装 DEB，它会通过系统包管理器注册应用菜单：
+
+```bash
+sudo apt install ./tpcowork_0.0.1_amd64.deb
+```
+
+AppImage 是免安装版。GitHub Actions Artifact 不保留 Unix 可执行权限，从 Artifact 或浏览器下载后需要重新授权再运行：
+
+```bash
+chmod +x TPCowork-0.0.1.AppImage
+./TPCowork-0.0.1.AppImage
+```
+
+如果提示缺少 `libfuse.so.2`，Ubuntu 22.04 可安装 `libfuse2`，Ubuntu 24.04 可安装 `libfuse2t64`；DEB 安装不依赖 AppImage 的 FUSE 启动方式。
 
 打包配置会把这些资源放入安装包：
 

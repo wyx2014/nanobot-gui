@@ -82,22 +82,28 @@ describe('cross-platform Python runtime packaging', () => {
     expect(workflow).not.toContain('node scripts/package-python-runtime.mjs');
   });
 
-  it('builds, smoke-tests, and publishes the final AppImage on a Linux CI runner', () => {
+  it('builds, smoke-tests, and publishes AppImage and DEB packages on Linux CI', () => {
     const workflow = fs.readFileSync(
       path.join(process.cwd(), '.github', 'workflows', 'linux-python-runtime.yml'),
       'utf8',
     );
 
-    expect(workflow).toContain('name: Build Linux AppImage');
+    expect(workflow).toContain('name: Build Linux Packages');
     expect(workflow).toContain('runs-on: ubuntu-22.04');
     expect(workflow).toContain('repository: ${{ inputs.nanobot_repository }}');
     expect(workflow).toContain('run: npm ci');
     expect(workflow).toContain('Verify packaging contracts');
     expect(workflow).toContain('run: npm run build:linux');
     expect(workflow).toContain('--appimage-extract');
+    expect(workflow).toContain('dpkg-deb --extract');
+    expect(workflow).toContain('deb_root/usr/share/applications');
+    expect(workflow).toContain("grep -q '^Exec='");
     expect(workflow).toContain('resources/python/bin/python3');
     expect(workflow).toContain('find squashfs-root/resources/python -xtype l');
     expect(workflow).toContain('nanobot-gui/${{ steps.package.outputs.appimage }}');
+    expect(workflow).toContain('nanobot-gui/${{ steps.package.outputs.deb }}');
+    expect(workflow).toContain('linux-packages-$version');
+    expect(workflow).toContain('DEB_NAME: ${{ steps.package.outputs.deb_name }}');
     expect(workflow).toContain('gh release create "$RELEASE_TAG" --prerelease');
     expect(workflow).toContain('gh release upload "$RELEASE_TAG"');
     expect(workflow).toContain('--clobber');

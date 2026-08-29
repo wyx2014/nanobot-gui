@@ -55,7 +55,7 @@ export default defineConfig(({ mode }) => {
         port: 5173,
         strictPort: true,
         watch: {
-          ignored: ['**/embedded-python/**']
+          ignored: ['**/embedded-python/**', '**/dist/**']
         }
       },
       build: {

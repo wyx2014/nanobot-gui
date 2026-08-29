@@ -43,6 +43,11 @@ export function isMacOS(): boolean {
   return (cached ?? rendererPlatformFallback()) === 'macos';
 }
 
+/** Returns true if running on Linux */
+export function isLinux(): boolean {
+  return (cached ?? rendererPlatformFallback()) === 'linux';
+}
+
 /** Get the cached platform string. Warns if called before initPlatform(). */
 export function getPlatform(): string {
   if (cached === null) {

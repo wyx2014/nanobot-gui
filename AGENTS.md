@@ -131,7 +131,7 @@ venv/bin/pip install -e ".[desktop]"
 
 - macOS arm64/x64 standalone Python 已支持。
 - Windows x64 standalone Python 已支持。
-- Linux x64 standalone Python 和 AppImage 打包已支持。
+- Linux x64 standalone Python 和 AppImage 已支持，并由 Ubuntu GitHub Actions 原生打包。
 
 ## 项目结构
 

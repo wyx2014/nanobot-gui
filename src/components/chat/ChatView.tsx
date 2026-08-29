@@ -59,7 +59,7 @@ import { preserveLatestUserAnchor } from '@/core/nanobot/threadHistoryMerge';
 import { loadConversationHistory } from '@/core/nanobot/conversationHistory';
 import { normalizeTaskTimestamp } from '@/utils/taskDuration';
 import { cn } from '@/lib/utils';
-import { isMacOS } from '@/utils/platform';
+import { isLinux, isMacOS } from '@/utils/platform';
 import { useConversationSearch } from './useConversationSearch';
 import { shouldShowConversationLoading } from './conversationHistoryLoading';
 
@@ -890,7 +890,7 @@ export default function ChatView({
       data-chat-surface
       className={cn(
         'relative flex min-h-0 min-w-0 flex-col bg-[#fbfaf7] dark:bg-[#1f1f1f]',
-        isMacOS() ? '-mt-12 h-[calc(100%+3rem)]' : 'h-full',
+        isMacOS() || isLinux() ? '-mt-12 h-[calc(100%+3rem)]' : 'h-full',
       )}
     >
       <ConversationHeader

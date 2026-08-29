@@ -200,6 +200,16 @@ html.dark[data-desktop-platform="windows"] .conversation-detail-scrollbar::-webk
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* Linux window buttons share the renderer-owned header. Keep conversation
+   actions inside Electron's Window Controls Overlay safe rectangle. The
+   fallbacks preserve the normal 12px inset on compositors without WCO vars. */
+html[data-desktop-platform="linux"] .conversation-header-titlebar-inset {
+  padding-right: max(
+    0.75rem,
+    calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 0.5rem)
+  );
+}
+
 /* While a theme switch is in flight, suppress transitions so buttons and
    surfaces flip to the new palette in the same frame as the page background
    instead of lagging behind with an animated light->dark fade. This class is
@@ -1970,6 +1980,17 @@ input[type="range"].slider-filled::-moz-range-thumb {
     inset 0 1px 0 rgba(255, 255, 255, 0.025),
     0 16px 48px rgba(0, 0, 0, 0.34),
     0 2px 10px rgba(0, 0, 0, 0.2);
+}
+
+/* Chromium's Linux compositor can expose a bright one-pixel backing-layer
+   seam around a translucent backdrop-filter surface. Keep the dark floating
+   composer visually identical but opaque and in the normal paint layer. */
+html.dark[data-desktop-platform="linux"]
+  [data-codex-composer-shell][data-composer-variant="chat"]
+  [data-floating-composer] {
+  background: #2a2a2a;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .dark [data-codex-composer-shell][data-composer-variant="chat"] [data-codex-project-selector] {

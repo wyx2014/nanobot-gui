@@ -7,7 +7,6 @@ import { fileURLToPath } from 'url';
 
 import {
   DEFAULT_RUNTIME_REPOSITORY,
-  LINUX_RUNTIME_TARGET,
   PYTHON_STANDALONE_RELEASE,
   PYTHON_VERSION,
   RUNTIME_PROFILE,
@@ -75,9 +74,7 @@ const runtimeRepository = environmentValue(
 const defaultAssetBaseUrl = `https://github.com/${runtimeRepository}/releases/download/${assetMetadata.releaseTag}`;
 const runtimeUrlEnvironmentPrefix = targetKey.startsWith('win32-')
   ? 'WINDOWS'
-  : targetKey.startsWith('linux-')
-    ? 'LINUX'
-    : null;
+  : null;
 
 function targetRuntimeEnvironmentValue(suffix) {
   if (!runtimeUrlEnvironmentPrefix) return undefined;
@@ -100,7 +97,11 @@ if (process.argv.includes('--print-config')) {
   console.log(JSON.stringify({
     ...assetMetadata,
     host: hostKey,
-    mode: targetKey === hostKey ? 'build-on-host' : 'download-prebuilt',
+    mode: targetKey === hostKey
+      ? 'build-on-host'
+      : targetKey === WINDOWS_RUNTIME_TARGET
+        ? 'download-prebuilt'
+        : 'target-host-required',
     repository: runtimeRepository,
     archiveUrl: runtimeArchiveUrl,
     checksumUrl: runtimeChecksumUrl,
@@ -319,11 +320,11 @@ async function downloadRuntimeAsset({ assetName, destination, explicitUrl, url }
   });
 }
 
-async function installPrebuiltRuntime() {
-  const prebuiltTargets = new Set([WINDOWS_RUNTIME_TARGET, LINUX_RUNTIME_TARGET]);
-  if (!prebuiltTargets.has(targetKey)) {
+async function installPrebuiltWindowsRuntime() {
+  if (targetKey !== WINDOWS_RUNTIME_TARGET) {
     throw new Error(
-      `Cross-host runtime preparation is only supported for ${[...prebuiltTargets].join(', ')}; received ${targetKey}.`,
+      `${targetKey} runtime must be prepared on its target host; current host is ${hostKey}. `
+      + `Cross-host runtime preparation is only supported for ${WINDOWS_RUNTIME_TARGET}.`,
     );
   }
   const existingErrors = fs.existsSync(destDir) ? runtimeValidationErrors(destDir) : ['runtime is absent'];
@@ -447,7 +448,7 @@ try {
   if (targetKey === hostKey) {
     await buildRuntimeOnHost();
   } else {
-    await installPrebuiltRuntime();
+    await installPrebuiltWindowsRuntime();
   }
 } catch (error) {
   console.error(`Failed to prepare Python runtime for ${targetKey}:`, error);

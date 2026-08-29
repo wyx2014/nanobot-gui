@@ -27,7 +27,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import type { ConversationStatus } from '@/types';
 import { dialogBridge, fsBridge, shellBridge } from '@/lib/ipc-factory';
-import { isMacOS, isWindows } from '@/utils/platform';
+import { isLinux, isMacOS, isWindows } from '@/utils/platform';
 import {
   conversationBelongsToProject,
   normalizeProjectPath,
@@ -836,8 +836,8 @@ export default function Sidebar() {
       className="flex flex-col h-full w-[260px] bg-[#f7f6f2] border-r border-[#e5e2db] dark:bg-[#242424] dark:border-[#3d3d3d]"
       onClickCapture={refreshRelativeTimes}
     >
-      {/* The overlay title bar is part of the renderer on macOS and Windows. */}
-      {(isMacOS() || windows) && (
+      {/* The overlay title bar is part of the renderer on every desktop platform. */}
+      {(isMacOS() || windows || isLinux()) && (
         <div
           data-sidebar-titlebar-spacer
           className={cn('shrink-0', windows ? 'h-9' : 'h-12')}

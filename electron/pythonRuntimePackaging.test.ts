@@ -72,8 +72,6 @@ describe('cross-platform Python runtime packaging', () => {
         env: {
           ...process.env,
           TPCOWORK_RUNTIME_REPOSITORY: 'example/tpcowork',
-          TPCOWORK_LINUX_RUNTIME_URL: 'https://runtime.example/linux.tar.gz',
-          TPCOWORK_LINUX_RUNTIME_SHA256_URL: 'https://runtime.example/linux.tar.gz.sha256',
         },
       },
     );
@@ -86,8 +84,9 @@ describe('cross-platform Python runtime packaging', () => {
     );
     expect(metadata.checksum).toBe(`${metadata.archive}.sha256`);
     expect(metadata.releaseTag).toContain('3.12.9-linux-x64');
-    expect(metadata.archiveUrl).toBe('https://runtime.example/linux.tar.gz');
-    expect(metadata.checksumUrl).toBe('https://runtime.example/linux.tar.gz.sha256');
+    expect(metadata.mode).toBe(
+      metadata.host === 'linux-x64' ? 'build-on-host' : 'target-host-required',
+    );
   });
 
   it('builds and publishes the prebuilt runtime on a Windows CI runner', () => {
@@ -105,19 +104,36 @@ describe('cross-platform Python runtime packaging', () => {
     expect(workflow).toContain('--clobber');
   });
 
-  it('builds and publishes the prebuilt runtime on a Linux CI runner', () => {
+  it('builds, smoke-tests, and publishes the final AppImage on a Linux CI runner', () => {
     const workflow = fs.readFileSync(
       path.join(process.cwd(), '.github', 'workflows', 'linux-python-runtime.yml'),
       'utf8',
     );
 
-    expect(workflow).toContain('runs-on: ubuntu-latest');
+    expect(workflow).toContain('name: Build Linux AppImage');
+    expect(workflow).toContain('runs-on: ubuntu-22.04');
     expect(workflow).toContain('repository: ${{ inputs.nanobot_repository }}');
-    expect(workflow).toContain('node scripts/download-python.mjs --target linux-x64');
-    expect(workflow).toContain('node scripts/package-python-runtime.mjs --target linux-x64');
-    expect(workflow).toContain('gh release create "$RUNTIME_TAG" --prerelease');
-    expect(workflow).toContain('gh release upload "$RUNTIME_TAG"');
+    expect(workflow).toContain('run: npm ci');
+    expect(workflow).toContain('Verify packaging contracts');
+    expect(workflow).toContain('run: npm run build:linux');
+    expect(workflow).toContain('--appimage-extract');
+    expect(workflow).toContain('resources/python/bin/python3');
+    expect(workflow).toContain('find squashfs-root/resources/python -xtype l');
+    expect(workflow).toContain('nanobot-gui/${{ steps.package.outputs.appimage }}');
+    expect(workflow).toContain('gh release create "$RELEASE_TAG" --prerelease');
+    expect(workflow).toContain('gh release upload "$RELEASE_TAG"');
     expect(workflow).toContain('--clobber');
+  });
+
+  it('requires Linux runtime assembly to run on a Linux x64 host', () => {
+    const preparationScript = fs.readFileSync(
+      path.join(process.cwd(), 'scripts', 'download-python.mjs'),
+      'utf8',
+    );
+
+    expect(preparationScript).toContain("'target-host-required'");
+    expect(preparationScript).toContain('runtime must be prepared on its target host');
+    expect(preparationScript).not.toContain('TPCOWORK_LINUX_RUNTIME_URL');
   });
 
   it('does not build nanobot browser assets for the native desktop gateway', () => {

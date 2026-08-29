@@ -30,7 +30,7 @@ import { useSettingsStore, getEffectiveModel } from '@/stores/settingsStore';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ArrowLeft, ArrowRight, PanelLeft } from 'lucide-react';
 import ThinkingOrb from '@/components/common/ModalAwareThinkingOrb';
-import { isMacOS, isWindows } from '@/utils/platform';
+import { isLinux, isMacOS, isWindows } from '@/utils/platform';
 import { cn } from '@/lib/utils';
 import { initNotifications } from '@/utils/notifications';
 import { startBehaviorSensor, stopBehaviorSensor } from '@/core/runtime/behaviorSensor';
@@ -206,11 +206,11 @@ function App() {
       const root = document.documentElement;
       const isDark = theme === 'dark' || (theme === 'system' && mediaQuery.matches);
       const currentlyDark = root.classList.contains('dark');
-      // Keep Electron-owned chrome in lockstep with the renderer. Windows uses
-      // native caption buttons over our custom title bar, so their background
-      // and glyph colors must follow the active theme as well.
+      // Keep Electron-owned chrome in lockstep with the renderer. Windows and
+      // Linux use native caption buttons over our custom title bar, so the
+      // overlay background (and Windows glyphs) must follow the active theme.
       void windowBridge.setBackgroundColor(isDark ? '#171717' : '#fbfaf7');
-      if (isWindows()) {
+      if (isWindows() || isLinux()) {
         void windowBridge.setTitleBarOverlayTheme(isDark);
       }
       // No-op switch (e.g. "system" -> "light" while the OS is already light)
@@ -681,12 +681,13 @@ function App() {
     refreshDiscovery,
   ]);
 
-  // macOS shares this row with the traffic lights. Windows uses Electron's
-  // title-bar overlay so the native caption buttons stay on the right while
-  // our sidebar and history controls occupy the upper-left, like Codex.
+  // macOS shares this row with the traffic lights. Windows and Linux use
+  // Electron's title-bar overlay so native caption buttons stay on the right
+  // while our sidebar and history controls occupy the renderer-owned header.
   const mac = isMacOS();
   const windows = isWindows();
-  const customTitlebar = mac || windows;
+  const linux = isLinux();
+  const customTitlebar = mac || windows || linux;
   const autoHideSidebarForSummary = shouldAutoHideSidebarForPinnedSummary({
     windows,
     compactViewport: compactSummaryViewport,
@@ -743,17 +744,18 @@ function App() {
         {customTitlebar && (
           <div
             data-window-titlebar
-            data-window-titlebar-platform={windows ? 'windows' : 'macos'}
+            data-window-titlebar-platform={windows ? 'windows' : linux ? 'linux' : 'macos'}
             className={cn(
               'window-titlebar-drag fixed left-0 right-0 top-0 z-40',
               windows ? 'h-9' : 'h-12',
               windows && 'bg-[#f7f6f2] dark:bg-[#242424]',
+              linux && 'bg-[#fbfaf7] dark:bg-[#1f1f1f]',
             )}
           >
             {windows && <AppTitlebarMenu />}
           </div>
         )}
-        {customTitlebar && windows && (
+        {customTitlebar && (windows || linux) && (
           <div
             data-window-titlebar-divider
             aria-hidden="true"
@@ -869,9 +871,9 @@ function App() {
           {/* Custom title bars live inside the renderer, so content starts below them. */}
           <main
             className={cn(
-              'flex-1 min-w-0 bg-[#fbfaf7] transition-opacity duration-150',
+              'flex-1 min-w-0 bg-[#fbfaf7] transition-opacity duration-150 dark:bg-[#1f1f1f]',
               previewExpanded && 'pointer-events-none overflow-hidden opacity-0',
-              mac ? 'pt-12' : windows && 'pt-9',
+              mac || linux ? 'pt-12' : windows && 'pt-9',
             )}
             style={{
               transitionDelay: shellTransitionDelay,

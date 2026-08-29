@@ -1,9 +1,11 @@
 import {
+  LINUX_TITLE_BAR_HEIGHT,
   MACOS_TITLE_BAR_HEIGHT,
   WINDOWS_TITLE_BAR_HEIGHT,
 } from '../src/config/windowChrome';
 
 export {
+  LINUX_TITLE_BAR_HEIGHT,
   MACOS_TITLE_BAR_HEIGHT,
   WINDOWS_TITLE_BAR_HEIGHT,
 } from '../src/config/windowChrome';
@@ -35,6 +37,12 @@ export const WINDOWS_TITLE_BAR_DARK = Object.freeze({
   color: '#242424',
   symbolColor: '#f3f0e8',
 });
+export const LINUX_TITLE_BAR_LIGHT = Object.freeze({
+  color: '#fbfaf7',
+});
+export const LINUX_TITLE_BAR_DARK = Object.freeze({
+  color: '#1f1f1f',
+});
 
 const MACOS_WINDOW_CHROME = Object.freeze({
   titleBarStyle: 'hidden' as const,
@@ -55,15 +63,24 @@ const WINDOWS_WINDOW_CHROME = Object.freeze({
   }),
 });
 
+const LINUX_WINDOW_CHROME = Object.freeze({
+  titleBarStyle: 'hidden' as const,
+  titleBarOverlay: Object.freeze({
+    ...LINUX_TITLE_BAR_LIGHT,
+    height: LINUX_TITLE_BAR_HEIGHT,
+  }),
+});
+
 /**
- * macOS shares the renderer title bar with the traffic lights. Windows keeps
- * its native minimise/maximise/close buttons in a title-bar overlay while the
- * renderer owns the rest of the row. Linux retains the native title bar.
+ * macOS shares the renderer title bar with the traffic lights. Windows and
+ * Linux keep their native minimise/maximise/close buttons in a title-bar
+ * overlay while the renderer owns and themes the rest of the row.
  */
 export function getMainWindowChrome(
   platform: string,
-): typeof MACOS_WINDOW_CHROME | typeof WINDOWS_WINDOW_CHROME | Record<string, never> {
+): typeof MACOS_WINDOW_CHROME | typeof WINDOWS_WINDOW_CHROME | typeof LINUX_WINDOW_CHROME | Record<string, never> {
   if (platform === 'darwin') return MACOS_WINDOW_CHROME;
   if (platform === 'win32') return WINDOWS_WINDOW_CHROME;
+  if (platform === 'linux') return LINUX_WINDOW_CHROME;
   return {};
 }

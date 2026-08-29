@@ -1,4 +1,4 @@
-name: Build Linux Python runtime
+name: Build Linux AppImage
 
 on:
   workflow_dispatch:
@@ -11,20 +11,20 @@ on:
       nanobot_ref:
         description: Branch, tag, or commit to embed
         required: true
-        default: main
+        default: tpacowork-runtime
         type: string
 
 permissions:
   contents: write
 
 concurrency:
-  group: linux-python-3.12.9-linux-x64
+  group: linux-appimage-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  build-runtime:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+  build-appimage:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
     steps:
       - name: Checkout TPCowork GUI
         uses: actions/checkout@v4
@@ -43,50 +43,75 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: nanobot-gui/package-lock.json
 
-      - name: Build complete linux-x64 runtime
+      - name: Install GUI dependencies
         working-directory: nanobot-gui
-        run: node scripts/download-python.mjs --target linux-x64
+        run: npm ci
 
-      - name: Smoke-test and archive runtime
+      - name: Verify packaging contracts
         working-directory: nanobot-gui
-        run: node scripts/package-python-runtime.mjs --target linux-x64
+        run: npm run test -- electron/pythonRuntimePackaging.test.ts electron/packagingDependencies.test.ts
 
-      - name: Read release metadata
-        id: runtime
+      - name: Build Linux AppImage with native Python runtime
+        working-directory: nanobot-gui
+        env:
+          JUYUAN_MCP_TOKEN: ${{ secrets.JUYUAN_MCP_TOKEN }}
+          CAIHUI_MCP_API_KEY: ${{ secrets.CAIHUI_MCP_API_KEY }}
+          IFIND_MCP_API_KEY: ${{ secrets.IFIND_MCP_API_KEY }}
+          ANYSEARCH_API_KEY: ${{ secrets.ANYSEARCH_API_KEY }}
+        run: npm run build:linux
+
+      - name: Smoke-test packaged Python runtime
         working-directory: nanobot-gui
         run: |
-          metadata="$(node scripts/download-python.mjs --target linux-x64 --print-config)"
-          echo "tag=$(jq -r .releaseTag <<<"$metadata")" >> "$GITHUB_OUTPUT"
-          echo "archive=$(jq -r .archive <<<"$metadata")" >> "$GITHUB_OUTPUT"
-          echo "checksum=$(jq -r .checksum <<<"$metadata")" >> "$GITHUB_OUTPUT"
-          echo "manifest=$(jq -r .manifest <<<"$metadata")" >> "$GITHUB_OUTPUT"
+          appimage="$(find dist/installers -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          test -n "$appimage"
+          chmod +x "$appimage"
+          "$appimage" --appimage-extract >/dev/null
+          test -x squashfs-root/resources/python/bin/python3
+          squashfs-root/resources/python/bin/python3 -c "import nanobot; from nanobot.cli.commands import app; print(nanobot.__file__); print(type(app).__name__)"
+          broken_link="$(find squashfs-root/resources/python -xtype l -print -quit)"
+          test -z "$broken_link"
+
+      - name: Read package metadata and checksum
+        id: package
+        working-directory: nanobot-gui
+        run: |
+          appimage="$(find dist/installers -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          appimage_name="$(basename "$appimage")"
+          version="$(node -p "require('./package.json').version")"
+          (cd "$(dirname "$appimage")" && sha256sum "$appimage_name" > "$appimage_name.sha256")
+          echo "appimage=$appimage" >> "$GITHUB_OUTPUT"
+          echo "appimage_name=$appimage_name" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "release_tag=linux-appimage-$version" >> "$GITHUB_OUTPUT"
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.runtime.outputs.archive }}
-          path: nanobot-gui/dist/python-runtime/*
+          name: TPCowork-${{ steps.package.outputs.version }}-linux-x64
+          path: |
+            nanobot-gui/${{ steps.package.outputs.appimage }}
+            nanobot-gui/${{ steps.package.outputs.appimage }}.sha256
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
 
-      - name: Publish stable runtime release assets
+      - name: Publish Linux AppImage prerelease
         working-directory: nanobot-gui
         env:
           GH_TOKEN: ${{ github.token }}
-          RUNTIME_TAG: ${{ steps.runtime.outputs.tag }}
-          RUNTIME_ARCHIVE: ${{ steps.runtime.outputs.archive }}
-          RUNTIME_CHECKSUM: ${{ steps.runtime.outputs.checksum }}
-          RUNTIME_MANIFEST: ${{ steps.runtime.outputs.manifest }}
+          RELEASE_TAG: ${{ steps.package.outputs.release_tag }}
+          APPIMAGE_NAME: ${{ steps.package.outputs.appimage_name }}
           NANOBOT_REF: ${{ inputs.nanobot_ref }}
         run: |
-          if ! gh release view "$RUNTIME_TAG" >/dev/null 2>&1; then
-            gh release create "$RUNTIME_TAG" --prerelease --target "$GITHUB_SHA" --title "TPCowork Linux Python 3.12.9 runtime" --notes "Prebuilt linux-x64 desktop runtime. Embedded nanobot ref: $NANOBOT_REF"
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --prerelease --target "$GITHUB_SHA" --title "TPCowork ${{ steps.package.outputs.version }} Linux x64" --notes "Ubuntu-built AppImage with embedded nanobot ref: $NANOBOT_REF"
           else
-            gh release edit "$RUNTIME_TAG" --prerelease
+            gh release edit "$RELEASE_TAG" --prerelease
           fi
-          gh release upload "$RUNTIME_TAG" \
-            "dist/python-runtime/$RUNTIME_ARCHIVE" \
-            "dist/python-runtime/$RUNTIME_CHECKSUM" \
-            "dist/python-runtime/$RUNTIME_MANIFEST" \
+          gh release upload "$RELEASE_TAG" \
+            "dist/installers/$APPIMAGE_NAME" \
+            "dist/installers/$APPIMAGE_NAME.sha256" \
             --clobber

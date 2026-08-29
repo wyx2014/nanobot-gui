@@ -26,7 +26,7 @@ describe('resolveTitlebarLayout', () => {
     }).conversationLeadingInset).toBe(12);
   });
 
-  it('accounts for fullscreen and native-titlebar layouts', () => {
+  it('accounts for fullscreen and Linux overlay layouts', () => {
     expect(resolveTitlebarLayout({
       isMac: true,
       isWindows: false,
@@ -45,8 +45,19 @@ describe('resolveTitlebarLayout', () => {
       sidebarCollapsed: false,
       sidebarVisible: true,
     })).toEqual({
-      navigationLeft: 232,
-      conversationLeadingInset: 76,
+      navigationLeft: 12,
+      conversationLeadingInset: 12,
+    });
+
+    expect(resolveTitlebarLayout({
+      isMac: false,
+      isWindows: false,
+      isFullScreen: false,
+      sidebarCollapsed: true,
+      sidebarVisible: false,
+    })).toEqual({
+      navigationLeft: 12,
+      conversationLeadingInset: 116,
     });
   });
 

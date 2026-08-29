@@ -9,6 +9,9 @@ import { syncNanobotConfig, type NanobotConfigInput } from './nanobotConfig'
 import { MermaidBridge } from './mermaidBridge'
 import {
   getMainWindowChrome,
+  LINUX_TITLE_BAR_DARK,
+  LINUX_TITLE_BAR_HEIGHT,
+  LINUX_TITLE_BAR_LIGHT,
   MAIN_WINDOW_BACKGROUND,
   MAIN_WINDOW_BOUNDS,
   WINDOWS_TITLE_BAR_DARK,
@@ -796,11 +799,16 @@ async function startApplication(): Promise<void> {
   })
 
   ipcMain.handle('window:setTitleBarOverlayTheme', (event, dark: boolean) => {
-    if (process.platform !== 'win32') return false
+    if (process.platform !== 'win32' && process.platform !== 'linux') return false
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win || typeof dark !== 'boolean') return false
-    const colors = dark ? WINDOWS_TITLE_BAR_DARK : WINDOWS_TITLE_BAR_LIGHT
-    win.setTitleBarOverlay({ ...colors, height: WINDOWS_TITLE_BAR_HEIGHT })
+    const colors = process.platform === 'linux'
+      ? dark ? LINUX_TITLE_BAR_DARK : LINUX_TITLE_BAR_LIGHT
+      : dark ? WINDOWS_TITLE_BAR_DARK : WINDOWS_TITLE_BAR_LIGHT
+    const height = process.platform === 'linux'
+      ? LINUX_TITLE_BAR_HEIGHT
+      : WINDOWS_TITLE_BAR_HEIGHT
+    win.setTitleBarOverlay({ ...colors, height })
     return true
   })
 

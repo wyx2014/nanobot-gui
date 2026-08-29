@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   getMainWindowChrome,
+  LINUX_TITLE_BAR_DARK,
+  LINUX_TITLE_BAR_HEIGHT,
+  LINUX_TITLE_BAR_LIGHT,
   MACOS_TITLE_BAR_HEIGHT,
   MAIN_WINDOW_BACKGROUND,
   MAIN_WINDOW_BOUNDS,
@@ -55,7 +58,16 @@ describe('main window chrome', () => {
     });
   });
 
-  it('keeps native window chrome on Linux', () => {
-    expect(getMainWindowChrome('linux')).toEqual({});
+  it('uses a themed overlay while retaining native window buttons on Linux', () => {
+    expect(LINUX_TITLE_BAR_HEIGHT).toBe(48);
+    expect(LINUX_TITLE_BAR_LIGHT).toEqual({ color: '#fbfaf7' });
+    expect(LINUX_TITLE_BAR_DARK).toEqual({ color: '#1f1f1f' });
+    expect(getMainWindowChrome('linux')).toEqual({
+      titleBarStyle: 'hidden',
+      titleBarOverlay: {
+        color: '#fbfaf7',
+        height: 48,
+      },
+    });
   });
 });

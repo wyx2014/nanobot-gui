@@ -26,18 +26,13 @@ export function resolveTitlebarLayout({
   isMac,
   isWindows,
   isFullScreen,
-  sidebarCollapsed,
   sidebarVisible,
 }: TitlebarLayoutInput): TitlebarLayout {
   const navigationLeft = isFullScreen
     ? TITLEBAR_EDGE_GAP
     : isMac
       ? 92
-      : isWindows
-        ? TITLEBAR_EDGE_GAP
-        : sidebarCollapsed
-          ? 70
-          : 232;
+      : TITLEBAR_EDGE_GAP;
   const navigationWidth = (
     TITLEBAR_CONTROL_COUNT * TITLEBAR_CONTROL_SIZE
     + (TITLEBAR_CONTROL_COUNT - 1) * TITLEBAR_CONTROL_GAP

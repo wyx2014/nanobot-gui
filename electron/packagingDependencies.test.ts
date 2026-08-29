@@ -73,6 +73,10 @@ describe('packaged dependency boundary', () => {
     expect(electronViteConfig).not.toContain('node-llama-cpp');
   });
 
+  it('does not watch generated installers during Electron development', () => {
+    expect(electronViteConfig).toContain("'**/dist/**'");
+  });
+
   it('builds one compressed Windows release target by default', () => {
     expect(packageManifest.build?.win?.compression).toBe('normal');
     expect(packageManifest.build?.win?.target).toEqual(['nsis']);

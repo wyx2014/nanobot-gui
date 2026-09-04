@@ -2,17 +2,22 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   archiveSession,
+  clearSecurityAudit,
   createModelConfiguration,
   deleteModelConfiguration,
   deleteProviderSettings,
   deleteScheduleRun,
+  fetchSecurityAudit,
+  fetchSecurityPolicy,
   fetchThreadResource,
   fetchArchivedData,
   fetchProviderModels,
   fetchWebuiThread,
   purgeSession,
   registerTokenProvider,
+  resetSecurityPolicy,
   THREAD_HISTORY_MESSAGE_LIMIT,
+  updateSecurityPolicy,
 } from "./api";
 
 afterEach(() => {
@@ -271,5 +276,122 @@ describe("schedule run history", () => {
     expect(url.pathname).toBe("/api/schedule/runs/delete");
     expect(url.searchParams.get("task_id")).toBe("daily-brief");
     expect(url.searchParams.get("run_id")).toBe("run-1");
+  });
+});
+
+describe("security protection API", () => {
+  it("uses the explicit gateway origin for policy reads and updates", async () => {
+    const policy = {
+      protection_enabled: true,
+      enforcement_level: "application",
+      access_mode: "full",
+      core_protection_locked: true,
+      file_allow_paths: [],
+      approval_paths: [],
+      command_allow_prefixes: [],
+      command_approval_prefixes: [],
+      network_block_all: false,
+      network_allow_domains: [],
+      network_deny_domains: [],
+      components: {},
+      core_rules: [],
+    };
+    const fetchMock = vi.fn().mockImplementation(async () => jsonResponse(policy));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchSecurityPolicy("gateway-token", "http://127.0.0.1:8900");
+    await updateSecurityPolicy(
+      "gateway-token",
+      "http://127.0.0.1:8900",
+      { approval_paths: ["/work/private"] },
+    );
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("http://127.0.0.1:8900/api/security/policy");
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("http://127.0.0.1:8900/api/security/policy/update");
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      cache: "no-store",
+      headers: {
+        "X-Nanobot-Security-Values": JSON.stringify({
+          approval_paths: ["/work/private"],
+        }),
+      },
+    });
+  });
+
+  it("updates command and network rules without requiring unrelated sections", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await updateSecurityPolicy(
+      "gateway-token",
+      "http://127.0.0.1:8900",
+      {
+        command_approval_prefixes: ["git push"],
+        network_block_all: true,
+        network_allow_domains: ["api.example.com"],
+      },
+    );
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("http://127.0.0.1:8900/api/security/policy/update");
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      cache: "no-store",
+      headers: {
+        "X-Nanobot-Security-Values": JSON.stringify({
+          command_approval_prefixes: ["git push"],
+          network_block_all: true,
+          network_allow_domains: ["api.example.com"],
+        }),
+      },
+    });
+  });
+
+  it("encodes audit filters and cursor pagination", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      events: [], total: 0, loaded: 0, next_cursor: null,
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchSecurityAudit("gateway-token", "http://127.0.0.1:8900", {
+      search: "rm -rf",
+      category: "command",
+      result: "blocked",
+      startMs: 100,
+      endMs: 200,
+      cursor: 42,
+      limit: 100,
+      includeTotal: false,
+    });
+
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.pathname).toBe("/api/security/audit");
+    expect(Object.fromEntries(url.searchParams)).toMatchObject({
+      search: "rm -rf",
+      category: "command",
+      result: "blocked",
+      start_ms: "100",
+      end_ms: "200",
+      cursor: "42",
+      limit: "100",
+      include_total: "0",
+    });
+  });
+
+  it("uses gateway-compatible GET routes for reset and audit clearing", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => jsonResponse({ deleted: 0 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await resetSecurityPolicy("gateway-token", "http://127.0.0.1:8900");
+    await clearSecurityAudit("gateway-token", "http://127.0.0.1:8900");
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "http://127.0.0.1:8900/api/security/policy/reset",
+    );
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ cache: "no-store" });
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBeUndefined();
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "http://127.0.0.1:8900/api/security/audit/clear",
+    );
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ cache: "no-store" });
+    expect(fetchMock.mock.calls[1]?.[1]?.method).toBeUndefined();
   });
 });

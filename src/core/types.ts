@@ -351,6 +351,8 @@ export interface UIMessage {
   interactivePrompt?: UIInteractivePrompt;
   /** User turn: structured answer metadata for an interactive prompt. */
   interactivePromptAnswer?: UIInteractivePromptAnswer;
+  /** Pending or resolved high-risk operation approval. */
+  securityApproval?: UISecurityApproval;
 }
 
 export interface UICliAppAttachment {
@@ -374,6 +376,76 @@ export interface UIMcpPresetAttachment {
 }
 
 export type UIInteractivePromptStatus = "pending" | "answered" | "skipped" | "expired";
+
+export interface UISecurityApproval {
+  approval_id: string;
+  tool_call_id: string;
+  tool_name: string;
+  risk: "high" | "critical" | string;
+  rule_id: string;
+  summary: string;
+  target?: string | null;
+  scope: "turn";
+  status?: "pending" | "allowed" | "denied" | "expired";
+}
+
+export interface SecurityPolicyPath {
+  path: string;
+  source: "default" | "user" | string;
+}
+
+export interface SecurityPolicyPayload {
+  protection_enabled: true;
+  enforcement_level: "application" | string;
+  access_mode: "full";
+  core_protection_locked: true;
+  file_allow_paths: SecurityPolicyPath[];
+  approval_paths: SecurityPolicyPath[];
+  command_allow_prefixes: string[];
+  command_approval_prefixes: string[];
+  network_block_all: boolean;
+  network_allow_domains: string[];
+  network_deny_domains: string[];
+  components: Record<string, { enabled: boolean; configurable?: boolean; retention_days?: number; max_records?: number }>;
+  core_rules: Array<{ id: string; label: string; locked: boolean }>;
+}
+
+export interface SecurityPolicyUpdate {
+  file_allow_paths?: string[];
+  approval_paths?: string[];
+  command_allow_prefixes?: string[];
+  command_approval_prefixes?: string[];
+  network_block_all?: boolean;
+  network_allow_domains?: string[];
+  network_deny_domains?: string[];
+}
+
+export interface SecurityAuditEvent {
+  id: number;
+  timestamp: number;
+  category: string;
+  action: string;
+  decision: string;
+  result: string;
+  risk: string;
+  rule_id?: string | null;
+  project_id?: string | null;
+  session_id?: string | null;
+  turn_id?: string | null;
+  tool_call_id?: string | null;
+  tool_name?: string | null;
+  target?: string | null;
+  summary: string;
+  duration_ms?: number | null;
+  details: Record<string, unknown>;
+}
+
+export interface SecurityAuditPage {
+  events: SecurityAuditEvent[];
+  total: number | null;
+  loaded: number;
+  next_cursor?: number | null;
+}
 
 export interface UIInteractivePromptOption {
   id: string;
@@ -1268,6 +1340,18 @@ export type InboundEvent =
       status: "running" | "completed" | "error";
       timestamp: number;
     }
+  | {
+      event: "security_approval_required";
+      chat_id: string;
+      approval: UISecurityApproval;
+    }
+  | {
+      event: "security_approval_resolved";
+      chat_id: string;
+      approval_id: string;
+      decision: "allow_turn" | "deny";
+      accepted: boolean;
+    }
   | { event: "attached"; chat_id: string }
   | {
       event: "message";
@@ -1598,6 +1682,12 @@ export type Outbound =
   | { type: "set_workspace_scope"; chat_id: string; workspace_scope: WorkspaceScopePayload }
   | { type: "set_expert_team"; chat_id: string; expert_team: ExpertTeamBinding | null }
   | { type: "set_mcp_presets"; chat_id: string; mcp_presets: OutboundMcpPresetMention[] }
+  | {
+      type: "security_approval_response";
+      chat_id: string;
+      approval_id: string;
+      decision: "allow_turn" | "deny";
+    }
   | {
       type: "browser_control";
       chat_id: string;

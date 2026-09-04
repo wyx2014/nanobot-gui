@@ -164,6 +164,33 @@ describe("NanobotClient readiness", () => {
     }));
   });
 
+  it("sends a turn-scoped security approval decision", () => {
+    const socket = new FakeSocket();
+    const client = new NanobotClient({
+      url: "ws://127.0.0.1:8900/",
+      reconnect: false,
+      socketFactory: () => socket as unknown as WebSocket,
+    });
+    client.connect();
+    socket.open();
+    socket.receive({
+      event: "ready",
+      chat_id: "default-chat",
+      client_id: "desktop",
+      agent_ready: true,
+      mcp_status: "ready",
+    });
+
+    client.respondSecurityApproval("chat-security", "sap_123", "allow_turn");
+
+    expect(socket.send).toHaveBeenLastCalledWith(JSON.stringify({
+      type: "security_approval_response",
+      chat_id: "chat-security",
+      approval_id: "sap_123",
+      decision: "allow_turn",
+    }));
+  });
+
   it("rejects an expert-team update when the gateway refuses it", async () => {
     const socket = new FakeSocket();
     const client = new NanobotClient({

@@ -33,6 +33,9 @@ import type {
   TurnPlanResource,
   WorkspaceScopePayload,
   PersonalizationPayload,
+  SecurityAuditPage,
+  SecurityPolicyPayload,
+  SecurityPolicyUpdate,
 } from "./types";
 import type { ScheduleConfig } from "@/types/schedule";
 import { isProtectedBuiltinModelProvider } from "@/config/builtinModelServices";
@@ -1403,6 +1406,81 @@ export async function updateNetworkSafetySettings(
     `${base}/api/settings/network-safety/update?${query}`,
     token,
   );
+}
+
+export interface SecurityAuditQuery {
+  search?: string;
+  category?: string;
+  result?: string;
+  startMs?: number;
+  endMs?: number;
+  cursor?: number;
+  limit?: number;
+  includeTotal?: boolean;
+}
+
+function securityAuditQuery(query: SecurityAuditQuery = {}): string {
+  const params = new URLSearchParams();
+  if (query.search) params.set("search", query.search);
+  if (query.category) params.set("category", query.category);
+  if (query.result) params.set("result", query.result);
+  if (query.startMs !== undefined) params.set("start_ms", String(query.startMs));
+  if (query.endMs !== undefined) params.set("end_ms", String(query.endMs));
+  if (query.cursor !== undefined) params.set("cursor", String(query.cursor));
+  if (query.includeTotal !== undefined) params.set("include_total", query.includeTotal ? "1" : "0");
+  params.set("limit", String(query.limit ?? 100));
+  const encoded = params.toString();
+  return encoded ? `?${encoded}` : "";
+}
+
+export async function fetchSecurityPolicy(
+  token: string,
+  base: string,
+): Promise<SecurityPolicyPayload> {
+  return request<SecurityPolicyPayload>(`${base}/api/security/policy`, token);
+}
+
+export async function updateSecurityPolicy(
+  token: string,
+  base: string,
+  values: SecurityPolicyUpdate,
+): Promise<SecurityPolicyPayload> {
+  return request<SecurityPolicyPayload>(`${base}/api/security/policy/update`, token, {
+    cache: "no-store",
+    headers: { "X-Nanobot-Security-Values": asciiJsonStringify(values) },
+  });
+}
+
+export async function resetSecurityPolicy(
+  token: string,
+  base: string,
+): Promise<SecurityPolicyPayload> {
+  return request<SecurityPolicyPayload>(`${base}/api/security/policy/reset`, token, { cache: "no-store" });
+}
+
+export async function fetchSecurityAudit(
+  token: string,
+  base: string,
+  query: SecurityAuditQuery = {},
+): Promise<SecurityAuditPage> {
+  return request<SecurityAuditPage>(`${base}/api/security/audit${securityAuditQuery(query)}`, token);
+}
+
+export async function exportSecurityAudit(
+  token: string,
+  base: string,
+  query: SecurityAuditQuery = {},
+): Promise<Uint8Array> {
+  const response = await fetchGatewayResponse(
+    `${base}/api/security/audit/export${securityAuditQuery(query)}`,
+    token,
+  );
+  if (!response.ok) throw new ApiError(response.status, (await response.text()).trim() || `HTTP ${response.status}`);
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+export async function clearSecurityAudit(token: string, base: string): Promise<{ deleted: number }> {
+  return request<{ deleted: number }>(`${base}/api/security/audit/clear`, token, { cache: "no-store" });
 }
 
 export async function updateImageGenerationSettings(

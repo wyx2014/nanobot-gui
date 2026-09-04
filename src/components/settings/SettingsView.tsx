@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import DataManagementSection from "./DataManagementSection";
+import SecurityProtectionSection from "./SecurityProtectionSection";
 import WindowModalBackdrop from "@/components/common/WindowModalBackdrop";
 import {
   AlertCircle,
@@ -21,6 +22,7 @@ import {
   RefreshCw,
   RotateCcw,
   Save,
+  ShieldCheck,
   SlidersHorizontal,
   Sparkles,
   Trash2,
@@ -91,6 +93,7 @@ type TabKey =
   | "search"
   | "general"
   | "personalization"
+  | "security"
   | "data"
   | "shortcuts"
   | "help";
@@ -146,6 +149,7 @@ const secondaryTabs: Array<{ key: TabKey | null; label: string; icon: typeof Cpu
   { key: "account", label: "账户管理", icon: UserRound },
   { key: "shortcuts", label: "快捷键", icon: Keyboard },
   { key: "data", label: "数据管理", icon: Database },
+  { key: "security", label: "安全防护", icon: ShieldCheck },
   { key: "help", label: "帮助与反馈", icon: HelpCircle },
 ];
 
@@ -160,6 +164,7 @@ const settingsEnglish = {
   account: "Account",
   shortcuts: "Keyboard Shortcuts",
   data: "Data Management",
+  security: "Security Protection",
   help: "Help & Feedback",
   settings: "Settings",
   close: "Close settings",
@@ -341,7 +346,9 @@ export function SettingsView({
         ? settingsEnglish.help
         : tab.key === "data"
           ? settingsEnglish.data
-          : settingsEnglish.shortcuts;
+          : tab.key === "security"
+            ? settingsEnglish.security
+            : settingsEnglish.shortcuts;
     return { ...tab, label };
   }), [isEnglish]);
   const settingsStore = useSettingsStore();
@@ -357,9 +364,11 @@ export function SettingsView({
       ? "providers"
       : requestedSystemTab === "help" || requestedSystemTab === "feedback"
         ? "help"
-      : requestedSystemTab === "sandbox" || requestedSystemTab === "about"
-        ? "general"
-        : requestedSystemTab;
+      : requestedSystemTab === "sandbox"
+        ? "security"
+        : requestedSystemTab === "about"
+          ? "general"
+          : requestedSystemTab;
   const [activeTab, setActiveTab] = useState<TabKey>(initialTab);
   const [settings, setSettings] = useState<SettingsPayload | null>(null);
   const [apiBase, setApiBase] = useState("");
@@ -429,9 +438,11 @@ export function SettingsView({
         ? "providers"
         : requestedSystemTab === "help" || requestedSystemTab === "feedback"
           ? "help"
-        : requestedSystemTab === "sandbox" || requestedSystemTab === "about"
-          ? "general"
-          : requestedSystemTab;
+        : requestedSystemTab === "sandbox"
+          ? "security"
+          : requestedSystemTab === "about"
+            ? "general"
+            : requestedSystemTab;
     setActiveTab(nextTab);
     if (requestedSystemTab === "feedback") setFeedbackOpen(true);
   }, [requestedSystemTab]);
@@ -966,6 +977,8 @@ export function SettingsView({
                       ? (isEnglish ? settingsEnglish.help : "帮助与反馈")
                       : activeTab === "data"
                         ? (isEnglish ? settingsEnglish.data : "数据管理")
+                      : activeTab === "security"
+                        ? (isEnglish ? settingsEnglish.security : "安全防护")
                       : activeTab === "shortcuts"
                         ? (isEnglish ? settingsEnglish.shortcuts : "快捷键")
                         : localizedTabs.find((tab) => tab.key === activeTab)?.label || (isEnglish ? settingsEnglish.settings : "设置")}
@@ -1063,6 +1076,10 @@ export function SettingsView({
                   apiBase={apiBase}
                   isEnglish={isEnglish}
                 />
+              )}
+
+              {activeTab === "security" && (
+                <SecurityProtectionSection token={token} apiBase={apiBase} isEnglish={isEnglish} />
               )}
 
               {activeTab === "help" && (

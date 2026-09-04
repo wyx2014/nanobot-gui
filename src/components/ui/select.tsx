@@ -11,13 +11,14 @@ export interface SelectProps {
   value: string;
   onChange: (value: string) => void;
   options: SelectOption[];
+  ariaLabel?: string;
   placeholder?: string;
   /** 'default' = full-width form field, 'inline' = compact for settings rows */
   variant?: 'default' | 'inline';
   className?: string;
 }
 
-export function Select({ value, onChange, options, placeholder, variant = 'default', className }: SelectProps) {
+export function Select({ value, onChange, options, ariaLabel, placeholder, variant = 'default', className }: SelectProps) {
   const [open, setOpen] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
 
@@ -47,6 +48,9 @@ export function Select({ value, onChange, options, placeholder, variant = 'defau
       {/* Trigger */}
       <button
         type="button"
+        aria-label={ariaLabel}
+        aria-expanded={open}
+        aria-haspopup="listbox"
         onClick={() => setOpen(!open)}
         className={cn(
           'flex items-center gap-2 rounded-lg border border-[#e8e4dd] text-sm text-left transition-all',
@@ -76,11 +80,13 @@ export function Select({ value, onChange, options, placeholder, variant = 'defau
           'absolute z-50 top-full mt-1 py-1 bg-white border border-[#e8e4dd] rounded-xl shadow-lg max-h-60 overflow-auto',
           'dark:bg-[#262624] dark:border-[#3a3a3a] dark:shadow-[0_8px_28px_rgba(0,0,0,0.5)]',
           isInline ? 'right-0 min-w-[140px]' : 'left-0 right-0',
-        )}>
+        )} role="listbox" aria-label={ariaLabel}>
           {options.map((opt) => (
             <button
               key={opt.value}
               type="button"
+              role="option"
+              aria-selected={opt.value === value}
               onClick={() => {
                 onChange(opt.value);
                 setOpen(false);

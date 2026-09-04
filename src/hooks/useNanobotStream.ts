@@ -26,6 +26,7 @@ import type {
   UIFileEdit,
   UIMediaAttachment,
   UIMessage,
+  UISecurityApproval,
   WorkspaceScopePayload,
 } from "@/core/types";
 import { useTurnPlanStore } from '@/stores/turnPlanStore';
@@ -36,6 +37,7 @@ import {
   initialStreamProtocolState,
   streamProtocolReducer,
 } from '@/core/nanobot/streamProtocol';
+import { sanitizeAssistantProtocolLeak } from '@/core/nanobot/thread-display-compat';
 
 interface StreamBuffer {
   /** ID of the assistant message currently receiving deltas (cleared on ``stream_end``). */
@@ -1350,6 +1352,9 @@ export function useNanobotStream(
   turnUsage: CurrentTurnUsage | undefined;
   /** Latest sustained goal for this ``chatId`` (``goal_state`` WS events). */
   goalState: GoalStateWsPayload | undefined;
+  /** High-risk operation currently waiting for this chat's user decision. */
+  securityApproval: UISecurityApproval | null;
+  respondSecurityApproval: (decision: "allow_turn" | "deny") => boolean;
   send: (content: string, images?: SendImage[], options?: SendOptions) => boolean;
   stop: () => void;
   setMessages: React.Dispatch<React.SetStateAction<UIMessage[]>>;
@@ -1368,6 +1373,7 @@ export function useNanobotStream(
   }
   const [messages, setMessages] = useState<UIMessage[]>(initialMessages);
   const [turnUsage, setTurnUsage] = useState<CurrentTurnUsage>();
+  const [securityApproval, setSecurityApproval] = useState<UISecurityApproval | null>(null);
   const [messageConversationId, setMessageConversationId] = useState<string | null>(chatId);
   const visibleMessages = useMemo(
     () => messageConversationId === chatId ? messages : [],
@@ -1412,6 +1418,10 @@ export function useNanobotStream(
    * the loading spinner alive across tool-call boundaries without needing
    * backend changes. */
   const streamEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    setSecurityApproval(null);
+  }, [chatId]);
 
   useEffect(() => {
     if (!client) return;
@@ -1618,7 +1628,9 @@ export function useNanobotStream(
       streamFrameRef.current = null;
     }
     const events = pendingStreamEventsRef.current;
-    const finalAnswerText = options?.finalAnswerText;
+    const finalAnswerText = options?.finalAnswerText === undefined
+      ? undefined
+      : sanitizeAssistantProtocolLeak(options.finalAnswerText);
     if (
       events.length === 0
       && finalAnswerText === undefined
@@ -1752,6 +1764,19 @@ export function useNanobotStream(
         || ev.event === "browser_action"
       ) {
         useBrowserStore.getState().handleEvent(ev);
+        return;
+      }
+
+      if (ev.event === "security_approval_required") {
+        setSecurityApproval({ ...ev.approval, status: "pending" });
+        setIsStreaming(true);
+        return;
+      }
+
+      if (ev.event === "security_approval_resolved") {
+        setSecurityApproval((current) => (
+          current?.approval_id === ev.approval_id ? null : current
+        ));
         return;
       }
 
@@ -2134,6 +2159,7 @@ export function useNanobotStream(
       }
 
       if (ev.event === "turn_completed" || ev.event === "turn_end") {
+        setSecurityApproval(null);
         const wasLifecycleHandled = lifecycleTerminalHandledRef.current;
         if (ev.event === "turn_end" && ev.goal_state != null && typeof ev.goal_state === "object") {
           setGoalState(ev.goal_state);
@@ -2446,7 +2472,7 @@ export function useNanobotStream(
           const filtered = activeId && ev.replace_stream !== true
             ? prev.filter((m) => m.id !== activeId)
             : prev;
-          const content = ev.text;
+          const content = sanitizeAssistantProtocolLeak(ev.text);
           const lat =
             typeof ev.latency_ms === "number" && ev.latency_ms >= 0
               ? Math.round(ev.latency_ms)
@@ -2637,6 +2663,12 @@ export function useNanobotStream(
     client.sendMessage(chatId, "/stop");
   }, [chatId, client, flushPendingStreamEvents, isStopping, isStreaming, setIsStopping]);
 
+  const respondSecurityApproval = useCallback((decision: "allow_turn" | "deny") => {
+    if (!chatId || !client || client.status !== "open" || !securityApproval) return false;
+    client.respondSecurityApproval(chatId, securityApproval.approval_id, decision);
+    return true;
+  }, [chatId, client, securityApproval]);
+
   return useMemo(() => ({
     messages: visibleMessages,
     messageConversationId: messageConversationId === chatId
@@ -2647,6 +2679,8 @@ export function useNanobotStream(
     runStartedAt,
     turnUsage,
     goalState,
+    securityApproval,
+    respondSecurityApproval,
     send,
     stop,
     setMessages,
@@ -2659,6 +2693,8 @@ export function useNanobotStream(
     isStreaming,
     messageConversationId,
     runStartedAt,
+    respondSecurityApproval,
+    securityApproval,
     send,
     stop,
     streamError,

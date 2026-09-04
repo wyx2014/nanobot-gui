@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useChatStore, useActiveConversation } from '@/stores/chatStore';
-import type { ImageAttachment, Message } from '@/types';
+import type { ImageAttachment } from '@/types';
 import { useAutoScroll } from '@/hooks/useAutoScroll';
 import { useNanobotStream, type SendImage, type SendOptions } from '@/hooks/useNanobotStream';
 import {
@@ -36,6 +36,7 @@ import { useThreadResourceStore } from '@/stores/threadResourceStore';
 import { useI18n } from '@/i18n';
 import ThreadMessages from './ThreadMessages';
 import InteractivePromptCard, { type InteractivePromptSubmitPayload } from './InteractivePromptCard';
+import SecurityApprovalCard from './SecurityApprovalCard';
 import ChatInput, { type ChatInputSendOptions } from './ChatInput';
 import ActiveSkillsBar from './ActiveSkillsBar';
 import { ChevronDown, Settings } from 'lucide-react';
@@ -48,7 +49,6 @@ import { projectUsableSkills, stripUnavailableLeadingSkillMentions } from '@/cor
 import { normalizeProjectPath, projectNameFromPath, visibleProjectPath } from '@/core/workspace';
 import {
   projectLegacyLocalFileContext,
-  replaceVisibleLocalFileContent,
 } from '@/core/nanobot/localFileContext';
 import GenerationStatusBar, { type GenerationPhase } from './GenerationStatusBar';
 import ThinkingOrb from '@/components/common/ModalAwareThinkingOrb';
@@ -639,16 +639,10 @@ export default function ChatView({
     scrollToBottom({ force: true });
   }, [activeConv?.expertTeam, availableSkillNames, scrollToBottom, stream, workspaceScope]);
 
-  const handleEditUserMessage = useCallback((message: Message, newContent: string) => {
-    const trimmed = newContent.trim();
-    if (!trimmed) return;
-    const userMessage = stream.messages.find((item) => item.id === message.id && item.role === 'user');
-    if (!userMessage) return;
-    resendFromUserMessage(
-      userMessage,
-      replaceVisibleLocalFileContent(userMessage.content, trimmed),
-    );
-  }, [resendFromUserMessage, stream.messages]);
+  const handleEditUserMessage = useCallback((content: string) => {
+    if (!content.trim()) return;
+    useChatStore.getState().setPendingInput(content);
+  }, []);
 
   const handleSubmitInteractivePromptAnswer = useCallback((
     message: UIMessage,
@@ -1047,6 +1041,13 @@ export default function ChatView({
                 onAllowFullAccess={handleAllowFullAccessAndRetry}
               />
             ) : null}
+            {stream.securityApproval ? (
+              <SecurityApprovalCard
+                key={stream.securityApproval.approval_id}
+                approval={stream.securityApproval}
+                onRespond={stream.respondSecurityApproval}
+              />
+            ) : null}
             {pendingPromptMessage?.interactivePrompt ? (
               <div className="mb-3">
                 <InteractivePromptCard
@@ -1073,7 +1074,7 @@ export default function ChatView({
               onStop={stream.stop}
               isStreaming={stream.isStreaming}
               isStopping={stream.isStopping}
-              disabled={!!pendingPromptMessage}
+              disabled={!!pendingPromptMessage || !!stream.securityApproval}
               sendDisabled={!gatewayReady}
               workspaceScope={workspaceScope}
               onWorkspaceScopeChange={_onWorkspaceScopeChange}

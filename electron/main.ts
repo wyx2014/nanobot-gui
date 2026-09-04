@@ -714,6 +714,19 @@ async function startApplication(): Promise<void> {
     return options.multiple ? result.filePaths : result.filePaths[0]
   })
 
+  ipcMain.handle('dialog:save', async (event, options: any) => {
+    const { dialog } = await import('electron')
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return null
+    const result = await dialog.showSaveDialog(win, {
+      title: options?.title,
+      defaultPath: options?.defaultPath,
+      buttonLabel: options?.buttonLabel,
+      filters: options?.filters,
+    })
+    return result.canceled ? null : result.filePath
+  })
+
   safeInvoke('os:homeDir', async () => os.homedir());
   safeInvoke('os:platform', async () => process.platform);
   safeInvoke('app:installationId', async () => getInstallationId());

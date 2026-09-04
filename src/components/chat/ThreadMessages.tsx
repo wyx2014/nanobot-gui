@@ -14,7 +14,7 @@ interface ThreadMessagesProps {
   isStreaming?: boolean;
   activeTurnElapsedMs?: number;
   latestTurnStatus?: TurnLifecycleStatus;
-  onEditUserMessage?: (message: Message, newContent: string) => void;
+  onEditUserMessage?: (content: string) => void;
 }
 
 export type DisplayUnit = ChatDisplayUnit;

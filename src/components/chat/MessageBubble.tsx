@@ -1,4 +1,4 @@
-import { Check, Copy, Pencil, Plug, Terminal, Wand2, X, ArrowUp, ChevronRight, Wrench } from 'lucide-react';
+import { Check, Copy, Pencil, Plug, Terminal, Wand2, ChevronRight, Wrench } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Message, MessageContent } from '@/types';
 import MarkdownRenderer from './MarkdownRenderer';
@@ -65,69 +65,6 @@ function startOfLocalWeek(value: Date): Date {
   const daysSinceMonday = (result.getDay() + 6) % 7;
   result.setDate(result.getDate() - daysSinceMonday);
   return result;
-}
-
-function EditInput({
-  initialContent,
-  onSave,
-  onCancel,
-}: {
-  initialContent: string;
-  onSave: (content: string) => void;
-  onCancel: () => void;
-}) {
-  const [text, setText] = useState(initialContent);
-  const { t } = useI18n();
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-    textarea.style.height = 'auto';
-    textarea.style.height = `${textarea.scrollHeight}px`;
-  }, [text]);
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    // IME composition Enter confirms a candidate; only a real Enter saves.
-    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) {
-      e.preventDefault();
-      onSave(text);
-    } else if (e.key === 'Escape') {
-      onCancel();
-    }
-  };
-
-  return (
-    <div className="flex w-full items-end gap-2">
-      <button
-        onClick={onCancel}
-        className="mb-1 shrink-0 rounded-full p-1.5 text-[#656358] transition-colors hover:bg-[#706b5710]"
-        title={t.common.cancel}
-      >
-        <X className="h-5 w-5" />
-      </button>
-      <div className="flex min-h-[44px] flex-1 items-end gap-2 rounded-2xl border border-[#dedbd3] bg-white px-4 py-2 shadow-sm focus-within:border-[#8f8b82]">
-        <textarea
-          ref={textareaRef}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={handleKeyDown}
-          className="flex-1 resize-none overflow-hidden border-none bg-transparent py-1.5 text-[14.5px] leading-relaxed text-[#29261b] outline-none font-user-message"
-          placeholder={t.chat.inputPlaceholder}
-          autoFocus
-          rows={1}
-        />
-        <button
-          onClick={() => onSave(text)}
-          disabled={!text.trim()}
-          className="mb-1 shrink-0 rounded-full bg-[#29261b] p-1.5 text-white transition-colors hover:bg-[#3d3929] disabled:cursor-not-allowed disabled:opacity-50"
-          title={t.chat.saveAndResend}
-        >
-          <ArrowUp className="h-4 w-4" />
-        </button>
-      </div>
-    </div>
-  );
 }
 
 function UserContextMenu({
@@ -227,7 +164,7 @@ export default function MessageBubble({
   message: Message;
   showAssistantCopyAction?: boolean;
   isLastAssistantReply?: boolean;
-  onEditUserMessage?: (message: Message, newContent: string) => void;
+  onEditUserMessage?: (content: string) => void;
 }) {
   const { t } = useI18n();
   const isUser = message.role === 'user';
@@ -243,7 +180,6 @@ export default function MessageBubble({
   const activeConv = useActiveConversation();
   const isConvRunning = activeConv?.status === 'running';
 
-  const [isEditing, setIsEditing] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [copied, setCopied] = useState(false);
   const copyResetRef = useRef<number | null>(null);
@@ -278,11 +214,6 @@ export default function MessageBubble({
     }, 1500);
   }, [visibleTextContent]);
 
-  const handleSaveEdit = async (newContent: string) => {
-    setIsEditing(false);
-    onEditUserMessage?.(message, newContent);
-  };
-
   if (message.kind === 'trace' || message.role === 'tool') {
     return <TraceGroup message={message} />;
   }
@@ -292,15 +223,12 @@ export default function MessageBubble({
       <div
         data-message-bubble
         data-message-role="user"
-        className={cn(
-          'group ml-auto flex max-w-[min(85%,36rem)] flex-col items-end gap-1.5',
-          isEditing && 'max-w-full',
-        )}
+        className="group ml-auto flex max-w-[min(85%,36rem)] flex-col items-end gap-1.5"
       >
-        {imageBlocks.length > 0 && !isEditing ? <UserImageGrid images={imageBlocks} /> : null}
+        {imageBlocks.length > 0 ? <UserImageGrid images={imageBlocks} /> : null}
         {mediaAttachments.length > 0 ? <MessageMedia media={mediaAttachments} align="right" /> : null}
 
-        {(message.delegateAgent || !!message.cliApps?.length || !!message.skills?.length || !!message.mcpPresets?.length) && !isEditing && (
+        {(message.delegateAgent || !!message.cliApps?.length || !!message.skills?.length || !!message.mcpPresets?.length) && (
           <div className="flex flex-wrap items-center justify-end gap-1.5">
             {message.skill && (
               <span className="inline-flex items-center gap-1 rounded-full bg-[#f2efe9] px-2 py-0.5 text-[11px] font-medium text-[#6b685e] dark:bg-[#4a4a4a] dark:text-[#e2ded5]">
@@ -339,11 +267,7 @@ export default function MessageBubble({
           </div>
         )}
 
-        {isEditing ? (
-          <div className="w-full">
-            <EditInput initialContent={textContent} onSave={handleSaveEdit} onCancel={() => setIsEditing(false)} />
-          </div>
-        ) : textContent ? (
+        {textContent ? (
           <div className="flex items-start gap-2">
             {!isConvRunning && (
               <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
@@ -355,7 +279,7 @@ export default function MessageBubble({
                   {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
                 </button>
                 <button
-                  onClick={() => setIsEditing(true)}
+                  onClick={() => onEditUserMessage?.(textContent)}
                   className="rounded-md p-1.5 text-[#656358] hover:bg-[#e8e5de] hover:text-[#29261b]"
                   title={t.chat.edit}
                 >
@@ -382,7 +306,7 @@ export default function MessageBubble({
             y={contextMenu.y}
             onClose={() => setContextMenu(null)}
             onCopy={copyText}
-            onEdit={() => setIsEditing(true)}
+            onEdit={() => onEditUserMessage?.(textContent)}
           />
         )}
       </div>

@@ -598,6 +598,20 @@ export class NanobotClient {
     });
   }
 
+  respondSecurityApproval(
+    chatId: string,
+    approvalId: string,
+    decision: "allow_turn" | "deny",
+  ): void {
+    this.knownChats.add(chatId);
+    this.queueSend({
+      type: "security_approval_response",
+      chat_id: chatId,
+      approval_id: approvalId,
+      decision,
+    });
+  }
+
   setExpertTeam(
     chatId: string,
     expertTeam: ExpertTeamBinding | null,

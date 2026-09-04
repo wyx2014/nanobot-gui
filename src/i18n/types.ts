@@ -143,7 +143,6 @@ export interface TranslationDict {
     copy: string;
     edit: string;
     regenerate: string;
-    saveAndResend: string;
     clickToViewFull: string;
     inputTokens: string;
     outputTokens: string;

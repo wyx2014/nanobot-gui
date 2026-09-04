@@ -129,7 +129,6 @@ const zhCN: TranslationDict = {
     copy: '复制',
     edit: '编辑',
     regenerate: '重新生成',
-    saveAndResend: '保存并重发',
     clickToViewFull: '点击查看大图',
     inputTokens: '输入',
     outputTokens: '输出',

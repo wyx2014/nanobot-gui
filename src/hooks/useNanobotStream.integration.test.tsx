@@ -8,6 +8,7 @@ import { mapWebuiThreadToGuiMessages } from "@/core/nanobotClient";
 const mocks = vi.hoisted(() => ({
   getNanobotClient: vi.fn(),
   sendMessage: vi.fn(),
+  respondSecurityApproval: vi.fn(),
 }));
 
 vi.mock("@/core/nanobotClient", async () => {
@@ -70,6 +71,7 @@ beforeEach(() => {
       };
     },
     sendMessage: mocks.sendMessage,
+    respondSecurityApproval: mocks.respondSecurityApproval,
   });
   container = document.createElement("div");
   document.body.append(container);
@@ -88,6 +90,43 @@ afterEach(() => {
 });
 
 describe("useNanobotStream media progress lifecycle", () => {
+  it("holds a high-risk approval for the active chat and sends the scoped response", () => {
+    emit({
+      event: "security_approval_required",
+      chat_id: "chat-media-progress",
+      approval: {
+        approval_id: "sap_test",
+        tool_call_id: "call-test",
+        tool_name: "exec",
+        risk: "high",
+        rule_id: "command.recursive_delete",
+        summary: "递归删除需要确认",
+        target: "rm -rf build",
+        scope: "turn",
+      },
+    });
+
+    expect(latest?.securityApproval).toMatchObject({
+      approval_id: "sap_test",
+      status: "pending",
+    });
+    expect(latest?.respondSecurityApproval("allow_turn")).toBe(true);
+    expect(mocks.respondSecurityApproval).toHaveBeenCalledWith(
+      "chat-media-progress",
+      "sap_test",
+      "allow_turn",
+    );
+
+    emit({
+      event: "security_approval_resolved",
+      chat_id: "chat-media-progress",
+      approval_id: "sap_test",
+      decision: "allow_turn",
+      accepted: true,
+    });
+    expect(latest?.securityApproval).toBeNull();
+  });
+
   it("keeps streaming visible while stop waits for gateway confirmation", () => {
     expect(latest?.isStreaming).toBe(true);
 

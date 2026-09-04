@@ -187,12 +187,12 @@ Press **Enter** to send and **Shift+Enter** for a new line. While a task runs, n
 
 ## 消息操作
 
-- 悬停用户消息：复制，或编辑后从该条消息重新执行；
+- 悬停用户消息：复制，或将消息内容放回输入框继续修改；
 - 悬停助手最终回复：复制回复；
 - 点击执行步骤左侧箭头：展开或收起工具过程；
 - 点击回复中的文件卡片：在右侧预览。
 
-编辑历史用户消息会截断它之后的旧执行结果，并基于新内容重新运行，这是“重新提问”，不是修改已完成报告。
+编辑历史用户消息只会把内容放回输入框，不会修改或截断已有会话记录。
 
 ## 两个不同的帮助入口
 
@@ -229,12 +229,12 @@ Restore archived conversations or workspaces in **Settings → Data Management**
 
 ## Message actions
 
-- Hover a user message to copy it or edit and rerun from that point;
+- Hover a user message to copy it or place its content back in the composer;
 - Hover a final assistant reply to copy it;
 - Expand or collapse execution steps with the arrow;
 - Open file cards in the preview panel.
 
-Editing a historical prompt discards the later execution branch and runs again. It does not rewrite an already generated report.
+Editing a historical prompt only places its content in the composer. Existing conversation history remains unchanged.
 
 ## Two help entries
 

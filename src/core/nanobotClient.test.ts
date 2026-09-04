@@ -425,6 +425,28 @@ describe('mapWebuiThreadToGuiMessages artifacts', () => {
     expect(messages[0].completedAt).toBe(completedAt);
   });
 
+  it('does not expose serialized internal tool calls from gateway history', () => {
+    const messages = mapWebuiThreadToGuiMessages([{
+      id: 'assistant-protocol-leak',
+      role: 'assistant',
+      content: '<tool_call>\n<function=update_task_progress>\n</function>\n</tool_call>',
+      createdAt: 1,
+    }]);
+
+    expect(messages[0].content).toBe('未能生成有效回复，请重试或继续询问当前进度。');
+  });
+
+  it('does not expose internal tool calls appended after assistant narration', () => {
+    const messages = mapWebuiThreadToGuiMessages([{
+      id: 'assistant-mixed-protocol-leak',
+      role: 'assistant',
+      content: '准备创建文件。<tool_call>\n<function=exec>\n<parameter=command>mkdir demo</parameter>\n</function>\n</tool_call>',
+      createdAt: 1,
+    }]);
+
+    expect(messages[0].content).toBe('未能生成有效回复，请重试或继续询问当前进度。');
+  });
+
   it('projects unclassified streamed text into Steps until it is final', () => {
     const [streaming] = mapWebuiThreadToGuiMessages([{
       id: 'provisional',

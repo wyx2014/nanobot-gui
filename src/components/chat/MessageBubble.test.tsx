@@ -1,6 +1,6 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '@/types';
 import { stripDuplicateHtmlArtifactReference } from '@/core/nanobot/htmlArtifactDedup';
 import MessageBubble, { formatAssistantCompletedAt } from './MessageBubble';
@@ -146,5 +146,28 @@ describe('MessageBubble user context badges', () => {
     expect(overflow?.title).toContain('同花顺 iFinD 新闻 MCP');
     expect(overflow?.title).toContain('聚源金融数据 MCP');
     expect(container.textContent).not.toContain('同花顺 iFinD 新闻 MCP');
+  });
+});
+
+describe('MessageBubble user edit action', () => {
+  it('returns the message text without opening an inline editor', () => {
+    const onEditUserMessage = vi.fn();
+    const message: Message = {
+      id: 'user-message',
+      role: 'user',
+      content: '继续完善这份报告',
+      timestamp: Date.now(),
+    };
+
+    act(() => root.render(
+      <MessageBubble message={message} onEditUserMessage={onEditUserMessage} />,
+    ));
+
+    const editButton = container.querySelector<SVGElement>('.lucide-pencil')?.closest('button');
+    act(() => editButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+    expect(onEditUserMessage).toHaveBeenCalledWith('继续完善这份报告');
+    expect(container.querySelector('textarea')).toBeNull();
+    expect(container.textContent).toContain('继续完善这份报告');
   });
 });

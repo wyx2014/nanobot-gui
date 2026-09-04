@@ -129,7 +129,6 @@ const enUS: TranslationDict = {
     copy: 'Copy',
     edit: 'Edit',
     regenerate: 'Regenerate',
-    saveAndResend: 'Save & Resend',
     clickToViewFull: 'Click to view full image',
     inputTokens: 'Input',
     outputTokens: 'Output',

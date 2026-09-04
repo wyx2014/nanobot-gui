@@ -447,7 +447,10 @@ import {
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { normalizeFileEditToolTraces } from './nanobot/toolTraceMerge';
 import { scrubSubagentUiMessages } from './nanobot/subagent-channel-display';
-import { normalizeLegacyLongTaskMessages } from './nanobot/thread-display-compat';
+import {
+  normalizeLegacyLongTaskMessages,
+  sanitizeAssistantProtocolLeak,
+} from './nanobot/thread-display-compat';
 import { projectLegacyLocalFileContext } from './nanobot/localFileContext';
 import { projectThreadResource } from './nanobot/threadResourceProjection';
 import { useThreadResourceStore } from '@/stores/threadResourceStore';
@@ -662,21 +665,21 @@ export function mapWebuiThreadToGuiMessages(webuiMessages: UIMessage[]): Message
     } 
     
     else if (msg.role === 'assistant' && msg.kind !== 'trace') {
+      const assistantContent = sanitizeAssistantProtocolLeak(msg.content || '');
       // Provider text remains provisional until stream_end / turn_end tells us
       // whether it is a final answer or pre-tool public narration. Project it
       // into Steps while the segment is open so it never flashes in the answer
       // body first.
       const provisionalNarration = (
         msg.isStreaming
-        && typeof msg.content === 'string'
-        && msg.content.trim()
+        && assistantContent.trim()
       )
-        ? msg.content
+        ? assistantContent
         : undefined;
       const guiMsg: Message = {
         id: msg.id,
         role: 'assistant',
-        content: provisionalNarration ? '' : msg.content || '',
+        content: provisionalNarration ? '' : assistantContent,
         timestamp,
         interactivePrompt: msg.interactivePrompt,
         thinking: msg.reasoning,

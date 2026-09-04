@@ -336,37 +336,6 @@ describe('chatStore', () => {
     });
   });
 
-  // ── editMessage ──
-  describe('editMessage', () => {
-    it('edits string content', () => {
-      const id = useChatStore.getState().createConversation();
-      useChatStore.getState().addMessage(id, {
-        id: 'msg1', role: 'user', content: 'old text', timestamp: Date.now(),
-      });
-      useChatStore.getState().editMessage(id, 'msg1', 'new text');
-      expect(useChatStore.getState().conversations[id].messages[0].content).toBe('new text');
-    });
-
-    it('preserves non-text blocks in multimodal content', () => {
-      const id = useChatStore.getState().createConversation();
-      useChatStore.getState().addMessage(id, {
-        id: 'msg1', role: 'user',
-        content: [
-          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'abc' } },
-          { type: 'text', text: 'old text' },
-        ],
-        timestamp: Date.now(),
-      });
-      useChatStore.getState().editMessage(id, 'msg1', 'new text');
-      const content = useChatStore.getState().conversations[id].messages[0].content;
-      expect(Array.isArray(content)).toBe(true);
-      if (Array.isArray(content)) {
-        expect(content[0].type).toBe('image');
-        expect(content[1]).toEqual({ type: 'text', text: 'new text' });
-      }
-    });
-  });
-
   // ── deleteMessage ──
   describe('deleteMessage', () => {
     it('removes a specific message', () => {

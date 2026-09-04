@@ -136,7 +136,6 @@ interface ChatActions {
   updateToolCall: (convId: string, messageId: string, toolCallId: string, result: string, resultContent?: ToolResultContent[], isError?: boolean, hideScreenshot?: boolean) => void;
 
   // New message operations
-  editMessage: (convId: string, messageId: string, newContent: string) => void;
   deleteMessage: (convId: string, messageId: string) => void;
   deleteMessagesFrom: (convId: string, messageId: string) => void;
   deleteLoopMessages: (convId: string, loopId: string) => void;
@@ -560,27 +559,6 @@ export const useChatStore = create<ChatStore>()(
       },
 
       // New message operations
-      editMessage: (convId, messageId, newContent) => {
-        set((state) => {
-          const msg = state.conversations[convId]?.messages.find((m) => m.id === messageId);
-          if (msg) {
-            // Preserve non-text blocks (images, documents) when content is multimodal
-            if (Array.isArray(msg.content)) {
-              const nonTextBlocks = msg.content.filter((c) => c.type !== 'text');
-              if (nonTextBlocks.length > 0) {
-                msg.content = [...nonTextBlocks, { type: 'text' as const, text: newContent }];
-              } else {
-                msg.content = newContent;
-              }
-            } else {
-              msg.content = newContent;
-            }
-            state.conversations[convId].updatedAt = Date.now();
-            state.conversations[convId].contextCache = undefined;  // Invalidate compression cache
-          }
-        });
-      },
-
       deleteMessage: (convId, messageId) => {
         set((state) => {
           const conv = state.conversations[convId];

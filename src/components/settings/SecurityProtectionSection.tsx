@@ -507,12 +507,12 @@ function CommandSecurityView({ policy, busy, isEnglish, onBack, onAdd, onRemove,
         <Button size="sm" variant="outline" disabled={busy} onClick={onReset}><RefreshCw />{isEnglish ? 'Reset' : '重置默认'}</Button>
       </SecurityPageHeader>
       <div className="settings-page-copy space-y-1">
-          <p>
-            {isEnglish
-              ? 'Core blocks and protected paths always take priority. Ask prefixes override allow prefixes; allow prefixes only skip configurable command-risk prompts.'
-              : '核心硬拦截和强制审批路径始终优先；询问前缀优先于放行前缀，放行仅跳过可配置的命令风险询问。'}
-          </p>
-          <p>{isEnglish ? 'With no custom prefixes, built-in risk checks apply. Saved changes affect subsequent tool calls.' : '未添加前缀时，按内置风险规则判断；保存后影响后续工具调用。'}</p>
+        <p>
+          {isEnglish
+            ? 'Core blocks and protected paths always take priority. Ask prefixes override allow prefixes; allow prefixes only skip configurable command-risk prompts.'
+            : '核心硬拦截和强制审批路径始终优先；询问前缀优先于放行前缀，放行仅跳过可配置的命令风险询问。'}
+        </p>
+        <p>{isEnglish ? 'With no custom prefixes, built-in risk checks apply. Saved changes affect subsequent tool calls.' : '未添加前缀时，按内置风险规则判断；保存后影响后续工具调用。'}</p>
       </div>
       <RuleListEditor
         icon={CheckCircle2}
@@ -650,48 +650,48 @@ function AuditRecord({ event, isEnglish }: { event: SecurityAuditEvent; isEnglis
           aria-label={`${isEnglish ? (detailsOpen ? 'Collapse details' : 'Expand details') : (detailsOpen ? '收起详情' : '展开详情')}：${action}`}
           className="security-event-summary"
         >
-        <span className="security-event-icon">
-          <CategoryIcon className="h-4 w-4" strokeWidth={1.8} />
-        </span>
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="text-[13px] font-semibold leading-5">{action}</span>
-            <span className="settings-page-caption">
-              {categoryLabel(event.category, isEnglish)}
+          <span className="security-event-icon">
+            <CategoryIcon className="h-4 w-4" strokeWidth={1.8} />
+          </span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="text-[13px] font-semibold leading-5">{action}</span>
+              <span className="settings-page-caption">
+                {categoryLabel(event.category, isEnglish)}
+              </span>
+              {operationCount > 1 && <span className="settings-page-caption">{isEnglish ? `${operationCount} operations` : `${operationCount} 次`}</span>}
+              {riskLabel ? (
+                <span className="rounded bg-orange-50 px-1.5 py-0.5 text-[11px] font-medium text-orange-700 dark:bg-orange-950/40 dark:text-orange-300">
+                  {riskLabel}
+                </span>
+              ) : null}
+            </div>
+            <p data-audit-preview className="settings-page-secondary mt-0.5 line-clamp-2 whitespace-pre-wrap break-words font-mono text-[12px] leading-[18px] [overflow-wrap:anywhere]">
+              {target}
+            </p>
+            {Boolean(authorization || event.details.agent_label) && <p className="settings-page-caption mt-1 truncate">
+              {[event.details.agent_label, authorization ? auditDecisionLabel(authorization, isEnglish) : null].filter(Boolean).map(String).join(' · ')}
+            </p>}
+            {showReason ? (
+              <p className="mt-1 flex items-start gap-1.5 text-xs leading-5 text-red-700 dark:text-red-300">
+                <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>{isEnglish ? 'Reason: ' : '原因：'}{reason}</span>
+              </p>
+            ) : null}
+          </div>
+          <div className="security-event-result">
+            <span className={cn('inline-flex rounded px-1.5 py-0.5 text-[11px] font-medium leading-4', resultMeta.className)}>
+              {resultMeta.label}
             </span>
-            {operationCount > 1 && <span className="settings-page-caption">{isEnglish ? `${operationCount} operations` : `${operationCount} 次`}</span>}
-            {riskLabel ? (
-              <span className="rounded bg-orange-50 px-1.5 py-0.5 text-[11px] font-medium text-orange-700 dark:bg-orange-950/40 dark:text-orange-300">
-                {riskLabel}
+            <time className="settings-page-caption block whitespace-nowrap tabular-nums">
+              {formatTime(event.timestamp, isEnglish)}
+            </time>
+            {event.duration_ms !== null && event.duration_ms !== undefined ? (
+              <span className="security-event-duration settings-page-caption tabular-nums">
+                {event.duration_ms} ms
               </span>
             ) : null}
           </div>
-          <p data-audit-preview className="settings-page-secondary mt-0.5 line-clamp-2 whitespace-pre-wrap break-words font-mono text-[12px] leading-[18px] [overflow-wrap:anywhere]">
-            {target}
-          </p>
-          {Boolean(authorization || event.details.agent_label) && <p className="settings-page-caption mt-1 truncate">
-            {[event.details.agent_label, authorization ? auditDecisionLabel(authorization, isEnglish) : null].filter(Boolean).map(String).join(' · ')}
-          </p>}
-          {showReason ? (
-            <p className="mt-1 flex items-start gap-1.5 text-xs leading-5 text-red-700 dark:text-red-300">
-              <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              <span>{isEnglish ? 'Reason: ' : '原因：'}{reason}</span>
-            </p>
-          ) : null}
-        </div>
-      <div className="security-event-result">
-        <span className={cn('inline-flex rounded px-1.5 py-0.5 text-[11px] font-medium leading-4', resultMeta.className)}>
-          {resultMeta.label}
-        </span>
-        <time className="settings-page-caption block whitespace-nowrap tabular-nums">
-          {formatTime(event.timestamp, isEnglish)}
-        </time>
-        {event.duration_ms !== null && event.duration_ms !== undefined ? (
-          <span className="security-event-duration settings-page-caption tabular-nums">
-            {event.duration_ms} ms
-          </span>
-        ) : null}
-      </div>
           <ChevronRight aria-hidden="true" className="security-event-chevron" />
         </summary>
         {detailsOpen && <div className="security-event-details">
@@ -863,128 +863,126 @@ function AuditCenter({ token, apiBase, isEnglish, onBack }: { token: string; api
   return (
     <div data-security-audit className="settings-page-stack">
       <SecurityPageHeader title={isEnglish ? 'Audit center' : '审计中心'} isEnglish={isEnglish} onBack={onBack}>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={exporting || loading || paging || !!loadError || !events.length}
-            onClick={() => void exportAudit()}
-          >
-            {exporting ? <Loader2 className="animate-spin" /> : <Download />}
-            {isEnglish ? 'Export' : '导出'}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={clearing}
-            onClick={() => setClearOpen(true)}
-            className="settings-action-danger"
-          >
-            {clearing ? <Loader2 className="animate-spin" /> : <Trash2 />}
-            {isEnglish ? 'Clear' : '清空'}
-          </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={exporting || loading || paging || !!loadError || !events.length}
+          onClick={() => void exportAudit()}
+        >
+          {exporting ? <Loader2 className="animate-spin" /> : <Download />}
+          {isEnglish ? 'Export' : '导出'}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={clearing}
+          onClick={() => setClearOpen(true)}
+          className="settings-action-danger"
+        >
+          {clearing ? <Loader2 className="animate-spin" /> : <Trash2 />}
+          {isEnglish ? 'Clear' : '清空'}
+        </Button>
       </SecurityPageHeader>
 
       <div className="security-audit-content">
-      <section aria-label={isEnglish ? 'Audit filters' : '审计筛选'} className="security-filters">
-        <div className="security-filter-grid">
-          <div className="relative">
-            <Search className="settings-page-muted pointer-events-none absolute left-3 top-2.5 h-4 w-4" />
-            <Input
-              value={search}
-              aria-label={isEnglish ? 'Search audit records' : '搜索审计记录'}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder={isEnglish ? 'Search command, path, or summary' : '搜索命令、路径或摘要'}
-              className="pl-9"
-            />
+        <section aria-label={isEnglish ? 'Audit filters' : '审计筛选'} className="security-filters">
+          <div className="security-filter-grid">
+            <div className="relative">
+              <Search className="settings-page-muted pointer-events-none absolute left-3 top-2.5 h-4 w-4" />
+              <Input
+                value={search}
+                aria-label={isEnglish ? 'Search audit records' : '搜索审计记录'}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder={isEnglish ? 'Search command, path, or summary' : '搜索命令、路径或摘要'}
+                className="pl-9"
+              />
+            </div>
+            <Select ariaLabel={isEnglish ? 'Audit type' : '审计类型'} value={category} onChange={setCategory} options={[
+              { value: '', label: isEnglish ? 'All types' : '全部类型' },
+              ...['file', 'command', 'network', 'authorization', 'settings'].map((value) => ({ value, label: categoryLabel(value, isEnglish) })),
+            ]} />
+            <Select ariaLabel={isEnglish ? 'Audit result' : '审计结果'} value={result} onChange={setResult} options={[
+              { value: '', label: isEnglish ? 'All results' : '全部结果' },
+              { value: 'succeeded', label: isEnglish ? 'Succeeded' : '已完成' },
+              { value: 'approved', label: isEnglish ? 'Approved' : '已批准' },
+              { value: 'denied', label: isEnglish ? 'Denied' : '已拒绝' },
+              { value: 'blocked', label: isEnglish ? 'Blocked' : '已阻止' },
+              { value: 'blocked_unattended', label: isEnglish ? 'Blocked unattended' : '无人值守阻止' },
+              { value: 'failed', label: isEnglish ? 'Failed' : '失败' },
+              { value: 'waiting_for_input', label: isEnglish ? 'Waiting for input' : '等待输入' },
+              { value: 'cancelled', label: isEnglish ? 'Cancelled' : '已取消' },
+              { value: 'timed_out', label: isEnglish ? 'Timed out' : '已超时' },
+              { value: 'running', label: isEnglish ? 'Exit unconfirmed' : '未确认结束' },
+              { value: 'pending', label: isEnglish ? 'No completion recorded' : '尚无完成记录' },
+            ]} />
+            <Select ariaLabel={isEnglish ? 'Audit period' : '审计时间范围'} value={period} onChange={setPeriod} options={[
+              { value: 'all', label: isEnglish ? 'All time' : '全部时间' },
+              { value: '24h', label: isEnglish ? 'Last 24h' : '最近 24 小时' },
+              { value: '7d', label: isEnglish ? 'Last 7 days' : '最近 7 天' },
+              { value: '30d', label: isEnglish ? 'Last 30 days' : '最近 30 天' },
+            ]} />
           </div>
-          <Select ariaLabel={isEnglish ? 'Audit type' : '审计类型'} value={category} onChange={setCategory} options={[
-            { value: '', label: isEnglish ? 'All types' : '全部类型' },
-            ...['file', 'command', 'network', 'authorization', 'settings'].map((value) => ({ value, label: categoryLabel(value, isEnglish) })),
-          ]} />
-          <Select ariaLabel={isEnglish ? 'Audit result' : '审计结果'} value={result} onChange={setResult} options={[
-            { value: '', label: isEnglish ? 'All results' : '全部结果' },
-            { value: 'succeeded', label: isEnglish ? 'Succeeded' : '已完成' },
-            { value: 'approved', label: isEnglish ? 'Approved' : '已批准' },
-            { value: 'denied', label: isEnglish ? 'Denied' : '已拒绝' },
-            { value: 'blocked', label: isEnglish ? 'Blocked' : '已阻止' },
-            { value: 'blocked_unattended', label: isEnglish ? 'Blocked unattended' : '无人值守阻止' },
-            { value: 'failed', label: isEnglish ? 'Failed' : '失败' },
-            { value: 'waiting_for_input', label: isEnglish ? 'Waiting for input' : '等待输入' },
-            { value: 'cancelled', label: isEnglish ? 'Cancelled' : '已取消' },
-            { value: 'timed_out', label: isEnglish ? 'Timed out' : '已超时' },
-            { value: 'running', label: isEnglish ? 'Exit unconfirmed' : '未确认结束' },
-            { value: 'pending', label: isEnglish ? 'No completion recorded' : '尚无完成记录' },
-          ]} />
-          <Select ariaLabel={isEnglish ? 'Audit period' : '审计时间范围'} value={period} onChange={setPeriod} options={[
-            { value: 'all', label: isEnglish ? 'All time' : '全部时间' },
-            { value: '24h', label: isEnglish ? 'Last 24h' : '最近 24 小时' },
-            { value: '7d', label: isEnglish ? 'Last 7 days' : '最近 7 天' },
-            { value: '30d', label: isEnglish ? 'Last 30 days' : '最近 30 天' },
-          ]} />
-        </div>
-        <div className="security-filter-stats">
-          <div>
-            {!loading && !loadError && <span>{isEnglish ? `${total} records` : `共 ${total} 条记录`}</span>}
-            {!loading && !loadError && preventedCount > 0 ? (
-              <span className="inline-flex items-center gap-1">
-                <ShieldCheck className="h-3.5 w-3.5" />
-                {isEnglish ? `${preventedCount} blocked or not authorized on this page` : `当前页已拦截或未获授权 ${preventedCount} 条`}
-              </span>
-            ) : null}
-            {!loading && !loadError && exceptionCount > 0 && <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-300"><Info className="h-3.5 w-3.5" />{isEnglish ? `${exceptionCount} execution exceptions on this page` : `当前页执行异常 ${exceptionCount} 条`}</span>}
-            {activeFilterCount > 0 ? (
-              <button type="button" onClick={resetFilters} className="inline-flex items-center gap-1 font-medium hover:underline">
-                <X className="h-3.5 w-3.5" />
-                {isEnglish ? `Clear ${activeFilterCount} filters` : `清除 ${activeFilterCount} 项筛选`}
-              </button>
-            ) : null}
+          <div className="security-filter-stats">
+            <div>
+              {!loading && !loadError && <span>{isEnglish ? `${total} records` : `共 ${total} 条记录`}</span>}
+              {!loading && !loadError && preventedCount > 0 ? (
+                <span className="inline-flex items-center gap-1">
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  {isEnglish ? `${preventedCount} blocked or not authorized on this page` : `当前页已拦截或未获授权 ${preventedCount} 条`}
+                </span>
+              ) : null}
+              {!loading && !loadError && exceptionCount > 0 && <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-300"><Info className="h-3.5 w-3.5" />{isEnglish ? `${exceptionCount} execution exceptions on this page` : `当前页执行异常 ${exceptionCount} 条`}</span>}
+              {activeFilterCount > 0 ? (
+                <button type="button" onClick={resetFilters} className="inline-flex items-center gap-1 font-medium hover:underline">
+                  <X className="h-3.5 w-3.5" />
+                  {isEnglish ? `Clear ${activeFilterCount} filters` : `清除 ${activeFilterCount} 项筛选`}
+                </button>
+              ) : null}
+            </div>
+            <Button type="button" size="icon-sm" variant="ghost" onClick={() => void refresh()} disabled={loading || paging} aria-label={isEnglish ? 'Refresh' : '刷新'} title={isEnglish ? 'Refresh' : '刷新'}>
+              <RefreshCw className={cn(loading && 'animate-spin')} /><span className="sr-only">{isEnglish ? 'Refresh' : '刷新'}</span>
+            </Button>
           </div>
-          <Button type="button" size="icon-sm" variant="ghost" onClick={() => void refresh()} disabled={loading || paging} aria-label={isEnglish ? 'Refresh' : '刷新'} title={isEnglish ? 'Refresh' : '刷新'}>
-            <RefreshCw className={cn(loading && 'animate-spin')} /><span className="sr-only">{isEnglish ? 'Refresh' : '刷新'}</span>
-          </Button>
-        </div>
-      </section>
+        </section>
 
-      {loadError && <div role="alert" className="settings-page-alert"><div><p className="font-semibold">{isEnglish ? 'Could not load audit records' : '无法读取审计记录'}</p><p>{loadError}</p><p>{events.length ? (isEnglish ? 'The records below are from the previous load. Refresh to retry.' : '下方保留上次加载的记录，请刷新重试。') : (isEnglish ? 'Refresh to retry; record availability is unconfirmed.' : '请刷新重试，目前无法确认是否存在记录。')}</p></div></div>}
-      <p className="settings-page-copy">{isEnglish ? 'Historical outcomes. Blocked actions do not necessarily need follow-up; execution failures do not by themselves indicate a threat. Live approvals appear in the conversation.' : '以下为历史结果：已拦截不代表仍待处理，执行异常不等同于安全威胁；当前待审批事项以会话中的请求为准。'}</p>
-
-      <div aria-busy={loading || paging} className="security-audit-table">
-        <div className="security-audit-columns">
-          <span>{isEnglish ? 'EVENT' : '事件'}</span>
-          <span className="text-right">{isEnglish ? 'RESULT / TIME' : '结果 / 时间'}</span>
-        </div>
-        {loading && !events.length ? (
-          <div className="settings-page-empty flex items-center justify-center"><Loader2 className="mr-2 h-4 w-4 animate-spin" />{isEnglish ? 'Loading audit records…' : '正在读取审计记录…'}</div>
-        ) : events.length ? (
-          <div role="list">
-            {events.map((event) => <AuditRecord key={event.id} event={event} isEnglish={isEnglish} />)}
+        {loadError && <div role="alert" className="settings-page-alert"><div><p className="font-semibold">{isEnglish ? 'Could not load audit records' : '无法读取审计记录'}</p><p>{loadError}</p><p>{events.length ? (isEnglish ? 'The records below are from the previous load. Refresh to retry.' : '下方保留上次加载的记录，请刷新重试。') : (isEnglish ? 'Refresh to retry; record availability is unconfirmed.' : '请刷新重试，目前无法确认是否存在记录。')}</p></div></div>}
+        <div aria-busy={loading || paging} className="security-audit-table">
+          <div className="security-audit-columns">
+            <span>{isEnglish ? 'EVENT' : '事件'}</span>
+            <span className="text-right">{isEnglish ? 'RESULT / TIME' : '结果 / 时间'}</span>
           </div>
-        ) : loadError ? null : (
-          <div className="settings-page-empty">
-            <Clock3 className="settings-page-muted mx-auto h-5 w-5" />
-            <p className="settings-page-title mt-2">{isEnglish ? 'No matching audit records' : '暂无匹配的审计记录'}</p>
-            {activeFilterCount > 0 ? (
-              <button type="button" onClick={resetFilters} className="mt-2 font-medium hover:underline">
-                {isEnglish ? 'Clear filters' : '清除筛选条件'}
-              </button>
-            ) : null}
-          </div>
-        )}
-      </div>
-
-      {(pageIndex > 0 || nextCursor !== null) ? (
-        <div className="security-pagination">
-          <Button size="sm" variant="outline" disabled={loading || paging || !!loadError || pageIndex === 0} onClick={loadPreviousPage}>
-            <ChevronLeft />{isEnglish ? 'Previous page' : '上一页'}
-          </Button>
-          <span className="settings-page-caption min-w-16 text-center">
-            {isEnglish ? `Page ${pageIndex + 1}` : `第 ${pageIndex + 1} 页`}
-          </span>
-          <Button size="sm" variant="outline" disabled={loading || paging || !!loadError || nextCursor === null} onClick={loadNextPage}>
-            {paging ? <Loader2 className="animate-spin" /> : null}{isEnglish ? 'Next page' : '下一页'}<ChevronRight />
-          </Button>
+          {loading && !events.length ? (
+            <div className="settings-page-empty flex items-center justify-center"><Loader2 className="mr-2 h-4 w-4 animate-spin" />{isEnglish ? 'Loading audit records…' : '正在读取审计记录…'}</div>
+          ) : events.length ? (
+            <div role="list">
+              {events.map((event) => <AuditRecord key={event.id} event={event} isEnglish={isEnglish} />)}
+            </div>
+          ) : loadError ? null : (
+            <div className="settings-page-empty">
+              <Clock3 className="settings-page-muted mx-auto h-5 w-5" />
+              <p className="settings-page-title mt-2">{isEnglish ? 'No matching audit records' : '暂无匹配的审计记录'}</p>
+              {activeFilterCount > 0 ? (
+                <button type="button" onClick={resetFilters} className="mt-2 font-medium hover:underline">
+                  {isEnglish ? 'Clear filters' : '清除筛选条件'}
+                </button>
+              ) : null}
+            </div>
+          )}
         </div>
-      ) : null}
+
+        {(pageIndex > 0 || nextCursor !== null) ? (
+          <div className="security-pagination">
+            <Button size="sm" variant="outline" disabled={loading || paging || !!loadError || pageIndex === 0} onClick={loadPreviousPage}>
+              <ChevronLeft />{isEnglish ? 'Previous page' : '上一页'}
+            </Button>
+            <span className="settings-page-caption min-w-16 text-center">
+              {isEnglish ? `Page ${pageIndex + 1}` : `第 ${pageIndex + 1} 页`}
+            </span>
+            <Button size="sm" variant="outline" disabled={loading || paging || !!loadError || nextCursor === null} onClick={loadNextPage}>
+              {paging ? <Loader2 className="animate-spin" /> : null}{isEnglish ? 'Next page' : '下一页'}<ChevronRight />
+            </Button>
+          </div>
+        ) : null}
       </div>
       <ConfirmDialog
         open={clearOpen}

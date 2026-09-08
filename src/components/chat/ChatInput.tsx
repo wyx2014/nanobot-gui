@@ -56,6 +56,8 @@ import PresentationPicker from './PresentationPicker';
 import { normalizePresentationSelection, type PresentationSelection } from '@/core/presentations';
 import { Presentation } from 'lucide-react';
 
+const SHOW_PRESENTATION_PLUS_MENU_ENTRY = false;
+
 export interface ChatInputSendOptions {
   presentation?: PresentationSelection;
   cliApps?: OutboundCliAppMention[];
@@ -1686,13 +1688,15 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
           )}
         </div>
 
-        <button
-          data-plus-menu-item="presentation"
-          disabled={!!selectedExpertTeam}
-          title={selectedExpertTeam ? (isEn ? 'Start a regular conversation for presentations' : '演示文稿需在普通会话中制作') : undefined}
-          className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left font-medium text-[#29261b] hover:bg-[#f5f3ee] disabled:opacity-50"
-          onClick={() => { setShowPlusMenu(false); setActiveSubmenu(null); setShowPresentationPicker(true); }}
-        ><Presentation className="h-4 w-4 text-[#656358]" />{isEn ? 'Create presentation' : '制作演示文稿'}</button>
+        {SHOW_PRESENTATION_PLUS_MENU_ENTRY && (
+          <button
+            data-plus-menu-item="presentation"
+            disabled={!!selectedExpertTeam}
+            title={selectedExpertTeam ? (isEn ? 'Start a regular conversation for presentations' : '演示文稿需在普通会话中制作') : undefined}
+            className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left font-medium text-[#29261b] hover:bg-[#f5f3ee] disabled:opacity-50"
+            onClick={() => { setShowPlusMenu(false); setActiveSubmenu(null); setShowPresentationPicker(true); }}
+          ><Presentation className="h-4 w-4 text-[#656358]" />{isEn ? 'Create presentation' : '制作演示文稿'}</button>
+        )}
 
         {/* Skills */}
         <div

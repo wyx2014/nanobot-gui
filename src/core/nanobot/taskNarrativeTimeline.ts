@@ -30,6 +30,8 @@ export interface TaskNarrativeEntry {
   error?: string;
   evidence?: ActivityEvidence[];
   planSteps?: TaskProgressStep[];
+  teamRunId?: string;
+  teamId?: string;
   fileEdit?: UIFileEdit;
   sequence?: number;
   batchId?: string;
@@ -139,6 +141,7 @@ export function buildTaskNarrativeEntries(messages: Message[]): TaskNarrativeEnt
         visibleSteps,
         taskProgressNote(message.agentUI) || expertProjection?.note,
         isExpertTeamPlan ? '专家团队研究' : '整理计划',
+        message.agentUI,
       ));
     }
 
@@ -496,7 +499,7 @@ function isTerminalStepStatus(status: TaskProgressStep['status']): boolean {
     || status === 'interrupted';
 }
 
-function planEntry(id: string, steps: TaskProgressStep[], note?: string, title = '整理计划'): TaskNarrativeEntry {
+function planEntry(id: string, steps: TaskProgressStep[], note?: string, title = '整理计划', agentUI?: Message['agentUI']): TaskNarrativeEntry {
   const status = planStatus(steps);
   const failed = steps.find((step) => step.status === 'error');
   const running = steps.find((step) => step.status === 'running');
@@ -518,6 +521,8 @@ function planEntry(id: string, steps: TaskProgressStep[], note?: string, title =
     status,
     source: 'tool',
     planSteps: steps,
+    teamRunId: typeof agentUI?.team_run_id === 'string' ? agentUI.team_run_id : undefined,
+    teamId: typeof agentUI?.team_id === 'string' ? agentUI.team_id : undefined,
   };
 }
 

@@ -1,10 +1,14 @@
-import { app, shell, BrowserWindow, ipcMain, systemPreferences, Tray, Menu, nativeImage } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, systemPreferences, Tray, Menu, nativeImage, powerMonitor } from 'electron'
 import { join } from 'path'
 import fs from 'fs/promises'
 import { mkdirSync } from 'fs'
 import { exec, spawn } from 'child_process'
 import os from 'os'
 import { pythonBridge } from './pythonBridge'
+import { initializeOperationalLog, recordMainDiagnostic, recordRendererBatch } from './operationalLog'
+import { diagnosticError, diagnosticId } from '../src/shared/diagnostics'
+import { createDiagnosticExporter } from './diagnostics/controller'
+import { SKILL_NAME_RE } from '../src/utils/validation'
 import { syncNanobotConfig, type NanobotConfigInput } from './nanobotConfig'
 import { MermaidBridge } from './mermaidBridge'
 import {
@@ -78,6 +82,11 @@ try {
 }
 mkdirSync(configuredUserDataPath, { recursive: true });
 app.setPath('userData', configuredUserDataPath);
+const operationLog = initializeOperationalLog(configuredUserDataPath);
+recordMainDiagnostic({ event_name: 'main.started', details: { app_version: app.getVersion(), platform: process.platform, arch: process.arch, packaged: app.isPackaged } });
+process.on('uncaughtExceptionMonitor', (error) => {
+  operationLog.recordFatal({ event_name: 'main.uncaught', level: 'error', status: 'failed', details: diagnosticError(error) });
+});
 recordMainStartupEvent('Main module initialized and userData configured');
 
 // Keep GPU acceleration enabled by default. Individual deployments can opt
@@ -187,6 +196,7 @@ function applicationIconPath(): string {
 
 function createWindow(): void {
   const windowStartedAt = Date.now();
+  recordMainDiagnostic({ event_name: 'main.window_load', status: 'started' });
   recordMainStartupEvent('Creating BrowserWindow');
   mainWindowReady = false;
   const win = new BrowserWindow({
@@ -299,6 +309,15 @@ if (isPrimaryInstance) {
 
 async function startApplication(): Promise<void> {
   await app.whenReady();
+  const diagnosticExporter = createDiagnosticExporter(() => mainWindow, pythonBridge, operationLog);
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    ...(process.platform === 'darwin' ? [{ role: 'appMenu' as const }] : []),
+    { role: 'fileMenu' }, { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' },
+    { role: 'help', label: '帮助', submenu: [
+      { label: '导出诊断包…', click: () => { void diagnosticExporter.exportNative(); } },
+      { label: '取消诊断包导出', click: () => { diagnosticExporter.cancel(); } },
+    ] },
+  ]));
   recordMainStartupEvent('app.whenReady fired');
 
   const workspacePreparationStartedAt = Date.now();
@@ -370,6 +389,8 @@ async function startApplication(): Promise<void> {
       appTray?.destroy();
       appTray = null;
       await pythonBridge.stop();
+      recordMainDiagnostic({ event_name: 'main.stopped', status: 'completed' });
+      await Promise.race([operationLog.close(), new Promise((resolve) => setTimeout(resolve, 1000))]);
       app.quit();
     }
   });
@@ -420,54 +441,40 @@ async function startApplication(): Promise<void> {
   // and ignore CommandOrControl + R in production.
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
+    window.webContents.on('did-finish-load', () => recordMainDiagnostic({ event_name: 'main.window_load', status: 'completed' }));
+    window.webContents.on('did-fail-load', (_, code, _description, _url, isMainFrame) => {
+      if (isMainFrame) recordMainDiagnostic({ event_name: 'main.window_load', status: code === -3 ? 'cancelled' : 'failed', level: code === -3 ? 'info' : 'error', details: { code } });
+    });
+    window.webContents.on('render-process-gone', (_, details) => recordMainDiagnostic({ event_name: 'main.renderer_exited', level: details.reason === 'clean-exit' ? 'info' : 'error', details: { code: details.exitCode, stage: details.reason } }));
+    window.on('unresponsive', () => recordMainDiagnostic({ event_name: 'main.renderer_unresponsive', level: 'warning' }));
+    window.on('responsive', () => recordMainDiagnostic({ event_name: 'main.renderer_responsive' }));
   })
-
-  function formatLogData(data: any): string {
-    if (data === undefined || data === null) return '';
-    if (Array.isArray(data)) {
-      if (data.length === 0) return '';
-      if (data.length > 10) {
-        return `[${data.slice(0, 5).map(v => typeof v === 'number' ? v.toFixed(4) : JSON.stringify(v)).join(', ')}, ... ${data.length} items]`;
-      }
-      return JSON.stringify(data);
-    }
-    if (typeof data === 'object') {
-      const keys = Object.keys(data);
-      if (keys.length === 0) return '';
-      if (keys.length > 20) return `{ ... ${keys.length} keys }`;
-      const result: any = {};
-      for (const key of keys) {
-        const val = data[key];
-        if (typeof val === 'string' && val.length > 200) {
-          result[key] = val.substring(0, 100) + '... (truncated)';
-        } else if (Array.isArray(val) && val.length > 10) {
-          result[key] = `[Array(${val.length})]`;
-        } else if (val && typeof val === 'object' && !Array.isArray(val)) {
-          result[key] = '{...}';
-        } else {
-          result[key] = val;
-        }
-      }
-      return JSON.stringify(result);
-    }
-    if (typeof data === 'string' && data.length > 500) {
-      return data.substring(0, 200) + '... (truncated)';
-    }
-    return JSON.stringify(data);
-  }
+  powerMonitor.on('suspend', () => recordMainDiagnostic({ event_name: 'main.suspend' }));
+  powerMonitor.on('resume', () => recordMainDiagnostic({ event_name: 'main.resume' }));
+  let diagnosticWindow = 0;
+  let diagnosticBatches = 0;
+  ipcMain.on('diagnostics:record-batch', (event, payload: unknown) => {
+    if (event.sender !== mainWindow?.webContents || event.senderFrame !== event.sender.mainFrame) return;
+    const now = Date.now();
+    if (now - diagnosticWindow >= 1000) { diagnosticWindow = now; diagnosticBatches = 0; }
+    if (++diagnosticBatches > 10) { operationLog.dropped++; return; }
+    recordRendererBatch(operationLog, payload);
+  });
 
   const SILENT_CHANNELS = new Set(['os:homeDir', 'os:resolve', 'fs:exists']);
 
   const safeInvoke = (channel: string, handler: (args: any) => Promise<any>) => {
     ipcMain.removeHandler(channel);
     ipcMain.handle(channel, async (event, data: any) => {
-      const formattedData = formatLogData(data);
-      if (!SILENT_CHANNELS.has(channel)) {
-        console.log(`[IPC] ${channel}${formattedData ? ' called with: ' + formattedData : ''}`);
-      }
+      const request_id = diagnosticId('ipc');
+      const started = performance.now();
+      if (!SILENT_CHANNELS.has(channel)) recordMainDiagnostic({ event_name: 'ipc.call', request_id, status: 'started', details: { channel } });
       try {
-        return await handler(data);
+        const result = await handler(data);
+        if (!SILENT_CHANNELS.has(channel)) recordMainDiagnostic({ event_name: 'ipc.call', request_id, status: 'completed', duration_ms: performance.now() - started, details: { channel } });
+        return result;
       } catch (error: any) {
+        recordMainDiagnostic({ event_name: 'ipc.call', request_id, status: 'failed', level: 'error', duration_ms: performance.now() - started, details: { channel, ...diagnosticError(error) } });
         if (error?.code === 'ENOENT') {
           console.warn(`[IPC] NOT FOUND: ${data?.path || data}`);
         } else {
@@ -575,7 +582,7 @@ async function startApplication(): Promise<void> {
   safeInvoke('skills:writePackage', async (data) => {
     const name = typeof data?.name === 'string' ? data.name.trim() : '';
     const files = Array.isArray(data?.files) ? data.files : [];
-    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(name)) throw new Error('invalid skill name');
+    if (!SKILL_NAME_RE.test(name)) throw new Error('invalid skill name');
     if (!files.some((file: any) => String(file?.path).toLowerCase() === 'skill.md')) {
       throw new Error('skill package must include SKILL.md');
     }
@@ -950,6 +957,9 @@ async function startApplication(): Promise<void> {
 
   // Renderer pushes settings → main syncs to nanobot config and (re)starts bridge
   ipcMain.handle('nanobot:sync-config', async (_, settings: NanobotConfigInput) => {
+    const request_id = diagnosticId('config');
+    const started = performance.now();
+    recordMainDiagnostic({ event_name: 'bridge.config_sync', request_id, status: 'started' });
     try {
       const changed = await syncNanobotConfig(settings);
       let restarted = false;
@@ -965,8 +975,10 @@ async function startApplication(): Promise<void> {
       } else if (!pythonBridge.isReady) {
         await pythonBridge.start();
       }
+      recordMainDiagnostic({ event_name: 'bridge.config_sync', request_id, status: 'completed', duration_ms: performance.now() - started, details: { changed, restarted } });
       return { ok: true, changed, restarted };
     } catch (err: any) {
+      recordMainDiagnostic({ event_name: 'bridge.config_sync', request_id, status: 'failed', level: 'error', duration_ms: performance.now() - started, details: diagnosticError(err) });
       console.error('[Main] nanobot:sync-config error:', err);
       return { ok: false, error: err.message };
     }

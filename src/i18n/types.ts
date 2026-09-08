@@ -104,6 +104,8 @@ export interface TranslationDict {
     inputPlaceholderMidTask: string;
     appLoading: string;
     gatewayStarting: string;
+    gatewayStartFailed: string;
+    gatewayDiagnostics: string;
     mcpWarming: string;
     mcpUnavailable: string;
     start: string;

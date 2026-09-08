@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { shallow } from 'zustand/shallow';
 import {
   AlertCircle,
   Check,
@@ -26,16 +27,18 @@ import {
 import { useTurnPlanStore } from '@/stores/turnPlanStore';
 import { useThreadResourceStore } from '@/stores/threadResourceStore';
 import { usePreviewStore } from '@/stores/previewStore';
-import { getGatewayBaseUrl, getNanobotToken } from '@/core/nanobotClient';
+import { getGatewayBaseUrl, getNanobotToken, getNanobotConnectionStatus, subscribeNanobotConnectionStatus } from '@/core/nanobotClient';
+import { researchRevisionSource } from '@/core/nanobot/revisionViewModel';
+import { useExpertTeamRevisionStore } from '@/stores/expertTeamRevisionStore';
+import { RoleRevisionActions } from '@/components/chat/ExpertTeamRevisionActions';
 import { conversationIdToSessionKey } from '@/core/sessionKey';
 import {
   fetchSessionArtifacts,
   normalizeSessionArtifactRecords,
   type SessionArtifact,
 } from '@/core/sessionArtifacts';
-import { fetchThreadResource } from '@/core/api';
-import { projectThreadResource } from '@/core/nanobot/threadResourceProjection';
 import { artifactPreviewKind } from '@/core/artifacts';
+import { useDocumentVisible } from '@/components/common/useVisualActivity';
 
 const EMPTY_PROGRESS: WorkbenchProgressSnapshot = {
   steps: [],
@@ -91,6 +94,7 @@ export default function ConversationWorkbench({
   showInitialLoading?: boolean;
 }) {
   const { locale, t } = useI18n();
+  const documentVisible = useDocumentVisible();
   const activeConversationId = useChatStore((state) => state.activeConversationId);
   const conversationStatus = useChatStore((state) => (
     state.activeConversationId
@@ -123,6 +127,9 @@ export default function ConversationWorkbench({
       : undefined
   ));
   const turnPlan = threadResource?.plan ?? legacyTurnPlan;
+  const revisionSource = researchRevisionSource(threadResource ? threadResource.plan : legacyTurnPlan);
+  const connectionStatus = useSyncExternalStore(subscribeNanobotConnectionStatus, getNanobotConnectionStatus, getNanobotConnectionStatus);
+  const revisionDisabled = connectionStatus !== 'open' || conversationStatus === 'running' || Boolean(threadResource?.active_turn);
   const legacyProgress = useConversationWorkbenchStore((state) => (
     activeConversationId
       ? state.progressByConversation[activeConversationId]
@@ -179,68 +186,80 @@ export default function ConversationWorkbench({
   const previewArtifact = usePreviewStore((state) => state.previewArtifact);
   const [error, setError] = useState<string | null>(null);
   const requestSequence = useRef(0);
+  const artifactsConversation = useRef(activeConversationId);
+  const inFlight = useRef<{ key: string; refreshAgain: boolean } | null>(null);
   const artifactRevisionConversation = useRef<string | null>(null);
   const shouldPollActiveTurn = turnPlan
     ? progress.isActive
     : conversationStatus === 'running';
   const refreshArtifacts = useCallback(async (
     mode: 'blocking' | 'background' | 'silent' = 'blocking',
-  ) => {
+    reason: 'event' | 'poll' = 'event',
+  ): Promise<void> => {
     if (!activeConversationId) return;
+    const key = conversationIdToSessionKey(activeConversationId);
+    if (inFlight.current?.key === key) {
+      if (reason === 'event') inFlight.current.refreshAgain = true;
+      return;
+    }
+    const request = { key, refreshAgain: false };
+    inFlight.current = request;
     const requestId = ++requestSequence.current;
     if (mode === 'background') setRefreshing(true);
     else if (mode === 'blocking') setLoading(true);
     setError(null);
     try {
-      const key = conversationIdToSessionKey(activeConversationId);
       const currentResource = useThreadResourceStore.getState().resourcesBySession[key];
-      let rows: SessionArtifact[];
-      if (currentResource) {
-        const refreshed = await fetchThreadResource(
-          getNanobotToken(),
-          key,
-          getGatewayBaseUrl(),
-        );
-        if (!refreshed) throw new Error('Thread Resource is unavailable.');
-        projectThreadResource(activeConversationId, refreshed);
-        rows = normalizeSessionArtifactRecords(
-          getGatewayBaseUrl(),
-          refreshed.session_key,
-          refreshed.artifacts,
-          workspacePath,
-          { projectId: refreshed.project_id, sessionId: refreshed.session_id },
-        );
-      } else {
-        rows = await fetchSessionArtifacts(
-          getNanobotToken(),
-          key,
-          getGatewayBaseUrl(),
-          workspacePath,
-          { projectId, sessionId },
-        );
-      }
+      const rows = await fetchSessionArtifacts(
+        getNanobotToken(),
+        key,
+        getGatewayBaseUrl(),
+        workspacePath,
+        {
+          projectId: currentResource?.project_id ?? projectId,
+          sessionId: currentResource?.session_id ?? sessionId,
+        },
+      );
       if (requestId !== requestSequence.current) return;
-      setArtifacts(rows);
+      setArtifacts((current) => (
+        current.length === rows.length && rows.every(({ ref, ...fields }, index) => {
+          const { ref: previousRef, ...previousFields } = current[index];
+          const { source, ...refFields } = ref;
+          const { source: previousSource, ...previousRefFields } = previousRef;
+          return shallow(fields, previousFields)
+            && shallow(refFields, previousRefFields)
+            && shallow(source, previousSource);
+        }) ? current : rows
+      ));
     } catch (loadError) {
       if (requestId !== requestSequence.current) return;
       console.warn('[ConversationWorkbench] Failed to load artifacts:', loadError);
       setError(loadError instanceof Error ? loadError.message : t.panel.artifactsLoadFailed);
     } finally {
+      if (inFlight.current === request) inFlight.current = null;
       if (requestId === requestSequence.current) {
         setLoading(false);
         setRefreshing(false);
+        if (request.refreshAgain) void refreshArtifacts('silent');
       }
     }
   }, [activeConversationId, projectId, sessionId, t.panel.artifactsLoadFailed, workspacePath]);
 
   useEffect(() => {
     requestSequence.current += 1;
+    inFlight.current = null;
     setError(null);
-    if (blockInitialLoad) setArtifacts([]);
+    if (blockInitialLoad || artifactsConversation.current !== activeConversationId) setArtifacts([]);
+    artifactsConversation.current = activeConversationId;
     setLoading(Boolean(activeConversationId) && blockInitialLoad);
+    setRefreshing(false);
     if (activeConversationId) {
       void refreshArtifacts(blockInitialLoad ? 'blocking' : 'silent');
     }
+    return () => {
+      requestSequence.current += 1;
+      inFlight.current = null;
+    };
   }, [activeConversationId, blockInitialLoad, refreshArtifacts]);
 
   useEffect(() => {
@@ -252,17 +271,26 @@ export default function ConversationWorkbench({
     void refreshArtifacts('background');
   }, [activeConversationId, artifactRevision, refreshArtifacts]);
 
+  const hasStagingArtifact = artifacts.some((artifact) => artifact.status === 'staging');
   useEffect(() => {
-    const hasStagingArtifact = artifacts.some((artifact) => artifact.status === 'staging');
     if (
       !activeConversationId
+      || !documentVisible
       || (!shouldPollActiveTurn && !hasStagingArtifact)
     ) return;
     const timer = window.setInterval(() => {
-      void refreshArtifacts('background');
+      void refreshArtifacts('silent', 'poll');
     }, POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [activeConversationId, artifacts, refreshArtifacts, shouldPollActiveTurn]);
+  }, [activeConversationId, documentVisible, hasStagingArtifact, refreshArtifacts, shouldPollActiveTurn]);
+
+  useEffect(() => {
+    const refreshOnReturn = () => {
+      if (document.visibilityState !== 'hidden') void refreshArtifacts('silent');
+    };
+    document.addEventListener('visibilitychange', refreshOnReturn);
+    return () => document.removeEventListener('visibilitychange', refreshOnReturn);
+  }, [refreshArtifacts]);
 
   const openArtifactFolder = useCallback(async () => {
     // Prefer the currently previewed artifact, otherwise the first ready one.
@@ -364,6 +392,15 @@ export default function ConversationWorkbench({
                     {step.detail ? (
                       <div className="truncate text-[11px] text-[#9a968c] dark:text-[#817d75]">{step.detail}</div>
                     ) : null}
+                    {activeConversationId && revisionSource?.roles.some((role) => role.id === step.id) && (
+                      <RoleRevisionActions
+                        runId={revisionSource.runId}
+                        roleId={step.id}
+                        roleTitle={step.title}
+                        disabled={revisionDisabled}
+                        onReviseRole={(runId, roleId, mode) => useExpertTeamRevisionStore.getState().setSelection({ chatId: activeConversationId, runId, roleId, mode })}
+                      />
+                    )}
                   </div>
                 </li>
               ))}

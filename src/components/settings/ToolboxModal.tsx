@@ -7,7 +7,7 @@ import { Search, Sparkles, Server, Wrench, Plus, Upload, Wand2, PenLine, Chevron
 import { cn } from '@/lib/utils';
 import { fsBridge, dialogBridge } from '@/lib/ipc-factory';
 import { normalizeSeparators } from '@/utils/pathUtils';
-import { ITEM_NAME_RE } from '@/utils/validation';
+import { normalizeSkillName, SKILL_NAME_RE } from '@/utils/validation';
 import { saveSkill } from '@/core/api';
 import { getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/nanobotClient';
 import SkillsSection from '../customize/SkillsSection';
@@ -94,7 +94,7 @@ export default function ToolboxView() {
       const fileName = parts[parts.length - 1];
       let rawName: string;
 
-      if (fileName.toUpperCase() === expectedFileName) {
+      if (fileName.toUpperCase() === expectedFileName.toUpperCase()) {
         // Use parent directory name
         rawName = parts[parts.length - 2] || fileName.replace(/\.md$/i, '');
       } else {
@@ -102,14 +102,9 @@ export default function ToolboxView() {
         rawName = fileName.replace(/\.md$/i, '');
       }
 
-      // Normalize: lowercase, spaces/underscores → hyphens, strip invalid chars
-      const name = rawName
-        .toLowerCase()
-        .replace(/[\s_]+/g, '-')
-        .replace(/[^a-z0-9-]/g, '')
-        .replace(/^-+|-+$/g, '');
+      const name = normalizeSkillName(rawName);
 
-      if (!name || !ITEM_NAME_RE.test(name)) {
+      if (!name || !SKILL_NAME_RE.test(name)) {
         console.warn('[Upload] Invalid name after normalization:', rawName, '→', name);
         return;
       }

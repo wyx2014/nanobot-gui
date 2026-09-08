@@ -1,7 +1,12 @@
 import type {
   BootstrapResponse,
+  McpPresetsPayload,
+  McpEditorAction,
   ConnectionStatus,
   ExpertTeamBinding,
+  ExpertTeamRevisionContext,
+  ExpertTeamRevisionInput,
+  ExpertTeamRevisionPlan,
   InboundEvent,
   Outbound,
   OutboundCliAppMention,
@@ -15,6 +20,10 @@ import type {
   ThreadRuntimeSnapshot,
   CanonicalSessionEvent,
 } from "./types";
+
+import type { PresentationSelection } from './presentations';
+import { recordDiagnostic } from './diagnostics';
+import { diagnosticId } from '../shared/diagnostics';
 
 const WS_OPEN = 1;
 const WS_CLOSING = 2;
@@ -34,9 +43,9 @@ function wsInboundDebugEnabled(): boolean {
     if (raw === "1" || raw === "true" || raw === "on" || raw === "yes") {
       return true;
     }
-    return true; // Enabled by default in GUI
+    return false;
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -86,6 +95,7 @@ type RuntimeSnapshotGapHandler = (chatId: string) => void;
 type CanonicalEventHandler = (event: CanonicalSessionEvent) => void;
 
 export type StreamError =
+  | { kind: "expert_team_revision_rejected"; reason?: string; chatId?: string }
   | { kind: "message_too_big" }
   | { kind: "workspace_scope_rejected"; reason?: string; chatId?: string }
   | { kind: "workspace_access_required"; reason?: string; chatId?: string };
@@ -195,7 +205,18 @@ export class NanobotClient {
   private pendingNewChat: PendingNewChat | null = null;
   private pendingExpertTeamUpdates = new Map<string, PendingExpertTeamUpdate>();
   private pendingMcpPresetsUpdates = new Map<string, PendingMcpPresetsUpdate>();
+  private pendingMcpSettings = new Map<string, {
+    resolve: (result: McpPresetsPayload) => void;
+    reject: (error: Error) => void;
+    timer: ReturnType<typeof setTimeout>;
+    cleanup: () => void;
+  }>();
   private pendingTranscriptions = new Map<string, PendingTranscription>();
+  private pendingRevisions = new Map<string, {
+    resolve: (result: ExpertTeamRevisionContext | ExpertTeamRevisionPlan) => void;
+    reject: (error: Error) => void;
+    timer: ReturnType<typeof setTimeout>;
+  }>();
   private voiceStreams = new Map<string, ActiveVoiceStream>();
   private sendQueue: Outbound[] = [];
   private reconnectAttempts = 0;
@@ -354,6 +375,7 @@ export class NanobotClient {
       this.emitRunStatus(chatId, startedAt);
     }
     if (hasRevisionGap) {
+      recordDiagnostic({ event_name: 'websocket.revision_gap', chat_id: chatId, level: 'warning', details: { snapshot_revision: snapshot.snapshot_revision, runtime_epoch: snapshot.runtime_epoch } });
       for (const handler of this.runtimeSnapshotGapHandlers) {
         handler(chatId);
       }
@@ -502,6 +524,12 @@ export class NanobotClient {
 
   close(): void {
     this.intentionallyClosed = true;
+    for (const pending of this.pendingMcpSettings.values()) {
+      clearTimeout(pending.timer);
+      pending.cleanup();
+      pending.reject(new Error('网关连接已断开 / Gateway disconnected'));
+    }
+    this.pendingMcpSettings.clear();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -550,6 +578,7 @@ export class NanobotClient {
     content: string,
     media?: OutboundMedia[],
     options?: {
+      presentation?: PresentationSelection;
       imageGeneration?: OutboundImageGeneration;
       cliApps?: OutboundCliAppMention[];
       mcpPresets?: OutboundMcpPresetMention[];
@@ -557,13 +586,16 @@ export class NanobotClient {
       workspaceScope?: WorkspaceScopePayload | null;
       interactivePromptAnswer?: UIInteractivePromptAnswer;
       expertTeam?: ExpertTeamBinding;
+      expertTeamRevisionPlanId?: string;
     },
   ): void {
     this.knownChats.add(chatId);
     const frame: Outbound = {
       type: "message",
+      client_action_id: diagnosticId('action'),
       chat_id: chatId,
       content,
+      ...(options?.presentation ? { presentation: options.presentation } : {}),
       ...(media && media.length > 0 ? { media } : {}),
       ...(options?.imageGeneration ? { image_generation: options.imageGeneration } : {}),
       ...(options?.cliApps?.length ? { cli_apps: options.cliApps } : {}),
@@ -572,9 +604,86 @@ export class NanobotClient {
       ...(options?.workspaceScope ? { workspace_scope: options.workspaceScope } : {}),
       ...(options?.interactivePromptAnswer ? { interactive_prompt_answer: options.interactivePromptAnswer } : {}),
       ...(options?.expertTeam ? { expert_team: options.expertTeam } : {}),
+      ...(options?.expertTeamRevisionPlanId ? { expert_team_revision_plan_id: options.expertTeamRevisionPlanId } : {}),
       webui: true,
     };
-    this.queueSend(frame);
+    recordDiagnostic({ event_name: 'websocket.message', client_action_id: frame.client_action_id, chat_id: chatId, status: 'started' });
+    if (options?.expertTeamRevisionPlanId) {
+      if (this.socket?.readyState !== WS_OPEN) {
+        recordDiagnostic({ event_name: 'websocket.message', client_action_id: frame.client_action_id, chat_id: chatId, status: 'failed', level: 'error', details: { error_code: 'SOCKET_CLOSED' } });
+        throw new Error("网关连接已断开，请重新确认更新范围");
+      }
+      this.rawSend(frame);
+    } else {
+      this.queueSend(frame);
+    }
+  }
+
+  revisionContext(chatId: string, runId: string): Promise<ExpertTeamRevisionContext> {
+    return this.revisionRequest(chatId, { action: "context", run_id: runId });
+  }
+
+  mcpSettings(action: McpEditorAction, values: Record<string, unknown> = {}, signal?: AbortSignal): Promise<McpPresetsPayload> {
+    if (signal?.aborted) return Promise.reject(new DOMException('Cancelled', 'AbortError'));
+    if (this.socket?.readyState !== WS_OPEN) return Promise.reject(new Error("网关尚未连接 / Gateway disconnected"));
+    if (this.pendingMcpSettings.size >= 8) return Promise.reject(new Error("MCP 请求繁忙，请稍后重试 / MCP requests are busy"));
+    const requestId = crypto.randomUUID();
+    return new Promise((resolve, reject) => {
+      const cancelProbe = () => {
+        if (action === 'probe' && this.socket?.readyState === WS_OPEN) {
+          try { this.socket.send(JSON.stringify({ type: 'mcp_settings_cancel', request_id: requestId })); } catch { /* Already disconnected. */ }
+        }
+      };
+      const cleanup = () => signal?.removeEventListener('abort', abort);
+      const abort = () => {
+        clearTimeout(timer);
+        cleanup();
+        this.pendingMcpSettings.delete(requestId);
+        cancelProbe();
+        reject(new DOMException('Cancelled', 'AbortError'));
+      };
+      const timer = setTimeout(() => {
+        cleanup();
+        this.pendingMcpSettings.delete(requestId);
+        cancelProbe();
+        reject(new Error("MCP 请求超时，请刷新服务状态 / MCP request timed out; refresh server status"));
+      }, action === "probe" ? 310_000 : 30_000);
+      this.pendingMcpSettings.set(requestId, { resolve, reject, timer, cleanup });
+      signal?.addEventListener('abort', abort, { once: true });
+      try {
+        this.socket!.send(JSON.stringify({ type: "mcp_settings", request_id: requestId, action, values }));
+      } catch {
+        clearTimeout(timer);
+        cleanup();
+        this.pendingMcpSettings.delete(requestId);
+        reject(new Error('MCP 请求发送失败 / Could not send MCP request'));
+      }
+    });
+  }
+
+  discardRevision(chatId: string, planId: string): void {
+    if (this.socket?.readyState === WS_OPEN) this.rawSend({ type: "expert_team_revision_discard", chat_id: chatId, plan_id: planId });
+  }
+
+  prepareRevision(chatId: string, input: ExpertTeamRevisionInput): Promise<ExpertTeamRevisionPlan> {
+    return this.revisionRequest(chatId, { action: "prepare", ...input });
+  }
+
+  private revisionRequest<T extends ExpertTeamRevisionContext | ExpertTeamRevisionPlan>(
+    chatId: string,
+    payload: { action: "context"; run_id: string } | ({ action: "prepare" } & ExpertTeamRevisionInput),
+  ): Promise<T> {
+    if (this.socket?.readyState !== WS_OPEN) return Promise.reject(new Error("网关尚未连接"));
+    if (this.pendingRevisions.size >= 8) return Promise.reject(new Error("请等待资料请求完成"));
+    const requestId = crypto.randomUUID();
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingRevisions.delete(requestId);
+        reject(new Error("资料请求超时，请重试；研究尚未启动"));
+      }, 30000);
+      this.pendingRevisions.set(requestId, { resolve: (result) => resolve(result as T), reject, timer });
+      this.rawSend({ type: "expert_team_revision", chat_id: chatId, request_id: requestId, ...payload });
+    });
   }
 
   setWorkspaceScope(chatId: string, workspaceScope: WorkspaceScopePayload): void {
@@ -755,6 +864,7 @@ export class NanobotClient {
 
   private setStatus(status: ConnectionStatus): void {
     if (this.status_ === status) return;
+    recordDiagnostic({ event_name: 'websocket.connection', details: { previous_status: this.status_, connection_status: status, attempt: this.reconnectAttempts, queue_depth: this.sendQueue.length } });
     this.status_ = status;
     for (const handler of this.statusHandlers) handler(status);
   }
@@ -768,6 +878,7 @@ export class NanobotClient {
     try {
       parsed = JSON.parse(typeof ev.data === "string" ? ev.data : "") as InboundEvent;
     } catch {
+      recordDiagnostic({ event_name: 'websocket.invalid_frame', status: 'failed', level: 'error', details: { error_code: 'INVALID_JSON' } });
       if (wsInboundDebugEnabled()) {
         const raw = typeof ev.data === "string" ? ev.data : String(ev.data);
         console.warn(
@@ -780,6 +891,13 @@ export class NanobotClient {
 
     if (wsInboundDebugEnabled()) {
       console.log("[nanobot ws inbound]", summarizeInboundWsPayload(parsed));
+    }
+    if (parsed.event === 'turn_started' || parsed.event === 'turn_completed') {
+      recordDiagnostic({ event_name: 'websocket.turn', client_action_id: parsed.client_action_id, chat_id: parsed.chat_id, turn_id: parsed.turn.id,
+        trace_id: parsed.turn.trace_id ?? undefined, status: parsed.event === 'turn_started' ? 'started' : parsed.turn.status === 'failed' ? 'failed' : parsed.turn.status === 'interrupted' ? 'cancelled' : 'completed',
+        details: { snapshot_revision: parsed.snapshot_revision, runtime_epoch: parsed.turn.runtime_epoch } });
+    } else if (parsed.event === 'error') {
+      recordDiagnostic({ event_name: 'websocket.error', status: 'failed', level: 'error', details: { error_code: parsed.detail } });
     }
 
     const durable = parsed as InboundEvent & Partial<CanonicalSessionEvent>;
@@ -799,6 +917,25 @@ export class NanobotClient {
       }
     }
 
+    if (parsed.event === "expert_team_revision_result") {
+      const pending = this.pendingRevisions.get(parsed.request_id);
+      if (!pending) return;
+      clearTimeout(pending.timer);
+      this.pendingRevisions.delete(parsed.request_id);
+      if (parsed.error || !parsed.result) pending.reject(new Error(parsed.error || "资料请求失败"));
+      else pending.resolve(parsed.result);
+      return;
+    }
+    if (parsed.event === "mcp_settings_result") {
+      const pending = this.pendingMcpSettings.get(parsed.request_id);
+      if (!pending) return;
+      clearTimeout(pending.timer);
+      pending.cleanup();
+      this.pendingMcpSettings.delete(parsed.request_id);
+      if (parsed.error || !parsed.result) pending.reject(new Error(parsed.error || "MCP request failed"));
+      else pending.resolve(parsed.result);
+      return;
+    }
     if (parsed.event === "ready") {
       this.readyChatId = parsed.chat_id;
       this.updateRuntimeStatus(parsed.agent_ready !== false, parsed.mcp_status);
@@ -1032,10 +1169,22 @@ export class NanobotClient {
   }
 
   private handleClose(event?: { code?: number }): void {
+    recordDiagnostic({ event_name: 'websocket.closed', details: { close_code: event?.code, intentional: this.intentionallyClosed, queue_depth: this.sendQueue.length } });
     this.socket = null;
+    for (const pending of this.pendingMcpSettings.values()) {
+      clearTimeout(pending.timer);
+      pending.cleanup();
+      pending.reject(new Error("网关连接已断开，请刷新 MCP 状态 / Gateway disconnected; refresh MCP status"));
+    }
+    this.pendingMcpSettings.clear();
     // Preserve the last revision across reconnect. The HTTP Runtime Snapshot
     // will authoritatively replace it after re-authentication; socket closure
     // by itself is not a turn terminal event.
+    for (const pending of this.pendingRevisions.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error("网关连接已断开，请重新打开补充窗口"));
+    }
+    this.pendingRevisions.clear();
     if (this.pendingNewChat) {
       clearTimeout(this.pendingNewChat.timer);
       this.pendingNewChat.reject(new Error("socket closed"));
@@ -1089,6 +1238,7 @@ export class NanobotClient {
     this.setStatus("reconnecting");
     const attempt = this.reconnectAttempts++;
     const delay = Math.min(500 * 2 ** attempt, this.maxBackoffMs);
+    recordDiagnostic({ event_name: 'websocket.reconnect', details: { attempt, delay_ms: delay } });
     this.reconnectTimer = setTimeout(async () => {
       this.reconnectTimer = null;
       if (this.options.onReauth) {
@@ -1108,6 +1258,7 @@ export class NanobotClient {
       this.rawSend(frame);
     } else {
       this.sendQueue.push(frame);
+      if (frame.type === 'message') recordDiagnostic({ event_name: 'websocket.queued', client_action_id: frame.client_action_id, chat_id: frame.chat_id, details: { queue_depth: this.sendQueue.length } });
     }
   }
 
@@ -1115,8 +1266,10 @@ export class NanobotClient {
     if (!this.socket) return;
     try {
       this.socket.send(JSON.stringify(frame));
+      if (frame.type === 'message') recordDiagnostic({ event_name: 'websocket.message', client_action_id: frame.client_action_id, chat_id: frame.chat_id, status: 'completed', details: { stage: 'sent' } });
     } catch {
       this.sendQueue.push(frame);
+      if (frame.type === 'message') recordDiagnostic({ event_name: 'websocket.send_failed', client_action_id: frame.client_action_id, chat_id: frame.chat_id, status: 'failed', level: 'error', details: { queue_depth: this.sendQueue.length } });
     }
   }
 }

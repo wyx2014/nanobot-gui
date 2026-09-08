@@ -28,6 +28,8 @@ import type {
   ArchivedSessionPayload,
 } from "@/core/types";
 import { useToastStore } from "@/stores/toastStore";
+import "./settingsPage.css";
+import "./dataManagement.css";
 
 type PendingDelete =
   | { kind: "session"; item: ArchivedSessionPayload }
@@ -48,13 +50,13 @@ function EmptyState({ isEnglish }: { isEnglish: boolean }) {
   return (
     <div
       data-data-management-empty
-      className="rounded-xl border border-dashed border-[#dedede] bg-[#fafafa] px-6 py-12 text-center dark:border-[#3e3d39] dark:bg-[#222220]"
+      className="settings-page-empty"
     >
-      <Archive className="mx-auto h-7 w-7 text-[#aaa59b]" strokeWidth={1.6} />
-      <div className="mt-3 text-sm font-medium text-[#4f4c45] dark:text-[#d6d1c8]">
+      <Archive className="settings-page-muted mx-auto h-5 w-5" strokeWidth={1.8} />
+      <div className="settings-page-title mt-3">
         {isEnglish ? "Nothing is archived" : "暂无归档内容"}
       </div>
-      <p className="mt-1 text-xs text-[#8b8578] dark:text-[#8f8a81]">
+      <p className="settings-page-copy mt-1">
         {isEnglish
           ? "Archived conversations and workspaces will appear here."
           : "归档后的会话和工作空间会显示在这里。"}
@@ -159,17 +161,18 @@ export default function DataManagementSection({
   const empty = !loading && !archivedSessions.length && !archivedProjects.length;
 
   return (
-    <div data-data-management className="mx-auto w-full max-w-4xl space-y-5 py-1">
+    <div data-data-management className="settings-page">
+      <div className="settings-page-stack data-management-content">
       <section
         data-data-management-notice
-        className="flex gap-3 rounded-xl border border-[#e3ded4] bg-[#f8f6f1] px-4 py-3.5 dark:border-[#45413b] dark:bg-[#24221f]"
+        className="settings-page-intro"
       >
-        <Database className="mt-0.5 h-5 w-5 shrink-0 text-[#9a654f] dark:text-[#dc9678]" strokeWidth={1.7} />
-        <div>
-          <div className="text-sm font-semibold text-[#302d27] dark:text-[#eee9df]">
+        <Database className="settings-page-secondary mt-0.5 h-4 w-4 shrink-0" strokeWidth={1.8} />
+        <div className="min-w-0 flex-1">
+          <div className="settings-page-title">
             {isEnglish ? "Archive first, delete only when certain" : "先归档，确认无误后再永久删除"}
           </div>
-          <p className="mt-1 text-xs leading-5 text-[#746f65] dark:text-[#aaa49a]">
+          <p className="settings-page-copy mt-1">
             {isEnglish
               ? "Archiving only hides an item. Permanent deletion removes its conversation journals, progress, and internal records. Workspace files and generated files on disk are never deleted here."
               : "归档只会隐藏项目；永久删除会清理对应的会话记录、进度、产物索引和内部诊断数据。这里不会删除工作空间目录及磁盘上的用户文件或已生成文件。"}
@@ -177,32 +180,32 @@ export default function DataManagementSection({
         </div>
       </section>
 
-      <div className="flex items-center justify-between">
-        <div className="text-xs text-[#817b70] dark:text-[#969087]">
+      <div className="flex items-center justify-between gap-3">
+        <div className="settings-page-caption">
           {isEnglish
             ? `${archivedSessions.length} conversations · ${archivedProjects.length} workspaces`
             : `${archivedSessions.length} 个归档会话 · ${archivedProjects.length} 个归档工作空间`}
         </div>
         <Button
-          variant="outline"
-          size="sm"
+          variant="ghost"
+          size="icon-sm"
           onClick={() => void refresh()}
           disabled={loading || Boolean(busy)}
-          className="border-[#dedbd4] bg-white text-[#4f4b43] hover:bg-[#f5f3ee] dark:border-[#46443f] dark:bg-[#282725] dark:text-[#d8d3ca] dark:hover:bg-[#33312e]"
+          aria-label={isEnglish ? "Refresh" : "刷新"}
+          title={isEnglish ? "Refresh" : "刷新"}
         >
           {loading ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-          {isEnglish ? "Refresh" : "刷新"}
         </Button>
       </div>
 
       {error ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
+        <div role="alert" className="settings-page-alert">
           {error}
         </div>
       ) : null}
 
       {loading && !data ? (
-        <div className="flex items-center justify-center py-16 text-sm text-[#888278] dark:text-[#99948c]">
+        <div className="settings-page-empty flex items-center justify-center">
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
           {isEnglish ? "Loading archived data…" : "正在读取归档数据…"}
         </div>
@@ -211,12 +214,12 @@ export default function DataManagementSection({
       {empty ? <EmptyState isEnglish={isEnglish} /> : null}
 
       {archivedSessions.length ? (
-        <section className="space-y-2">
-          <div className="flex items-center gap-2 px-1 text-sm font-semibold text-[#38352f] dark:text-[#e3ded5]">
-            <Archive className="h-4 w-4" />
+        <section className="space-y-3">
+          <h3 className="settings-page-title flex items-center gap-2">
+            <Archive className="settings-page-secondary h-4 w-4" strokeWidth={1.8} />
             {isEnglish ? "Archived conversations" : "已归档会话"}
-          </div>
-          <div className="overflow-hidden rounded-xl border border-[#e5e2db] bg-white dark:border-[#3c3a36] dark:bg-[#242423]">
+          </h3>
+          <div className="data-management-list">
             {archivedSessions.map((item) => {
               const restoring = busy === `restore-session:${item.sessionKey}`;
               const deleting = busy === `purge-session:${item.sessionKey}`;
@@ -224,24 +227,23 @@ export default function DataManagementSection({
                 <div
                   key={item.sessionKey}
                   data-archived-row
-                  className="flex items-center gap-4 border-b border-[#eeeae3] px-4 py-3.5 last:border-b-0 dark:border-[#383632]"
+                  className="settings-page-row data-management-row"
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium text-[#282620] dark:text-[#ece7de]">
+                    <div className="settings-page-title truncate" title={item.title || (isEnglish ? "Untitled conversation" : "未命名会话")}>
                       {item.title || (isEnglish ? "Untitled conversation" : "未命名会话")}
                     </div>
-                    <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-[#888278] dark:text-[#969087]">
-                      <span className="truncate">{item.projectName || item.projectRoot}</span>
-                      <span aria-hidden="true">·</span>
-                      <span className="shrink-0">{formatArchivedAt(item.archivedAt, isEnglish)}</span>
+                    <div className="settings-page-copy data-management-meta mt-1">
+                      <span className="truncate" title={item.projectName || item.projectRoot}>{item.projectName || item.projectRoot}</span>
+                      <span className="shrink-0 tabular-nums">{formatArchivedAt(item.archivedAt, isEnglish)}</span>
                     </div>
                   </div>
+                  <div className="data-management-actions">
                   <Button
                     variant="outline"
                     size="sm"
                     disabled={Boolean(busy)}
                     onClick={() => restoreArchivedSession(item)}
-                    className="border-[#dedbd4] bg-white text-[#4f4b43] hover:bg-[#f5f3ee] dark:border-[#494640] dark:bg-[#2b2a27] dark:text-[#ddd8cf] dark:hover:bg-[#35332f]"
                   >
                     {restoring ? <Loader2 className="animate-spin" /> : <RotateCcw />}
                     {isEnglish ? "Restore" : "取消归档"}
@@ -251,11 +253,12 @@ export default function DataManagementSection({
                     size="sm"
                     disabled={Boolean(busy)}
                     onClick={() => setPendingDelete({ kind: "session", item })}
-                    className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950/35 dark:hover:text-red-300"
+                    className="settings-action-danger"
                   >
                     {deleting ? <Loader2 className="animate-spin" /> : <Trash2 />}
                     {isEnglish ? "Delete" : "永久删除"}
                   </Button>
+                  </div>
                 </div>
               );
             })}
@@ -264,12 +267,12 @@ export default function DataManagementSection({
       ) : null}
 
       {archivedProjects.length ? (
-        <section className="space-y-2">
-          <div className="flex items-center gap-2 px-1 text-sm font-semibold text-[#38352f] dark:text-[#e3ded5]">
-            <FolderArchive className="h-4 w-4" />
+        <section className="space-y-3">
+          <h3 className="settings-page-title flex items-center gap-2">
+            <FolderArchive className="settings-page-secondary h-4 w-4" strokeWidth={1.8} />
             {isEnglish ? "Archived workspaces" : "已归档工作空间"}
-          </div>
-          <div className="overflow-hidden rounded-xl border border-[#e5e2db] bg-white dark:border-[#3c3a36] dark:bg-[#242423]">
+          </h3>
+          <div className="data-management-list">
             {archivedProjects.map((item) => {
               const restoring = busy === `restore-project:${item.id}`;
               const deleting = busy === `purge-project:${item.id}`;
@@ -277,24 +280,23 @@ export default function DataManagementSection({
                 <div
                   key={item.id}
                   data-archived-row
-                  className="flex items-center gap-4 border-b border-[#eeeae3] px-4 py-3.5 last:border-b-0 dark:border-[#383632]"
+                  className="settings-page-row data-management-row"
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium text-[#282620] dark:text-[#ece7de]">{item.name}</div>
-                    <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-[#888278] dark:text-[#969087]">
-                      <span className="truncate">{item.rootPath}</span>
-                      <span aria-hidden="true">·</span>
+                    <div className="settings-page-title truncate" title={item.name}>{item.name}</div>
+                    <div className="settings-page-copy data-management-meta mt-1">
+                      <span className="truncate font-mono text-xs" title={item.rootPath}>{item.rootPath}</span>
                       <span className="shrink-0">
                         {isEnglish ? `${item.sessionCount} conversations` : `${item.sessionCount} 个会话`}
                       </span>
                     </div>
                   </div>
+                  <div className="data-management-actions">
                   <Button
                     variant="outline"
                     size="sm"
                     disabled={Boolean(busy)}
                     onClick={() => restoreArchivedProject(item)}
-                    className="border-[#dedbd4] bg-white text-[#4f4b43] hover:bg-[#f5f3ee] dark:border-[#494640] dark:bg-[#2b2a27] dark:text-[#ddd8cf] dark:hover:bg-[#35332f]"
                   >
                     {restoring ? <Loader2 className="animate-spin" /> : <RotateCcw />}
                     {isEnglish ? "Restore" : "取消归档"}
@@ -304,17 +306,19 @@ export default function DataManagementSection({
                     size="sm"
                     disabled={Boolean(busy)}
                     onClick={() => setPendingDelete({ kind: "project", item })}
-                    className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950/35 dark:hover:text-red-300"
+                    className="settings-action-danger"
                   >
                     {deleting ? <Loader2 className="animate-spin" /> : <Trash2 />}
                     {isEnglish ? "Delete record" : "永久删除记录"}
                   </Button>
+                  </div>
                 </div>
               );
             })}
           </div>
         </section>
       ) : null}
+      </div>
 
       <ConfirmDialog
         open={pendingDelete !== null}

@@ -93,7 +93,7 @@ describe('artifact normalization', () => {
       'http://127.0.0.1:8900/api/sessions/websocket%3Achat/artifacts/content?path=report.pdf',
       {
         credentials: 'same-origin',
-        headers: { Authorization: 'Bearer private-token' },
+        headers: expect.objectContaining({ Authorization: 'Bearer private-token' }),
       },
     );
     expect(String(fetchMock.mock.calls[0][0])).not.toContain('private-token');

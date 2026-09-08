@@ -1028,7 +1028,7 @@ PromptHub 账户主要用于技能商店的安装、发布和账号关联。普�
 **设置 → 帮助与反馈** 提供：
 
 - 使用手册；
-- 意见反馈，可附最多 4 张截图并选择包含日志；
+- 导出诊断包，填写问题描述和时间范围，保存本地 ZIP 后发给技术支持；
 - 联系我们。
 
 提交日志前应检查其中是否包含不希望分享的路径、错误信息或业务上下文。`,
@@ -1060,7 +1060,7 @@ PromptHub is primarily for Skill Store installation, publishing, and account ass
 
 ## Help and feedback
 
-The Help & Feedback page includes this manual, feedback with up to four screenshots and optional logs, contact links, privacy policy, and terms. Review logs before sharing them if paths or business context may be sensitive.`,
+The Help & Feedback page includes this manual, diagnostic bundle export, and contact information. Describe the issue and choose its time range to save a local ZIP for technical support. Nothing is uploaded automatically.`,
     },
   },
   {
@@ -1114,7 +1114,7 @@ The Help & Feedback page includes this manual, feedback with up to four screensh
 
 ## 仍然无法解决
 
-打开 **设置 → 帮助与反馈 → 意见反馈**，用“发生了什么、期望什么、如何复现”的顺序描述，并附截图和必要日志。`,
+打开 **设置 → 帮助与反馈 → 导出诊断包**，用“发生了什么、期望什么、如何复现”的顺序描述，选择时间范围并保存 ZIP。将 ZIP 和问题编号发给技术支持。窗口 **帮助 → 导出诊断包** 也能进入；界面无响应时可使用原生帮助菜单导出最近 15 分钟的应用诊断。`,
     },
     en: {
       title: 'Troubleshooting and shortcuts',
@@ -1159,7 +1159,7 @@ The first five can be customized under **Settings → Keyboard Shortcuts**.
 
 ## Still blocked
 
-Open **Settings → Help & Feedback → Send Feedback**. Describe what happened, what you expected, and how to reproduce it, then attach screenshots and only the necessary logs.`,
+Open **Settings → Help & Feedback → Export Diagnostics**. Describe what happened, what you expected, and how to reproduce it, then choose the time range and save a ZIP. Send the ZIP and issue ID to technical support. The window Help menu offers the same entry; the native Help menu can export recent application diagnostics if the interface stops responding.`,
     },
   },
 ];

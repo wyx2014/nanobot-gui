@@ -172,6 +172,34 @@ describe('PythonBridge lifecycle', () => {
     });
   });
 
+  it('stops a timed-out child before retrying startup', async () => {
+    vi.useFakeTimers();
+    try {
+      const firstChild = processStub(2001);
+      const secondChild = processStub(2002);
+      fetchMock.mockRejectedValue(new Error('gateway unavailable'));
+      spawn.mockReturnValueOnce(firstChild).mockImplementationOnce(() => {
+        expect(firstChild.kill).toHaveBeenCalledWith('SIGTERM');
+        fetchMock.mockResolvedValue({ ok: true, status: 200 });
+        return secondChild;
+      });
+      const { PythonBridge } = await import('./pythonBridge');
+      const bridge = new PythonBridge();
+      const failed = expect(bridge.start()).rejects.toThrow('did not become ready');
+      await vi.advanceTimersByTimeAsync(31_000);
+      await failed;
+      expect(firstChild.killed).toBe(false);
+
+      const retry = bridge.start();
+      await vi.advanceTimersByTimeAsync(0);
+      await retry;
+      expect(spawn).toHaveBeenCalledTimes(2);
+      expect(bridge.isReady).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('passes built-in MCP credentials only to the nanobot child process', async () => {
     const previous = {
       JUYUAN_MCP_TOKEN: process.env.JUYUAN_MCP_TOKEN,

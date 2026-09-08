@@ -4,11 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useChatStore } from '@/stores/chatStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { VoiceStreamError } from '@/core/nanobot-client';
 import ChatInput from './ChatInput';
 
 const mocks = vi.hoisted(() => ({
   fetchExpertTeams: vi.fn(),
+  fetchSkills: vi.fn(),
   fetchMcpPresets: vi.fn(),
   setExpertTeam: vi.fn(),
   setMcpPresets: vi.fn(),
@@ -68,6 +70,7 @@ vi.mock('@/core/api', async () => {
   return {
     ...actual,
     fetchExpertTeams: mocks.fetchExpertTeams,
+    fetchSkills: mocks.fetchSkills,
     listSlashCommands: vi.fn().mockResolvedValue([]),
     fetchCliApps: vi.fn().mockResolvedValue({ apps: [] }),
     fetchMcpPresets: mocks.fetchMcpPresets,
@@ -93,6 +96,8 @@ let root: Root | undefined;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 beforeEach(() => {
+  useDiscoveryStore.setState({ skills: [], agents: [], experts: [], isLoading: false });
+  mocks.fetchSkills.mockResolvedValue({ skills: [], disabled: [], installed_count: 0 });
   useSettingsStore.setState({
     provider: 'qiniu',
     model: 'deepseek/deepseek-v3.2-251201',
@@ -187,6 +192,17 @@ afterEach(() => {
   container = undefined;
   root = undefined;
   vi.clearAllMocks();
+  localStorage.removeItem('nanobot.gui.composerDraft.v1:chat');
+});
+
+it('restores a presentation draft and sends its document binding', async () => {
+  const presentation = { template_id: 'taiping-standard', document_id: 'document-001', name: '中国太平标准', sample_first: true };
+  localStorage.setItem('nanobot.gui.composerDraft.v1:chat', JSON.stringify({ text: '生成年度报告', images: [], files: [], skills: [], cliApps: [], mcpPresets: [], presentation }));
+  const onSend = vi.fn().mockReturnValue(true);
+  const view = await renderChatInput('chat', onSend);
+  expect(view.querySelector('[data-presentation-selection]')?.textContent).toContain('中国太平标准');
+  await act(async () => view.querySelector<HTMLButtonElement>('[data-codex-send-button]')!.click());
+  expect(onSend).toHaveBeenCalledWith('生成年度报告', undefined, undefined, expect.objectContaining({ presentation }));
 });
 
 async function renderChatInput(
@@ -667,6 +683,40 @@ describe('ChatInput voice input', () => {
 
     expect(mocks.openMicrophoneSettings).toHaveBeenCalledOnce();
     expect(mocks.startPcmVoiceRecorder).not.toHaveBeenCalled();
+  });
+});
+
+describe('ChatInput versioned skills', () => {
+  it('refreshes copied skills when opening the picker and sends the complete name', async () => {
+    const onSend = vi.fn().mockReturnValue(true);
+    const view = await renderChatInput('chat', onSend);
+    expect(useDiscoveryStore.getState().skills).toEqual([]);
+    mocks.fetchSkills.mockResolvedValue({
+      skills: [{
+        name: 'libai-1.0.4', description: '润色专家', source: 'workspace',
+        enabled: true, available: true, user_invocable: true, tags: [],
+      }],
+      disabled: [], installed_count: 1,
+    });
+
+    await act(async () => view.querySelector('svg.lucide-plus')?.closest('button')?.click());
+    await act(async () => view.querySelector('[data-plus-menu-item="skills"]')
+      ?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })));
+    const skillButton = [...view.querySelectorAll<HTMLButtonElement>('[data-plus-menu-item="skills"] button')]
+      .find((button) => button.textContent?.includes('/libai-1.0.4'));
+    expect(skillButton).toBeDefined();
+    expect(mocks.fetchSkills).toHaveBeenCalledWith('token', 'http://127.0.0.1:8900');
+    await act(async () => skillButton!.click());
+
+    const textarea = view.querySelector('textarea')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, '润色这段文字');
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => view.querySelector<HTMLButtonElement>('[data-codex-send-button]')!.click());
+    expect(onSend).toHaveBeenCalledWith('润色这段文字', undefined, undefined, expect.objectContaining({
+      skillScope: { project_bound_user_skills: [], explicit_skills: ['libai-1.0.4'] },
+    }));
   });
 });
 

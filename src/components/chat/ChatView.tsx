@@ -33,8 +33,11 @@ import { useToastStore } from '@/stores/toastStore';
 import { useConversationWorkbenchStore } from '@/stores/conversationWorkbenchStore';
 import { useTurnPlanStore } from '@/stores/turnPlanStore';
 import { useThreadResourceStore } from '@/stores/threadResourceStore';
+import { useExpertTeamRevisionStore } from '@/stores/expertTeamRevisionStore';
 import { useI18n } from '@/i18n';
 import ThreadMessages from './ThreadMessages';
+import ExpertTeamRevisionDialog, { type RevisionAction } from './ExpertTeamRevisionDialog';
+import ExpertTeamRevisionActions from './ExpertTeamRevisionActions';
 import InteractivePromptCard, { type InteractivePromptSubmitPayload } from './InteractivePromptCard';
 import SecurityApprovalCard from './SecurityApprovalCard';
 import ChatInput, { type ChatInputSendOptions } from './ChatInput';
@@ -57,11 +60,11 @@ import { historyHasPendingActivity } from '@/core/nanobot/historyActivity';
 import { buildTaskNarrativeEntries } from '@/core/nanobot/taskNarrativeTimeline';
 import { preserveLatestUserAnchor } from '@/core/nanobot/threadHistoryMerge';
 import { loadConversationHistory } from '@/core/nanobot/conversationHistory';
-import { normalizeTaskTimestamp } from '@/utils/taskDuration';
 import { cn } from '@/lib/utils';
 import { isLinux, isMacOS } from '@/utils/platform';
 import { useConversationSearch } from './useConversationSearch';
 import { shouldShowConversationLoading } from './conversationHistoryLoading';
+import GatewayStartupStatus from './GatewayStartupStatus';
 
 interface PendingFirstMessage {
   text: string;
@@ -107,11 +110,15 @@ function scopeWithAccessMode(scope: WorkspaceScopePayload, mode: 'restricted' | 
 }
 
 export default function ChatView({
+  gatewayStartupError,
+  onGatewayRetry,
   workspaceScope,
   workspaceControls,
   workspaceError: _workspaceError,
   onWorkspaceScopeChange: _onWorkspaceScopeChange,
 }: {
+  gatewayStartupError?: string | null;
+  onGatewayRetry?: () => void;
   workspaceScope?: WorkspaceScopePayload | null;
   workspaceDefaultScope?: WorkspaceScopePayload | null;
   workspaceControls?: WorkspacesPayload['controls'] | null;
@@ -120,6 +127,12 @@ export default function ChatView({
 }) {
   const activeConv = useActiveConversation();
   const activeConvId = activeConv?.id;
+  const revisionSelection = useExpertTeamRevisionStore((state) => state.selection);
+  const setRevisionSelection = useExpertTeamRevisionStore((state) => state.setSelection);
+  const handleReviseRole = useCallback<RevisionAction>((runId, roleId, mode) => {
+    if (activeConvId) setRevisionSelection({ chatId: activeConvId, runId, roleId, mode });
+  }, [activeConvId, setRevisionSelection]);
+  useEffect(() => { setRevisionSelection(null); }, [activeConvId, setRevisionSelection]);
   const scheduledTaskId = activeConv?.scheduledTaskId;
   // Ordinary chat status changes (idle -> running -> completed) must not
   // refetch the transcript. Scheduled runs are the only flow whose status can
@@ -185,6 +198,10 @@ export default function ChatView({
       : undefined
   ));
   const hasCanonicalThreadResource = Boolean(canonicalThreadResource);
+  const legacyRevisionPlan = useTurnPlanStore((state) => (
+    activeConvId ? state.planByConversation[activeConvId] : undefined
+  ));
+  const revisionPlan = canonicalThreadResource ? canonicalThreadResource.plan : legacyRevisionPlan;
 
   const [greeting, setGreeting] = useState('');
   const [userName, setUserName] = useState('');
@@ -393,6 +410,7 @@ export default function ChatView({
       ...(pending.options?.cliApps?.length ? { cliApps: pending.options.cliApps } : {}),
       ...(pending.options?.mcpPresets?.length ? { mcpPresets: pending.options.mcpPresets } : {}),
       ...(pending.options?.skillScope ? { skillScope: pending.options.skillScope } : {}),
+      ...(pending.options?.presentation ? { presentation: pending.options.presentation } : {}),
     };
     if (stream.send(pending.text, imageAttachmentsToSendImages(pending.images), options)) {
       pendingFirstRef.current = null;
@@ -461,18 +479,6 @@ export default function ChatView({
   const generationActive = hasCanonicalThreadResource
     ? runtimeActive
     : stream.isStreaming || runtimeActive;
-  const [turnClockNow, setTurnClockNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!generationActive) return;
-    setTurnClockNow(Date.now());
-    const timer = window.setInterval(() => setTurnClockNow(Date.now()), 500);
-    return () => window.clearInterval(timer);
-  }, [generationActive, runStartedAt]);
-  const activeTurnElapsedMs = useMemo(() => {
-    if (!generationActive) return undefined;
-    const startedAtMs = normalizeTaskTimestamp(runStartedAt);
-    return startedAtMs === undefined ? 0 : Math.max(0, turnClockNow - startedAtMs);
-  }, [generationActive, runStartedAt, turnClockNow]);
   const generationPhase = useMemo<GenerationPhase | null>(() => {
     if (!generationActive) return null;
     if (latestAssistantMessage?.reasoningStreaming) return 'thinking';
@@ -557,6 +563,7 @@ export default function ChatView({
     }
 
     const sendOptions: ChatInputSendOptions = {
+      ...(options?.presentation ? { presentation: options.presentation } : {}),
       ...(options?.cliApps?.length ? { cliApps: options.cliApps } : {}),
       ...(options?.mcpPresets?.length ? { mcpPresets: options.mcpPresets } : {}),
       ...(options?.skillScope ? { skillScope: options.skillScope } : {}),
@@ -564,6 +571,7 @@ export default function ChatView({
     };
     const effectiveExpertTeam = sendOptions.expertTeam ?? activeConv?.expertTeam;
     const wireOptions: SendOptions = {
+      ...(sendOptions.presentation ? { presentation: sendOptions.presentation } : {}),
       workspaceScope: effectiveScope,
       ...(effectiveExpertTeam ? { expertTeam: effectiveExpertTeam } : {}),
       ...(sendOptions.cliApps?.length ? { cliApps: sendOptions.cliApps } : {}),
@@ -626,6 +634,7 @@ export default function ChatView({
     const effectiveScope = overrideWorkspaceScope ?? workspaceScope;
     const options: SendOptions = {
       workspaceScope: effectiveScope,
+      ...(userMessage.presentation ? { presentation: userMessage.presentation } : {}),
       ...(activeConv?.expertTeam ? { expertTeam: activeConv.expertTeam } : {}),
       ...(userMessage.cliApps?.length ? { cliApps: userMessage.cliApps } : {}),
       ...(userMessage.mcpPresets?.length ? { mcpPresets: userMessage.mcpPresets } : {}),
@@ -801,14 +810,7 @@ export default function ChatView({
   // use the chat surface itself for a calm, contextual readiness indicator.
   if (!gatewayReady) {
     return (
-      <div data-chat-surface className="flex h-full min-h-[45vh] w-full items-center justify-center bg-[#fbfaf7] dark:bg-[#1f1f1f]">
-        <div className="flex flex-col items-center gap-4" role="status" aria-live="polite">
-          <ThinkingOrb state="solving" size={64} style={{ width: 44, height: 44 }} aria-label="" />
-          <p className="text-[15px] font-medium leading-6 text-[#88857b] dark:text-[#aaa69e]">
-            {t.chat.gatewayStarting}
-          </p>
-        </div>
-      </div>
+      <GatewayStartupStatus error={gatewayStartupError} onRetry={onGatewayRetry} />
     );
   }
 
@@ -887,6 +889,24 @@ export default function ChatView({
         isMacOS() || isLinux() ? '-mt-12 h-[calc(100%+3rem)]' : 'h-full',
       )}
     >
+      {revisionSelection && revisionSelection.chatId === activeConvId && <ExpertTeamRevisionDialog
+        key={`${revisionSelection.chatId}:${revisionSelection.runId}:${revisionSelection.roleId}:${revisionSelection.mode}`}
+        {...revisionSelection}
+        disabled={!gatewayReady || stream.isStreaming || generationActive}
+        onClose={() => setRevisionSelection(null)}
+        onStart={(plan) => {
+          if (!gatewayReady || stream.isStreaming || generationActive || useChatStore.getState().activeConversationId !== revisionSelection.chatId) return false;
+          if (!useSettingsStore.getState().apiKey?.trim()) {
+            useSettingsStore.getState().openSystemSettings('ai-services');
+            return false;
+          }
+          return stream.send(`更新 ${plan.target} 研究报告 v${plan.version}，按已确认范围补充角色结果。`, undefined, {
+            expertTeamRevisionPlanId: plan.plan_id,
+            expertTeam: canonicalThreadResource?.expert_team ?? activeConv.expertTeam ?? undefined,
+            workspaceScope,
+          });
+        }}
+      />}
       <ConversationHeader
         conversationTitle={activeConv.title}
         onOpenTerminal={() => osBridge.openTerminal(activeProjectPath ?? undefined)}
@@ -953,17 +973,25 @@ export default function ChatView({
                       </button>
                     </div>
                   ) : (
-                    <ThreadMessages
-                      messages={timelineMessages}
-                      isStreaming={stream.isStreaming}
-                      activeTurnElapsedMs={activeTurnElapsedMs}
-                      latestTurnStatus={
-                        !stream.isStreaming && !activeConv.runtimeSnapshot?.active_turn
-                          ? activeConv.runtimeSnapshot?.latest_turn?.status
-                          : undefined
-                      }
-                      onEditUserMessage={handleEditUserMessage}
-                    />
+                    <>
+                      <ThreadMessages
+                        messages={timelineMessages}
+                        isStreaming={stream.isStreaming}
+                        activeTurnStartedAt={generationActive ? runStartedAt : undefined}
+                        latestTurnStatus={
+                          !stream.isStreaming && !activeConv.runtimeSnapshot?.active_turn
+                            ? activeConv.runtimeSnapshot?.latest_turn?.status
+                            : undefined
+                        }
+                        onEditUserMessage={handleEditUserMessage}
+                        onReviseRole={gatewayReady && !generationActive ? handleReviseRole : undefined}
+                      />
+                      <ExpertTeamRevisionActions
+                        plan={revisionPlan}
+                        disabled={!gatewayReady || stream.isStreaming || generationActive}
+                        onReviseRole={handleReviseRole}
+                      />
+                    </>
                   )}
                 </>
               )}
@@ -1028,7 +1056,6 @@ export default function ChatView({
               <GenerationStatusBar
                 phase={generationPhase}
                 startedAt={runStartedAt}
-                elapsedMs={activeTurnElapsedMs}
                 tokenCount={generationTokenCount}
                 tokenCountEstimated={stream.turnUsage?.estimated ?? false}
               />

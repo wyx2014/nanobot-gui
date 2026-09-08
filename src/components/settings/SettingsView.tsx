@@ -12,7 +12,6 @@ import {
   Database,
   ExternalLink,
   HelpCircle,
-  ImagePlus,
   Keyboard,
   Link,
   Loader2,
@@ -65,7 +64,6 @@ import type { LanguageSetting } from "@/i18n";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { usePromptHubStore } from "@/stores/promptHubStore";
-import { submitPromptHubFeedback } from "@/core/prompthubApi";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useToastStore } from "@/stores/toastStore";
 import { isProtectedBuiltinModelProvider } from "@/config/builtinModelServices";
@@ -353,7 +351,6 @@ export function SettingsView({
   }), [isEnglish]);
   const settingsStore = useSettingsStore();
   const promptHubUser = usePromptHubStore((state) => state.user);
-  const promptHubBaseUrl = usePromptHubStore((state) => state.baseUrl);
   const openPromptHubLogin = usePromptHubStore((state) => state.openLogin);
   const logoutPromptHub = usePromptHubStore((state) => state.logout);
   const addToast = useToastStore((state) => state.addToast);
@@ -377,10 +374,6 @@ export function SettingsView({
   const [, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState<Record<ActionKey, boolean>>({});
-  const [feedbackOpen, setFeedbackOpen] = useState(requestedSystemTab === "feedback");
-  const [feedbackText, setFeedbackText] = useState("");
-  const [feedbackImages, setFeedbackImages] = useState<string[]>([]);
-  const [feedbackIncludeLogs, setFeedbackIncludeLogs] = useState(true);
 
   const [selectedProvider, setSelectedProvider] = useState("");
   const [voiceForm, setVoiceForm] = useState<VoiceForm>({
@@ -444,7 +437,6 @@ export function SettingsView({
             ? "general"
             : requestedSystemTab;
     setActiveTab(nextTab);
-    if (requestedSystemTab === "feedback") setFeedbackOpen(true);
   }, [requestedSystemTab]);
 
   const refreshSettingsAuth = useCallback(async () => {
@@ -859,48 +851,6 @@ export function SettingsView({
       "语音设置已保存",
     );
 
-  const addFeedbackImages = async (files: FileList | null) => {
-    if (!files) return;
-    const next = [...feedbackImages];
-    for (const file of Array.from(files)) {
-      if (next.length >= 4) break;
-      if (!file.type.startsWith("image/")) continue;
-      if (file.size > 2 * 1024 * 1024) {
-        addToast({ type: "error", title: "图片过大", message: "单张图片不能超过 2MB" });
-        continue;
-      }
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result || ""));
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(file);
-      });
-      next.push(dataUrl);
-    }
-    setFeedbackImages(next);
-  };
-
-  const submitFeedback = () =>
-    withAction(
-      "feedback",
-      async () => {
-        const content = feedbackText.trim();
-        if (!content) throw new Error("请填写反馈内容");
-        await submitPromptHubFeedback(promptHubBaseUrl, {
-          username: promptHubUser?.username,
-          content,
-          images: feedbackImages,
-          includeLogs: feedbackIncludeLogs,
-          platform: navigator.platform,
-        });
-        setFeedbackOpen(false);
-        settingsStore.setActiveSystemTab("help");
-        setFeedbackText("");
-        setFeedbackImages([]);
-      },
-      "反馈已提交",
-    );
-
   if (loading && !settings) {
     return (
       <div className="window-modal-viewport fixed inset-0 z-[70] flex items-center justify-center text-[#777267]">
@@ -1083,31 +1033,13 @@ export function SettingsView({
               )}
 
               {activeTab === "help" && (
-                <HelpFeedbackSection onOpenFeedback={() => setFeedbackOpen(true)} isEnglish={isEnglish} />
+                <HelpFeedbackSection isEnglish={isEnglish} />
               )}
 
             </div>
           </div>
         </main>
       </div>
-      {feedbackOpen ? (
-        <FeedbackDialog
-          text={feedbackText}
-          setText={setFeedbackText}
-          images={feedbackImages}
-          setImages={setFeedbackImages}
-          includeLogs={feedbackIncludeLogs}
-          setIncludeLogs={setFeedbackIncludeLogs}
-          saving={saving["feedback"]}
-          onAddImages={addFeedbackImages}
-          onClose={() => {
-            setFeedbackOpen(false);
-            settingsStore.setActiveSystemTab("help");
-          }}
-          onSubmit={submitFeedback}
-          isEnglish={isEnglish}
-        />
-      ) : null}
     </div>
   );
 }
@@ -1213,15 +1145,16 @@ function AccountSection({
   );
 }
 
-function HelpFeedbackSection({ onOpenFeedback, isEnglish }: { onOpenFeedback: () => void; isEnglish: boolean }) {
+function HelpFeedbackSection({ isEnglish }: { isEnglish: boolean }) {
   const openHelpManual = useSettingsStore((state) => state.openHelpManual);
+  const openDiagnosticsDialog = useSettingsStore((state) => state.openDiagnosticsDialog);
   const [contactOpen, setContactOpen] = useState(false);
 
   return (
     <div className="space-y-6">
       <div className="space-y-3">
         <HelpRow icon={BookOpenText} label={isEnglish ? "User Manual" : "使用手册"} trailing onClick={openHelpManual} />
-        <HelpRow icon={MessageSquare} label={isEnglish ? "Send Feedback" : "意见反馈"} onClick={onOpenFeedback} />
+        <HelpRow icon={Database} label={isEnglish ? "Export Diagnostics" : "导出诊断包"} onClick={openDiagnosticsDialog} />
         <HelpRow
           icon={Link}
           label={isEnglish ? "Contact Us" : "联系我们"}
@@ -1276,96 +1209,6 @@ function HelpRow({
         />
       ) : trailing ? <ExternalLink className="h-5 w-5 text-[#777] dark:text-[#8a867c]" strokeWidth={1.8} /> : null}
     </button>
-  );
-}
-
-function FeedbackDialog({
-  text,
-  setText,
-  images,
-  setImages,
-  includeLogs,
-  setIncludeLogs,
-  saving,
-  onAddImages,
-  onClose,
-  onSubmit,
-  isEnglish,
-}: {
-  text: string;
-  setText: (value: string) => void;
-  images: string[];
-  setImages: (value: string[]) => void;
-  includeLogs: boolean;
-  setIncludeLogs: (value: boolean) => void;
-  saving?: boolean;
-  onAddImages: (files: FileList | null) => void | Promise<void>;
-  onClose: () => void;
-  onSubmit: () => Promise<void>;
-  isEnglish: boolean;
-}) {
-  const disabled = saving || !text.trim() || text.length > 300;
-
-  return (
-    <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/15">
-      <div className="w-[480px] overflow-hidden rounded-xl border border-black/5 bg-white shadow-lg">
-        <div className="flex items-center justify-between border-b border-[#eeeeef] px-5 py-4">
-          <h3 className="text-lg font-semibold text-[#202020]">{isEnglish ? "Send Feedback" : "意见反馈"}</h3>
-          <button type="button" className="grid h-8 w-8 place-items-center rounded-md text-[#777] hover:bg-[#f2f2f3]" onClick={onClose}>
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-        <div className="px-5 py-6">
-          <div className="rounded-xl border border-[#e2e2e4] bg-white p-3">
-            <Textarea
-              value={text}
-              onChange={(event) => setText(event.target.value.slice(0, 300))}
-              placeholder={isEnglish ? "Describe the issue you encountered" : "你可以描述你遇到的问题"}
-              className="min-h-[210px] resize-none border-0 bg-white p-0 text-base shadow-none focus-visible:ring-0"
-            />
-            <div className="mt-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-[#e2e2e4] bg-[#fafafa] px-3 py-2 text-sm text-[#666] hover:bg-[#f4f4f5]">
-                  <ImagePlus className="h-4 w-4" />
-                  {isEnglish ? `Upload images (${images.length}/4)` : `上传图片 (${images.length}/4)`}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    className="hidden"
-                    onChange={(event) => {
-                      void onAddImages(event.target.files);
-                      event.currentTarget.value = "";
-                    }}
-                    disabled={images.length >= 4}
-                  />
-                </label>
-                {images.length ? (
-                  <button type="button" className="text-xs text-[#888] hover:text-[#202020]" onClick={() => setImages([])}>
-                    {isEnglish ? "Clear" : "清空"}
-                  </button>
-                ) : null}
-              </div>
-              <span className={cn("text-sm", text.length > 300 ? "text-red-600" : "text-[#8a8a8d]")}>{text.length}/300</span>
-            </div>
-          </div>
-          <div className="mt-5 flex items-center justify-between gap-4">
-            <button type="button" className="flex min-w-0 items-start gap-3 text-left" onClick={() => setIncludeLogs(!includeLogs)}>
-              <span className={cn("mt-1 grid h-5 w-5 shrink-0 place-items-center rounded-md", includeLogs ? "bg-[#202020] text-white" : "border border-[#d6d6d8]")}>
-                {includeLogs ? <Check className="h-4 w-4" /> : null}
-              </span>
-              <span className="text-sm leading-6 text-[#5f6368]">
-                {isEnglish ? "Include logs for troubleshooting. They may contain conversations and device information." : "上传日志，仅用于排查问题，可能包含对话记录、设备信息等数据。"}
-              </span>
-            </button>
-            <Button className="h-12 shrink-0 rounded-full bg-[#202020] px-8 text-base font-semibold text-white hover:bg-[#333] disabled:bg-[#d8d8d8]" disabled={disabled} onClick={() => void onSubmit()}>
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              {isEnglish ? "Submit" : "提交"}
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>
   );
 }
 

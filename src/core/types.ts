@@ -1,6 +1,7 @@
 export type Role = "user" | "assistant" | "tool" | "system";
 
 import type { ScheduledTask } from "@/types/schedule";
+import type { PresentationSelection } from './presentations';
 
 export type TurnLifecycleStatus =
   | "queued"
@@ -282,6 +283,7 @@ export interface UIMediaAttachment {
 }
 
 export interface UIMessage {
+  presentation?: PresentationSelection;
   id: string;
   role: Role;
   content: string;
@@ -420,6 +422,30 @@ export interface SecurityPolicyUpdate {
   network_deny_domains?: string[];
 }
 
+export interface SecurityAuditMetadata extends Record<string, unknown> {
+  agent_label?: string;
+  session_key?: string;
+  initial_decision?: string;
+  authorization?: string;
+  approval_id?: string;
+  approval_scope?: string;
+  operation_count?: number;
+  last_timestamp?: number;
+  working_directory?: string;
+  exit_code?: number | null;
+  process_session_id?: string;
+  paths?: string[];
+  paths_truncated?: boolean;
+  data_categories?: string[];
+  destination_known?: boolean;
+  lifecycle?: Array<{ timestamp: number; result: string; decision?: string }>;
+  changes?: Record<string, { before: unknown; after: unknown }>;
+  http_activity?: {
+    request_count: number;
+    requests: Array<{ url: string; method: string; status_code?: number }>;
+  };
+}
+
 export interface SecurityAuditEvent {
   id: number;
   timestamp: number;
@@ -437,7 +463,7 @@ export interface SecurityAuditEvent {
   target?: string | null;
   summary: string;
   duration_ms?: number | null;
-  details: Record<string, unknown>;
+  details: SecurityAuditMetadata;
 }
 
 export interface SecurityAuditPage {
@@ -1140,6 +1166,9 @@ export interface McpPresetInfo {
   note: string;
   install_supported: boolean;
   installed: boolean;
+  enabled?: boolean;
+  connection_state?: "pending" | "connecting" | "connected" | "needs_auth" | "failed" | "disabled";
+  diagnostics?: Array<{ time: string; status: string; message: string }>;
   configured: boolean;
   available: boolean;
   status: "not_installed" | "configured" | "missing_credentials" | "missing_dependency" | "coming_soon" | string;
@@ -1154,6 +1183,9 @@ export interface McpPresetInfo {
     cwd: string;
     url: string;
     tool_timeout: number;
+    connect_timeout?: number;
+    env_keys?: string[];
+    header_keys?: string[];
     has_env: boolean;
     has_headers: boolean;
   };
@@ -1169,6 +1201,8 @@ export interface McpPresetInfo {
 export interface McpPresetsPayload {
   presets: McpPresetInfo[];
   installed_count: number;
+  import_preview?: McpImportPreview[];
+  probe?: { ok: boolean; status: string; message: string; tool_names: string[]; checked_at?: string };
   requires_restart?: boolean;
   hot_reload?: {
     ok: boolean;
@@ -1185,6 +1219,8 @@ export interface McpPresetsPayload {
   };
   last_action?: {
     ok: boolean;
+    saved?: boolean;
+    names?: string[];
     message: string;
     installed?: boolean;
     removed?: boolean;
@@ -1197,6 +1233,19 @@ export interface McpPresetsPayload {
     error?: string | null;
   };
 }
+
+export interface McpImportPreview {
+  original_name: string;
+  name: string;
+  display_name: string;
+  transport: string;
+  enabled: boolean;
+  conflict: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+export type McpEditorAction = "list" | "save" | "probe" | "preview-import" | "import" | "toggle" | "remove" | "enable" | "tools" | "reconnect";
 
 export interface SettingsUpdate {
   model?: string;
@@ -1297,6 +1346,8 @@ export type ConnectionStatus =
   | "error";
 
 export type InboundEvent =
+  | { event: "mcp_settings_result"; request_id: string; result?: McpPresetsPayload; error?: string; status?: number }
+  | { event: "expert_team_revision_result"; request_id: string; chat_id: string; result?: ExpertTeamRevisionContext | ExpertTeamRevisionPlan; error?: string }
   | {
       event: "ready";
       chat_id: string;
@@ -1459,12 +1510,14 @@ export type InboundEvent =
     }
   | {
       event: "turn_started";
+      client_action_id?: string;
       chat_id: string;
       snapshot_revision: number;
       turn: TurnLifecycleResource;
     }
   | {
       event: "turn_completed";
+      client_action_id?: string;
       chat_id: string;
       snapshot_revision: number;
       turn: TurnLifecycleResource;
@@ -1676,7 +1729,72 @@ export interface WebuiThreadPersistedPayload {
   };
 }
 
+export interface ExpertTeamMaterialRequest {
+  title: string;
+  status: 'reported' | 'suggested';
+  data: string;
+  period: string;
+  purpose: string;
+  source: string;
+  basis: string;
+}
+
+export interface ExpertTeamRevisionRole {
+  id: string;
+  name: string;
+  status: string;
+  reason: string;
+  cached: boolean;
+  recommended_materials: string[];
+  framework?: string;
+  framework_prompt?: string;
+  framework_source?: string;
+  material_requests?: ExpertTeamMaterialRequest[];
+  research_prompt?: string;
+}
+
+export interface ExpertTeamRevisionContext {
+  run_id: string;
+  target: string;
+  version: number;
+  checkpoint_revision: number;
+  base_cached: boolean;
+  original_report?: string;
+  reported_gaps: string[];
+  research_period?: string;
+  security_identity?: string;
+  roles: ExpertTeamRevisionRole[];
+}
+
+export interface ExpertTeamRevisionPlan {
+  plan_id: string;
+  run_id: string;
+  target: string;
+  version: number;
+  selected_roles: string[];
+  reused_roles: string[];
+  base_cached: boolean;
+  original_report?: string;
+  materials: Array<{ name: string; path: string; status: string }>;
+}
+
+export interface ExpertTeamRevisionInput {
+  run_id: string;
+  checkpoint_revision: number;
+  roles: string[];
+  text: string;
+  period: string;
+  links: string[];
+  files: Array<{ name: string; base64: string }>;
+}
+
 export type Outbound =
+  | { type: "mcp_settings_cancel"; request_id: string }
+  | { type: "mcp_settings"; request_id: string; action: McpEditorAction; values: Record<string, unknown> }
+  | { type: "expert_team_revision_discard"; chat_id: string; plan_id: string }
+  | ({ type: "expert_team_revision"; request_id: string; chat_id: string } & (
+      { action: "context"; run_id: string } | ({ action: "prepare" } & ExpertTeamRevisionInput)
+    ))
   | { type: "new_chat"; workspace_scope?: WorkspaceScopePayload; expert_team?: ExpertTeamBinding }
   | { type: "attach"; chat_id: string }
   | { type: "set_workspace_scope"; chat_id: string; workspace_scope: WorkspaceScopePayload }
@@ -1717,8 +1835,10 @@ export type Outbound =
     }
   | {
       type: "message";
+      client_action_id?: string;
       chat_id: string;
       content: string;
+      presentation?: PresentationSelection;
       media?: OutboundMedia[];
       image_generation?: OutboundImageGeneration;
       cli_apps?: OutboundCliAppMention[];
@@ -1727,5 +1847,6 @@ export type Outbound =
       workspace_scope?: WorkspaceScopePayload;
       interactive_prompt_answer?: UIInteractivePromptAnswer;
       expert_team?: ExpertTeamBinding;
+      expert_team_revision_plan_id?: string;
       webui?: true;
     };

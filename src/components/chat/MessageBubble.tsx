@@ -1,8 +1,8 @@
-import { Check, Copy, Pencil, Plug, Terminal, Wand2, ChevronRight, Wrench } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Check, Copy, Pencil, Plug, Presentation, Terminal, Wand2, ChevronRight, Wrench } from 'lucide-react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import type { Message, MessageContent } from '@/types';
 import MarkdownRenderer from './MarkdownRenderer';
-import { useActiveConversation } from '@/stores/chatStore';
+import { useChatStore } from '@/stores/chatStore';
 import { useI18n } from '@/i18n';
 import { displaySkillName } from '@/core/skills/filter';
 import { cn } from '@/lib/utils';
@@ -155,7 +155,7 @@ function TypingDots() {
   );
 }
 
-export default function MessageBubble({
+export default memo(function MessageBubble({
   message,
   showAssistantCopyAction = true,
   isLastAssistantReply = false,
@@ -177,8 +177,10 @@ export default function MessageBubble({
   const mcpPresets = message.mcpPresets ?? [];
   const primaryMcpPreset = mcpPresets[0];
   const hiddenMcpPresets = mcpPresets.slice(1);
-  const activeConv = useActiveConversation();
-  const isConvRunning = activeConv?.status === 'running';
+  const isConvRunning = useChatStore((state) => (
+    !!state.activeConversationId
+    && state.conversations[state.activeConversationId]?.status === 'running'
+  ));
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [copied, setCopied] = useState(false);
@@ -228,8 +230,11 @@ export default function MessageBubble({
         {imageBlocks.length > 0 ? <UserImageGrid images={imageBlocks} /> : null}
         {mediaAttachments.length > 0 ? <MessageMedia media={mediaAttachments} align="right" /> : null}
 
-        {(message.delegateAgent || !!message.cliApps?.length || !!message.skills?.length || !!message.mcpPresets?.length) && (
+        {(message.presentation || message.delegateAgent || !!message.cliApps?.length || !!message.skills?.length || !!message.mcpPresets?.length) && (
           <div className="flex flex-wrap items-center justify-end gap-1.5">
+            {message.presentation && <span data-presentation-chip className="inline-flex max-w-full items-center gap-1 text-[11px] text-emerald-800 dark:text-emerald-200">
+              <Presentation className="size-3 shrink-0" /><span className="truncate">{message.presentation.name}{message.presentation.page ? ` · ${message.presentation.page}` : ''}</span>
+            </span>}
             {message.skill && (
               <span className="inline-flex items-center gap-1 rounded-full bg-[#f2efe9] px-2 py-0.5 text-[11px] font-medium text-[#6b685e] dark:bg-[#4a4a4a] dark:text-[#e2ded5]">
                 <Wand2 className="h-3 w-3" />
@@ -380,4 +385,4 @@ export default function MessageBubble({
       )}
     </div>
   );
-}
+});

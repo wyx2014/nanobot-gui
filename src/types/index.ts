@@ -119,6 +119,7 @@ export interface Message {
     description?: string;
   };
   cliApps?: UICliAppAttachment[];
+  presentation?: import('@/core/presentations').PresentationSelection;
   mcpPresets?: UIMcpPresetAttachment[];
   // Tool call context for LLM history (simplified, read-only)
   toolCallsForContext?: ToolCallContext[];

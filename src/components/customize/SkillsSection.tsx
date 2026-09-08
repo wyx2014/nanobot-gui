@@ -15,7 +15,7 @@ import SubTabBar from './SubTabBar';
 import { Toggle } from '@/components/ui/toggle';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { ITEM_NAME_RE } from '@/utils/validation';
+import { normalizeSkillName, SKILL_NAME_RE } from '@/utils/validation';
 import WindowModalBackdrop from '@/components/common/WindowModalBackdrop';
 import {
   AlertCircle,
@@ -98,16 +98,6 @@ function skillMarkdown(name: string, description: string, body: string): string 
   return `---\nname: ${name}\ndescription: ${JSON.stringify(description.trim())}\n---\n\n# ${name}\n\n${body.trim()}\n`;
 }
 
-function normalizeSkillName(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[\s_]+/g, '-')
-    .replace(/[^a-z0-9-]/g, '')
-    .replace(/-+/g, '-')
-    .replace(/^-+|-+$/g, '');
-}
-
 type SkillPackageFile = { path: string; content: Uint8Array };
 
 export default function SkillsSection({ manualCreateTrigger }: { manualCreateTrigger?: number }) {
@@ -123,6 +113,7 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
   const [activeSubTab, setActiveSubTab] = useState<SkillTab>('builtin');
   const [detail, setDetail] = useState<NanobotSkillInfo | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [actingName, setActingName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -140,6 +131,7 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
       const { token, baseUrl } = await getSkillsAuth();
       const next = await fetchSkills(token, baseUrl);
       setPayload(next);
+      void refreshDiscovery();
       if (promptHubToken) {
         const hub = await fetchPromptHubSkills(promptHubBaseUrl, promptHubToken);
         setHubSkillNames(new Set((hub.records ?? []).map((skill) => (skill.slug || skill.name || '').toLowerCase()).filter(Boolean)));
@@ -151,10 +143,19 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
     } finally {
       setLoading(false);
     }
-  }, [promptHubBaseUrl, promptHubToken]);
+  }, [promptHubBaseUrl, promptHubToken, refreshDiscovery]);
 
   useEffect(() => {
     void load();
+    const refreshOnFocus = () => {
+      if (document.visibilityState !== 'hidden') void load();
+    };
+    window.addEventListener('focus', refreshOnFocus);
+    document.addEventListener('visibilitychange', refreshOnFocus);
+    return () => {
+      window.removeEventListener('focus', refreshOnFocus);
+      document.removeEventListener('visibilitychange', refreshOnFocus);
+    };
   }, [load]);
 
   useEffect(() => {
@@ -202,8 +203,8 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
     const name = normalizeSkillName(createName);
     const description = createDescription.trim();
     const body = createBody.trim();
-    if (!ITEM_NAME_RE.test(name)) {
-      setError('技能名称只能使用英文小写、数字和连字符，且不能以连字符开头或结尾。');
+    if (!SKILL_NAME_RE.test(name)) {
+      setError('技能名称需以英文字母或数字开头，可包含小数点、连字符和下划线，最长 64 个字符。');
       return;
     }
     if (!description || !body) {
@@ -302,13 +303,18 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
   const openDetail = async (skill: NanobotSkillInfo) => {
     setDetail(skill);
     setDetailLoading(true);
+    setDetailError(null);
     setError(null);
     try {
       const { token, baseUrl } = await getSkillsAuth();
       const next = await fetchSkillDetail(token, skill.name, baseUrl);
-      setDetail(next.skills[0] ?? skill);
+      const loaded = next.skills[0];
+      if (!loaded || loaded.content === undefined) {
+        throw new Error(isEnglish ? 'The service did not return skill content.' : '服务未返回技能内容。');
+      }
+      setDetail(loaded);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setDetailError(err instanceof Error ? err.message : String(err));
     } finally {
       setDetailLoading(false);
     }
@@ -466,9 +472,16 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
                 <Loader2 className="h-4 w-4 animate-spin" />
                 {isEnglish ? 'Loading skill details...' : '正在读取技能详情'}
               </div>
+            ) : detailError ? (
+              <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                <p>{isEnglish ? 'Could not load skill details' : '技能详情读取失败'}：{detailError}</p>
+                <button type="button" onClick={() => void openDetail(detail)} className="mt-2 underline">
+                  {isEnglish ? 'Retry' : '重试'}
+                </button>
+              </div>
             ) : (
               <pre className="whitespace-pre-wrap rounded-lg border border-neutral-200 bg-white p-4 text-xs leading-5 text-neutral-700">
-                {detail.content || '未读取到技能内容'}
+                {detail.content || (isEnglish ? 'This skill file is empty.' : '技能文件内容为空。')}
               </pre>
             )}
           </div>

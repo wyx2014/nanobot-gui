@@ -54,7 +54,7 @@ const BUILTIN_SLASH_COMMANDS = new Set([
 
 export function stripUnavailableLeadingSkillMentions(text: string, availableNames: Iterable<string>): string {
   const available = new Set(availableNames);
-  const tokens = text.match(/^(\s*\/[A-Za-z0-9][A-Za-z0-9_-]{0,63})+/)?.[0] ?? '';
+  const tokens = text.match(/^(\s*\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?=\s|$))+/)?.[0] ?? '';
   if (!tokens) return text;
 
   const kept = tokens

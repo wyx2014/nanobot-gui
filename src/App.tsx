@@ -30,6 +30,8 @@ import { useSettingsStore, getEffectiveModel } from '@/stores/settingsStore';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ArrowLeft, ArrowRight, PanelLeft } from 'lucide-react';
 import ThinkingOrb from '@/components/common/ModalAwareThinkingOrb';
+import { useDocumentVisible } from '@/components/common/useVisualActivity';
+import { isDevLowPowerMode } from '@/utils/devPerformance';
 import { isLinux, isMacOS, isWindows } from '@/utils/platform';
 import { cn } from '@/lib/utils';
 import { initNotifications } from '@/utils/notifications';
@@ -119,6 +121,15 @@ function normalizeWorkspaceScope(scope: WorkspaceScopePayload): WorkspaceScopePa
 }
 
 function App() {
+  const documentVisible = useDocumentVisible();
+  useEffect(() => {
+    document.documentElement.toggleAttribute('data-window-hidden', !documentVisible);
+    document.documentElement.toggleAttribute('data-dev-low-power', isDevLowPowerMode());
+    return () => {
+      document.documentElement.removeAttribute('data-window-hidden');
+      document.documentElement.removeAttribute('data-dev-low-power');
+    };
+  }, [documentVisible]);
   const refreshDiscovery = useDiscoveryStore((s) => s.refresh);
   const sidebarCollapsed = useSettingsStore((s) => s.sidebarCollapsed);
   const summaryCollapsed = useSettingsStore((s) => s.rightPanelCollapsed);
@@ -584,9 +595,12 @@ function App() {
   const webSearchBaseUrl = useSettingsStore((s) => s.webSearchBaseUrl);
   const networkWhitelist = useSettingsStore((s) => s.networkWhitelist);
   const webuiAllowLocalServiceAccess = useSettingsStore((s) => s.allowPrivateNetworks);
+  const [gatewayStartupError, setGatewayStartupError] = useState<string | null>(null);
+  const [gatewayStartupAttempt, setGatewayStartupAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    setGatewayStartupError(null);
 
     void syncNanobotSettings({
       apiKey,
@@ -607,6 +621,7 @@ function App() {
     }).then(async (res) => {
       if (!res.ok) {
         console.error('[App] Nanobot settings sync failed:', res.error);
+        if (!cancelled) setGatewayStartupError(res.error || 'Gateway startup failed');
         return;
       }
 
@@ -661,6 +676,7 @@ function App() {
       }, 700);
     }).catch((err) => {
       console.error('[App] Nanobot settings sync exception:', err);
+      if (!cancelled) setGatewayStartupError(err instanceof Error ? err.message : String(err));
     });
 
     return () => {
@@ -681,6 +697,7 @@ function App() {
     webSearchBaseUrl,
     networkWhitelist,
     webuiAllowLocalServiceAccess,
+    gatewayStartupAttempt,
     refreshWorkspaces,
     refreshDiscovery,
   ]);
@@ -893,6 +910,8 @@ function App() {
             {(viewMode === 'chat' || !viewMode) && (
               <Suspense fallback={<DeferredChatFallback label={t.chat.appLoading} />}>
                 <ChatView
+                  gatewayStartupError={gatewayStartupError}
+                  onGatewayRetry={() => setGatewayStartupAttempt((attempt) => attempt + 1)}
                   workspaceScope={activeWorkspaceScope}
                   workspaceDefaultScope={workspaces?.default_scope ?? null}
                   workspaceControls={workspaces?.controls ?? null}

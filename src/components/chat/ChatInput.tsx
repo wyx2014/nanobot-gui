@@ -52,8 +52,12 @@ import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { normalizeProjectPath, projectNameFromPath, visibleProjectPath } from '@/core/workspace';
 import { displaySkillName, filterAvailableSkillNames, stripUnavailableLeadingSkillMentions, usableSkillsForScope } from '@/core/skills/filter';
 import { LEGACY_LOCAL_FILE_CONTEXT_HEADER } from '@/core/nanobot/localFileContext';
+import PresentationPicker from './PresentationPicker';
+import { normalizePresentationSelection, type PresentationSelection } from '@/core/presentations';
+import { Presentation } from 'lucide-react';
 
 export interface ChatInputSendOptions {
+  presentation?: PresentationSelection;
   cliApps?: OutboundCliAppMention[];
   mcpPresets?: OutboundMcpPresetMention[];
   skillScope?: OutboundSkillScope;
@@ -168,6 +172,7 @@ interface FileAttachmentItem {
 }
 
 interface ComposerDraft {
+  presentation?: PresentationSelection;
   text?: string;
   images?: ImageAttachment[];
   files?: FileAttachmentItem[];
@@ -218,6 +223,7 @@ function normalizeDraft(value: unknown): ComposerDraft | null {
     skills: Array.isArray(record.skills) ? record.skills.filter((skill): skill is string => typeof skill === 'string') : [],
     cliApps: Array.isArray(record.cliApps) ? record.cliApps : [],
     mcpPresets: Array.isArray(record.mcpPresets) ? record.mcpPresets : [],
+    presentation: normalizePresentationSelection(record.presentation),
   };
 }
 
@@ -233,6 +239,7 @@ function readDraft(key: string): ComposerDraft | null {
 
 function hasDraftPayload(draft: ComposerDraft): boolean {
   return !!draft.text?.trim()
+    || !!draft.presentation
     || !!draft.images?.length
     || !!draft.files?.length
     || !!draft.skills?.length
@@ -352,6 +359,8 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [selectedCliApps, setSelectedCliApps] = useState<OutboundCliAppMention[]>([]);
   const [selectedMcpPresets, setSelectedMcpPresets] = useState<OutboundMcpPresetMention[]>([]);
+  const [selectedPresentation, setSelectedPresentation] = useState<PresentationSelection>();
+  const [showPresentationPicker, setShowPresentationPicker] = useState(false);
   const [queuedPrompts, setQueuedPrompts] = useState<QueuedPrompt[]>([]);
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -387,6 +396,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   const [mcpPresetsUpdating, setMcpPresetsUpdating] = useState(false);
   const plusMenuRef = useRef<HTMLDivElement>(null);
   const skills = useDiscoveryStore((s) => s.skills);
+  const refreshDiscovery = useDiscoveryStore((s) => s.refresh);
   const useBuiltinWebSearch = useSettingsStore((s) => s.useBuiltinWebSearch);
   const setUseBuiltinWebSearch = useSettingsStore((s) => s.setUseBuiltinWebSearch);
 
@@ -596,6 +606,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   useEffect(() => {
     if (consumedPendingInputRef.current) {
       consumedPendingInputRef.current = false;
+      setSelectedPresentation(readDraft(draftKey)?.presentation);
       return;
     }
     skipDraftPersistRef.current = true;
@@ -606,6 +617,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     setSelectedSkills(draft?.skills ?? []);
     setSelectedCliApps(draft?.cliApps ?? []);
     setSelectedMcpPresets(draft?.mcpPresets ?? []);
+    setSelectedPresentation(draft?.presentation);
     window.setTimeout(() => {
       skipDraftPersistRef.current = false;
     }, 0);
@@ -614,7 +626,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   useEffect(() => {
     if (skipDraftPersistRef.current) return;
     if (isSubmittingRef.current) {
-      const hasPayload = text.trim() || images.length || files.length || selectedSkills.length || selectedCliApps.length || selectedMcpPresets.length;
+      const hasPayload = text.trim() || images.length || files.length || selectedSkills.length || selectedCliApps.length || selectedMcpPresets.length || selectedPresentation;
       if (!hasPayload) {
         isSubmittingRef.current = false;
       }
@@ -627,8 +639,9 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       skills: selectedSkills,
       cliApps: selectedCliApps,
       mcpPresets: selectedMcpPresets,
+      presentation: selectedPresentation,
     });
-  }, [draftKey, files, images, selectedCliApps, selectedMcpPresets, selectedSkills, text]);
+  }, [draftKey, files, images, selectedCliApps, selectedMcpPresets, selectedSkills, selectedPresentation, text]);
 
   useEffect(() => {
     skipQueuePersistRef.current = true;
@@ -744,6 +757,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     const refreshOnFocus = () => {
       if (document.visibilityState === 'hidden') return;
       void loadCapabilities();
+      void refreshDiscovery();
     };
     const refreshOnMcpPresetsChanged = (event: Event) => {
       const payload = (event as CustomEvent<unknown>).detail;
@@ -762,7 +776,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       document.removeEventListener('visibilitychange', refreshOnFocus);
       window.removeEventListener(MCP_PRESETS_CHANGED_EVENT, refreshOnMcpPresetsChanged);
     };
-  }, []);
+  }, [refreshDiscovery]);
 
   const activeProjectPath = visibleProjectPath(workspaceScope?.project_path ?? activeConv?.workspaceScope?.project_path ?? activeConv?.workspacePath ?? localWorkspace);
   const activeProjectSkillNames = activeProjectPath ? projectSkillBindings[normalizeProjectPath(activeProjectPath)] ?? [] : [];
@@ -780,6 +794,11 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   }, [text]);
 
   // Slash command and capability suggestions.
+  const skillPickerOpen = showPlusMenu || suggestionType === 'skill';
+  useEffect(() => {
+    if (skillPickerOpen) void refreshDiscovery();
+  }, [skillPickerOpen, refreshDiscovery]);
+
   const suggestions = useMemo((): SuggestionItem[] => {
     const trimmed = text.trim();
 
@@ -891,6 +910,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   };
 
   const resetInput = () => {
+    setSelectedPresentation(undefined);
     setText('');
     setImages([]);
     setFiles([]);
@@ -944,6 +964,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       draft.images?.length ? draft.images : undefined,
       isWelcome ? workspacePath ?? localWorkspace : undefined,
       {
+        ...(draft.presentation ? { presentation: draft.presentation } : {}),
         ...(draft.cliApps?.length ? { cliApps: draft.cliApps } : {}),
         ...(draft.mcpPresets?.length ? { mcpPresets: draft.mcpPresets } : {}),
         ...(selectedExpertTeam ? { expertTeam: selectedExpertTeam } : {}),
@@ -956,6 +977,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   };
 
   const currentDraft = (): ComposerDraft => ({
+    presentation: selectedPresentation,
     text,
     images,
     files,
@@ -1028,6 +1050,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     setSelectedSkills(prompt.skills ?? []);
     setSelectedCliApps(prompt.cliApps ?? []);
     setSelectedMcpPresets(prompt.mcpPresets ?? []);
+    setSelectedPresentation(prompt.presentation);
     requestAnimationFrame(() => {
       textareaRef.current?.focus();
       textareaRef.current?.setSelectionRange(prompt.text?.length ?? 0, prompt.text?.length ?? 0);
@@ -1625,8 +1648,8 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                     return (
                       <button
                         key={team.id}
-                        disabled={!team.available || expertTeamUpdating}
-                        title={!team.available ? team.unavailable_reason : undefined}
+                        disabled={!team.available || expertTeamUpdating || !!selectedPresentation}
+                        title={selectedPresentation ? (isEn ? 'Presentations use regular conversations' : '演示文稿需在普通会话中制作') : !team.available ? team.unavailable_reason : undefined}
                         onClick={() => {
                           const binding: ExpertTeamBinding = {
                             id: team.id,
@@ -1662,6 +1685,14 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
             </div>
           )}
         </div>
+
+        <button
+          data-plus-menu-item="presentation"
+          disabled={!!selectedExpertTeam}
+          title={selectedExpertTeam ? (isEn ? 'Start a regular conversation for presentations' : '演示文稿需在普通会话中制作') : undefined}
+          className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left font-medium text-[#29261b] hover:bg-[#f5f3ee] disabled:opacity-50"
+          onClick={() => { setShowPlusMenu(false); setActiveSubmenu(null); setShowPresentationPicker(true); }}
+        ><Presentation className="h-4 w-4 text-[#656358]" />{isEn ? 'Create presentation' : '制作演示文稿'}</button>
 
         {/* Skills */}
         <div
@@ -1951,7 +1982,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     </button>
   ) : null;
 
-  const renderBoundMcpPresets = () => boundMcpPresets.length > 0 ? (
+  const renderBoundMcpPresets = () => !selectedExpertTeam && boundMcpPresets.length > 0 ? (
     <div data-bound-mcp-presets className="inline-flex min-w-0 items-center gap-1.5">
       {boundMcpPresets.map((preset) => (
         <button
@@ -2114,6 +2145,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
 
   return (
     <>
+      {showPresentationPicker && <PresentationPicker chatId={activeConv?.id} isEnglish={isEn} onClose={() => setShowPresentationPicker(false)} onSelect={(selection) => { setSelectedPresentation(selection); textareaRef.current?.focus(); }} />}
       {/* Welcome-only: Permission Dialog */}
       {isWelcome && pendingFolder && (
         <PermissionDialog
@@ -2269,6 +2301,11 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
               </div>
             )}
 
+            {selectedPresentation && <div className="flex min-w-0 items-center gap-2 px-4 pt-3 text-xs" data-presentation-selection>
+              <Presentation className="size-4 shrink-0 text-emerald-700" />
+              <button className="min-w-0 truncate text-emerald-800" title={isEn ? 'Change presentation' : '选择模板或文稿'} onClick={() => setShowPresentationPicker(true)}>{selectedPresentation.name}{selectedPresentation.page ? ` · ${isEn ? 'Page' : '第'} ${selectedPresentation.page} ${isEn ? '' : '页'}` : ''}</button>
+              <button title={isEn ? 'Remove presentation' : '移除文稿选择'} className="grid size-6 shrink-0 place-items-center rounded hover:bg-black/5" onClick={() => setSelectedPresentation(undefined)}><X className="size-3" /></button>
+            </div>}
             {/* Textarea Row with inline command prefix */}
             <div className={cn(
               'flex items-start gap-0',
@@ -2337,7 +2374,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
             {/* Bottom Toolbar */}
             {isWelcome ? (
               /* Welcome variant: [+] + --- + Start button */
-              <div data-codex-composer-toolbar data-welcome-composer-toolbar className="flex items-center gap-2 px-4 pb-3">
+              <div data-codex-composer-toolbar data-welcome-composer-toolbar className="flex flex-wrap items-center gap-2 px-4 pb-3">
                 <div className="relative">
                   <Button
                     data-composer-action
@@ -2377,7 +2414,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
               </div>
             ) : (
               /* Chat variant: [+] + --- + Model label + Stop/Send */
-              <div data-codex-composer-toolbar className="flex items-center justify-between px-4 pb-3 pt-1">
+              <div data-codex-composer-toolbar className="flex flex-wrap items-center justify-between gap-y-2 px-4 pb-3 pt-1">
                 {/* Left Actions */}
                 <div className="flex items-center gap-0.5">
                   <div className="relative">
@@ -2403,7 +2440,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                   {renderBoundMcpPresets()}
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="ml-auto flex items-center gap-2">
                   {/* Model picker dropdown */}
                   {renderModelPicker()}
 

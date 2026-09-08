@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -57,9 +57,6 @@ export default function HelpManual({ onClose }: { onClose: () => void }) {
   const [activeId, setActiveId] = useState<HelpManualChapterId>('quick-start');
   const [query, setQuery] = useState('');
   const articleRef = useRef<HTMLDivElement>(null);
-  // Cache per-chapter rendered bodies so switching back and forth never
-  // re-parses markdown or re-runs syntax highlighting.
-  const bodyCacheRef = useRef(new Map<string, ReactNode>());
   // Defer the first body render so the modal entrance animation plays first
   // instead of being blocked by the (heavy) markdown render.
   const [bodyReady, setBodyReady] = useState(false);
@@ -109,15 +106,9 @@ export default function HelpManual({ onClose }: { onClose: () => void }) {
     : null;
 
   const activeBody = useMemo(() => {
-    if (!active) return null;
-    const key = `${active.id}:${language}`;
-    const cached = bodyCacheRef.current.get(key);
-    if (cached) return cached;
-    const copy = localizedHelpChapter(active, language);
-    const node = <MarkdownRenderer content={copy.body} />;
-    bodyCacheRef.current.set(key, node);
-    return node;
-  }, [active, language]);
+    if (!activeCopy) return null;
+    return <MarkdownRenderer content={activeCopy.body} />;
+  }, [activeCopy]);
 
   const selectChapter = (id: HelpManualChapterId) => {
     // Keep the sidebar highlight and layout responsive while the heavy

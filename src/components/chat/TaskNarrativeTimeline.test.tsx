@@ -1,8 +1,9 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TurnLifecycleStatus } from '@/core/types';
 import type { Message } from '@/types';
+import { initLanguage } from '@/i18n';
 import TaskNarrativeTimeline from './TaskNarrativeTimeline';
 
 let container: HTMLDivElement | undefined;
@@ -15,6 +16,7 @@ afterEach(() => {
   container?.remove();
   container = undefined;
   root = undefined;
+  vi.useRealTimers();
 });
 
 function render(
@@ -23,8 +25,10 @@ function render(
     isActive?: boolean;
     turnLatencyMs?: number;
     activeElapsedMs?: number;
+    activeTurnStartedAt?: number;
     hasBodyBelow?: boolean;
     turnStatus?: TurnLifecycleStatus;
+    onReviseRole?: (runId: string, roleId: string, mode: 'supplement' | 'retry') => void;
   } = {},
 ) {
   if (!container) {
@@ -38,8 +42,10 @@ function render(
       isActive={options.isActive ?? true}
       turnLatencyMs={options.turnLatencyMs}
       activeElapsedMs={options.activeElapsedMs}
+      activeTurnStartedAt={options.activeTurnStartedAt}
       hasBodyBelow={options.hasBodyBelow}
       turnStatus={options.turnStatus}
+      onReviseRole={options.onReviseRole}
     />,
   ));
   return container;
@@ -56,6 +62,40 @@ function trace(partial: Partial<Message> & Pick<Message, 'id'>): Message {
 }
 
 describe('TaskNarrativeTimeline Hope Agent-compatible UI', () => {
+  it('binds role actions to the persisted run and exact member', () => {
+    initLanguage('zh-CN');
+    const revise = vi.fn();
+    const view = render([trace({ id: 'role-plan', agentUI: {
+      kind: 'task_progress', plan_kind: 'workflow', team_id: 'asset-research-team', team_run_id: 'byd-v1',
+      steps: [{ id: 'risk-assessor', title: '风险评估师 · 李录视角（已降级）', status: 'completed' }],
+    } })], { onReviseRole: revise });
+    act(() => view.querySelector<HTMLButtonElement>('[data-hope-plan] > button')?.click());
+    const supplement = view.querySelector<HTMLButtonElement>('button[title="补充资料"]');
+    expect(supplement).not.toBeNull();
+    act(() => supplement!.click());
+    expect(revise).toHaveBeenLastCalledWith('byd-v1', 'risk-assessor', 'supplement');
+    act(() => view.querySelector<HTMLButtonElement>('button[title="仅重试该角色"]')!.click());
+    expect(revise).toHaveBeenLastCalledWith('byd-v1', 'risk-assessor', 'retry');
+  });
+  it('keeps live tool time advancing and freezes it when the turn is interrupted', () => {
+    vi.useFakeTimers();
+    const startedAt = Date.parse('2026-09-01T12:00:00Z');
+    vi.setSystemTime(startedAt + 2_000);
+    const messages = [trace({
+      id: 'live-tool',
+      timestamp: startedAt,
+      toolEvents: [{ phase: 'start', call_id: 'live-1', name: 'web_search', arguments: { query: 'market data' } }],
+    })];
+    const view = render(messages, { activeTurnStartedAt: startedAt, turnStatus: 'inProgress' });
+    expect(view.textContent).toContain('耗时 2s');
+    act(() => vi.advanceTimersByTime(3_000));
+    expect(view.textContent).toContain('耗时 5s');
+    render(messages, { isActive: false, turnStatus: 'interrupted', turnLatencyMs: 5_000 });
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(view.textContent).toContain('耗时 5s');
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('removes the old ToolStep summary and animates only the active timeline item', () => {
     const view = render([trace({
       id: 'tool-frame',

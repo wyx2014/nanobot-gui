@@ -11,6 +11,7 @@ import { useI18n } from '@/i18n';
 import { Archive, Check, Clock, Wrench, Settings, Download, Pencil, Funnel, Folder, HelpCircle, ChevronRight, MoreHorizontal, Plus, SquarePen, FolderOpen, FolderClosed, X, Search, LogOut, UserRound } from 'lucide-react';
 import NewWorkspaceDialog from '@/components/common/NewWorkspaceDialog';
 import WindowModalBackdrop from '@/components/common/WindowModalBackdrop';
+import { useVisualActivity } from '@/components/common/useVisualActivity';
 import {
   matchesConversationFilters,
   matchesConversationSearch,
@@ -53,6 +54,12 @@ interface StatusIndicatorProps {
   onComplete: () => void;
 }
 
+function RunningStatusIndicator() {
+  const ref = useRef<HTMLSpanElement>(null);
+  const active = useVisualActivity(ref);
+  return <span ref={ref} data-visual-paused={!active ? 'true' : undefined} className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />;
+}
+
 function StatusIndicator({ status, onComplete }: StatusIndicatorProps) {
   useEffect(() => {
     if (status === 'completed') {
@@ -62,7 +69,7 @@ function StatusIndicator({ status, onComplete }: StatusIndicatorProps) {
   }, [status, onComplete]);
 
   if (status === 'running') {
-    return <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />;
+    return <RunningStatusIndicator />;
   }
   if (status === 'completed') {
     return <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />;

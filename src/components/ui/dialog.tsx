@@ -31,15 +31,16 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 interface DialogContentProps
   extends React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> {
   showCloseButton?: boolean;
+  layer?: number;
 }
 
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   DialogContentProps
->(({ className, children, showCloseButton = true, ...props }, ref) => (
+>(({ className, children, showCloseButton = true, layer = 50, ...props }, ref) => (
   <DialogPortal>
-    <DialogOverlay />
-    <div className="window-modal-viewport fixed inset-0 z-50 flex items-center justify-center p-4">
+    <DialogOverlay style={{ zIndex: layer }} />
+    <div className="window-modal-viewport fixed inset-0 z-50 flex items-center justify-center p-4" style={{ zIndex: layer }}>
       <DialogPrimitive.Content
         ref={ref}
         className={cn(

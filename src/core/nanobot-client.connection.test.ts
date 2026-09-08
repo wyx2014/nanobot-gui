@@ -21,6 +21,36 @@ class FakeSocket {
 }
 
 describe("NanobotClient readiness", () => {
+  it("keeps a presentation document binding on queued wire messages", () => {
+    const socket = new FakeSocket();
+    const client = new NanobotClient({ url: 'ws://127.0.0.1:8900/', reconnect: false, socketFactory: () => socket as unknown as WebSocket });
+    const presentation = { template_id: 'guizang-swiss', document_id: 'document-001', name: '瑞士极简', sample_first: false, page: 2 };
+    client.connect();
+    socket.open();
+    client.sendMessage('chat-a', '调整第二页', undefined, { presentation });
+    socket.receive({ event: 'ready', chat_id: 'chat-a', client_id: 'desktop' });
+    expect(JSON.parse(socket.send.mock.lastCall![0])).toMatchObject({ type: 'message', presentation });
+    expect(JSON.parse(socket.send.mock.lastCall![0]).client_action_id).toMatch(/^action_[a-f0-9-]+$/);
+    client.close();
+  });
+  it("correlates revision preflight errors and never queues revision starts offline", async () => {
+    const socket = new FakeSocket();
+    const client = new NanobotClient({ url: 'ws://127.0.0.1:8900/', reconnect: false, socketFactory: () => socket as unknown as WebSocket });
+    expect(() => client.sendMessage('byd', 'update', undefined, { expertTeamRevisionPlanId: 'plan' })).toThrow();
+    client.connect();
+    socket.open();
+    socket.receive({ event: 'ready', chat_id: 'byd', client_id: 'desktop' });
+    expect(socket.send.mock.calls.every(([raw]) => JSON.parse(raw).type !== 'message')).toBe(true);
+    const context = client.revisionContext('byd', 'v1');
+    const request = JSON.parse(socket.send.mock.lastCall![0]);
+    expect(request).toMatchObject({ type: 'expert_team_revision', action: 'context', chat_id: 'byd', run_id: 'v1' });
+    socket.receive({ event: 'expert_team_revision_result', request_id: request.request_id, chat_id: 'byd', error: '原记录已变化' });
+    await expect(context).rejects.toThrow('原记录已变化');
+    const pending = client.revisionContext('byd', 'v1');
+    socket.onclose?.({ code: 1000 });
+    await expect(pending).rejects.toThrow('连接已断开');
+    client.close();
+  });
   it("keeps outbound messages queued until the gateway ready frame", async () => {
     const socket = new FakeSocket();
     const client = new NanobotClient({

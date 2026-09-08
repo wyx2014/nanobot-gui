@@ -1160,6 +1160,8 @@ export interface SendImage {
 }
 
 export interface SendOptions {
+  presentation?: import('@/core/presentations').PresentationSelection;
+  expertTeamRevisionPlanId?: string;
   imageGeneration?: OutboundImageGeneration;
   cliApps?: OutboundCliAppMention[];
   mcpPresets?: OutboundMcpPresetMention[];
@@ -2546,6 +2548,12 @@ export function useNanobotStream(
         }
         return;
       }
+      if (ev.event === 'error' && ev.detail === 'expert_team_revision_rejected') {
+        setIsStreaming(client.getRuntimeSnapshot(chatId)?.thread_status.type === 'active');
+        setIsStopping(false);
+        setStreamError({ kind: 'expert_team_revision_rejected', reason: ev.reason, chatId });
+        return;
+      }
       // ``attached`` / ``error`` frames aren't actionable here; the client
       // shell handles them separately.
     };
@@ -2600,6 +2608,7 @@ export function useNanobotStream(
     onTurnEnd,
     schedulePendingStreamFlush,
     setGoalState,
+    setIsStopping,
     setIsStreaming,
     setRunStartedAt,
     setStreamError,
@@ -2630,6 +2639,7 @@ export function useNanobotStream(
             role: "user",
             content,
             createdAt: Date.now(),
+            ...(options?.presentation ? { presentation: options.presentation } : {}),
             ...(previews ? { images: previews } : {}),
             ...(options?.interactivePromptAnswer ? { interactivePromptAnswer: options.interactivePromptAnswer } : {}),
             ...(options?.cliApps?.length ? { cliApps: options.cliApps } : {}),

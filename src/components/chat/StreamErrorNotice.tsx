@@ -54,6 +54,8 @@ export default function StreamErrorNotice({
 
 function resolveCopy(error: StreamError): { title: string; body: string } {
   switch (error.kind) {
+    case 'expert_team_revision_rejected':
+      return { title: '局部更新未启动', body: error.reason || '请重新打开补充窗口确认更新范围。' };
     case 'message_too_big':
       return {
         title: '消息过大',

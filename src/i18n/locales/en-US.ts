@@ -91,6 +91,8 @@ const enUS: TranslationDict = {
     inputPlaceholderMidTask: 'Add instructions (TP Cowork reads next turn)...',
     appLoading: 'TP Cowork is loading',
     gatewayStarting: 'TP Cowork is starting',
+    gatewayStartFailed: 'TP Cowork could not start',
+    gatewayDiagnostics: 'Startup logs',
     mcpWarming: 'The assistant is ready. Connectors are warming in the background.',
     mcpUnavailable: 'Some connectors failed to start. Core chat remains available.',
     start: 'Start',

@@ -3,6 +3,7 @@ import { useConversationWorkbenchStore } from '@/stores/conversationWorkbenchSto
 import { useThreadResourceStore } from '@/stores/threadResourceStore';
 import { useTurnPlanStore } from '@/stores/turnPlanStore';
 import { conversationIdToSessionKey } from '@/core/sessionKey';
+import { recordDiagnostic } from '@/core/diagnostics';
 
 export function runtimeSnapshotFromThread(
   resource: ThreadResource,
@@ -29,13 +30,18 @@ export function projectThreadResource(
   const expectedSessionKey = conversationIdToSessionKey(conversationId);
   const actualSessionKey = conversationIdToSessionKey(resource.session_key);
   if (expectedSessionKey !== actualSessionKey) {
+    recordDiagnostic({ event_name: 'renderer.snapshot_rejected', chat_id: conversationId, level: 'error', details: { error_code: 'CROSS_SESSION_SNAPSHOT' } });
     console.error('[ThreadResourceProjection] rejected cross-session snapshot', {
       expectedSessionKey,
       actualSessionKey,
     });
     return null;
   }
-  if (!useThreadResourceStore.getState().replaceSnapshot(resource)) return null;
+  if (!useThreadResourceStore.getState().replaceSnapshot(resource)) {
+    recordDiagnostic({ event_name: 'renderer.snapshot_rejected', chat_id: conversationId, details: { stage: 'revision_guard' } });
+    return null;
+  }
+  recordDiagnostic({ event_name: 'renderer.snapshot_applied', chat_id: conversationId, session_id: resource.session_id ?? undefined, details: { snapshot_revision: resource.runtime_snapshot_revision, runtime_epoch: resource.runtime_epoch } });
 
   const planStore = useTurnPlanStore.getState();
   planStore.clearConversation(conversationId);

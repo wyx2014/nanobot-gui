@@ -99,10 +99,11 @@ describe('AppTitlebarMenu', () => {
       helpManualOpen: true,
     });
 
-    act(() => buttonWithText('意见反馈').click());
+    expect(container?.textContent).not.toContain('意见反馈');
+    act(() => buttonWithText('导出诊断包').click());
     expect(useSettingsStore.getState()).toMatchObject({
       viewMode: 'chat',
-      feedbackDialogOpen: true,
+      diagnosticsDialogOpen: true,
     });
   });
 });

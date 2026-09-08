@@ -40,6 +40,8 @@ import type {
 import type { ScheduleConfig } from "@/types/schedule";
 import { isProtectedBuiltinModelProvider } from "@/config/builtinModelServices";
 import { fetchWithTimeout } from "./bootstrap";
+import { recordDiagnostic, startDiagnostic } from './diagnostics';
+import { diagnosticError, diagnosticId, diagnosticRoute } from '../shared/diagnostics';
 
 const API_READ_TIMEOUT_MS = 20_000;
 
@@ -76,29 +78,42 @@ export async function fetchGatewayResponse(
   init?: RequestInit,
   timeoutMs: number = 0,
 ): Promise<Response> {
-  const execute = (currentToken: string) => fetchWithTimeout(
-    url,
-    {
-      ...(init ?? {}),
-      headers: {
-        ...(init?.headers ?? {}),
-        Authorization: `Bearer ${currentToken}`,
-      },
-      credentials: "same-origin",
-    },
-    timeoutMs,
-  );
+  const actionId = diagnosticId('action');
+  let attempt = 0;
+  const execute = async (currentToken: string) => {
+    const request_id = diagnosticId('http');
+    const operation = startDiagnostic('http.request', { request_id, client_action_id: actionId,
+      details: { route: diagnosticRoute(url), method: init?.method ?? 'GET', attempt: ++attempt, timeout_ms: timeoutMs } });
+    try {
+      const response = await fetchWithTimeout(url, {
+        ...(init ?? {}),
+        headers: { ...(init?.headers ?? {}), Authorization: `Bearer ${currentToken}`,
+          'X-Request-Id': request_id, 'X-Client-Action-Id': actionId },
+        credentials: 'same-origin',
+      }, timeoutMs);
+      operation.finish(response.ok ? 'completed' : 'failed', { status_code: response.status });
+      return response;
+    } catch (cause) {
+      operation.finish(init?.signal?.aborted ? 'cancelled' : 'failed', diagnosticError(cause));
+      throw cause;
+    }
+  };
 
-  let res = await execute(token);
+  const res = await execute(token);
   if (res.status !== 401 || !tokenProvider) return res;
 
+  let refreshedToken: string;
   try {
-    const refreshedToken = await tokenProvider();
-    res = await execute(refreshedToken);
+    recordDiagnostic({ event_name: 'http.auth_refresh', client_action_id: actionId, status: 'started' });
+    refreshedToken = await tokenProvider();
+    recordDiagnostic({ event_name: 'http.auth_refresh', client_action_id: actionId, status: 'completed' });
   } catch (refreshErr) {
+    recordDiagnostic({ event_name: 'http.auth_refresh', client_action_id: actionId, status: 'failed', level: 'error', details: diagnosticError(refreshErr) });
     console.error("Token refresh failed during 401 retry:", refreshErr);
+    return res;
   }
-  return res;
+  try { return await execute(refreshedToken); }
+  catch { return res; }
 }
 
 async function request<T>(
@@ -115,6 +130,8 @@ async function request<T>(
   }
   const contentType = res.headers?.get?.("content-type") ?? "";
   if (contentType && !contentType.toLowerCase().includes("application/json")) {
+    recordDiagnostic({ event_name: 'http.invalid_response', request_id: res.headers?.get?.('X-Request-Id') ?? undefined,
+      status: 'failed', level: 'error', details: { route: diagnosticRoute(url), status_code: res.status, error_code: 'NON_JSON_RESPONSE' } });
     const text = typeof res.text === "function" ? await res.text() : "";
     const isHtml = text.trimStart().toLowerCase().startsWith("<!doctype");
     throw new ApiError(
@@ -124,7 +141,14 @@ async function request<T>(
         : "Gateway returned a non-JSON response.",
     );
   }
-  return (await res.json()) as T;
+  try {
+    return (await res.json()) as T;
+  } catch (cause) {
+    recordDiagnostic({ event_name: 'http.invalid_response', request_id: res.headers?.get?.('X-Request-Id') ?? undefined,
+      status: 'failed', level: 'error', details: { route: diagnosticRoute(url), status_code: res.status,
+        ...diagnosticError(cause), error_code: 'JSON_READ_FAILED' } });
+    throw cause;
+  }
 }
 
 function mcpValuesHeader(values: Record<string, unknown>): HeadersInit | undefined {
@@ -1067,6 +1091,17 @@ export async function fetchMcpPresets(
   );
 }
 
+export async function requestMcpEditor(
+  action: import('./types').McpEditorAction,
+  values: Record<string, unknown> = {},
+  signal?: AbortSignal,
+): Promise<McpPresetsPayload> {
+  const { getNanobotClient } = await import('./nanobotClient');
+  const client = getNanobotClient();
+  await client.waitUntilReady();
+  return client.mcpSettings(action, values, signal);
+}
+
 export async function fetchProviderModels(
   token: string,
   provider:
@@ -1437,7 +1472,7 @@ export async function fetchSecurityPolicy(
   token: string,
   base: string,
 ): Promise<SecurityPolicyPayload> {
-  return request<SecurityPolicyPayload>(`${base}/api/security/policy`, token);
+  return request<SecurityPolicyPayload>(`${base}/api/security/policy`, token, { cache: "no-store" }, API_READ_TIMEOUT_MS);
 }
 
 export async function updateSecurityPolicy(
@@ -1448,7 +1483,7 @@ export async function updateSecurityPolicy(
   return request<SecurityPolicyPayload>(`${base}/api/security/policy/update`, token, {
     cache: "no-store",
     headers: { "X-Nanobot-Security-Values": asciiJsonStringify(values) },
-  });
+  }, API_READ_TIMEOUT_MS);
 }
 
 export async function resetSecurityPolicy(
@@ -1463,7 +1498,7 @@ export async function fetchSecurityAudit(
   base: string,
   query: SecurityAuditQuery = {},
 ): Promise<SecurityAuditPage> {
-  return request<SecurityAuditPage>(`${base}/api/security/audit${securityAuditQuery(query)}`, token);
+  return request<SecurityAuditPage>(`${base}/api/security/audit${securityAuditQuery(query)}`, token, { cache: "no-store" }, API_READ_TIMEOUT_MS);
 }
 
 export async function exportSecurityAudit(

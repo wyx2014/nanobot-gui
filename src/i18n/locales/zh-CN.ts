@@ -91,6 +91,8 @@ const zhCN: TranslationDict = {
     inputPlaceholderMidTask: '追加指令...',
     appLoading: 'TP Cowork 加载中',
     gatewayStarting: 'TP Cowork 启动中',
+    gatewayStartFailed: 'TP Cowork 启动失败',
+    gatewayDiagnostics: '查看启动日志',
     mcpWarming: '本地助手已就绪，连接器正在后台启动',
     mcpUnavailable: '部分连接器启动失败，基础对话仍可正常使用',
     start: '开始',

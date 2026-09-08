@@ -213,7 +213,7 @@ export default function ExpertTeamsSection() {
     }
   };
 
-  const useTeam = (team: ExpertTeamSummary | ExpertTeamDetail) => {
+  const startChatWithTeam = (team: ExpertTeamSummary | ExpertTeamDetail) => {
     startNewConversation({
       expertTeam: {
         id: team.id,
@@ -257,7 +257,7 @@ export default function ExpertTeamsSection() {
               </div>
             </div>
             <button
-              onClick={() => useTeam(detail)}
+              onClick={() => startChatWithTeam(detail)}
               disabled={!detail.available}
               className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-[#d97757] px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-[#c96747] disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -418,7 +418,7 @@ export default function ExpertTeamsSection() {
                     {detailLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ChevronRight className="h-3.5 w-3.5" />}
                   </button>
                   <button
-                    onClick={() => useTeam(team)}
+                    onClick={() => startChatWithTeam(team)}
                     disabled={!team.available}
                     className="inline-flex items-center gap-1.5 rounded-lg bg-[#29261b] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#423e31] disabled:opacity-40"
                   >

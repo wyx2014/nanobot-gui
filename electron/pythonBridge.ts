@@ -11,6 +11,8 @@ import {
   type NanobotDiagnosticSource,
 } from './nanobotDiagnostics';
 import { StartupLog } from './startupLog';
+import { appLaunchId, operationalLogHealth, recordMainDiagnostic } from './operationalLog';
+import { diagnosticError, diagnosticId } from '../src/shared/diagnostics';
 
 const NANOBOT_PORT = 8900;
 // A freshly installed standalone Python runtime can take much longer on
@@ -86,6 +88,13 @@ export class PythonBridge {
     return this._tokenSecret;
   }
 
+  getOperationalSnapshot(): Record<string, unknown> {
+    return { captured_at: new Date().toISOString(), ready: this._ready, starting: this.isStarting,
+      pid: this.proc?.pid ?? null, restart_count: this._restarts, port: NANOBOT_PORT,
+      last_exit_code: this._lastExit?.code ?? null, last_exit_signal: this._lastExit?.signal ?? null,
+      process_running: Boolean(this.proc && this.proc.exitCode === null && !this.proc.killed) };
+  }
+
   recordMainStartupEvent(message: string): void {
     this.recordDiagnostic('main', message);
   }
@@ -97,13 +106,18 @@ export class PythonBridge {
       return this._startingPromise;
     }
     this._stopping = false;
+    const request_id = diagnosticId('startup');
+    const started = performance.now();
+    recordMainDiagnostic({ event_name: 'bridge.start', request_id, status: 'started' });
     this._restarts = 0;
     this._lastError = null;
     this._lastExit = null;
     this._startingPromise = this._startWithRetries();
     try {
       await this._startingPromise;
+      recordMainDiagnostic({ event_name: 'bridge.start', request_id, status: 'completed', duration_ms: performance.now() - started });
     } catch (error) {
+      recordMainDiagnostic({ event_name: 'bridge.start', request_id, status: 'failed', level: 'error', duration_ms: performance.now() - started, details: diagnosticError(error) });
       const message = error instanceof Error ? error.message : String(error);
       this._ready = false;
       this._lastError = message;
@@ -132,6 +146,7 @@ export class PythonBridge {
         }
 
         retryCount += 1;
+        recordMainDiagnostic({ event_name: 'bridge.start_retry', level: 'warning', details: { attempt: retryCount, delay_ms: RESTART_DELAY_MS } });
         this._restarts = retryCount;
         const message = error instanceof Error ? error.message : String(error);
         const retryMessage =
@@ -165,6 +180,12 @@ export class PythonBridge {
       console.log('[PythonBridge] Existing managed nanobot API is healthy');
       this._ready = true;
       return;
+    }
+    // A startup timeout can leave Python alive without a listening gateway.
+    // Dispose of that child before a retry replaces its process handle.
+    if (this.isManagedProcessRunning()) {
+      await this.stop();
+      this._stopping = false;
     }
     if (await this.isPortListening()) {
       console.warn(`[PythonBridge] Port ${NANOBOT_PORT} is already in use; clearing external process before start.`);
@@ -209,6 +230,7 @@ export class PythonBridge {
         // desktop gateway path. This matters most on Windows cold starts,
         // where every additional Python module is inspected by Defender.
         NANOBOT_DESKTOP_GATEWAY: '1',
+        NANOBOT_APP_LAUNCH_ID: appLaunchId,
         // Write nanobot's own logs to a file so they don't pollute Electron's stdout
         NANOBOT_LOG_FILE: path.join(app.getPath('userData'), 'nanobot.log'),
         NANOBOT_EXPERT_TEAMS_DIR: expertTeamsDir,
@@ -232,6 +254,7 @@ export class PythonBridge {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     this.proc = child;
+    recordMainDiagnostic({ event_name: 'bridge.spawned', details: { pid: child.pid } });
     let becameReady = false;
     this.recordDiagnostic('bridge', `Spawned nanobot process (pid=${child.pid ?? 'pending'}, port=${NANOBOT_PORT})`);
 
@@ -260,6 +283,7 @@ export class PythonBridge {
     });
 
     child.on('exit', (code, signal) => {
+      recordMainDiagnostic({ event_name: 'bridge.exited', level: this._stopping ? 'info' : 'error', details: { code, signal, intentional: this._stopping } });
       console.warn('[PythonBridge] nanobot exited', { code, signal });
       if (this.proc !== child) return;
       this._ready = false;
@@ -315,6 +339,7 @@ export class PythonBridge {
     const startupLogPath = path.join(app.getPath('userData'), 'startup.log');
     const logTail = this.readLogTail(logPath);
     const startupLogTail = this.readLogTail(startupLogPath);
+    const desktopLogTail = this.readLogTail(path.join(app.getPath('userData'), 'desktop-events.jsonl'));
     const exactSecrets = [this._tokenSecret];
     const processRunning = Boolean(this.proc && this.proc.exitCode === null && !this.proc.killed);
     const status: NanobotDiagnosticsSnapshot['status'] = this._ready
@@ -332,6 +357,8 @@ export class PythonBridge {
     const metadata = [
       'TPCowork diagnostics',
       `captured_at=${capturedAt}`,
+      `app_launch_id=${appLaunchId}`,
+      `desktop_log_health=${JSON.stringify(operationalLogHealth())}`,
       `status=${status}`,
       `ready=${this._ready}`,
       `starting=${this.isStarting}`,
@@ -356,7 +383,8 @@ export class PythonBridge {
     const text = redactNanobotDiagnosticText(
       `${metadata}\n\n[bridge / process output]\n${bridgeOutput}`
       + `\n\n[startup.log tail]\n${startupFileOutput}`
-      + `\n\n[nanobot.log tail]\n${fileOutput}`,
+      + `\n\n[nanobot.log tail]\n${fileOutput}`
+      + `\n\n[desktop-events.jsonl tail]\n${desktopLogTail || '(no operational events yet)'}`,
       exactSecrets,
     );
 

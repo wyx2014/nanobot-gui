@@ -159,7 +159,7 @@ describe('fetchSessionArtifacts', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(fetchSessionArtifacts('token', 'websocket:chat-3', ''))
-      .rejects.toThrow('explicit nanobot gateway base URL');
+      .rejects.toThrow('explicit local service base URL');
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

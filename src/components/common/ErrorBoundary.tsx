@@ -1,6 +1,8 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 import { Button } from '../ui/button';
+import { recordDiagnostic } from '@/core/diagnostics';
+import { diagnosticError } from '@/shared/diagnostics';
 
 interface Props {
     children: ReactNode;
@@ -23,6 +25,7 @@ export class ErrorBoundary extends Component<Props, State> {
     }
 
     public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+        recordDiagnostic({ event_name: 'renderer.render_failed', status: 'failed', level: 'error', details: { ...diagnosticError(error), component_stack: errorInfo.componentStack } });
         console.error('Uncaught error:', error, errorInfo);
     }
 

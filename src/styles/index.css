@@ -1551,7 +1551,7 @@ input[type="range"].slider-filled::-moz-range-thumb {
   background: rgba(205, 73, 73, 0.18);
 }
 
-.dark [data-skills-surface] [role="switch"]:hover {
+.dark :is([data-skills-surface], [data-mcp-surface]) [role="switch"]:hover {
   filter: brightness(1.1);
   box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.1);
 }
@@ -1564,6 +1564,9 @@ input[type="range"].slider-filled::-moz-range-thumb {
 }
 
 .hope-text-shimmer {
+  /* Repaint the moving highlight within its small text layer. */
+  contain: paint;
+  will-change: transform;
   background: linear-gradient(
     90deg,
     currentColor 40%,
@@ -1575,6 +1578,36 @@ input[type="range"].slider-filled::-moz-range-thumb {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent !important;
   animation: hope-text-shimmer 2.5s ease-in-out infinite;
+}
+
+html[data-window-hidden] *,
+html[data-window-hidden] *::before,
+html[data-window-hidden] *::after,
+[data-visual-paused="true"],
+[data-visual-paused="true"] *,
+[data-visual-paused="true"] *::before,
+[data-visual-paused="true"] *::after {
+  animation-play-state: paused !important;
+}
+
+/* Applied only by a development renderer; task data and controls stay live. */
+html[data-dev-low-power] *,
+html[data-dev-low-power] *::before,
+html[data-dev-low-power] *::after {
+  animation: none !important;
+  transition: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  will-change: auto !important;
+}
+
+html[data-dev-low-power] .hope-text-shimmer {
+  background: none !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+html[data-dev-low-power] [data-hope-ripple] {
+  display: none;
 }
 
 .dark [data-hope-toolstep] {
@@ -1605,36 +1638,36 @@ input[type="range"].slider-filled::-moz-range-thumb {
   }
 }
 
-.dark [data-skill-card] {
+.dark :is([data-skill-card], [data-mcp-card]) {
   color: #eeeae2;
   background: #242424;
   border-color: rgba(255, 255, 255, 0.11);
 }
 
-.dark [data-skill-card]:hover {
+.dark :is([data-skill-card], [data-mcp-card]):hover {
   background: #292929;
   border-color: rgba(255, 255, 255, 0.2);
 }
 
-.dark [data-skill-card][data-enabled="false"] {
+.dark :is([data-skill-card], [data-mcp-card])[data-enabled="false"] {
   opacity: 1;
   background: #202020;
 }
 
-.dark [data-skill-card][data-enabled="false"] :is([data-skill-name], [data-skill-description], [data-skill-icon]) {
+.dark :is([data-skill-card], [data-mcp-card])[data-enabled="false"] :is([data-skill-name], [data-skill-description], [data-skill-icon], [data-mcp-name], [data-mcp-description], [data-mcp-icon]) {
   opacity: 0.58;
 }
 
-.dark [data-skill-icon] {
+.dark :is([data-skill-icon], [data-mcp-icon]) {
   color: #bdb8af;
   background: #333230;
 }
 
-.dark [data-skill-name] {
+.dark :is([data-skill-name], [data-mcp-name]) {
   color: #f1ede5;
 }
 
-.dark [data-skill-description] {
+.dark :is([data-skill-description], [data-mcp-description]) {
   color: #aaa69d;
 }
 
@@ -1650,11 +1683,11 @@ input[type="range"].slider-filled::-moz-range-thumb {
   border-color: rgba(85, 178, 124, 0.28);
 }
 
-.dark [data-skills-surface] [role="switch"][aria-checked="false"] {
+.dark :is([data-skills-surface], [data-mcp-surface]) [role="switch"][aria-checked="false"] {
   background: #55514b;
 }
 
-.dark [data-skills-surface] [role="switch"] > span {
+.dark :is([data-skills-surface], [data-mcp-surface]) [role="switch"] > span {
   background: #f0ece4;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
 }

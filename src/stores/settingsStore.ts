@@ -279,7 +279,7 @@ interface SettingsState {
   guideInstallationId: string; // persisted: installation that completed the guide
   guideOpen: boolean; // ephemeral: manually replay the guide from Help
   helpManualOpen: boolean; // ephemeral: display the full user manual over Help & Feedback
-  feedbackDialogOpen: boolean; // ephemeral: display feedback form above the current view
+  diagnosticsDialogOpen: boolean; // ephemeral: export diagnostics above the current view
   // Behavior sensor
   behaviorSensorEnabled: boolean;
   // Computer Use (screenshot + keyboard/mouse simulation)
@@ -367,8 +367,8 @@ interface SettingsActions {
   closeGuide: () => void;
   openHelpManual: () => void;
   closeHelpManual: () => void;
-  openFeedbackDialog: () => void;
-  closeFeedbackDialog: () => void;
+  openDiagnosticsDialog: () => void;
+  closeDiagnosticsDialog: () => void;
   setBehaviorSensorEnabled: (enabled: boolean) => void;
   setComputerUseEnabled: (enabled: boolean) => void;
   // New embedding actions
@@ -478,7 +478,7 @@ export const useSettingsStore = create<SettingsStore>()(
       guideInstallationId: '',
       guideOpen: false,
       helpManualOpen: false,
-      feedbackDialogOpen: false,
+      diagnosticsDialogOpen: false,
       behaviorSensorEnabled: false,
       computerUseEnabled: false,
       // Embedding settings
@@ -583,8 +583,8 @@ export const useSettingsStore = create<SettingsStore>()(
         helpManualOpen: true,
       }),
       closeHelpManual: () => set({ helpManualOpen: false }),
-      openFeedbackDialog: () => set({ feedbackDialogOpen: true }),
-      closeFeedbackDialog: () => set({ feedbackDialogOpen: false }),
+      openDiagnosticsDialog: () => set({ diagnosticsDialogOpen: true, helpManualOpen: false }),
+      closeDiagnosticsDialog: () => set({ diagnosticsDialogOpen: false }),
       setBehaviorSensorEnabled: (behaviorSensorEnabled) => set({ behaviorSensorEnabled }),
       setComputerUseEnabled: (computerUseEnabled) => set({ computerUseEnabled }),
       setEmbeddingProvider: (embeddingProvider) => set({ embeddingProvider }),

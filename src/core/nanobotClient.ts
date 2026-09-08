@@ -649,6 +649,7 @@ export function mapWebuiThreadToGuiMessages(webuiMessages: UIMessage[]): Message
         loopId: currentLoopId,
         interactivePromptAnswer: msg.interactivePromptAnswer,
         cliApps: msg.cliApps,
+        presentation: msg.presentation,
         mcpPresets: msg.mcpPresets,
         skills: msg.skills,
         mediaAttachments: [

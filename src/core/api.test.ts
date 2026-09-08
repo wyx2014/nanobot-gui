@@ -280,6 +280,25 @@ describe("schedule run history", () => {
 });
 
 describe("security protection API", () => {
+  it.each(["policy", "update", "audit"])("times out a stalled security %s request", async (operation) => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockImplementation(() => new Promise<Response>(() => {}));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const pending = operation === "policy"
+        ? fetchSecurityPolicy("token", "http://127.0.0.1:8900")
+        : operation === "update"
+          ? updateSecurityPolicy("token", "http://127.0.0.1:8900", { network_block_all: true })
+          : fetchSecurityAudit("token", "http://127.0.0.1:8900");
+      const result = expect(pending).rejects.toThrow("Request timed out after 20000ms");
+      await vi.advanceTimersByTimeAsync(20_000);
+      await result;
+      expect(fetchMock.mock.calls[0]?.[1].signal.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("uses the explicit gateway origin for policy reads and updates", async () => {
     const policy = {
       protection_enabled: true,

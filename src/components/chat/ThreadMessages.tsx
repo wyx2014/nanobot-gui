@@ -3,6 +3,7 @@ import type { Message } from '@/types';
 import type { TurnLifecycleStatus } from '@/core/types';
 import MessageBubble from './MessageBubble';
 import TaskNarrativeTimeline from './TaskNarrativeTimeline';
+import type { RevisionAction } from './ExpertTeamRevisionDialog';
 import {
   createActivityTimelineProjector,
   normalizeActivityTimeline,
@@ -13,8 +14,10 @@ interface ThreadMessagesProps {
   messages: Message[];
   isStreaming?: boolean;
   activeTurnElapsedMs?: number;
+  activeTurnStartedAt?: number | null;
   latestTurnStatus?: TurnLifecycleStatus;
   onEditUserMessage?: (content: string) => void;
+  onReviseRole?: RevisionAction;
 }
 
 export type DisplayUnit = ChatDisplayUnit;
@@ -37,8 +40,10 @@ function ThreadMessages({
   messages,
   isStreaming = false,
   activeTurnElapsedMs,
+  activeTurnStartedAt,
   latestTurnStatus,
   onEditUserMessage,
+  onReviseRole,
 }: ThreadMessagesProps) {
   const [projector] = useState(createActivityTimelineProjector);
   const units = useMemo(() => projector.project(messages), [messages, projector]);
@@ -81,7 +86,9 @@ function ThreadMessages({
                 hasBodyBelow={hasBodyBelow}
                 turnLatencyMs={unit.turnLatencyMs}
                 activeElapsedMs={isLiveActivity ? activeTurnElapsedMs : undefined}
+                activeTurnStartedAt={isLiveActivity ? activeTurnStartedAt : undefined}
                 turnStatus={latestTurnActivityIndices.has(index) ? latestTurnStatus : undefined}
+                onReviseRole={isStreaming ? undefined : onReviseRole}
               />
             ) : (
               <MessageBubble

@@ -1,4 +1,7 @@
 import {
+  createContext,
+  memo,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -34,8 +37,12 @@ import {
   type TaskNarrativeEntry,
   type TaskNarrativeStatus,
 } from '@/core/nanobot/taskNarrativeTimeline';
-import { formatTaskDuration } from '@/utils/taskDuration';
+import { normalizeTaskTimestamp } from '@/utils/taskDuration';
+import { useVisualActivity } from '@/components/common/useVisualActivity';
 import MarkdownRenderer from './MarkdownRenderer';
+import TaskElapsedTime from './TaskElapsedTime';
+import type { RevisionAction } from './ExpertTeamRevisionDialog';
+import { RoleRevisionActions } from './ExpertTeamRevisionActions';
 
 interface TaskNarrativeTimelineProps {
   messages: Message[];
@@ -43,7 +50,9 @@ interface TaskNarrativeTimelineProps {
   hasBodyBelow?: boolean;
   turnLatencyMs?: number;
   activeElapsedMs?: number;
+  activeTurnStartedAt?: number | null;
   turnStatus?: TurnLifecycleStatus;
+  onReviseRole?: RevisionAction;
 }
 
 type HopeUnitKind = 'thinking' | 'tool' | 'tool-group' | 'plan' | 'loading';
@@ -78,14 +87,17 @@ interface HopeRenderItem {
  * as ordered message blocks. Only the last live block receives the timeline
  * activity marker, and a completed run folds only after assistant text begins.
  */
-export default function TaskNarrativeTimeline({
+export default memo(function TaskNarrativeTimeline({
   messages,
   isActive = false,
   hasBodyBelow = false,
   turnLatencyMs,
   activeElapsedMs,
+  activeTurnStartedAt,
   turnStatus,
+  onReviseRole,
 }: TaskNarrativeTimelineProps) {
+  const timelineRef = useRef<HTMLElement>(null);
   const entries = useMemo(
     () => removeEmptyThinkingBeforeNarration(buildTaskNarrativeEntries(messages)),
     [messages],
@@ -99,13 +111,6 @@ export default function TaskNarrativeTimeline({
     turnStatus === 'completed'
     || (turnStatus === undefined && hasBodyBelow)
   );
-  const [, refreshClock] = useState(0);
-
-  useEffect(() => {
-    if (!activityActive || activeElapsedMs !== undefined) return;
-    const timer = window.setInterval(() => refreshClock((value) => value + 1), 100);
-    return () => window.clearInterval(timer);
-  }, [activeElapsedMs, activityActive]);
 
   const units = appendHopeLoadingUnit(baseUnits, activityActive);
   const activeUnitKey = activityActive ? units.at(-1)?.key : undefined;
@@ -123,17 +128,21 @@ export default function TaskNarrativeTimeline({
     overallCompleted,
     terminalTurn,
   );
+  const visualActive = useVisualActivity(timelineRef, items.length > 0);
 
   if (items.length === 0) return null;
 
   return (
     <section
+      ref={timelineRef}
+      data-visual-paused={!visualActive ? 'true' : undefined}
       data-hope-toolstep
       data-active={activityActive ? 'true' : 'false'}
       className="w-full py-0.5"
       aria-label="任务执行过程"
       aria-live={activityActive ? 'polite' : 'off'}
     >
+      <RevisionActionContext.Provider value={onReviseRole}>
       <HopeMessageTimeline>
         {items.map((item) => (
           <HopeMessageTimelineItem
@@ -149,18 +158,50 @@ export default function TaskNarrativeTimeline({
                 overallCompleted={overallCompleted}
               />
             ) : (
-              <HopeUnitContent
-                unit={item.units[0]}
-                active={item.active || item.key === liveThinkingUnitKey}
-                elapsedMs={item.elapsedMs}
-                overallCompleted={overallCompleted}
-              />
+              <DurationStartContext.Provider value={
+                activityActive && !terminalTurn && activeElapsedMs === undefined
+                  ? unitClockStart(item.units[0], item.active ? activeTurnStartedAt : undefined)
+                  : undefined
+              }>
+                <HopeUnitContent
+                  unit={item.units[0]}
+                  active={item.active || item.key === liveThinkingUnitKey}
+                  elapsedMs={item.elapsedMs}
+                  overallCompleted={overallCompleted}
+                />
+              </DurationStartContext.Provider>
             )}
           </HopeMessageTimelineItem>
         ))}
       </HopeMessageTimeline>
+      </RevisionActionContext.Provider>
     </section>
   );
+});
+
+const DurationStartContext = createContext<number | undefined>(undefined);
+const RevisionActionContext = createContext<RevisionAction | undefined>(undefined);
+
+function NarrativeDuration({ elapsedMs, className, prefix = '耗时 ', live = true }: {
+  elapsedMs?: number;
+  className: string;
+  prefix?: string;
+  live?: boolean;
+}) {
+  const clockStart = useContext(DurationStartContext);
+  const startedAt = live ? clockStart : undefined;
+  if (startedAt === undefined && !(elapsedMs !== undefined && elapsedMs > 0)) return null;
+  return <TaskElapsedTime startedAt={startedAt} elapsedMs={elapsedMs} className={className} prefix={prefix} hideZero />;
+}
+
+function unitClockStart(unit: HopeUnit, turnStartedAt?: number | null): number | undefined {
+  if (unit.status !== 'running' || unit.entries.some((entry) => (
+    validDuration(entry.durationMs) || normalizedTimestamp(entry.completedAt) !== undefined
+  ))) return undefined;
+  const starts = unit.entries
+    .map((entry) => normalizedTimestamp(entry.startedAt ?? entry.occurredAt))
+    .filter((value): value is number => value !== undefined);
+  return starts.length ? Math.min(...starts) : normalizeTaskTimestamp(turnStartedAt);
 }
 
 function HopeMessageTimeline({ children }: { children: ReactNode }) {
@@ -328,11 +369,7 @@ function HopeThinkingBlock({
         <span data-hope-thinking-label className={cn(active && 'hope-text-shimmer')}>
           {active ? '正在思考' : '已思考'}
         </span>
-        {elapsedMs !== undefined && elapsedMs > 0 ? (
-          <span className="text-[10px] tabular-nums text-muted-foreground/70">
-            耗时 {formatTaskDuration(elapsedMs)}
-          </span>
-        ) : null}
+        <NarrativeDuration elapsedMs={elapsedMs} className="text-[10px] tabular-nums text-muted-foreground/70" />
         {active ? (
           <span className="text-[10px] text-purple-400 motion-safe:animate-pulse">···</span>
         ) : null}
@@ -439,14 +476,10 @@ function HopeToolCallBlock({
               {groupMemberStatusLabel(entry.status)}
             </span>
           ) : null}
-          {elapsedMs !== undefined && elapsedMs > 0 ? (
-            <span className={cn(
+          <NarrativeDuration elapsedMs={elapsedMs} live={!groupMember} className={cn(
               'shrink-0 text-[10px] tabular-nums text-muted-foreground/60',
               !groupMember && 'ml-auto',
-            )}>
-              耗时 {formatTaskDuration(elapsedMs)}
-            </span>
-          ) : null}
+            )} />
         </button>
         {hasDetails ? (
           <button
@@ -533,11 +566,7 @@ function HopeToolCallGroup({
         >
           {displayLabel}
         </span>
-        {elapsedMs !== undefined && elapsedMs > 0 ? (
-          <span className="ml-auto shrink-0 text-[10px] tabular-nums text-muted-foreground/60">
-            耗时 {formatTaskDuration(elapsedMs)}
-          </span>
-        ) : null}
+        <NarrativeDuration elapsedMs={elapsedMs} className="ml-auto shrink-0 text-[10px] tabular-nums text-muted-foreground/60" />
       </button>
 
       {expanded ? (
@@ -572,6 +601,7 @@ function HopePlanBlock({
 }) {
   const [manualOpen, setManualOpen] = useState<boolean | null>(null);
   const steps = entry.planSteps ?? [];
+  const onReviseRole = useContext(RevisionActionContext);
   const open = manualOpen ?? active;
 
   return (
@@ -595,11 +625,7 @@ function HopePlanBlock({
         {entry.detail ? (
           <span className="min-w-0 truncate text-muted-foreground/60">{entry.detail}</span>
         ) : null}
-        {elapsedMs !== undefined && elapsedMs > 0 ? (
-          <span className="ml-auto shrink-0 text-[10px] tabular-nums text-muted-foreground/60">
-            耗时 {formatTaskDuration(elapsedMs)}
-          </span>
-        ) : null}
+        <NarrativeDuration elapsedMs={elapsedMs} className="ml-auto shrink-0 text-[10px] tabular-nums text-muted-foreground/60" />
       </button>
 
       {open && steps.length > 0 ? (
@@ -608,7 +634,7 @@ function HopePlanBlock({
             {steps.map((step) => {
               const Icon = planStepIcon(step.status);
               return (
-                <li key={step.id} className="flex min-w-0 items-center gap-1.5 text-[11px] leading-5">
+                <li key={step.id} className="flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] leading-5">
                   <Icon
                     className={cn(
                       'h-3 w-3 shrink-0 text-muted-foreground/50',
@@ -619,13 +645,18 @@ function HopePlanBlock({
                   />
                   <span
                     className={cn(
-                      'min-w-0 truncate text-muted-foreground/70',
+                      'min-w-0 flex-1 break-words text-muted-foreground/70',
                       step.status === 'running' && 'font-medium text-muted-foreground',
                     )}
                   >
                     {step.title}
                     {step.detail ? ` · ${step.detail}` : ''}
                   </span>
+                  {onReviseRole && entry.teamId === 'asset-research-team' && entry.teamRunId
+                    && ['business-analyst', 'financial-analyst', 'industry-researcher', 'risk-assessor'].includes(step.id)
+                    && ['completed', 'error', 'interrupted', 'skipped'].includes(step.status) && (
+                    <RoleRevisionActions runId={entry.teamRunId} roleId={step.id} roleTitle={step.title} onReviseRole={onReviseRole} />
+                  )}
                 </li>
               );
             })}
@@ -664,11 +695,7 @@ function HopeProcessedBlockGroup({
         />
         <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground/75" />
         <span className="font-medium text-muted-foreground/75">已处理</span>
-        {elapsedMs !== undefined && elapsedMs > 0 ? (
-          <span className="shrink-0 font-medium tabular-nums text-muted-foreground/75">
-            {formatTaskDuration(elapsedMs)}
-          </span>
-        ) : null}
+        <NarrativeDuration elapsedMs={elapsedMs} prefix="" className="shrink-0 font-medium tabular-nums text-muted-foreground/75" />
       </button>
 
       {expanded ? (

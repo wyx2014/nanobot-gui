@@ -1,8 +1,9 @@
 import { ArrowDown } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { memo } from 'react';
 import ThinkingOrb, { type OrbState } from '@/components/common/ModalAwareThinkingOrb';
 import { cn } from '@/lib/utils';
-import { formatTaskDuration, normalizeTaskTimestamp } from '@/utils/taskDuration';
+import { formatTaskDuration } from '@/utils/taskDuration';
+import TaskElapsedTime from './TaskElapsedTime';
 
 export type GenerationPhase = 'generating' | 'thinking' | 'working' | 'searching';
 
@@ -55,7 +56,7 @@ const PHASE_PRESENTATION = {
   color: string;
 }>;
 
-export default function GenerationStatusBar({
+export default memo(function GenerationStatusBar({
   phase,
   startedAt = null,
   elapsedMs: sharedElapsedMs,
@@ -63,21 +64,6 @@ export default function GenerationStatusBar({
   tokenCountEstimated = false,
   className,
 }: GenerationStatusBarProps) {
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    if (sharedElapsedMs !== undefined || startedAt == null) return;
-    setNow(Date.now());
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [sharedElapsedMs, startedAt]);
-
-  const startedAtMs = normalizeTaskTimestamp(startedAt);
-  const elapsedMs = sharedElapsedMs !== undefined
-    ? Math.max(0, sharedElapsedMs)
-    : startedAtMs !== undefined
-      ? Math.max(0, now - startedAtMs)
-      : 0;
   const presentation = PHASE_PRESENTATION[phase];
 
   return (
@@ -102,7 +88,11 @@ export default function GenerationStatusBar({
       </div>
 
       <div className="inline-flex shrink-0 items-center gap-2 text-[#8b887c]">
-        <span className="tabular-nums">{formatGenerationDuration(elapsedMs)}</span>
+        <TaskElapsedTime
+          className="tabular-nums"
+          startedAt={sharedElapsedMs === undefined ? startedAt : undefined}
+          elapsedMs={sharedElapsedMs}
+        />
         <span aria-hidden className="text-[#b4b0a6]">·</span>
         <ArrowDown className="h-3.5 w-3.5 text-[#9b978d]" strokeWidth={1.8} aria-hidden />
         <span className="tabular-nums">
@@ -112,4 +102,4 @@ export default function GenerationStatusBar({
       </div>
     </div>
   );
-}
+});

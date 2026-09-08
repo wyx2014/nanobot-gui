@@ -53,7 +53,7 @@ function EditMenuItem({
 export default function AppTitlebarMenu() {
   const { locale } = useI18n();
   const openHelpManual = useSettingsStore((state) => state.openHelpManual);
-  const openFeedbackDialog = useSettingsStore((state) => state.openFeedbackDialog);
+  const openDiagnosticsDialog = useSettingsStore((state) => state.openDiagnosticsDialog);
   const isEnglish = locale === 'en-US';
   const lastEditTargetRef = useRef<HTMLElement | null>(null);
 
@@ -96,7 +96,7 @@ export default function AppTitlebarMenu() {
         help: 'Help',
         docs: 'User Guide',
         logs: 'Open Logs Folder',
-        feedback: 'Send Feedback',
+        diagnostics: 'Export Diagnostics',
       }
     : {
         edit: '编辑(E)',
@@ -110,7 +110,7 @@ export default function AppTitlebarMenu() {
         help: '帮助(H)',
         docs: '使用文档',
         logs: '打开日志目录',
-        feedback: '意见反馈',
+        diagnostics: '导出诊断包',
       };
 
   return (
@@ -170,9 +170,9 @@ export default function AppTitlebarMenu() {
           <DropdownMenuSeparator className="my-1 bg-[#e3e0da] dark:bg-white/10" />
           <DropdownMenuItem
             className={itemClassName}
-            onSelect={openFeedbackDialog}
+            onSelect={openDiagnosticsDialog}
           >
-            {labels.feedback}
+            {labels.diagnostics}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

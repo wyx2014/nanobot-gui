@@ -6,6 +6,7 @@ interface ToggleProps {
   size?: 'sm' | 'md' | 'lg';
   disabled?: boolean;
   className?: string;
+  'aria-label'?: string;
 }
 
 const sizeConfig = {
@@ -14,7 +15,7 @@ const sizeConfig = {
   lg:  { track: 'h-6 w-10', thumb: 'h-5 w-5',     on: 'translate-x-4',   off: 'translate-x-0.5' },
 };
 
-export function Toggle({ checked, onChange, size = 'sm', disabled, className }: ToggleProps) {
+export function Toggle({ checked, onChange, size = 'sm', disabled, className, 'aria-label': ariaLabel }: ToggleProps) {
   const s = sizeConfig[size];
 
   return (
@@ -22,6 +23,7 @@ export function Toggle({ checked, onChange, size = 'sm', disabled, className }: 
       type="button"
       role="switch"
       aria-checked={checked}
+      aria-label={ariaLabel}
       disabled={disabled}
       onClick={(e) => { e.stopPropagation(); onChange(); }}
       className={cn(

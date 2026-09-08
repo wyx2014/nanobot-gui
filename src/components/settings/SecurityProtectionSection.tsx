@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -43,6 +43,9 @@ import type { SecurityAuditEvent, SecurityPolicyPath, SecurityPolicyPayload, Sec
 import { dialogBridge, fsBridge } from '@/lib/ipc-factory';
 import { cn } from '@/lib/utils';
 import { useToastStore } from '@/stores/toastStore';
+import SecurityAuditDetails, { auditDecisionLabel } from './SecurityAuditDetails';
+import './settingsPage.css';
+import './securityCenter.css';
 
 type SecurityView = 'overview' | 'files' | 'commands' | 'network' | 'audit';
 
@@ -52,10 +55,11 @@ function errorMessage(error: unknown): string {
 
 function categoryLabel(category: string, isEnglish: boolean): string {
   const labels: Record<string, [string, string]> = {
-    file: ['文件安全', 'File security'],
-    command: ['命令安全', 'Command security'],
-    network: ['网络安全', 'Network security'],
-    settings: ['安全设置', 'Security settings'],
+    file: ['文件访问与修改', 'File access and changes'],
+    command: ['命令与系统操作', 'Commands and system'],
+    network: ['联网与数据流转', 'Network and data'],
+    authorization: ['安全决策与授权', 'Decisions and approvals'],
+    settings: ['安全设置与审计管理', 'Policy and audit administration'],
   };
   const label = labels[category];
   return label ? label[isEnglish ? 1 : 0] : category;
@@ -83,6 +87,8 @@ function auditActionLabel(event: SecurityAuditEvent, isEnglish: boolean): string
     const value = actions[event.action];
     return value ? value[isEnglish ? 1 : 0] : (isEnglish ? 'Command operation' : '命令操作');
   } else if (event.category === 'network') {
+    if (event.action === 'model_request') return isEnglish ? 'Model request' : '模型请求';
+    if (event.action === 'mcp_call') return isEnglish ? 'MCP tool call' : 'MCP 工具调用';
     return event.action === 'search'
       ? (isEnglish ? 'Web search' : '联网搜索')
       : (isEnglish ? 'Network access' : '访问网络');
@@ -101,6 +107,8 @@ function auditActionLabel(event: SecurityAuditEvent, isEnglish: boolean): string
   }
   if (event.category === 'settings') {
     if (event.action === 'clear_audit') return isEnglish ? 'Clear audit records' : '清空审计记录';
+    if (event.action === 'export_audit') return isEnglish ? 'Generate audit export' : '生成审计导出';
+    if (event.action === 'reset') return isEnglish ? 'Reset security policy' : '重置安全策略';
     return isEnglish ? 'Update security policy' : '更新安全策略';
   }
   return event.action || (isEnglish ? 'Security event' : '安全事件');
@@ -134,31 +142,62 @@ function auditResultMeta(result: string, isEnglish: boolean): { label: string; c
     },
     cancelled: {
       labels: ['已取消', 'Cancelled'],
-      className: 'bg-[#efede8] text-[#716b62] dark:bg-[#393630] dark:text-[#bbb5ab]',
+      className: 'security-result-neutral',
     },
     pending: {
-      labels: ['处理中', 'Pending'],
+      labels: ['尚无完成记录', 'No completion recorded'],
       className: 'bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300',
     },
     waiting_for_input: {
       labels: ['等待输入', 'Waiting for input'],
       className: 'bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300',
     },
+    executing: {
+      labels: ['已授权执行', 'Execution authorized'],
+      className: 'bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300',
+    },
+    running: {
+      labels: ['未确认结束', 'Exit unconfirmed'],
+      className: 'bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300',
+    },
+    timed_out: {
+      labels: ['已超时', 'Timed out'],
+      className: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
+    },
   };
   const value = values[result];
   return value
     ? { label: value.labels[isEnglish ? 1 : 0], className: value.className }
-    : { label: result || (isEnglish ? 'Unknown' : '未知'), className: 'bg-[#efede8] text-[#716b62] dark:bg-[#393630] dark:text-[#bbb5ab]' };
-}
-
-function isExceptionalAuditResult(result: string): boolean {
-  return ['blocked', 'blocked_unattended', 'denied', 'failed'].includes(result);
+    : { label: result || (isEnglish ? 'Unknown' : '未知'), className: 'security-result-neutral' };
 }
 
 function auditRiskLabel(risk: string, isEnglish: boolean): string | null {
+  if (risk === 'sensitive') return isEnglish ? 'Sensitive' : '敏感';
   if (risk === 'critical') return isEnglish ? 'Critical risk' : '严重风险';
   if (risk === 'high') return isEnglish ? 'High risk' : '高风险';
   return null;
+}
+
+function isApprovalTimeout(event: SecurityAuditEvent): boolean {
+  return event.result === 'timed_out' && (event.decision === 'timed_out' || event.details.authorization === 'timed_out');
+}
+
+function SecurityPageHeader({ title, isEnglish, onBack, children }: {
+  title: string;
+  isEnglish: boolean;
+  onBack: () => void;
+  children?: ReactNode;
+}) {
+  const backLabel = isEnglish ? 'Security overview' : '安全防护概览';
+  return <div className="security-page-header">
+    <div className="security-page-heading">
+      <Button size="icon-sm" variant="ghost" onClick={onBack} aria-label={backLabel} title={backLabel}>
+        <ArrowLeft /><span className="sr-only">{backLabel}</span>
+      </Button>
+      <h3 className="settings-page-title">{title}</h3>
+    </div>
+    {children && <div className="security-page-actions">{children}</div>}
+  </div>;
 }
 
 function ProtectionRow({
@@ -176,77 +215,91 @@ function ProtectionRow({
 }) {
   const content = (
     <>
-      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-[#eceae6] text-[#565149] dark:bg-[#33312e] dark:text-[#d1cbc1]">
-        <Icon className="h-[18px] w-[18px]" strokeWidth={1.7} />
+      <span className="security-nav-icon">
+        <Icon className="h-5 w-5" strokeWidth={1.8} />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-sm font-semibold text-[#282620] dark:text-[#eee9df]">{title}</span>
-        <span className="mt-0.5 block text-xs leading-5 text-[#7b766d] dark:text-[#9f998f]">{description}</span>
+        <span className="settings-page-title block">{title}</span>
+        <span className="settings-page-copy mt-1 block">{description}</span>
+        <span className="security-nav-status security-nav-status-mobile">{status}</span>
       </span>
-      <span className="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">
-        <CheckCircle2 className="h-3.5 w-3.5" />
+      <span className="security-nav-status security-nav-status-desktop">
         {status}
       </span>
-      {onClick ? <ChevronRight className="h-4 w-4 shrink-0 text-[#aaa49a]" /> : null}
+      {onClick ? <ChevronRight className="settings-page-muted h-4 w-4 shrink-0" /> : null}
     </>
   );
-  const classes = 'flex w-full items-center gap-3 border-b border-[#ebe8e2] px-4 py-3 text-left last:border-b-0 dark:border-[#3a3834]';
+  const classes = 'settings-page-row security-nav-row';
   return onClick ? (
-    <button type="button" onClick={onClick} className={`${classes} transition-colors hover:bg-[#f7f6f3] dark:hover:bg-[#2c2a27]`}>
+    <button type="button" onClick={onClick} className={classes}>
       {content}
     </button>
   ) : <div className={classes}>{content}</div>;
 }
 
-function SecurityOverview({ isEnglish, onOpen }: {
+function SecurityOverview({ policy, confirmedAt, unconfirmed, loading, busy, isEnglish, onRefresh, onOpen }: {
+  policy: SecurityPolicyPayload;
+  confirmedAt: number | null;
+  unconfirmed: boolean;
+  loading: boolean;
+  busy: boolean;
   isEnglish: boolean;
+  onRefresh: () => void;
   onOpen: (view: SecurityView) => void;
 }) {
+  const componentStatus = (key: string, configured: string) => {
+    const enabled = policy.components[key]?.enabled;
+    return enabled === false ? (isEnglish ? 'Configured off' : '配置未启用')
+      : enabled === undefined ? (isEnglish ? 'Status not reported' : '未返回启用状态') : configured;
+  };
+  const StatusIcon = unconfirmed || !policy.protection_enabled ? ShieldAlert : ShieldCheck;
   return (
-    <div data-security-overview className="mx-auto w-full max-w-4xl space-y-5 py-1">
-      <section className="flex items-start gap-4 rounded-lg border border-[#dedbd4] bg-[#f8f7f4] px-5 py-4 dark:border-[#44413c] dark:bg-[#252320]">
-        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-md bg-[#e3eee7] text-[#397052] dark:bg-[#263b30] dark:text-[#8bc7a4]">
-          <ShieldCheck className="h-6 w-6" strokeWidth={1.7} />
-        </span>
+    <div data-security-overview className="settings-page-stack">
+      <section className="settings-page-intro">
+        <StatusIcon className={cn('mt-0.5 h-4 w-4 shrink-0', unconfirmed ? 'text-amber-600 dark:text-amber-300' : 'settings-page-secondary')} strokeWidth={1.8} />
         <div className="min-w-0 flex-1">
-          <h3 className="text-[15px] font-semibold text-[#25231e] dark:text-[#f0ebe2]">
-            {isEnglish ? 'Application protection is active' : '应用安全防护已开启'}
+          <h3 className="settings-page-title">
+            {unconfirmed ? (isEnglish ? 'Current policy unconfirmed' : '当前策略尚未确认') : !policy.protection_enabled ? (isEnglish ? 'Protection configured off' : '防护配置未启用') : (isEnglish ? 'Security policy retrieved' : '已读取安全策略')}
           </h3>
-          <p className="mt-1 text-xs leading-5 text-[#736e65] dark:text-[#aaa49a]">
+          <p className="settings-page-copy mt-1">
             {isEnglish
-              ? 'Normal cross-folder work runs without repeated prompts. Catastrophic actions are blocked and high-risk actions require confirmation.'
-              : '普通跨目录工作不会反复申请权限；灾难性操作会被直接阻止，高风险操作会在聊天中请求确认。'}
+              ? 'Application protection. Policy settings do not verify the outcome of every operation.'
+              : '应用层防护；策略配置不代表每次操作的实际执行结果。'}
           </p>
+          {confirmedAt !== null && <p className="settings-page-caption mt-2">{isEnglish ? 'Last confirmed: ' : '上次确认：'}{formatTime(confirmedAt, isEnglish)}{unconfirmed ? (isEnglish ? ' (previous snapshot)' : '（上次快照）') : ''}</p>}
         </div>
+        <Button size="icon-sm" variant="ghost" disabled={loading || busy} onClick={onRefresh} aria-label={isEnglish ? 'Refresh security policy' : '刷新安全策略'} title={isEnglish ? 'Refresh security policy' : '刷新安全策略'}><RefreshCw className={cn(loading && 'animate-spin')} /></Button>
       </section>
 
-      <section className="overflow-hidden rounded-lg border border-[#e3e0d9] bg-white dark:border-[#3d3a36] dark:bg-[#272522]">
+      <section className="security-nav-list" aria-label={isEnglish ? 'Protection policies' : '防护策略'}>
         <ProtectionRow
           icon={FileKey2}
           title={isEnglish ? 'File protection' : '文件安全'}
-          description={isEnglish ? 'Manage automatic allow and mandatory approval folders' : '管理自动放行白名单与强制审批目录'}
-          status={isEnglish ? 'Always on' : '始终开启'}
+          description={isEnglish ? `${policy.approval_paths.length} approval folders; ${policy.file_allow_paths.length} allowed folders` : `${policy.approval_paths.length} 个强制审批目录，${policy.file_allow_paths.length} 个自动放行目录`}
+          status={componentStatus('file', isEnglish ? 'Approval rules configured' : '按目录风险审批')}
           onClick={() => onOpen('files')}
         />
         <ProtectionRow
           icon={SquareTerminal}
           title={isEnglish ? 'Command protection' : '命令安全'}
-          description={isEnglish ? 'Blocks catastrophic commands and confirms destructive operations' : '硬拦截灾难性命令，确认删除、提权等高风险操作'}
-          status={isEnglish ? 'Always on' : '始终开启'}
+          description={isEnglish ? `${policy.command_approval_prefixes.length} ask prefixes; ${policy.command_allow_prefixes.length} allow prefixes` : `${policy.command_approval_prefixes.length} 条询问前缀，${policy.command_allow_prefixes.length} 条放行前缀`}
+          status={componentStatus('command', policy.core_protection_locked ? (isEnglish ? 'Core blocks locked' : '核心拦截已锁定') : (isEnglish ? 'Core lock unconfirmed' : '核心锁定未确认'))}
           onClick={() => onOpen('commands')}
         />
         <ProtectionRow
           icon={Network}
           title={isEnglish ? 'Network protection' : '网络安全'}
-          description={isEnglish ? 'Protects private services and internal network boundaries' : '保护本机服务、私网地址和内部网络边界'}
-          status={isEnglish ? 'Always on' : '始终开启'}
+          description={isEnglish ? `${policy.network_deny_domains.length} denied domains; ${policy.network_allow_domains.length} exceptions${policy.network_block_all ? '' : ' (inactive)'}` : `${policy.network_deny_domains.length} 个拒绝域名，${policy.network_allow_domains.length} 个放行例外${policy.network_block_all ? '' : '（当前不启用）'}`}
+          status={componentStatus('network', policy.network_block_all ? (isEnglish ? 'Covered requests blocked by default' : '受控请求默认阻断') : (isEnglish ? 'Allowed after risk checks' : '通过安全检查后放行'))}
           onClick={() => onOpen('network')}
         />
+      </section>
+      <section className="security-audit-entry">
         <ProtectionRow
           icon={FileSearch}
           title={isEnglish ? 'Audit center' : '审计中心'}
-          description={isEnglish ? 'Trace file access, command execution, and network requests' : '追溯文件访问、命令执行与网络请求'}
-          status={isEnglish ? 'Always on' : '始终开启'}
+          description={isEnglish ? 'Operations, approvals, policy changes, and audit administration' : '关键操作、授权结果、安全设置变更与审计管理'}
+          status={componentStatus('audit', isEnglish ? 'Recording configured' : '已配置记录')}
           onClick={() => onOpen('audit')}
         />
       </section>
@@ -254,24 +307,25 @@ function SecurityOverview({ isEnglish, onOpen }: {
   );
 }
 
-function PathList({ paths, empty, defaultLabel, removeLabel, onRemove }: {
+function PathList({ paths, busy, empty, defaultLabel, removeLabel, onRemove }: {
   paths: SecurityPolicyPath[];
+  busy: boolean;
   empty: string;
   defaultLabel: string;
   removeLabel: string;
   onRemove: (path: string) => void;
 }) {
-  if (!paths.length) return <div className="px-4 py-6 text-center text-xs text-[#938d83] dark:text-[#8f8a81]">{empty}</div>;
+  if (!paths.length) return <div className="security-empty-inline">{empty}</div>;
   return (
-    <div>
+    <div className="security-rule-list">
       {paths.map((item) => (
-        <div key={`${item.source}:${item.path}`} className="flex items-center gap-3 border-b border-[#ebe8e2] px-4 py-3 last:border-b-0 dark:border-[#3a3834]">
-          <FolderCheck className="h-4 w-4 shrink-0 text-[#716b62] dark:text-[#aaa49a]" />
-          <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-[#39362f] dark:text-[#ddd7ce]" title={item.path}>{item.path}</span>
+        <div key={`${item.source}:${item.path}`} className="security-rule-row">
+          <FolderCheck className="settings-page-secondary h-4 w-4 shrink-0" />
+          <span className="min-w-0 flex-1 truncate font-mono text-[13px]" title={item.path}>{item.path}</span>
           {item.source === 'default' ? (
-            <span className="shrink-0 rounded bg-[#efede8] px-1.5 py-0.5 text-[10px] text-[#777167] dark:bg-[#37342f] dark:text-[#aaa49a]">{defaultLabel}</span>
+            <span className="settings-page-caption shrink-0">{defaultLabel}</span>
           ) : (
-            <button type="button" onClick={() => onRemove(item.path)} className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-[#8b857b] hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30" aria-label={removeLabel}>
+            <button type="button" disabled={busy} onClick={() => onRemove(item.path)} className="security-remove" aria-label={removeLabel} title={removeLabel}>
               <X className="h-3.5 w-3.5" />
             </button>
           )}
@@ -291,10 +345,11 @@ function FileSecurityView({ policy, busy, isEnglish, onBack, onAdd, onRemove, on
   onReset: () => void;
 }) {
   return (
-    <div data-file-security className="mx-auto w-full max-w-4xl space-y-5 py-1">
-      <button type="button" onClick={onBack} className="inline-flex items-center gap-1.5 text-sm font-medium text-[#625e56] hover:text-[#222] dark:text-[#bbb5ab] dark:hover:text-white">
-        <ArrowLeft className="h-4 w-4" />{isEnglish ? 'Security overview' : '安全防护概览'}
-      </button>
+    <div data-file-security className="settings-page-stack">
+      <SecurityPageHeader title={isEnglish ? 'File protection' : '文件安全'} isEnglish={isEnglish} onBack={onBack}>
+        <Button size="sm" variant="outline" disabled={busy} onClick={onReset}><RefreshCw />{isEnglish ? 'Restore defaults' : '恢复系统默认'}</Button>
+      </SecurityPageHeader>
+      <p className="settings-page-copy">{isEnglish ? 'Ordinary file work is allowed by default. An empty allowlist keeps risk checks in place. Core blocks and mandatory approval take priority over allow rules. Saved changes apply to subsequent tool calls.' : '普通文件操作默认允许，白名单为空时仍按风险检查。核心拦截、强制审批优先于自动放行；保存后影响后续工具调用。'}</p>
       <PathSection
         title={isEnglish ? 'Automatic allowlist' : '自动放行白名单'}
         description={isEnglish ? 'Matching path operations are treated as low risk and proceed automatically.' : '命中路径会按低风险处理并自动放行。'}
@@ -319,11 +374,9 @@ function FileSecurityView({ policy, busy, isEnglish, onBack, onAdd, onRemove, on
         onAdd={() => onAdd('approval')}
         onRemove={(path) => onRemove('approval', path)}
       />
-      <div className="flex items-center justify-between border-t border-[#ebe8e2] px-1 pt-4 dark:border-[#3a3834]">
-        <p className="text-xs leading-5 text-[#827c72] dark:text-[#99938a]">{isEnglish ? 'Automatic allow cannot cover the home root, system folders, core protection, or approval folders.' : '自动放行不能覆盖整个用户目录、系统目录、核心保护项或强制审批目录。'}</p>
-        <Button size="sm" variant="ghost" disabled={busy} onClick={onReset} className="text-[#756f65] hover:bg-[#f2f0eb] dark:text-[#aaa49a]">
-          <RefreshCw />{isEnglish ? 'Restore defaults' : '恢复系统默认'}
-        </Button>
+      <div className="security-note security-footer">
+        <Info className="h-4 w-4" />
+        <p>{isEnglish ? 'Automatic allow cannot cover the home root, system folders, core protection, or approval folders.' : '自动放行不能覆盖整个用户目录、系统目录、核心保护项或强制审批目录。'}</p>
       </div>
     </div>
   );
@@ -342,19 +395,17 @@ function PathSection({ title, description, addLabel, empty, paths, busy, default
   onRemove: (path: string) => void;
 }) {
   return (
-    <section className="space-y-2">
-      <div className="flex items-end justify-between gap-4 px-1">
+    <section className="security-rule-section">
+      <div className="security-rule-heading">
         <div>
-          <h3 className="text-sm font-semibold text-[#2d2a24] dark:text-[#eee9df]">{title}</h3>
-          <p className="mt-1 text-xs text-[#7d776d] dark:text-[#9c968c]">{description}</p>
+          <h3 className="settings-page-title">{title}</h3>
+          <p className="settings-page-copy">{description}</p>
         </div>
-        <Button size="sm" variant="outline" disabled={busy} onClick={onAdd} className="border-[#dedbd4] bg-white text-[#4f4b43] hover:bg-[#f5f3ee] dark:border-[#494640] dark:bg-[#2b2a27] dark:text-[#ddd8cf]">
+        <Button size="sm" variant="outline" disabled={busy} onClick={onAdd}>
           <Plus />{addLabel}
         </Button>
       </div>
-      <div className="overflow-hidden rounded-lg border border-[#e3e0d9] bg-white dark:border-[#3d3a36] dark:bg-[#272522]">
-        <PathList paths={paths} empty={empty} defaultLabel={defaultLabel} removeLabel={removeLabel} onRemove={onRemove} />
-      </div>
+      <PathList paths={paths} busy={busy} empty={empty} defaultLabel={defaultLabel} removeLabel={removeLabel} onRemove={onRemove} />
     </section>
   );
 }
@@ -381,28 +432,30 @@ function RuleListEditor({
   addLabel: string;
   emptyLabel: string;
   removeLabel: string;
-  onAdd: (value: string) => void;
+  onAdd: (value: string) => Promise<boolean>;
   onRemove: (value: string) => void;
 }) {
   const [value, setValue] = useState('');
-  const submit = () => {
+  const submitting = useRef(false);
+  const submit = async () => {
     const normalized = value.trim();
-    if (!normalized || busy || items.includes(normalized)) return;
-    onAdd(normalized);
-    setValue('');
+    if (!normalized || busy || submitting.current || items.includes(normalized)) return;
+    submitting.current = true;
+    try {
+      if (await onAdd(normalized)) setValue('');
+    } finally {
+      submitting.current = false;
+    }
   };
   return (
-    <section className="overflow-hidden rounded-lg border border-[#e3e0d9] bg-white dark:border-[#3d3a36] dark:bg-[#272522]">
-      <div className="flex items-start gap-3 px-4 py-4">
-        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-[#e8f4ee] text-emerald-700 dark:bg-[#243a30] dark:text-emerald-300">
-          <Icon className="h-4 w-4" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-semibold text-[#2d2a24] dark:text-[#eee9df]">{title}</h3>
-          <p className="mt-1 text-xs leading-5 text-[#7d776d] dark:text-[#9c968c]">{description}</p>
+    <section className="security-rule-section">
+      <div className="security-rule-heading">
+        <div>
+          <h3 className="settings-page-title"><Icon className="h-4 w-4" strokeWidth={1.8} />{title}</h3>
+          <p className="settings-page-copy">{description}</p>
         </div>
       </div>
-      <div className="flex gap-2 border-t border-[#ebe8e2] px-4 py-3 dark:border-[#3a3834]">
+      <div className="security-rule-input">
         <Input
           value={value}
           disabled={busy}
@@ -415,25 +468,25 @@ function RuleListEditor({
               submit();
             }
           }}
-          className="font-mono text-xs"
+          className="font-mono"
         />
-        <Button type="button" size="sm" disabled={busy || !value.trim()} onClick={submit} className="shrink-0 bg-[#565149] text-white hover:bg-[#403c36] dark:bg-[#d8d1c6] dark:text-[#25231f]">
+        <Button type="button" size="sm" disabled={busy || !value.trim() || items.includes(value.trim())} onClick={submit}>
           <Plus />{addLabel}
         </Button>
       </div>
       {items.length ? (
-        <div className="border-t border-[#ebe8e2] dark:border-[#3a3834]">
+        <div className="security-rule-list">
           {items.map((item) => (
-            <div key={item} className="flex items-center gap-3 border-b border-[#ebe8e2] px-4 py-2.5 last:border-b-0 dark:border-[#3a3834]">
-              <code className="min-w-0 flex-1 truncate text-xs text-[#403c35] dark:text-[#ddd7ce]" title={item}>{item}</code>
-              <button type="button" disabled={busy} onClick={() => onRemove(item)} className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-[#8b857b] hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-950/30" aria-label={removeLabel} title={removeLabel}>
+            <div key={item} className="security-rule-row">
+              <code className="min-w-0 flex-1 truncate" title={item}>{item}</code>
+              <button type="button" disabled={busy} onClick={() => onRemove(item)} className="security-remove" aria-label={removeLabel} title={removeLabel}>
                 <X className="h-3.5 w-3.5" />
               </button>
             </div>
           ))}
         </div>
       ) : (
-        <div className="border-t border-[#ebe8e2] px-4 py-3 text-xs text-[#938d83] dark:border-[#3a3834] dark:text-[#8f8a81]">{emptyLabel}</div>
+        <div className="security-empty-inline">{emptyLabel}</div>
       )}
     </section>
   );
@@ -444,29 +497,23 @@ function CommandSecurityView({ policy, busy, isEnglish, onBack, onAdd, onRemove,
   busy: boolean;
   isEnglish: boolean;
   onBack: () => void;
-  onAdd: (kind: 'allow' | 'approval', value: string) => void;
+  onAdd: (kind: 'allow' | 'approval', value: string) => Promise<boolean>;
   onRemove: (kind: 'allow' | 'approval', value: string) => void;
   onReset: () => void;
 }) {
   return (
-    <div data-command-security className="mx-auto w-full max-w-4xl space-y-4 py-1">
-      <button type="button" onClick={onBack} className="inline-flex items-center gap-1.5 text-sm font-medium text-[#625e56] hover:text-[#222] dark:text-[#bbb5ab] dark:hover:text-white">
-        <ArrowLeft className="h-4 w-4" />{isEnglish ? 'Security overview' : '安全防护概览'}
-      </button>
-      <section className="flex items-start gap-3 rounded-lg border border-[#dedbd4] bg-[#f8f7f4] px-4 py-3 dark:border-[#44413c] dark:bg-[#252320]">
-        <Info className="mt-0.5 h-4 w-4 shrink-0 text-[#397052] dark:text-[#8bc7a4]" />
-        <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-semibold text-[#302d27] dark:text-[#eee9df]">{isEnglish ? 'Command rule priority' : '命令安全说明'}</h3>
-          <p className="mt-1 text-xs leading-5 text-[#736e65] dark:text-[#aaa49a]">
+    <div data-command-security className="settings-page-stack">
+      <SecurityPageHeader title={isEnglish ? 'Command protection' : '命令安全'} isEnglish={isEnglish} onBack={onBack}>
+        <Button size="sm" variant="outline" disabled={busy} onClick={onReset}><RefreshCw />{isEnglish ? 'Reset' : '重置默认'}</Button>
+      </SecurityPageHeader>
+      <div className="settings-page-copy space-y-1">
+          <p>
             {isEnglish
               ? 'Core blocks and protected paths always take priority. Ask prefixes override allow prefixes; allow prefixes only skip configurable command-risk prompts.'
               : '核心硬拦截和强制审批路径始终优先；询问前缀优先于放行前缀，放行仅跳过可配置的命令风险询问。'}
           </p>
-        </div>
-        <Button size="sm" variant="outline" disabled={busy} onClick={onReset} className="shrink-0 border-[#dedbd4] bg-white text-[#625e56] dark:border-[#494640] dark:bg-[#2b2a27] dark:text-[#ddd8cf]">
-          <RefreshCw />{isEnglish ? 'Reset' : '重置默认'}
-        </Button>
-      </section>
+          <p>{isEnglish ? 'With no custom prefixes, built-in risk checks apply. Saved changes affect subsequent tool calls.' : '未添加前缀时，按内置风险规则判断；保存后影响后续工具调用。'}</p>
+      </div>
       <RuleListEditor
         icon={CheckCircle2}
         title={isEnglish ? 'Allow prefixes' : '放行前缀'}
@@ -503,37 +550,29 @@ function NetworkSecurityView({ policy, busy, isEnglish, onBack, onToggle, onAdd,
   isEnglish: boolean;
   onBack: () => void;
   onToggle: () => void;
-  onAdd: (kind: 'allow' | 'deny', value: string) => void;
+  onAdd: (kind: 'allow' | 'deny', value: string) => Promise<boolean>;
   onRemove: (kind: 'allow' | 'deny', value: string) => void;
   onReset: () => void;
 }) {
   return (
-    <div data-network-security className="mx-auto w-full max-w-4xl space-y-4 py-1">
-      <button type="button" onClick={onBack} className="inline-flex items-center gap-1.5 text-sm font-medium text-[#625e56] hover:text-[#222] dark:text-[#bbb5ab] dark:hover:text-white">
-        <ArrowLeft className="h-4 w-4" />{isEnglish ? 'Security overview' : '安全防护概览'}
-      </button>
-      <section className="flex items-start gap-3 rounded-lg border border-[#dedbd4] bg-[#f8f7f4] px-4 py-3 dark:border-[#44413c] dark:bg-[#252320]">
-        <Info className="mt-0.5 h-4 w-4 shrink-0 text-[#397052] dark:text-[#8bc7a4]" />
-        <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-semibold text-[#302d27] dark:text-[#eee9df]">{isEnglish ? 'Effective immediately' : '生效说明'}</h3>
-          <p className="mt-1 text-xs leading-5 text-[#736e65] dark:text-[#aaa49a]">{isEnglish ? 'Saved rules apply to subsequent tool calls in existing and new chats.' : '保存后对现有会话和新会话的后续工具调用立即生效。'}</p>
-        </div>
-        <Button size="sm" variant="outline" disabled={busy} onClick={onReset} className="shrink-0 border-[#dedbd4] bg-white text-[#625e56] dark:border-[#494640] dark:bg-[#2b2a27] dark:text-[#ddd8cf]">
-          <RefreshCw />{isEnglish ? 'Reset' : '重置默认'}
-        </Button>
-      </section>
-      <section className="flex items-center gap-3 rounded-lg border border-[#e3e0d9] bg-white px-4 py-4 dark:border-[#3d3a36] dark:bg-[#272522]">
-        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-[#e8f4ee] text-emerald-700 dark:bg-[#243a30] dark:text-emerald-300"><ShieldOff className="h-4 w-4" /></span>
-        <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-semibold text-[#2d2a24] dark:text-[#eee9df]">{isEnglish ? 'Block all network access' : '阻断所有网络访问'}</h3>
-          <p className="mt-1 text-xs leading-5 text-[#7d776d] dark:text-[#9c968c]">{isEnglish ? 'Web tools and network commands are blocked by default; allowed domains remain available.' : 'Web 工具和网络命令默认阻断，仅允许域名作为例外放行。'}</p>
+    <div data-network-security className="settings-page-stack">
+      <SecurityPageHeader title={isEnglish ? 'Network protection' : '网络安全'} isEnglish={isEnglish} onBack={onBack}>
+        <Button size="sm" variant="outline" disabled={busy} onClick={onReset}><RefreshCw />{isEnglish ? 'Reset' : '重置默认'}</Button>
+      </SecurityPageHeader>
+      <p className="settings-page-copy">{isEnglish ? 'Saved rules apply to subsequent tool calls in existing and new chats.' : '保存后对现有会话和新会话的后续工具调用立即生效。'}</p>
+      <div className="settings-page-row security-switch-row">
+        <div>
+          <h3 className="settings-page-title">{isEnglish ? 'Block covered tool requests by default' : '默认阻断受控工具联网'}</h3>
+          <p className="settings-page-copy">{isEnglish ? 'When on, covered requests need an allowed-domain exception. When off, requests still follow denied-domain and built-in risk checks.' : '开启后，受控请求仅按允许域名例外放行；关闭时仍执行拒绝域名和内置风险检查。'}</p>
         </div>
         <Toggle checked={policy.network_block_all} disabled={busy} onChange={onToggle} size="md" />
-      </section>
+      </div>
       <RuleListEditor
         icon={Globe2}
         title={isEnglish ? 'Allowed domains' : '允许域名'}
-        description={isEnglish ? 'Exceptions used when all network access is blocked.' : '开启全部阻断时，这些域名作为例外放行。'}
+        description={policy.network_block_all
+          ? (isEnglish ? 'Exceptions to default blocking. An empty list blocks all covered requests. Denied domains and built-in restrictions take priority.' : '默认阻断的例外；列表为空时阻断所有受控请求。拒绝域名和内置限制优先。')
+          : (isEnglish ? 'Currently inactive. These exceptions apply only when default blocking is on; an empty list does not block access.' : '当前不启用，仅在开启默认阻断后作为例外；列表为空不表示禁止联网。')}
         placeholder="api.example.com"
         items={policy.network_allow_domains}
         busy={busy}
@@ -556,15 +595,18 @@ function NetworkSecurityView({ policy, busy, isEnglish, onBack, onToggle, onAdd,
         onAdd={(value) => onAdd('deny', value)}
         onRemove={(value) => onRemove('deny', value)}
       />
-      <div className="flex items-start gap-2 px-1 text-xs leading-5 text-[#827c72] dark:text-[#99938a]">
+      <div className="security-note security-footer">
         <CircleSlash2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-        <p>{isEnglish ? 'This is application-level control for Web tools and explicit network targets in commands, not a replacement for the operating-system firewall.' : '该能力针对 Web 工具和命令中的明确网络目标进行应用层控制，不能替代操作系统防火墙。'}</p>
+        <p>{isEnglish ? 'Coverage: Web tools and recognized network targets in commands. Model requests and downstream MCP traffic are not fully covered; this cannot replace the operating-system firewall.' : '适用范围：Web 工具及命令中可识别的网络目标。不保证覆盖模型请求或 MCP 服务内部的全部联网，不能替代操作系统防火墙。'}</p>
       </div>
     </div>
   );
 }
 
 function AuditRecord({ event, isEnglish }: { event: SecurityAuditEvent; isEnglish: boolean }) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const operationCount = typeof event.details.operation_count === 'number' ? event.details.operation_count : 1;
+  const authorization = event.details.authorization || (event.decision.startsWith('approved') ? event.decision : null);
   const CategoryIcon = event.category === 'command'
     ? SquareTerminal
     : event.category === 'network'
@@ -572,24 +614,26 @@ function AuditRecord({ event, isEnglish }: { event: SecurityAuditEvent; isEnglis
       : event.category === 'file'
         ? FileKey2
         : ShieldCheck;
-  const categoryIconClasses = event.category === 'command'
-    ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
-    : event.category === 'network'
-      ? 'bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300'
-      : event.category === 'file'
-        ? 'bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300'
-        : 'bg-[#efede8] text-[#716b62] dark:bg-[#393630] dark:text-[#bbb5ab]';
   const action = auditActionLabel(event, isEnglish);
   const resultMeta = auditResultMeta(event.result, isEnglish);
+  if (isApprovalTimeout(event)) resultMeta.label = isEnglish ? 'Approval timed out' : '审批已超时';
   const riskLabel = auditRiskLabel(event.risk, isEnglish);
-  const target = event.target?.trim() || event.summary || '-';
-  const showReason = isExceptionalAuditResult(event.result) && !!event.target?.trim() && !!event.summary?.trim();
+  const target = operationCount > 1 && event.category === 'file'
+    ? (isEnglish ? 'Workspace file operations in this task' : '本轮工作区文件操作')
+    : event.target?.trim() || event.summary || '-';
+  const reason = ['blocked', 'blocked_unattended', 'denied'].includes(event.result)
+    ? event.result === 'blocked' && event.details.error_type
+      ? (isEnglish ? 'Execution was blocked by a tool security boundary' : '执行时被工具安全边界阻止')
+      : event.summary
+    : event.result === 'failed' && typeof event.details.exit_code === 'number'
+      ? `${isEnglish ? 'Process exit code: ' : '进程退出码：'}${event.details.exit_code}` : '';
+  const showReason = !!reason;
   const accessibleSummary = [
     categoryLabel(event.category, isEnglish),
     action,
     resultMeta.label,
     target,
-    showReason ? event.summary : '',
+    reason,
     formatTime(event.timestamp, isEnglish),
   ].filter(Boolean).join(', ');
 
@@ -598,48 +642,62 @@ function AuditRecord({ event, isEnglish }: { event: SecurityAuditEvent; isEnglis
       data-audit-record
       role="listitem"
       aria-label={accessibleSummary}
-      className="grid grid-cols-1 gap-3 border-b border-[#ebe8e2] px-4 py-4 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_172px] sm:gap-6 dark:border-[#3a3834]"
+      className="security-event"
     >
-      <div className="flex min-w-0 items-start gap-3">
-        <span className={cn('mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-md', categoryIconClasses)}>
+      <details onToggle={(e) => setDetailsOpen(e.currentTarget.open)} className="min-w-0">
+        <summary
+          title={isEnglish ? (detailsOpen ? 'Collapse details' : 'Expand details') : (detailsOpen ? '收起详情' : '展开详情')}
+          aria-label={`${isEnglish ? (detailsOpen ? 'Collapse details' : 'Expand details') : (detailsOpen ? '收起详情' : '展开详情')}：${action}`}
+          className="security-event-summary"
+        >
+        <span className="security-event-icon">
           <CategoryIcon className="h-4 w-4" strokeWidth={1.8} />
         </span>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="text-[11px] font-medium text-[#7a746b] dark:text-[#aaa49a]">
+            <span className="text-[13px] font-semibold leading-5">{action}</span>
+            <span className="settings-page-caption">
               {categoryLabel(event.category, isEnglish)}
             </span>
-            <span className="text-[13px] font-semibold text-[#302d27] dark:text-[#eee9df]">{action}</span>
+            {operationCount > 1 && <span className="settings-page-caption">{isEnglish ? `${operationCount} operations` : `${operationCount} 次`}</span>}
             {riskLabel ? (
-              <span className="rounded bg-orange-50 px-1.5 py-0.5 text-[10px] font-medium text-orange-700 dark:bg-orange-950/40 dark:text-orange-300">
+              <span className="rounded bg-orange-50 px-1.5 py-0.5 text-[11px] font-medium text-orange-700 dark:bg-orange-950/40 dark:text-orange-300">
                 {riskLabel}
               </span>
             ) : null}
           </div>
-          <p className="mt-1.5 whitespace-pre-wrap break-words font-mono text-[12px] leading-5 text-[#4b473f] [overflow-wrap:anywhere] dark:text-[#d6d0c6]">
+          <p data-audit-preview className="settings-page-secondary mt-0.5 line-clamp-2 whitespace-pre-wrap break-words font-mono text-[12px] leading-[18px] [overflow-wrap:anywhere]">
             {target}
           </p>
+          {Boolean(authorization || event.details.agent_label) && <p className="settings-page-caption mt-1 truncate">
+            {[event.details.agent_label, authorization ? auditDecisionLabel(authorization, isEnglish) : null].filter(Boolean).map(String).join(' · ')}
+          </p>}
           {showReason ? (
-            <p className="mt-1.5 flex items-start gap-1.5 text-[11px] leading-5 text-red-700 dark:text-red-300">
+            <p className="mt-1 flex items-start gap-1.5 text-xs leading-5 text-red-700 dark:text-red-300">
               <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              <span>{isEnglish ? 'Reason: ' : '原因：'}{event.summary}</span>
+              <span>{isEnglish ? 'Reason: ' : '原因：'}{reason}</span>
             </p>
           ) : null}
         </div>
-      </div>
-      <div className="flex items-center justify-between gap-3 pl-11 sm:block sm:pl-0 sm:text-right">
-        <span className={cn('inline-flex rounded px-2 py-1 text-[10px] font-semibold', resultMeta.className)}>
+      <div className="security-event-result">
+        <span className={cn('inline-flex rounded px-1.5 py-0.5 text-[11px] font-medium leading-4', resultMeta.className)}>
           {resultMeta.label}
         </span>
-        <time className="block whitespace-nowrap text-[11px] leading-5 text-[#857f75] sm:mt-2 dark:text-[#99938a]">
+        <time className="settings-page-caption block whitespace-nowrap tabular-nums">
           {formatTime(event.timestamp, isEnglish)}
         </time>
         {event.duration_ms !== null && event.duration_ms !== undefined ? (
-          <span className="mt-0.5 hidden text-[10px] text-[#aaa49a] sm:block dark:text-[#817c74]">
+          <span className="security-event-duration settings-page-caption tabular-nums">
             {event.duration_ms} ms
           </span>
         ) : null}
       </div>
+          <ChevronRight aria-hidden="true" className="security-event-chevron" />
+        </summary>
+        {detailsOpen && <div className="security-event-details">
+          <SecurityAuditDetails event={event} isEnglish={isEnglish} />
+        </div>}
+      </details>
     </div>
   );
 }
@@ -661,10 +719,12 @@ function AuditCenter({ token, apiBase, isEnglish, onBack }: { token: string; api
   const [exporting, setExporting] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [clearOpen, setClearOpen] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
   const activeFilterCount = [search.trim(), category, result, period === 'all' ? '' : period]
     .filter(Boolean).length;
-  const attentionCount = events.filter((event) => isExceptionalAuditResult(event.result)).length;
+  const preventedCount = events.filter((event) => ['blocked', 'blocked_unattended', 'denied'].includes(event.result) || isApprovalTimeout(event)).length;
+  const exceptionCount = events.filter((event) => ['failed', 'timed_out'].includes(event.result) && !isApprovalTimeout(event)).length;
 
   const query = useMemo<SecurityAuditQuery>(() => {
     const periodMs = period === '24h'
@@ -685,6 +745,7 @@ function AuditCenter({ token, apiBase, isEnglish, onBack }: { token: string; api
 
   const refresh = useCallback(async () => {
     if (!token || !apiBase) {
+      setLoadError(isEnglish ? 'The local service is not connected.' : '本地服务尚未连接。');
       setLoading(false);
       return;
     }
@@ -699,18 +760,23 @@ function AuditCenter({ token, apiBase, isEnglish, onBack }: { token: string; api
       setNextCursor(page.next_cursor ?? null);
       setPageIndex(0);
       setPageCursors([null]);
+      setLoadError('');
     } catch (error) {
       if (requestId !== requestIdRef.current) return;
-      addToast({ type: 'error', title: isEnglish ? 'Could not load audit records' : '无法读取审计记录', message: errorMessage(error), duration: 6000 });
+      setLoadError(errorMessage(error));
     } finally {
       if (requestId === requestIdRef.current) setLoading(false);
     }
-  }, [addToast, apiBase, isEnglish, query, token]);
+  }, [apiBase, isEnglish, query, token]);
 
   useEffect(() => {
     requestIdRef.current += 1;
+    setLoading(true);
     const timer = window.setTimeout(() => void refresh(), 220);
-    return () => window.clearTimeout(timer);
+    return () => {
+      requestIdRef.current += 1;
+      window.clearTimeout(timer);
+    };
   }, [refresh]);
 
   const loadPage = async (cursor: number | null, index: number) => {
@@ -725,6 +791,7 @@ function AuditCenter({ token, apiBase, isEnglish, onBack }: { token: string; api
       });
       if (requestId !== requestIdRef.current) return;
       setEvents(page.events);
+      setLoadError('');
       setNextCursor(page.next_cursor ?? null);
       setPageIndex(index);
       setPageCursors((current) => {
@@ -734,7 +801,7 @@ function AuditCenter({ token, apiBase, isEnglish, onBack }: { token: string; api
       });
     } catch (error) {
       if (requestId !== requestIdRef.current) return;
-      addToast({ type: 'error', title: isEnglish ? 'Could not load audit page' : '加载审计记录失败', message: errorMessage(error) });
+      setLoadError(errorMessage(error));
     } finally {
       if (requestId === requestIdRef.current) setPaging(false);
     }
@@ -762,6 +829,7 @@ function AuditCenter({ token, apiBase, isEnglish, onBack }: { token: string; api
       if (!path) return;
       const data = await exportSecurityAudit(token, apiBase, query);
       await fsBridge.writeFile(path, data);
+      await refresh();
       addToast({ type: 'success', title: isEnglish ? 'Audit exported' : '审计记录已导出' });
     } catch (error) {
       addToast({ type: 'error', title: isEnglish ? 'Export failed' : '导出失败', message: errorMessage(error), duration: 6000 });
@@ -793,27 +861,13 @@ function AuditCenter({ token, apiBase, isEnglish, onBack }: { token: string; api
   };
 
   return (
-    <div data-security-audit className="mx-auto w-full max-w-4xl space-y-4 py-1">
-      <button type="button" onClick={onBack} className="inline-flex items-center gap-1.5 rounded-md text-sm font-medium text-[#625e56] outline-none hover:text-[#222] focus-visible:ring-2 focus-visible:ring-[#d97757]/30 dark:text-[#bbb5ab] dark:hover:text-white">
-        <ArrowLeft className="h-4 w-4" />{isEnglish ? 'Security overview' : '安全防护概览'}
-      </button>
-
-      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#ebe8e2] px-1 pb-4 dark:border-[#3a3834]">
-        <div className="min-w-0">
-          <h3 className="text-[17px] font-semibold text-[#282620] dark:text-[#f0ebe2]">
-            {isEnglish ? 'Audit center' : '审计中心'}
-          </h3>
-          <p className="mt-1 text-xs leading-5 text-[#7b766d] dark:text-[#9f998f]">
-            {isEnglish ? 'File, command, and network access records' : '文件、命令与网络访问记录'}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
+    <div data-security-audit className="settings-page-stack">
+      <SecurityPageHeader title={isEnglish ? 'Audit center' : '审计中心'} isEnglish={isEnglish} onBack={onBack}>
           <Button
             size="sm"
             variant="outline"
-            disabled={exporting || !events.length}
+            disabled={exporting || loading || paging || !!loadError || !events.length}
             onClick={() => void exportAudit()}
-            className="border-[#dedbd4] bg-white text-[#4f4b43] hover:bg-[#f5f3ee] dark:border-[#494640] dark:bg-[#2b2a27] dark:text-[#ddd8cf]"
           >
             {exporting ? <Loader2 className="animate-spin" /> : <Download />}
             {isEnglish ? 'Export' : '导出'}
@@ -823,31 +877,29 @@ function AuditCenter({ token, apiBase, isEnglish, onBack }: { token: string; api
             variant="ghost"
             disabled={clearing}
             onClick={() => setClearOpen(true)}
-            className="text-[#777167] hover:bg-red-50 hover:text-red-700 dark:text-[#aaa49a] dark:hover:bg-red-950/30 dark:hover:text-red-300"
+            className="settings-action-danger"
           >
             {clearing ? <Loader2 className="animate-spin" /> : <Trash2 />}
             {isEnglish ? 'Clear' : '清空'}
           </Button>
-        </div>
-      </div>
+      </SecurityPageHeader>
 
-      <section aria-label={isEnglish ? 'Audit filters' : '审计筛选'} className="rounded-lg border border-[#e3e0d9] bg-[#f8f7f4] p-3 dark:border-[#3d3a36] dark:bg-[#252320]">
-        <div className="grid grid-cols-2 gap-2 lg:grid-cols-[minmax(190px,1fr)_138px_138px_130px]">
-          <div className="relative col-span-2 lg:col-span-1">
-            <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-[#99938a]" />
+      <div className="security-audit-content">
+      <section aria-label={isEnglish ? 'Audit filters' : '审计筛选'} className="security-filters">
+        <div className="security-filter-grid">
+          <div className="relative">
+            <Search className="settings-page-muted pointer-events-none absolute left-3 top-2.5 h-4 w-4" />
             <Input
               value={search}
               aria-label={isEnglish ? 'Search audit records' : '搜索审计记录'}
               onChange={(event) => setSearch(event.target.value)}
               placeholder={isEnglish ? 'Search command, path, or summary' : '搜索命令、路径或摘要'}
-              className="bg-white pl-9 dark:bg-[#2b2a27]"
+              className="pl-9"
             />
           </div>
           <Select ariaLabel={isEnglish ? 'Audit type' : '审计类型'} value={category} onChange={setCategory} options={[
             { value: '', label: isEnglish ? 'All types' : '全部类型' },
-            { value: 'file', label: isEnglish ? 'File security' : '文件安全' },
-            { value: 'command', label: isEnglish ? 'Command security' : '命令安全' },
-            { value: 'network', label: isEnglish ? 'Network security' : '网络安全' },
+            ...['file', 'command', 'network', 'authorization', 'settings'].map((value) => ({ value, label: categoryLabel(value, isEnglish) })),
           ]} />
           <Select ariaLabel={isEnglish ? 'Audit result' : '审计结果'} value={result} onChange={setResult} options={[
             { value: '', label: isEnglish ? 'All results' : '全部结果' },
@@ -859,6 +911,9 @@ function AuditCenter({ token, apiBase, isEnglish, onBack }: { token: string; api
             { value: 'failed', label: isEnglish ? 'Failed' : '失败' },
             { value: 'waiting_for_input', label: isEnglish ? 'Waiting for input' : '等待输入' },
             { value: 'cancelled', label: isEnglish ? 'Cancelled' : '已取消' },
+            { value: 'timed_out', label: isEnglish ? 'Timed out' : '已超时' },
+            { value: 'running', label: isEnglish ? 'Exit unconfirmed' : '未确认结束' },
+            { value: 'pending', label: isEnglish ? 'No completion recorded' : '尚无完成记录' },
           ]} />
           <Select ariaLabel={isEnglish ? 'Audit period' : '审计时间范围'} value={period} onChange={setPeriod} options={[
             { value: 'all', label: isEnglish ? 'All time' : '全部时间' },
@@ -867,45 +922,49 @@ function AuditCenter({ token, apiBase, isEnglish, onBack }: { token: string; api
             { value: '30d', label: isEnglish ? 'Last 30 days' : '最近 30 天' },
           ]} />
         </div>
-        <div className="mt-3 flex min-h-6 flex-wrap items-center justify-between gap-2 border-t border-[#e7e3dc] pt-3 text-xs text-[#837d73] dark:border-[#3a3834] dark:text-[#9b958b]">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span>{isEnglish ? `${total} records` : `共 ${total} 条记录`}</span>
-            {attentionCount > 0 ? (
-              <span className="inline-flex items-center gap-1 text-red-700 dark:text-red-300">
-                <ShieldAlert className="h-3.5 w-3.5" />
-                {isEnglish ? `${attentionCount} need attention on this page` : `当前页 ${attentionCount} 条需关注`}
+        <div className="security-filter-stats">
+          <div>
+            {!loading && !loadError && <span>{isEnglish ? `${total} records` : `共 ${total} 条记录`}</span>}
+            {!loading && !loadError && preventedCount > 0 ? (
+              <span className="inline-flex items-center gap-1">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                {isEnglish ? `${preventedCount} blocked or not authorized on this page` : `当前页已拦截或未获授权 ${preventedCount} 条`}
               </span>
             ) : null}
+            {!loading && !loadError && exceptionCount > 0 && <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-300"><Info className="h-3.5 w-3.5" />{isEnglish ? `${exceptionCount} execution exceptions on this page` : `当前页执行异常 ${exceptionCount} 条`}</span>}
             {activeFilterCount > 0 ? (
-              <button type="button" onClick={resetFilters} className="inline-flex items-center gap-1 font-medium text-[#5f5a52] hover:text-[#222] dark:text-[#bbb5ab] dark:hover:text-white">
+              <button type="button" onClick={resetFilters} className="inline-flex items-center gap-1 font-medium hover:underline">
                 <X className="h-3.5 w-3.5" />
                 {isEnglish ? `Clear ${activeFilterCount} filters` : `清除 ${activeFilterCount} 项筛选`}
               </button>
             ) : null}
           </div>
-          <button type="button" onClick={() => void refresh()} disabled={loading || paging} className="inline-flex items-center gap-1 rounded outline-none hover:text-[#333] focus-visible:ring-2 focus-visible:ring-[#d97757]/30 disabled:opacity-50 dark:hover:text-white">
-            <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />{isEnglish ? 'Refresh' : '刷新'}
-          </button>
+          <Button type="button" size="icon-sm" variant="ghost" onClick={() => void refresh()} disabled={loading || paging} aria-label={isEnglish ? 'Refresh' : '刷新'} title={isEnglish ? 'Refresh' : '刷新'}>
+            <RefreshCw className={cn(loading && 'animate-spin')} /><span className="sr-only">{isEnglish ? 'Refresh' : '刷新'}</span>
+          </Button>
         </div>
       </section>
 
-      <div aria-busy={loading || paging} className="overflow-hidden rounded-lg border border-[#e3e0d9] bg-white dark:border-[#3d3a36] dark:bg-[#272522]">
-        <div className="hidden grid-cols-[minmax(0,1fr)_172px] gap-6 border-b border-[#ebe8e2] bg-[#faf9f7] px-4 py-2.5 text-[10px] font-semibold text-[#8a847a] sm:grid dark:border-[#3a3834] dark:bg-[#2b2926] dark:text-[#918b82]">
+      {loadError && <div role="alert" className="settings-page-alert"><div><p className="font-semibold">{isEnglish ? 'Could not load audit records' : '无法读取审计记录'}</p><p>{loadError}</p><p>{events.length ? (isEnglish ? 'The records below are from the previous load. Refresh to retry.' : '下方保留上次加载的记录，请刷新重试。') : (isEnglish ? 'Refresh to retry; record availability is unconfirmed.' : '请刷新重试，目前无法确认是否存在记录。')}</p></div></div>}
+      <p className="settings-page-copy">{isEnglish ? 'Historical outcomes. Blocked actions do not necessarily need follow-up; execution failures do not by themselves indicate a threat. Live approvals appear in the conversation.' : '以下为历史结果：已拦截不代表仍待处理，执行异常不等同于安全威胁；当前待审批事项以会话中的请求为准。'}</p>
+
+      <div aria-busy={loading || paging} className="security-audit-table">
+        <div className="security-audit-columns">
           <span>{isEnglish ? 'EVENT' : '事件'}</span>
           <span className="text-right">{isEnglish ? 'RESULT / TIME' : '结果 / 时间'}</span>
         </div>
         {loading && !events.length ? (
-          <div className="flex items-center justify-center py-16 text-sm text-[#888278]"><Loader2 className="mr-2 h-4 w-4 animate-spin" />{isEnglish ? 'Loading audit records…' : '正在读取审计记录…'}</div>
+          <div className="settings-page-empty flex items-center justify-center"><Loader2 className="mr-2 h-4 w-4 animate-spin" />{isEnglish ? 'Loading audit records…' : '正在读取审计记录…'}</div>
         ) : events.length ? (
           <div role="list">
             {events.map((event) => <AuditRecord key={event.id} event={event} isEnglish={isEnglish} />)}
           </div>
-        ) : (
-          <div className="px-6 py-14 text-center">
-            <Clock3 className="mx-auto h-6 w-6 text-[#aaa49a]" />
-            <p className="mt-2 text-sm font-medium text-[#5f5a52] dark:text-[#bbb5ab]">{isEnglish ? 'No matching audit records' : '暂无匹配的审计记录'}</p>
+        ) : loadError ? null : (
+          <div className="settings-page-empty">
+            <Clock3 className="settings-page-muted mx-auto h-5 w-5" />
+            <p className="settings-page-title mt-2">{isEnglish ? 'No matching audit records' : '暂无匹配的审计记录'}</p>
             {activeFilterCount > 0 ? (
-              <button type="button" onClick={resetFilters} className="mt-2 text-xs font-medium text-[#8a5a44] hover:text-[#603d2d] dark:text-[#d69b7f] dark:hover:text-[#edb59a]">
+              <button type="button" onClick={resetFilters} className="mt-2 font-medium hover:underline">
                 {isEnglish ? 'Clear filters' : '清除筛选条件'}
               </button>
             ) : null}
@@ -914,18 +973,19 @@ function AuditCenter({ token, apiBase, isEnglish, onBack }: { token: string; api
       </div>
 
       {(pageIndex > 0 || nextCursor !== null) ? (
-        <div className="flex items-center justify-center gap-3 pt-1">
-          <Button size="sm" variant="outline" disabled={paging || pageIndex === 0} onClick={loadPreviousPage} className="border-[#dedbd4] bg-white text-[#69645b] dark:border-[#494640] dark:bg-[#2b2a27] dark:text-[#aaa49a]">
+        <div className="security-pagination">
+          <Button size="sm" variant="outline" disabled={loading || paging || !!loadError || pageIndex === 0} onClick={loadPreviousPage}>
             <ChevronLeft />{isEnglish ? 'Previous page' : '上一页'}
           </Button>
-          <span className="min-w-16 text-center text-xs text-[#837d73] dark:text-[#9b958b]">
+          <span className="settings-page-caption min-w-16 text-center">
             {isEnglish ? `Page ${pageIndex + 1}` : `第 ${pageIndex + 1} 页`}
           </span>
-          <Button size="sm" variant="outline" disabled={paging || nextCursor === null} onClick={loadNextPage} className="border-[#dedbd4] bg-white text-[#69645b] dark:border-[#494640] dark:bg-[#2b2a27] dark:text-[#aaa49a]">
+          <Button size="sm" variant="outline" disabled={loading || paging || !!loadError || nextCursor === null} onClick={loadNextPage}>
             {paging ? <Loader2 className="animate-spin" /> : null}{isEnglish ? 'Next page' : '下一页'}<ChevronRight />
           </Button>
         </div>
       ) : null}
+      </div>
       <ConfirmDialog
         open={clearOpen}
         title={isEnglish ? 'Clear security audit?' : '清空安全审计？'}
@@ -940,36 +1000,74 @@ function AuditCenter({ token, apiBase, isEnglish, onBack }: { token: string; api
   );
 }
 
-export default function SecurityProtectionSection({ token, apiBase, isEnglish }: { token: string; apiBase: string; isEnglish: boolean }) {
+function SecurityProtectionContent({ token, apiBase, isEnglish }: { token: string; apiBase: string; isEnglish: boolean }) {
   const addToast = useToastStore((state) => state.addToast);
   const [view, setView] = useState<SecurityView>('overview');
   const [policy, setPolicy] = useState<SecurityPolicyPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [confirmedAt, setConfirmedAt] = useState<number | null>(null);
+  const [resetKind, setResetKind] = useState<'files' | 'commands' | 'network' | null>(null);
+  const requestIdRef = useRef(0);
+  const operationRef = useRef<'load' | 'save' | 'pick' | null>(null);
 
   const loadPolicy = useCallback(async () => {
-    if (!token || !apiBase) return;
+    if (operationRef.current === 'save' || operationRef.current === 'pick') return;
+    const requestId = ++requestIdRef.current;
+    if (!token || !apiBase) {
+      setLoadError(isEnglish ? 'The local service is not connected. Retry when it is available.' : '本地服务尚未连接，请在连接恢复后重试。');
+      setLoading(false);
+      return;
+    }
+    operationRef.current = 'load';
     setLoading(true);
     try {
-      setPolicy(await fetchSecurityPolicy(token, apiBase));
+      const next = await fetchSecurityPolicy(token, apiBase);
+      if (requestId !== requestIdRef.current) return;
+      setPolicy(next);
+      setConfirmedAt(Date.now());
+      setLoadError('');
+      setSaveError('');
     } catch (error) {
-      addToast({ type: 'error', title: isEnglish ? 'Could not load security policy' : '无法读取安全策略', message: errorMessage(error), duration: 6000 });
+      if (requestId !== requestIdRef.current) return;
+      setLoadError(errorMessage(error));
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) {
+        operationRef.current = null;
+        setLoading(false);
+      }
     }
-  }, [addToast, apiBase, isEnglish, token]);
+  }, [apiBase, isEnglish, token]);
 
-  useEffect(() => { void loadPolicy(); }, [loadPolicy]);
+  useEffect(() => {
+    void loadPolicy();
+  }, [loadPolicy]);
+  useEffect(() => () => { requestIdRef.current += 1; }, []);
 
-  const persistPolicy = async (update: SecurityPolicyUpdate, successTitle: string) => {
+  const persistPolicy = async (update: SecurityPolicyUpdate, successTitle: string): Promise<boolean> => {
+    if (operationRef.current || loadError || !token || !apiBase) return false;
+    operationRef.current = 'save';
+    const requestId = ++requestIdRef.current;
     setBusy(true);
     try {
-      setPolicy(await updateSecurityPolicy(token, apiBase, update));
+      const next = await updateSecurityPolicy(token, apiBase, update);
+      if (requestId !== requestIdRef.current) return false;
+      setPolicy(next);
+      setConfirmedAt(Date.now());
+      setSaveError('');
       addToast({ type: 'success', title: successTitle });
+      return true;
     } catch (error) {
-      addToast({ type: 'error', title: isEnglish ? 'Could not update policy' : '策略更新失败', message: errorMessage(error), duration: 6000 });
+      if (requestId !== requestIdRef.current) return false;
+      setSaveError(errorMessage(error));
+      return false;
     } finally {
-      setBusy(false);
+      if (requestId === requestIdRef.current) {
+        operationRef.current = null;
+        setBusy(false);
+      }
     }
   };
 
@@ -979,21 +1077,38 @@ export default function SecurityProtectionSection({ token, apiBase, isEnglish }:
   );
 
   const addPath = async (kind: 'allow' | 'approval') => {
-    if (!policy || busy) return;
-    const selected = await dialogBridge.open({
-      directory: true,
-      multiple: false,
-      title: kind === 'allow'
-        ? (isEnglish ? 'Choose automatically allowed folder' : '选择自动放行目录')
-        : (isEnglish ? 'Choose approval folder' : '选择强制审批目录'),
-    });
+    if (!policy || operationRef.current || loadError) return;
+    operationRef.current = 'pick';
+    setBusy(true);
+    const requestId = ++requestIdRef.current;
+    let selected;
+    try {
+      selected = await dialogBridge.open({
+        directory: true,
+        multiple: false,
+        title: kind === 'allow'
+          ? (isEnglish ? 'Choose automatically allowed folder' : '选择自动放行目录')
+          : (isEnglish ? 'Choose approval folder' : '选择强制审批目录'),
+      });
+    } catch (error) {
+      if (requestId === requestIdRef.current) setSaveError(errorMessage(error));
+    } finally {
+      if (requestId === requestIdRef.current) {
+        operationRef.current = null;
+        setBusy(false);
+      }
+    }
+    if (requestId !== requestIdRef.current) return;
     if (!selected || typeof selected !== 'string') return;
     const fileAllow = policy.file_allow_paths.map((item) => item.path);
     const approval = policy.approval_paths.map((item) => item.path);
     const target = kind === 'allow' ? fileAllow : approval;
     if (target.includes(selected)) return;
     target.push(selected);
-    await persistPaths(fileAllow, approval);
+    const saved = await persistPaths(fileAllow, approval);
+    if (!saved && requestId + 1 === requestIdRef.current) {
+      setSaveError((message) => `${selected}: ${message}`);
+    }
   };
 
   const removePath = async (kind: 'allow' | 'approval', path: string) => {
@@ -1005,55 +1120,66 @@ export default function SecurityProtectionSection({ token, apiBase, isEnglish }:
     await persistPaths(fileAllow, approval);
   };
 
-  const updateCommandRule = (kind: 'allow' | 'approval', value: string, remove = false) => {
-    if (!policy || busy) return;
+  const updateCommandRule = async (kind: 'allow' | 'approval', value: string, remove = false) => {
+    if (!policy || busy) return false;
     const key = kind === 'allow' ? 'command_allow_prefixes' : 'command_approval_prefixes';
     const current = policy[key];
     const next = remove ? current.filter((item) => item !== value) : [...current, value];
-    void persistPolicy(
+    return persistPolicy(
       kind === 'allow' ? { command_allow_prefixes: next } : { command_approval_prefixes: next },
       isEnglish ? 'Command security updated' : '命令安全策略已更新',
     );
   };
 
-  const updateNetworkRule = (kind: 'allow' | 'deny', value: string, remove = false) => {
-    if (!policy || busy) return;
+  const updateNetworkRule = async (kind: 'allow' | 'deny', value: string, remove = false) => {
+    if (!policy || busy) return false;
     const key = kind === 'allow' ? 'network_allow_domains' : 'network_deny_domains';
     const current = policy[key];
     const next = remove ? current.filter((item) => item !== value) : [...current, value];
-    void persistPolicy(
+    return persistPolicy(
       kind === 'allow' ? { network_allow_domains: next } : { network_deny_domains: next },
       isEnglish ? 'Network security updated' : '网络安全策略已更新',
     );
   };
 
-  if (loading && !policy) {
-    return <div className="flex items-center justify-center py-20 text-sm text-[#888278]"><Loader2 className="mr-2 h-4 w-4 animate-spin" />{isEnglish ? 'Loading security protection…' : '正在读取安全防护…'}</div>;
-  }
-  if (!policy) {
-    return <div className="py-16 text-center"><FolderLock className="mx-auto h-7 w-7 text-[#aaa49a]" /><p className="mt-2 text-sm text-[#777167]">{isEnglish ? 'Security policy is unavailable' : '安全策略暂时不可用'}</p><Button size="sm" variant="ghost" className="mt-3" onClick={() => void loadPolicy()}><RefreshCw />{isEnglish ? 'Retry' : '重试'}</Button></div>;
-  }
-  if (view === 'files') {
-    return <FileSecurityView policy={policy} busy={busy} isEnglish={isEnglish} onBack={() => setView('overview')} onAdd={(kind) => void addPath(kind)} onRemove={(kind, path) => void removePath(kind, path)} onReset={() => void persistPaths([], [])} />;
-  }
-  if (view === 'commands') return (
+  const resetOptions = {
+    files: {
+      title: isEnglish ? 'Restore file defaults?' : '恢复文件安全默认规则？',
+      message: isEnglish ? 'Remove custom allowed folders and approval folders. Built-in protected folders remain. Command rules, network rules, and audit records are unchanged. Applies to subsequent tool calls.' : '将移除自定义自动放行目录和自定义审批目录，保留系统保护目录。命令、网络规则及审计记录不变；后续工具调用按默认规则执行。',
+      update: { file_allow_paths: [], approval_paths: [] },
+    },
+    commands: {
+      title: isEnglish ? 'Restore command defaults?' : '恢复命令安全默认规则？',
+      message: isEnglish ? 'Remove all custom allow and ask prefixes. Built-in risk checks remain. File rules, network rules, and audit records are unchanged. Applies to subsequent tool calls.' : '将移除所有自定义放行前缀和询问前缀，保留内置风险检查。文件、网络规则及审计记录不变；后续工具调用按默认规则执行。',
+      update: { command_allow_prefixes: [], command_approval_prefixes: [] },
+    },
+    network: {
+      title: isEnglish ? 'Restore network defaults?' : '恢复网络安全默认规则？',
+      message: isEnglish ? 'Turn off default blocking and remove allowed and denied domains. Built-in network checks remain. File rules, command rules, and audit records are unchanged. Subsequent tool requests may access more destinations.' : '将关闭默认阻断，清空允许域名和拒绝域名，保留内置网络检查。文件、命令规则及审计记录不变；后续工具请求可访问的目标可能增加。',
+      update: { network_block_all: false, network_allow_domains: [], network_deny_domains: [] },
+    },
+  };
+  const editingDisabled = busy || loading || !!loadError;
+  let content;
+  if (view === 'audit') content = <AuditCenter token={token} apiBase={apiBase} isEnglish={isEnglish} onBack={() => setView('overview')} />;
+  else if (loading && !policy) content = <div className="settings-page-empty flex items-center justify-center"><Loader2 className="mr-2 h-4 w-4 animate-spin" />{isEnglish ? 'Loading security protection…' : '正在读取安全防护…'}</div>;
+  else if (!policy) content = <div className="settings-page-empty"><FolderLock className="settings-page-muted mx-auto h-6 w-6" /><p className="mt-2">{isEnglish ? 'Security policy is unavailable' : '安全策略暂时不可用'}</p><Button size="sm" variant="ghost" className="mt-3" onClick={() => setView('audit')}><FileSearch />{isEnglish ? 'Audit center' : '审计中心'}</Button></div>;
+  else if (view === 'files') content = <FileSecurityView policy={policy} busy={editingDisabled} isEnglish={isEnglish} onBack={() => setView('overview')} onAdd={(kind) => void addPath(kind)} onRemove={(kind, path) => void removePath(kind, path)} onReset={() => setResetKind('files')} />;
+  else if (view === 'commands') content = (
     <CommandSecurityView
       policy={policy}
-      busy={busy}
+      busy={editingDisabled}
       isEnglish={isEnglish}
       onBack={() => setView('overview')}
       onAdd={(kind, value) => updateCommandRule(kind, value)}
       onRemove={(kind, value) => updateCommandRule(kind, value, true)}
-      onReset={() => void persistPolicy(
-        { command_allow_prefixes: [], command_approval_prefixes: [] },
-        isEnglish ? 'Command defaults restored' : '已恢复命令安全默认设置',
-      )}
+      onReset={() => setResetKind('commands')}
     />
   );
-  if (view === 'network') return (
+  else if (view === 'network') content = (
     <NetworkSecurityView
       policy={policy}
-      busy={busy}
+      busy={editingDisabled}
       isEnglish={isEnglish}
       onBack={() => setView('overview')}
       onToggle={() => void persistPolicy(
@@ -1062,12 +1188,41 @@ export default function SecurityProtectionSection({ token, apiBase, isEnglish }:
       )}
       onAdd={(kind, value) => updateNetworkRule(kind, value)}
       onRemove={(kind, value) => updateNetworkRule(kind, value, true)}
-      onReset={() => void persistPolicy(
-        { network_block_all: false, network_allow_domains: [], network_deny_domains: [] },
-        isEnglish ? 'Network defaults restored' : '已恢复网络安全默认设置',
-      )}
+      onReset={() => setResetKind('network')}
     />
   );
-  if (view === 'audit') return <AuditCenter token={token} apiBase={apiBase} isEnglish={isEnglish} onBack={() => setView('overview')} />;
-  return <SecurityOverview isEnglish={isEnglish} onOpen={setView} />;
+  else content = <SecurityOverview policy={policy} confirmedAt={confirmedAt} unconfirmed={!!loadError || !!saveError} loading={loading} busy={busy} isEnglish={isEnglish} onRefresh={() => void loadPolicy()} onOpen={setView} />;
+
+  return <div className="settings-page security-center">
+    {view !== 'audit' && (loadError || saveError) && <div role="alert" className="settings-page-alert">
+      <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+      <div className="min-w-0 flex-1 [overflow-wrap:anywhere]">
+        <p className="font-semibold">{loadError ? (isEnglish ? 'Current policy could not be confirmed' : '无法确认当前策略') : (isEnglish ? 'Policy save unconfirmed' : '策略保存未确认')}</p>
+        <p>{loadError || saveError}</p>
+        <p>{loadError
+          ? (policy ? (isEnglish ? 'Showing the previous snapshot. Refresh successfully before editing.' : '下方为上次读取的快照，刷新成功后可继续修改。') : (isEnglish ? 'Retry to retrieve the current policy.' : '请重试读取当前策略。'))
+          : (isEnglish ? 'Retry the operation, or refresh to check what was saved.' : '请重试原操作，或刷新核对当前已保存的规则。')}</p>
+      </div>
+      <Button size="sm" variant="ghost" disabled={loading || busy} onClick={() => void loadPolicy()}><RefreshCw className={cn(loading && 'animate-spin')} />{loadError ? (isEnglish ? 'Retry' : '重试') : (isEnglish ? 'Check policy' : '刷新核对')}</Button>
+    </div>}
+    {content}
+    <ConfirmDialog
+      open={resetKind !== null}
+      title={resetKind ? resetOptions[resetKind].title : ''}
+      message={resetKind ? resetOptions[resetKind].message : ''}
+      confirmText={isEnglish ? 'Restore defaults' : '确认恢复'}
+      cancelText={isEnglish ? 'Cancel' : '取消'}
+      onCancel={() => setResetKind(null)}
+      onConfirm={() => {
+        if (!resetKind || editingDisabled) return;
+        const update = resetOptions[resetKind].update;
+        setResetKind(null);
+        void persistPolicy(update, isEnglish ? 'Defaults restored' : '已恢复默认规则');
+      }}
+    />
+  </div>;
+}
+
+export default function SecurityProtectionSection(props: { token: string; apiBase: string; isEnglish: boolean }) {
+  return <SecurityProtectionContent key={`${props.apiBase}:${props.token}`} {...props} />;
 }

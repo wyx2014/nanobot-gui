@@ -6,6 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import SubTabBar from '@/components/customize/SubTabBar';
 import { usePreviewStore } from '@/stores/previewStore';
+import { startDiagnostic } from '@/core/diagnostics';
+import { diagnosticError } from '@/shared/diagnostics';
 import {
   fetchPresentationDocuments, fetchPresentationPreviews,
   fetchPresentationTemplates, getCachedPresentationTemplates,
@@ -48,8 +50,22 @@ export default function PresentationPicker({ chatId, isEnglish: en, onClose, onS
   const [detail, setDetail] = useState<{ id: string; previews: string[] } | null>(null);
   const selected = templates.find((item) => item.id === selectedId);
   const cover = selected?.previews[0];
+  const opening = useRef<ReturnType<typeof startDiagnostic> | null>(null);
+  useEffect(() => {
+    const operation = startDiagnostic('presentation.picker_open', { chat_id: chatId,
+      details: { cache_hit: Boolean(getCachedPresentationTemplates()?.templates.length) } });
+    opening.current = operation;
+    return () => { operation.finish('cancelled'); opening.current = null; };
+  }, [chatId]);
+  useEffect(() => {
+    if (loading && !templates.length) return;
+    const frame = requestAnimationFrame(() => opening.current?.finish(catalogError && !templates.length ? 'failed' : 'completed',
+      { count: templates.length, stage: 'catalog_committed', ...(catalogError ? { error_code: 'CATALOG_LOAD_FAILED' } : {}) }));
+    return () => cancelAnimationFrame(frame);
+  }, [loading, templates.length, catalogError]);
 
   useEffect(() => {
+    const operation = startDiagnostic('presentation.catalog', { chat_id: chatId });
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     setLoading(true);
@@ -57,34 +73,37 @@ export default function PresentationPicker({ chatId, isEnglish: en, onClose, onS
     fetchPresentationTemplates().then((catalog) => {
       if (cancelled) return;
       setTemplates(catalog.templates);
+      operation.finish('completed', { count: catalog.templates.length });
       if (catalog.previews_pending) timer = setTimeout(() => setReload((value) => value + 1), 1500);
-    }).catch((cause: unknown) => { if (!cancelled) setCatalogError(errorMessage(cause)); })
+    }).catch((cause: unknown) => { if (!cancelled) { setCatalogError(errorMessage(cause)); operation.finish('failed', diagnosticError(cause)); } })
       .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; clearTimeout(timer); };
-  }, [reload]);
+    return () => { cancelled = true; clearTimeout(timer); operation.finish('cancelled'); };
+  }, [reload, chatId]);
 
   useEffect(() => {
     if (tab !== 'documents') return;
+    const operation = startDiagnostic('presentation.documents', { chat_id: chatId });
     let cancelled = false;
     setLoadingDocuments(true);
     setDocumentsError('');
     (chatId ? fetchPresentationDocuments(chatId) : Promise.resolve({ documents: [] })).then((list) => {
-      if (!cancelled) { setDocuments(list.documents); setDocumentsLoaded(true); }
-    }).catch((cause: unknown) => { if (!cancelled) setDocumentsError(errorMessage(cause)); })
+      if (!cancelled) { setDocuments(list.documents); setDocumentsLoaded(true); operation.finish('completed', { count: list.documents.length }); }
+    }).catch((cause: unknown) => { if (!cancelled) { setDocumentsError(errorMessage(cause)); operation.finish('failed', diagnosticError(cause)); } })
       .finally(() => { if (!cancelled) setLoadingDocuments(false); });
-    return () => { cancelled = true; };
+    return () => { cancelled = true; operation.finish('cancelled'); };
   }, [chatId, tab, reload]);
 
   useEffect(() => {
     if (!selectedId) return;
+    const operation = startDiagnostic('presentation.previews', { chat_id: chatId, details: { template_id: selectedId } });
     let cancelled = false;
     setPreviewError('');
     setDetail(null);
     fetchPresentationPreviews(selectedId).then((result) => {
-      if (!cancelled) setDetail({ id: selectedId, previews: result.previews });
-    }).catch((cause: unknown) => { if (!cancelled) setPreviewError(errorMessage(cause)); });
-    return () => { cancelled = true; };
-  }, [selectedId, cover, reload]);
+      if (!cancelled) { setDetail({ id: selectedId, previews: result.previews }); operation.finish('completed', { count: result.previews.length }); }
+    }).catch((cause: unknown) => { if (!cancelled) { setPreviewError(errorMessage(cause)); operation.finish('failed', diagnosticError(cause)); } });
+    return () => { cancelled = true; operation.finish('cancelled'); };
+  }, [selectedId, cover, reload, chatId]);
 
   const choose = (template: PresentationTemplate) => {
     try { localStorage.setItem('nanobot.presentation.lastTemplate', template.id); } catch { /* optional preference */ }

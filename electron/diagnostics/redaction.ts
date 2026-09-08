@@ -1,4 +1,5 @@
 import { redactNanobotDiagnosticText } from '../nanobotDiagnostics';
+import { diagnosticFrames } from '../../src/shared/diagnosticErrors';
 
 const SECRET_KEY = /(?:password|passwd|secret|api_?key|authorization|cookie|private_key|access_key|credential|token)/i;
 const COUNTERS = new Set(['input_tokens', 'output_tokens', 'cached_input_tokens', 'total_tokens', 'token_estimate']);
@@ -40,6 +41,14 @@ export class BundleRedactor {
     if (SECRET_KEY.test(key) && !COUNTERS.has(key)) { this.omitted_fields++; return '[REDACTED]'; }
     if (OMITTED.has(key)) { this.omitted_fields++; return '[CONTENT OMITTED]'; }
     if (typeof value === 'string') {
+      if (key === 'stack' && /^\s*at\s/m.test(value)) return diagnosticFrames(value);
+      if (key === 'stack') {
+        // Preserve historical Python frame line numbers separately from path aliases.
+        return value.split('\n').slice(0, 12).flatMap((line) => {
+          const frame = line.match(/^(.*):(\d+) in ([\w<>.]+)$/);
+          return frame ? [{ module: this.alias('path', frame[1]), line: Number(frame[2]), function: frame[3] }] : [];
+        });
+      }
       if (['server_id', 'tool_name', 'name'].includes(key)) return this.alias('resource', value);
       return this.text(value);
     }

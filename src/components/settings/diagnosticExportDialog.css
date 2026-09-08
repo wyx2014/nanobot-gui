@@ -66,7 +66,12 @@
   min-height: 0;
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 20px 24px;
+}
+
+.diagnostic-export-body[data-source-picker-open="true"] {
+  overflow-y: hidden;
 }
 
 .diagnostic-export-form,
@@ -125,7 +130,7 @@
   white-space: nowrap;
 }
 
-.diagnostic-export-field [role="listbox"] {
+.diagnostic-export-field [data-slot="select-content"] {
   border-color: #dedad2;
   border-radius: 8px;
 }
@@ -318,7 +323,7 @@
   color: #eeeae2;
 }
 
-.dark .diagnostic-export-field [role="listbox"] {
+.dark .diagnostic-export-field [data-slot="select-content"] {
   border-color: rgb(255 255 255 / 0.1);
   background: #242424;
 }

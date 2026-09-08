@@ -1,4 +1,4 @@
-import { fetchGatewayResponse } from './api';
+import { ApiError, fetchGatewayResponse } from './api';
 import { getNanobotStatus, getNanobotToken, refreshNanobotAuth } from './nanobotClient';
 
 export type PresentationFamily = 'taiping' | 'guizang' | 'kimi';
@@ -46,7 +46,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ({ token, baseUrl: base } = await refreshNanobotAuth());
     response = await fetchGatewayResponse(`${base}/api/presentations/${path}`, token, init, 40000);
   }
-  if (!response.ok) throw new Error(await response.text() || `HTTP ${response.status}`);
+  if (!response.ok) throw new ApiError(response.status, await response.text() || `HTTP ${response.status}`);
   if (!response.headers.get('content-type')?.includes('application/json')) {
     throw new Error('Gateway returned a non-JSON presentation response');
   }

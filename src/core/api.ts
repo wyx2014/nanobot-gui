@@ -42,6 +42,7 @@ import { isProtectedBuiltinModelProvider } from "@/config/builtinModelServices";
 import { fetchWithTimeout } from "./bootstrap";
 import { recordDiagnostic, startDiagnostic } from './diagnostics';
 import { diagnosticError, diagnosticId, diagnosticRoute } from '../shared/diagnostics';
+import { classifyDiagnosticError, diagnosticSymbol } from '../shared/diagnosticErrors';
 
 const API_READ_TIMEOUT_MS = 20_000;
 
@@ -91,7 +92,10 @@ export async function fetchGatewayResponse(
           'X-Request-Id': request_id, 'X-Client-Action-Id': actionId },
         credentials: 'same-origin',
       }, timeoutMs);
-      operation.finish(response.ok ? 'completed' : 'failed', { status_code: response.status });
+      operation.finish(response.ok ? 'completed' : 'failed', { status_code: response.status,
+        error_category: response.ok ? undefined : classifyDiagnosticError(undefined, response.status),
+        server_request_id: diagnosticSymbol(response.headers?.get?.('x-request-id')),
+        auth_mode: 'gateway_bearer', auth_header_present: Boolean(currentToken) });
       return response;
     } catch (cause) {
       operation.finish(init?.signal?.aborted ? 'cancelled' : 'failed', diagnosticError(cause));

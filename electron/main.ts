@@ -310,6 +310,7 @@ if (isPrimaryInstance) {
 async function startApplication(): Promise<void> {
   await app.whenReady();
   const diagnosticExporter = createDiagnosticExporter(() => mainWindow, pythonBridge, operationLog);
+  operationLog.setSnapshotProvider(() => ({ ...operationLog.lastRendererSnapshot, gateway_ready: pythonBridge.isReady }));
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     ...(process.platform === 'darwin' ? [{ role: 'appMenu' as const }] : []),
     { role: 'fileMenu' }, { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' },
@@ -457,8 +458,23 @@ async function startApplication(): Promise<void> {
     if (event.sender !== mainWindow?.webContents || event.senderFrame !== event.sender.mainFrame) return;
     const now = Date.now();
     if (now - diagnosticWindow >= 1000) { diagnosticWindow = now; diagnosticBatches = 0; }
-    if (++diagnosticBatches > 10) { operationLog.dropped++; return; }
+    if (++diagnosticBatches > 10) {
+      const events = (payload as { events?: unknown })?.events;
+      operationLog.dropped += Array.isArray(events) ? Math.min(events.length, 50) : 1;
+      return;
+    }
     recordRendererBatch(operationLog, payload);
+  });
+  ipcMain.handle('diagnostics:flush', async (event, payload: unknown) => {
+    if (event.sender !== mainWindow?.webContents || event.senderFrame !== event.sender.mainFrame) return { status: 'unavailable' };
+    const value = payload as { process_instance_id?: string; process_seq?: number; dropped?: number };
+    if (!value || typeof value.process_instance_id !== 'string' || !/^renderer_[a-f0-9-]{36}$/.test(value.process_instance_id)
+      || !Number.isSafeInteger(value.process_seq) || Number(value.process_seq) < 0
+      || !Number.isSafeInteger(value.dropped) || Number(value.dropped) < 0) return { status: 'unavailable' };
+    const received = operationLog.rendererSequence(value.process_instance_id);
+    const result = await operationLog.flush();
+    return { ...result, dropped: result.dropped! + value.dropped!, renderer_target_seq: value.process_seq, renderer_received_seq: received,
+      status: result.status === 'completed' && (received < value.process_seq! || value.dropped! > 0) ? 'incomplete' : result.status };
   });
 
   const SILENT_CHANNELS = new Set(['os:homeDir', 'os:resolve', 'fs:exists']);

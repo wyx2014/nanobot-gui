@@ -9,6 +9,8 @@ import createExportWorker from './exportWorker?nodeWorker';
 import type { PythonBridge } from '../pythonBridge';
 import { appLaunchId, operationalLogHealth, recordMainDiagnostic, type OperationalLog } from '../operationalLog';
 import { validateExportRequest, type DiagnosticExportRequest, type DiagnosticExportResult, type ExportStage } from '../../src/shared/diagnosticBundle';
+import { diagnosticError, type DiagnosticStatus } from '../../src/shared/diagnostics';
+import { buildIdentity } from '../buildIdentity';
 
 export function createDiagnosticExporter(getWindow: () => BrowserWindow | null, bridge: PythonBridge, log: OperationalLog) {
   let active: { id: string; cancelled: boolean; committing: boolean; worker?: Worker } | undefined;
@@ -22,6 +24,10 @@ export function createDiagnosticExporter(getWindow: () => BrowserWindow | null, 
     active = task;
     let tempPath: string | undefined;
     const incidentId = `incident_${randomUUID()}`;
+    const startedAt = performance.now();
+    let outcome: DiagnosticStatus = 'cancelled';
+    let failure: Record<string, unknown> = {};
+    recordMainDiagnostic({ event_name: 'main.diagnostic_export', request_id: task.id, status: 'started' });
     try {
       const options: Electron.SaveDialogOptions = { title: '导出诊断包',
         defaultPath: path.join(app.getPath('downloads'), `TPCowork-diagnostics-${new Date().toISOString().slice(0, 10)}-${incidentId}.zip`),
@@ -31,13 +37,14 @@ export function createDiagnosticExporter(getWindow: () => BrowserWindow | null, 
       if (selected.canceled || !selected.filePath || task.cancelled) return { status: 'cancelled' };
       const destination = selected.filePath;
       tempPath = path.join(path.dirname(destination), `.tpcowork-diagnostics-${randomUUID()}.tmp`);
-      recordMainDiagnostic({ event_name: 'main.diagnostic_export', request_id: task.id, status: 'started' });
+      outcome = 'failed';
       notify('collecting');
-      await Promise.race([log.flush(), new Promise<void>((resolve) => setTimeout(resolve, 250))]);
+      const desktopFlush = await log.flush();
       if (task.cancelled) return { status: 'cancelled' };
       const worker = createExportWorker({ workerData: {
         request, incidentId, tempPath, userData: app.getPath('userData'),
-        environment: { app_version: app.getVersion(), app_launch_id: appLaunchId, packaged: app.isPackaged,
+        collection: { desktop: desktopFlush, renderer: request.renderer_flush ?? { status: 'unavailable' } },
+        environment: { app_version: app.getVersion(), build: buildIdentity, app_launch_id: appLaunchId, packaged: app.isPackaged,
           platform: process.platform, arch: process.arch, os_release: os.release(),
           electron_version: process.versions.electron, chrome_version: process.versions.chrome, node_version: process.versions.node,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, uptime_seconds: process.uptime(), rss_bytes: process.memoryUsage().rss,
@@ -61,17 +68,27 @@ export function createDiagnosticExporter(getWindow: () => BrowserWindow | null, 
       await worker.terminate();
       task.worker = undefined;
       if (task.cancelled) return { status: 'cancelled' };
-      if (result.status !== 'ready' && result.status !== 'partial') return result;
+      if (result.status !== 'ready' && result.status !== 'partial') {
+        outcome = result.status === 'cancelled' ? 'cancelled' : 'failed';
+        failure = { error_code: result.error_code ?? 'EXPORT_FAILED' };
+        return result;
+      }
       // Cancellation stops at commit; the user-selected destination is changed only here.
       task.committing = true;
       await fs.rename(tempPath, destination);
       tempPath = undefined;
-      recordMainDiagnostic({ event_name: 'main.diagnostic_export', request_id: task.id, status: 'completed', details: { bytes: result.bytes } });
+      outcome = 'completed';
+      failure = { bytes: result.bytes };
       return { ...result, path: destination };
     } catch (cause) {
+      outcome = 'failed';
+      failure = diagnosticError(cause);
       const code = (cause as NodeJS.ErrnoException)?.code;
       return { status: 'failed', error_code: typeof code === 'string' && /^[A-Z_]+$/.test(code) ? code : 'EXPORT_FAILED' };
     } finally {
+      recordMainDiagnostic({ event_name: 'main.diagnostic_export', request_id: task.id,
+        status: task.cancelled ? 'cancelled' : outcome, level: !task.cancelled && outcome === 'failed' ? 'error' : 'info',
+        duration_ms: performance.now() - startedAt, details: failure });
       if (task.worker) await task.worker.terminate();
       if (tempPath) await fs.rm(tempPath, { force: true }).catch(() => {});
       active = undefined;

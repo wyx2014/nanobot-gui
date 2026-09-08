@@ -1,4 +1,6 @@
 import { resolve } from 'path'
+import { execFileSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { defineConfig, externalizeDepsPlugin, loadEnv } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import { version } from './package.json'
@@ -11,6 +13,13 @@ const BUILTIN_MCP_BUILD_CONSTANTS = {
 } as const
 
 export default defineConfig(({ mode }) => {
+  let revision = 'unknown';
+  let dirty = true;
+  try {
+    revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: __dirname, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    dirty = Boolean(execFileSync('git', ['status', '--porcelain'], { cwd: __dirname, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim());
+  } catch { /* Builds from a source archive have no Git metadata. */ }
+  const buildIdentity = JSON.stringify({ id: randomUUID(), revision, dirty, created_at: new Date().toISOString() });
   const fileEnv = loadEnv(mode, process.cwd(), '')
   const mainCredentialDefines = Object.fromEntries(
     Object.entries(BUILTIN_MCP_BUILD_CONSTANTS).map(([constant, envName]) => [
@@ -21,9 +30,10 @@ export default defineConfig(({ mode }) => {
 
   return {
     main: {
-      define: mainCredentialDefines,
+      define: { ...mainCredentialDefines, __TPCOWORK_BUILD__: buildIdentity },
       plugins: [externalizeDepsPlugin()],
       build: {
+        sourcemap: 'hidden',
         lib: {
           entry: resolve(__dirname, 'electron/main.ts'),
           formats: ['cjs']
@@ -42,6 +52,7 @@ export default defineConfig(({ mode }) => {
     preload: {
       plugins: [externalizeDepsPlugin()],
       build: {
+        sourcemap: 'hidden',
         rollupOptions: {
           input: {
             index: resolve(__dirname, 'electron/preload.ts')
@@ -59,6 +70,7 @@ export default defineConfig(({ mode }) => {
         }
       },
       build: {
+        sourcemap: 'hidden',
         rollupOptions: {
           input: {
             index: resolve(__dirname, 'index.html')

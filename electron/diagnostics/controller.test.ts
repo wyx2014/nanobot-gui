@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createDiagnosticExporter } from './controller';
 import type { PythonBridge } from '../pythonBridge';
 import type { OperationalLog } from '../operationalLog';
+import * as operational from '../operationalLog';
 
 const mocks = vi.hoisted(() => ({ handlers: new Map<string, (...args: unknown[]) => unknown>(),
   showSaveDialog: vi.fn(), worker: vi.fn(), directory: '', message: vi.fn() }));
@@ -35,6 +36,17 @@ async function setup() {
 }
 
 describe('diagnostic export controller', () => {
+  it('records the terminal failure of the exporter without exposing exception text', async () => {
+    const { request, event } = await setup();
+    const record = vi.spyOn(operational, 'recordMainDiagnostic');
+    try {
+      mocks.worker.mockImplementation(() => { throw new Error('private worker exception'); });
+      const result = await mocks.handlers.get('diagnostics:export')!(event, request);
+      expect(result).toMatchObject({ status: 'failed', error_code: 'EXPORT_FAILED' });
+      expect(record.mock.calls.map(([event]) => event.status)).toEqual(['started', 'failed']);
+      expect(JSON.stringify(record.mock.calls)).not.toContain('private worker exception');
+    } finally { record.mockRestore(); }
+  });
   it('opens the shared renderer dialog from the native Help menu', async () => {
     const { controller, event } = await setup();
     const pending = controller.exportNative();

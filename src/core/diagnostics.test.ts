@@ -1,12 +1,45 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { diagnosticError, diagnosticRoute, sanitizeDiagnostic } from '../shared/diagnostics';
-import { flushDiagnostics, installDiagnosticCapture, recordDiagnostic, startDiagnostic } from './diagnostics';
+import { flushDiagnostics, flushDiagnosticsForExport, installDiagnosticCapture, recordDiagnostic, setDiagnosticSnapshotProvider, startDiagnostic } from './diagnostics';
 import { fetchGatewayResponse, fetchSettings, registerTokenProvider } from './api';
 
 beforeEach(() => { flushDiagnostics(); vi.mocked(window.ipc.send).mockClear(); vi.useFakeTimers(); });
-afterEach(() => { flushDiagnostics(); vi.useRealTimers(); registerTokenProvider(null); vi.unstubAllGlobals(); });
+afterEach(() => { flushDiagnostics(); setDiagnosticSnapshotProvider(undefined); vi.useRealTimers(); registerTokenProvider(null); vi.unstubAllGlobals(); });
 
 describe('renderer diagnostics', () => {
+  it('keeps a nested TLS cause and source locations while removing response text and credentials', () => {
+    const cause = Object.assign(new Error('private certificate response'), { code: 'CERT_HAS_EXPIRED' });
+    const error = new TypeError('private fetch response', { cause });
+    error.stack = 'TypeError: private\n    at fetchCatalog (C:\\Users\\private\\app\\catalog.js:42:7)';
+    const safe = sanitizeDiagnostic({ event_name: 'http.request', details: diagnosticError(error) });
+    expect(safe?.details).toMatchObject({ error_category: 'network.tls',
+      cause_chain: [{ error_type: 'TypeError' }, { error_code: 'CERT_HAS_EXPIRED' }],
+      stack_frames: [{ module: 'catalog.js', function: 'fetchCatalog', line: 42, column: 7 }] });
+    expect(JSON.stringify(safe)).not.toContain('private');
+    const cyclic = Object.assign(new Error(), { code: 'sk-private' }) as Error & { cause?: unknown };
+    cyclic.cause = cyclic;
+    const cyclicSafe = sanitizeDiagnostic({ event_name: 'http.request', details: diagnosticError(cyclic) });
+    expect(JSON.stringify(cyclicSafe)).not.toContain('sk-private');
+    expect((cyclicSafe?.details?.cause_chain as unknown[]).length).toBe(1);
+  });
+
+  it('freezes the failure context before the user changes conversations and acknowledges all pending batches', async () => {
+    let chat = 'chat-failed';
+    setDiagnosticSnapshotProvider(() => ({ captured_at: new Date().toISOString(), chat_id: chat,
+      connection_status: 'disconnected', messages: ['private conversation'] }));
+    for (let index = 0; index < 130; index++) recordDiagnostic({ event_name: 'renderer.started' });
+    recordDiagnostic({ event_name: 'renderer.uncaught', status: 'failed', chat_id: chat });
+    chat = 'chat-new';
+    vi.mocked(window.ipc.invoke).mockResolvedValueOnce({ status: 'completed', processed_seq: 1000 });
+    expect(await flushDiagnosticsForExport()).toMatchObject({ status: 'completed' });
+    const events = vi.mocked(window.ipc.send).mock.calls.flatMap((call) => (call[1] as { events: Array<{ details: Record<string, unknown> }> }).events);
+    expect(events).toHaveLength(131);
+    const failure = events.at(-1)!;
+    expect(failure.details.incident_id).toMatch(/^incident_/);
+    expect(failure.details.incident_snapshot).toMatchObject({ chat_id: 'chat-failed' });
+    expect(JSON.stringify(events)).not.toContain('private conversation');
+    expect(window.ipc.invoke).toHaveBeenLastCalledWith('diagnostics:flush', expect.objectContaining({ process_seq: expect.any(Number) }));
+  });
   it.each([
     ['text/html', '<!doctype html>private response body', 'NON_JSON_RESPONSE'],
     ['application/json', '{"private response body":', 'JSON_READ_FAILED'],

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Archive, CheckCircle2, CircleAlert, FolderOpen, Loader2, ShieldCheck } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -7,6 +7,7 @@ import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { cancelDiagnosticExport, captureRendererDiagnostics, exportDiagnostics, onDiagnosticExportProgress } from '@/core/diagnosticExport';
 import type { DiagnosticExportResult, ExportStage } from '@/shared/diagnosticBundle';
+import { useChatStore } from '@/stores/chatStore';
 import './diagnosticExportDialog.css';
 
 function localInputTime() {
@@ -15,17 +16,41 @@ function localInputTime() {
 }
 
 export default function DiagnosticExportDialog({ onClose, isEnglish = false, initialDescription = '' }: { onClose: () => void; isEnglish?: boolean; initialDescription?: string }) {
-  const [snapshot] = useState(captureRendererDiagnostics);
+  const conversations = useChatStore((state) => state.conversations);
+  const [currentChatId] = useState(() => useChatStore.getState().activeConversationId);
   const [description, setDescription] = useState(initialDescription);
   const [occurredAt, setOccurredAt] = useState(localInputTime);
   const [minutes, setMinutes] = useState('15');
-  const [scope, setScope] = useState(snapshot.session_id ? 'session' : 'application');
+  const [logSource, setLogSource] = useState(() => currentChatId && conversations[currentChatId] ? `session:${currentChatId}` : 'application');
+  const [sourcePickerOpen, setSourcePickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState<ExportStage>('collecting');
   const [result, setResult] = useState<DiagnosticExportResult | null>(null);
   const [error, setError] = useState('');
   const requestId = useRef<string | null>(null);
+  const sourcePickerPortal = useRef<HTMLDivElement>(null);
   const en = isEnglish;
+  const selectedChatId = logSource === 'application' ? undefined : logSource.slice('session:'.length);
+  const selectedChat = selectedChatId ? conversations[selectedChatId] : undefined;
+  const sourceOptions = useMemo(() => {
+    const dateFormat = new Intl.DateTimeFormat(en ? 'en-US' : 'zh-CN', {
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+    });
+    return [
+      {
+        value: 'application',
+        label: en ? 'All runtime logs' : '全部运行日志',
+        description: en ? 'All conversations, background tasks and app events' : '所有会话、后台任务及软件事件',
+      },
+      ...Object.values(conversations)
+        .sort((a, b) => Number(b.id === currentChatId) - Number(a.id === currentChatId) || b.updatedAt - a.updatedAt)
+        .map((chat) => ({
+          value: `session:${chat.id}`,
+          label: `${chat.id === currentChatId ? (en ? 'Current chat · ' : '当前聊天 · ') : ''}${chat.title || (en ? 'Untitled chat' : '未命名聊天')}`,
+          description: dateFormat.format(chat.updatedAt),
+        })),
+    ];
+  }, [conversations, currentChatId, en]);
 
   useEffect(() => {
     const stop = onDiagnosticExportProgress((event) => {
@@ -44,12 +69,18 @@ export default function DiagnosticExportDialog({ onClose, isEnglish = false, ini
       setError(en ? 'Choose a valid time in the past.' : '请选择有效的问题发生时间，不能晚于当前时间。');
       return;
     }
+    const snapshot = captureRendererDiagnostics(selectedChatId
+      ? { event_name: 'diagnostics.export', chat_id: selectedChatId } : undefined);
+    if (selectedChatId && snapshot.chat_id !== selectedChatId) {
+      setError(en ? 'This conversation is no longer available. Choose another log source.' : '所选会话已不可用，请重新选择日志来源。');
+      return;
+    }
     const id = `export_${crypto.randomUUID()}`;
     requestId.current = id;
     setBusy(true); setResult(null); setError(''); setStage('collecting');
     try {
       const next = await exportDiagnostics({ export_id: id, description, occurred_at: new Date(occurred).toISOString(),
-        window_minutes: Number(minutes) as 15 | 60 | 1440, scope: scope as 'session' | 'application', renderer: snapshot });
+        window_minutes: Number(minutes) as 15 | 60 | 1440, scope: selectedChatId ? 'session' : 'application', renderer: snapshot });
       setResult(next);
       if (next.status === 'failed') {
         const errors: Record<string, string> = {
@@ -73,6 +104,10 @@ export default function DiagnosticExportDialog({ onClose, isEnglish = false, ini
     gateway_traces: en ? 'Task traces' : '任务链路', gateway_agent_runs: en ? 'Agent runs' : 'Agent 执行记录',
     gateway_trace_spans: en ? 'Execution stages' : '执行阶段', runtime: en ? 'Runtime snapshot' : '运行状态',
     renderer: en ? 'Interface snapshot' : '界面状态', timeline: en ? 'Timeline' : '事件时间线',
+    desktop_flush: en ? 'Desktop log completeness' : '桌面日志完整性',
+    renderer_flush: en ? 'Interface log completeness' : '界面日志完整性',
+    gateway_flush: en ? 'Gateway log completeness' : '后端日志完整性',
+    doctor: en ? 'Environment checks' : '环境检查', evidence: en ? 'Execution summary' : '执行摘要',
   };
   const stages = en ? { collecting: 'Collecting diagnostics…', redacting: 'Cleaning sensitive data…', packaging: 'Saving ZIP…' }
     : { collecting: '正在收集诊断信息…', redacting: '正在清洗敏感信息…', packaging: '正在保存诊断包…' };
@@ -96,7 +131,7 @@ export default function DiagnosticExportDialog({ onClose, isEnglish = false, ini
         </DialogDescription>
       </DialogHeader>
 
-      <div className="diagnostic-export-body">
+      <div className="diagnostic-export-body" data-source-picker-open={sourcePickerOpen || undefined}>
         {complete ? (
           <div className="diagnostic-export-success" role="status">
             <div className="diagnostic-export-success-banner">
@@ -141,19 +176,29 @@ export default function DiagnosticExportDialog({ onClose, isEnglish = false, ini
                 <Input id="diagnostic-time" type="datetime-local" value={occurredAt} onChange={(event) => setOccurredAt(event.target.value)} />
               </div>
               <div className="diagnostic-export-field">
-                <span>{en ? 'Time range' : '日志范围'}</span>
-                <Select ariaLabel={en ? 'Time range' : '日志范围'} value={minutes} onChange={setMinutes} options={[
+                <span>{en ? 'Time range' : '时间范围'}</span>
+                <Select ariaLabel={en ? 'Time range' : '时间范围'} value={minutes} onChange={setMinutes} options={[
                   { value: '15', label: en ? 'Around 15 minutes' : '发生前后约 15 分钟' },
                   { value: '60', label: en ? 'Around 1 hour' : '发生前后约 1 小时' },
                   { value: '1440', label: en ? 'Around 24 hours' : '发生前后约 24 小时' },
                 ]} />
               </div>
               <div className="diagnostic-export-field diagnostic-export-field-wide">
-                <span>{en ? 'Scope' : '任务范围'}</span>
-                <Select ariaLabel={en ? 'Scope' : '任务范围'} value={scope} onChange={setScope} options={[
-                  ...(snapshot.session_id ? [{ value: 'session', label: en ? 'Current conversation and app events' : '当前会话及应用公共事件' }] : []),
-                  { value: 'application', label: en ? 'Application (all tasks in this time range)' : '整个应用（该时段的所有任务）' },
-                ]} />
+                <span>{en ? 'Log source' : '日志来源'}</span>
+                <Select ariaLabel={en ? 'Log source' : '日志来源'} value={logSource} onChange={setLogSource}
+                  options={sourceOptions} placeholder={en ? 'Choose a conversation' : '请重新选择会话'}
+                  searchPlaceholder={en ? 'Search by conversation name' : '搜索会话名称'}
+                  emptySearchLabel={en ? 'No matching conversations' : '没有匹配的会话'}
+                  portalled portalLayer={100} portalContainer={() => sourcePickerPortal.current}
+                  onOpenChange={setSourcePickerOpen} />
+                <p className="diagnostic-export-help">
+                  {selectedChatId
+                    ? (en ? 'Only logs associated with this conversation in the selected time range. Environment checks are also included.' : '仅收集所选时间范围内属于此会话的日志，并附带软件环境检查。')
+                    : (en ? 'Includes all conversations, background tasks and app logs in the selected time range.' : '收集所选时间范围内所有会话、后台任务及软件运行日志。')}
+                </p>
+                {selectedChat && !selectedChat.sessionId && <p className="diagnostic-export-help">
+                  {en ? 'This conversation has not synced with the backend yet. Only its interface logs and local environment details are available.' : '此会话尚未同步到后端，目前只能收集它的界面日志和本地环境信息。'}
+                </p>}
               </div>
             </fieldset>
 
@@ -177,9 +222,10 @@ export default function DiagnosticExportDialog({ onClose, isEnglish = false, ini
         {complete ? (
           <Button onClick={() => { void window.ipc.invoke('shell:reveal', result.path); }}><FolderOpen aria-hidden="true" />{en ? 'Show in folder' : '打开所在文件夹'}</Button>
         ) : (
-          <Button disabled={busy} onClick={() => void start()}>{en ? 'Export ZIP' : '导出 ZIP'}</Button>
+          <Button disabled={busy || Boolean(selectedChatId && !selectedChat)} onClick={() => void start()}>{en ? 'Export ZIP' : '导出 ZIP'}</Button>
         )}
       </DialogFooter>
+      <div ref={sourcePickerPortal} className="contents" />
     </DialogContent>
   </Dialog>;
 }

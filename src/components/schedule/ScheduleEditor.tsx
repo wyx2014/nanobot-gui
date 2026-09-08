@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useScheduleStore } from '@/stores/scheduleStore';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -61,13 +61,16 @@ export default function ScheduleEditor() {
   const [dayOfMonth, setDayOfMonth] = useState(1);
   const [skillName, setSkillName] = useState('');
   const [workspacePath, setWorkspacePath] = useState('');
+  const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const workspacePickerPortal = useRef<HTMLDivElement>(null);
   const workspaceOptions = projects
     .filter((project) => project.kind === 'workspace' && project.status === 'active' && Boolean(project.rootPath))
     .map((project) => ({
       value: project.rootPath,
-      label: `${project.name || project.rootPath} · ${project.rootPath}`,
+      label: project.name || project.rootPath,
+      description: project.rootPath,
     }));
   const selectedWorkspacePath = workspaceOptions.some((option) => option.value === workspacePath)
     ? workspacePath
@@ -108,11 +111,11 @@ export default function ScheduleEditor() {
   useEffect(() => {
     if (!showEditor) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeEditor();
+      if (e.key === 'Escape' && !workspacePickerOpen) closeEditor();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showEditor, closeEditor]);
+  }, [showEditor, closeEditor, workspacePickerOpen]);
 
   if (!showEditor) return null;
 
@@ -227,7 +230,14 @@ export default function ScheduleEditor() {
         </div>
 
         {/* Form */}
-        <div className="px-6 py-4 space-y-4 overflow-auto flex-1">
+        <div
+          data-schedule-editor-scroll
+          data-workspace-picker-open={workspacePickerOpen || undefined}
+          className={cn(
+            'flex-1 space-y-4 overscroll-contain px-6 py-4',
+            workspacePickerOpen ? 'overflow-hidden' : 'overflow-auto',
+          )}
+        >
           {/* Task name */}
           <div>
             <label className="block text-[13px] font-medium text-[#29261b] mb-1.5">
@@ -441,6 +451,7 @@ export default function ScheduleEditor() {
             {workspaceOptions.length > 0 ? (
               <div className="mb-2">
                 <Select
+                  ariaLabel={isEnglish ? 'Workspace path' : '工作区路径'}
                   value={selectedWorkspacePath}
                   onChange={setWorkspacePath}
                   placeholder={isEnglish ? 'Select an existing workspace' : '选择已有工作空间'}
@@ -448,6 +459,12 @@ export default function ScheduleEditor() {
                     { value: '', label: isEnglish ? 'No workspace selected' : '不指定工作空间' },
                     ...workspaceOptions,
                   ]}
+                  searchPlaceholder={isEnglish ? 'Search workspace name or path' : '搜索工作空间名称或路径'}
+                  emptySearchLabel={isEnglish ? 'No matching workspaces' : '没有匹配的工作空间'}
+                  portalled
+                  portalLayer={60}
+                  portalContainer={() => workspacePickerPortal.current}
+                  onOpenChange={setWorkspacePickerOpen}
                 />
               </div>
             ) : null}
@@ -492,6 +509,7 @@ export default function ScheduleEditor() {
             {isSaving ? t.common.loading : t.common.save}
           </button>
         </div>
+        <div ref={workspacePickerPortal} className="contents" />
       </div>
     </div>
   );

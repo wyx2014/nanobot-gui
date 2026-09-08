@@ -16,6 +16,7 @@ export interface RendererDiagnosticSnapshot {
   last_step_status?: string;
   last_step_type?: string;
   last_progress_at?: number;
+  context_kind?: string;
 }
 export interface DiagnosticExportRequest {
   export_id: string;
@@ -24,6 +25,27 @@ export interface DiagnosticExportRequest {
   window_minutes: 15 | 60 | 1440;
   scope: 'application' | 'session';
   renderer?: RendererDiagnosticSnapshot;
+  renderer_flush?: DiagnosticFlushResult;
+}
+export interface DiagnosticFlushResult {
+  status: 'completed' | 'timeout' | 'write_failed' | 'incomplete' | 'unavailable';
+  target_seq?: number;
+  processed_seq?: number;
+  persisted_seq?: number;
+  dropped?: number;
+  write_failures?: number;
+  queue_depth?: number;
+  renderer_target_seq?: number;
+  renderer_received_seq?: number;
+}
+export function validateFlushResult(value: unknown): DiagnosticFlushResult {
+  const raw = value as Record<string, unknown> | undefined;
+  if (!raw || !['completed', 'timeout', 'write_failed', 'incomplete', 'unavailable'].includes(String(raw.status))) return { status: 'unavailable' };
+  const output: DiagnosticFlushResult = { status: raw.status as DiagnosticFlushResult['status'] };
+  for (const key of ['target_seq', 'processed_seq', 'persisted_seq', 'dropped', 'write_failures', 'queue_depth', 'renderer_target_seq', 'renderer_received_seq'] as const) {
+    if (Number.isSafeInteger(raw[key]) && Number(raw[key]) >= 0) output[key] = Number(raw[key]);
+  }
+  return output;
 }
 export interface DiagnosticSource {
   status: 'included' | 'unavailable' | 'truncated' | 'excluded';
@@ -50,7 +72,7 @@ export function validateRendererSnapshot(value: unknown): RendererDiagnosticSnap
   if (typeof raw.captured_at !== 'string' || raw.captured_at.length > 30 || !Number.isFinite(Date.parse(raw.captured_at))) return undefined;
   const output: Record<string, string | number> = { captured_at: raw.captured_at };
   for (const key of ['connection_status', 'chat_id', 'session_id', 'project_id', 'trace_id', 'turn_id',
-    'runtime_epoch', 'conversation_status', 'turn_status', 'last_step_status', 'last_step_type']) {
+    'runtime_epoch', 'conversation_status', 'turn_status', 'last_step_status', 'last_step_type', 'context_kind']) {
     const item = raw[key];
     if (typeof item === 'string' && ID_PATTERN.test(item)) output[key] = item;
   }
@@ -71,7 +93,8 @@ export function validateExportRequest(value: unknown): DiagnosticExportRequest {
     || !Number.isFinite(Date.parse(raw.occurred_at)) || Date.parse(raw.occurred_at) > Date.now() + 60_000
     || Date.parse(raw.occurred_at) < 0) throw new Error('INVALID_EXPORT_REQUEST');
   const renderer = validateRendererSnapshot(raw.renderer);
-  if (raw.scope === 'session' && !renderer?.session_id) throw new Error('INVALID_EXPORT_SESSION');
+  if (raw.scope === 'session' && !renderer?.session_id && !renderer?.chat_id) throw new Error('INVALID_EXPORT_SESSION');
   return { export_id: raw.export_id, description: raw.description, occurred_at: raw.occurred_at,
-    window_minutes: raw.window_minutes, scope: raw.scope, renderer };
+    window_minutes: raw.window_minutes, scope: raw.scope, renderer,
+    renderer_flush: raw.renderer_flush ? validateFlushResult(raw.renderer_flush) : undefined };
 }

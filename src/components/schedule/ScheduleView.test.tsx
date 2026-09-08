@@ -7,6 +7,7 @@ import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { useChatStore } from '@/stores/chatStore';
 import { useScheduleStore } from '@/stores/scheduleStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { ScheduledTask } from '@/types/schedule';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -76,6 +77,7 @@ beforeEach(() => {
     activeConversationId: null,
     conversationNavigationHistory: [],
   });
+  useWorkspaceStore.setState({ projects: [] });
   useScheduleStore.setState({
     tasks: {},
     loading: false,
@@ -137,6 +139,48 @@ describe('ScheduleView automation center', () => {
     );
     expect(view.textContent).toContain('仅一次');
     expect(view.textContent).toContain('不会自动重复');
+  });
+
+  it('searches and selects a workspace from a usable editor popover', () => {
+    useWorkspaceStore.setState({
+      projects: [
+        {
+          id: 'project-quarterly', kind: 'workspace', name: '季度报告',
+          rootPath: '/Users/test/quarterly-report', status: 'active', createdAt: 1, updatedAt: 2,
+        },
+        {
+          id: 'project-customer', kind: 'workspace', name: '客户资料',
+          rootPath: '/Users/test/customer-data', status: 'active', createdAt: 1, updatedAt: 3,
+        },
+      ],
+    });
+    useScheduleStore.setState({ showEditor: true, editingTaskId: null, editorDraft: null });
+    const view = renderView();
+    const trigger = view.querySelector<HTMLButtonElement>('button[aria-label="工作区路径"]');
+
+    expect(trigger).not.toBeNull();
+    act(() => trigger?.click());
+
+    const popover = view.querySelector<HTMLElement>('[data-select-portal="true"]');
+    expect(popover).not.toBeNull();
+    expect(popover?.closest('[data-schedule-editor]')).not.toBeNull();
+    expect(view.querySelector('[data-schedule-editor-scroll]')?.getAttribute('data-workspace-picker-open')).toBe('true');
+
+    const search = popover?.querySelector<HTMLInputElement>('input[aria-label="搜索工作空间名称或路径"]');
+    act(() => {
+      if (!search) return;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(search, 'quarterly');
+      search.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const options = popover?.querySelectorAll<HTMLButtonElement>('[role="option"]');
+    expect(options).toHaveLength(1);
+    expect(options?.[0].textContent).toContain('季度报告');
+    expect(options?.[0].textContent).toContain('/Users/test/quarterly-report');
+
+    act(() => options?.[0].click());
+    expect(view.querySelector<HTMLInputElement>('input[name="schedule-workspace"]')?.value).toBe('/Users/test/quarterly-report');
+    expect(view.querySelector('[data-select-portal="true"]')).toBeNull();
+    expect(view.querySelector('[data-schedule-editor-scroll]')?.hasAttribute('data-workspace-picker-open')).toBe(false);
   });
 
   it('renders a chat-created one-time reminder with its exact date', () => {

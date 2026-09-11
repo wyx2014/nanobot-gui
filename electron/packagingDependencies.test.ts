@@ -14,8 +14,13 @@ interface PackageManifest {
       target?: string[];
     };
     linux?: {
+      category?: string;
+      description?: string;
       maintainer?: string;
       target?: string[];
+      desktop?: {
+        entry?: Record<string, string>;
+      };
     };
     deb?: {
       afterInstall?: string;
@@ -110,6 +115,14 @@ describe('packaged dependency boundary', () => {
     expect(packageManifest.homepage).toBe('https://github.com/wyx2014/nanobot-gui');
     expect(packageManifest.build?.linux?.target).toEqual(['AppImage', 'deb']);
     expect(packageManifest.build?.linux?.maintainer).toBe('TPCowork Team');
+    expect(packageManifest.build?.linux?.category).toBe('Office;Utility');
+    expect(packageManifest.build?.linux?.description).toBe('AI Desktop Office Assistant');
+    expect(packageManifest.build?.linux?.desktop?.entry).toMatchObject({
+      Name: 'TPCowork',
+      Terminal: 'false',
+      StartupWMClass: 'TPCowork',
+      'X-TPCowork-ManagedShortcut': 'true',
+    });
     expect(packageManifest.scripts?.['prepare-python:linux'])
       .toBe('node scripts/download-python.mjs --target linux-x64');
     expect(packageManifest.scripts?.['package-python:linux'])
@@ -125,9 +138,13 @@ describe('packaged dependency boundary', () => {
     expect(linuxAfterInstall).toContain("INSTALLATION_ID_PATH='/var/lib/tpcowork/installation-id'");
     expect(linuxAfterInstall).toContain('/proc/sys/kernel/random/uuid');
     expect(linuxAfterInstall).toContain("update-alternatives --install");
+    expect(linuxAfterInstall).toContain("DESKTOP_ENTRY_SOURCE='/usr/share/applications/${executable}.desktop'");
+    expect(linuxAfterInstall).toContain('xdg-user-dir DESKTOP');
+    expect(linuxAfterInstall).toContain('metadata::trusted true');
     expect(linuxAfterRemove).toContain('remove|purge)');
     expect(linuxAfterRemove).toContain('rm -f "$INSTALLATION_ID_PATH"');
     expect(linuxAfterRemove).toContain("update-alternatives --remove");
+    expect(linuxAfterRemove).toContain("grep -q '^X-TPCowork-ManagedShortcut=true$'");
     expect(linuxAfterInstall.split(/\r?\n/, 1)[0]).toBe('#!/bin/bash');
     expect(linuxAfterRemove.split(/\r?\n/, 1)[0]).toBe('#!/bin/bash');
   });

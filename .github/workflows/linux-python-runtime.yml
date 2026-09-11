@@ -95,6 +95,13 @@ jobs:
           desktop_entry="$(find "$deb_root/usr/share/applications" -type f -name '*.desktop' -print -quit)"
           test -n "$desktop_entry"
           grep -q '^Exec=' "$desktop_entry"
+          grep -q '^Name=TPCowork$' "$desktop_entry"
+          grep -q '^Categories=Office;Utility;$' "$desktop_entry"
+          grep -q '^Comment=AI Desktop Office Assistant$' "$desktop_entry"
+          grep -q '^StartupWMClass=TPCowork$' "$desktop_entry"
+          grep -q '^X-TPCowork-ManagedShortcut=true$' "$desktop_entry"
+          grep -q 'desktop_dir_for_user' "$deb_control/postinst"
+          grep -q 'metadata::trusted true' "$deb_control/postinst"
 
       - name: Read package metadata and checksum
         id: package

@@ -90,9 +90,18 @@
         "AppImage",
         "deb"
       ],
-      "category": "Utility",
+      "category": "Office;Utility",
+      "description": "AI Desktop Office Assistant",
       "maintainer": "TPCowork Team",
-      "icon": "TPCowork-3_512x512.png"
+      "icon": "TPCowork-3_512x512.png",
+      "desktop": {
+        "entry": {
+          "Name": "TPCowork",
+          "Terminal": "false",
+          "StartupWMClass": "TPCowork",
+          "X-TPCowork-ManagedShortcut": "true"
+        }
+      }
     },
     "deb": {
       "afterInstall": "build/linux-after-install.sh",

@@ -27,6 +27,7 @@ import { acquireSingleInstanceLock, restoreAndFocusWindow } from './singleInstan
 import { createWindowsTerminalLaunchSpec } from './terminalLauncher'
 import { showDesktopNotification, type DesktopNotificationInput } from './desktopNotification'
 import { ensureInstallationId, systemInstallationMarkerPath } from './installationIdentity'
+import { listWorkspaceFiles } from './workspaceFiles'
 import {
   closeToTrayNoticePreferences,
   hasSeenCloseToTrayNoticeForInstallation,
@@ -511,6 +512,12 @@ async function startApplication(): Promise<void> {
       isFile: e.isFile(),
       isSymbolicLink: e.isSymbolicLink()
     }));
+  });
+
+  safeInvoke('workspace:listFiles', async (data) => {
+    const workspacePath = typeof data === 'string' ? data : data?.path;
+    if (!workspacePath) throw new Error('workspace:listFiles failed: path is missing');
+    return listWorkspaceFiles(workspacePath);
   });
 
   safeInvoke('fs:readTextFile', async (data) => {

@@ -277,6 +277,41 @@ describe('formatSidebarConversationTime', () => {
   });
 });
 
+describe('Sidebar automation badge', () => {
+  it('shows unread runs in a compact fixed-height badge', () => {
+    const completedAt = Date.now();
+    useScheduleStore.setState({
+      tasks: {
+        reminder: {
+          id: 'reminder',
+          name: '日报提醒',
+          prompt: '生成日报',
+          schedule: { frequency: 'daily' },
+          status: 'active',
+          createdAt: completedAt - 10_000,
+          updatedAt: completedAt,
+          totalRuns: 1,
+          runs: [{
+            id: 'reminder-run',
+            scheduledTaskId: 'reminder',
+            startedAt: completedAt - 1_000,
+            completedAt,
+            status: 'completed',
+          }],
+        },
+      },
+    });
+
+    const view = renderSidebar();
+    const badge = view.querySelector<HTMLElement>('[data-testid="sidebar-automation-unread-count"]');
+
+    expect(badge?.textContent).toBe('1');
+    expect(badge?.getAttribute('aria-label')).toBe('1 条未读自动化记录');
+    expect(badge?.classList.contains('h-4')).toBe(true);
+    expect(badge?.classList.contains('leading-none')).toBe(true);
+  });
+});
+
 describe('Sidebar workspace creation', () => {
   it('opens a workspace directory instead of trying to reveal it as a file', async () => {
     const openPath = vi.spyOn(shellBridge, 'openPath').mockResolvedValue();

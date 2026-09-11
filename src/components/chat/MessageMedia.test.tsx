@@ -58,6 +58,23 @@ describe('MessageMedia artifact opening', () => {
     });
   });
 
+  it('renders a labeled folder card and opens the folder', async () => {
+    const openPath = vi.spyOn(shellBridge, 'openPath').mockResolvedValue();
+    const view = render([{
+      path: '/workspace/reports',
+      name: 'reports',
+      kind: 'folder',
+    }]);
+
+    const folder = view.querySelector<HTMLButtonElement>('[data-media-kind="folder"]');
+    expect(folder?.textContent).toContain('reports');
+    expect(folder?.textContent).toMatch(/文件夹|Folder/);
+    await act(async () => folder?.click());
+
+    expect(openPath).toHaveBeenCalledWith('/workspace/reports');
+    openPath.mockRestore();
+  });
+
   it('opens the HTML preview URL in the browser instead of downloading it', async () => {
     const open = vi.spyOn(shellBridge, 'open').mockResolvedValue();
     const view = render([{

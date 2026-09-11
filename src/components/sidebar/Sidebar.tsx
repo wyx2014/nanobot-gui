@@ -1013,12 +1013,20 @@ export default function Sidebar() {
           )}
         >
           <Clock className="h-[18px] w-[18px] text-[#656358]" strokeWidth={1.75} />
-          <span>{t.sidebar.scheduledTasks}</span>
-          {unviewedRunCount > 0 && (
-            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#d97757]/15 text-[#d97757] font-medium">
-              {unviewedRunCount}
-            </span>
-          )}
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span>{t.sidebar.scheduledTasks}</span>
+            {unviewedRunCount > 0 && (
+              <span
+                data-testid="sidebar-automation-unread-count"
+                aria-label={isEnglish
+                  ? `${unviewedRunCount} unread automation runs`
+                  : `${unviewedRunCount} 条未读自动化记录`}
+                className="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-[#d97757]/12 px-1 text-[9px] font-semibold leading-none tabular-nums text-[#b85f43] dark:bg-[#e58a6c]/15 dark:text-[#f0a184]"
+              >
+                {unviewedRunCount > 99 ? '99+' : unviewedRunCount}
+              </span>
+            )}
+          </span>
         </button>
         <button
           onClick={() => openToolbox()}

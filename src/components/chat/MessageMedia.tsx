@@ -1,4 +1,4 @@
-import { ExternalLink, FileCode, FileText, Globe2, ImageIcon } from 'lucide-react';
+import { ExternalLink, FileCode, FileText, Folder, Globe2, ImageIcon } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { MessageContent, MessageMediaAttachment } from '@/types';
 import { cn } from '@/lib/utils';
@@ -7,6 +7,7 @@ import { shellBridge } from '@/lib/ipc-factory';
 import FileAttachment, { isImageFile } from './FileAttachment';
 import { artifactFromMediaAttachment, artifactFromUrl } from '@/core/artifacts';
 import { usePreviewStore } from '@/stores/previewStore';
+import { useI18n } from '@/i18n';
 
 type Align = 'left' | 'right';
 type Visibility = 'all' | 'html-only';
@@ -286,6 +287,34 @@ function RemoteFileTile({ item }: { item: MessageMediaAttachment }) {
   );
 }
 
+function LocalFolderTile({ item }: { item: MessageMediaAttachment }) {
+  const { locale } = useI18n();
+  const isEnglish = locale === 'en-US';
+  const label = displayName(item);
+  const openFolder = () => {
+    if (!item.path) return;
+    void shellBridge.openPath(item.path).catch(() => {
+      // Opening the native file manager is best-effort only.
+    });
+  };
+
+  return (
+    <button
+      type="button"
+      data-media-kind="folder"
+      onClick={openFolder}
+      className="inline-flex max-w-[20rem] items-center gap-2 rounded-xl border border-[#e5e2db] bg-white px-3 py-2 text-[13px] text-[#29261b] transition-all hover:border-[#c7aa78] hover:bg-[#fbfaf7] hover:shadow-sm dark:border-white/10 dark:bg-white/[0.06] dark:text-[#eeeae2] dark:hover:border-[#d1b27e]/50 dark:hover:bg-white/[0.09]"
+      title={item.path}
+    >
+      <Folder className="h-4 w-4 shrink-0 text-[#8a7452] dark:text-[#d1b27e]" />
+      <span className="truncate">{label}</span>
+      <span className="shrink-0 rounded-full bg-[#f1eee8] px-1.5 py-0.5 text-[10px] leading-none text-[#746f65] dark:bg-white/10 dark:text-[#bcb7ae]">
+        {isEnglish ? 'Folder' : '文件夹'}
+      </span>
+    </button>
+  );
+}
+
 export function UserImageGrid({
   images,
   align = 'right',
@@ -332,10 +361,12 @@ export function MessageMedia({
     <div className={cn(compact ? 'mt-0' : 'mt-2', 'flex flex-wrap gap-2', align === 'right' ? 'justify-end' : 'justify-start', className)}>
       {visibleMedia.map((item, index) => {
         const key = mediaKey(item, index);
-        if (mediaKind(item) === 'image') {
+        const kind = mediaKind(item);
+        if (kind === 'image') {
           if (item.path) return <LocalImageTile key={key} item={item} compact={compact} />;
           return <RemoteImageTile key={key} item={item} compact={compact} />;
         }
+        if (kind === 'folder' && item.path) return <LocalFolderTile key={key} item={item} />;
         if (item.path) return <FileAttachment key={key} filePath={item.path} />;
         return <RemoteFileTile key={key} item={item} />;
       })}

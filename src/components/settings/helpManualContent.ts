@@ -343,20 +343,24 @@ Stopping ends only the active run. Existing messages and artifacts remain. When 
       title: '文件、附件与产物',
       summary: '弄清图片与普通文件怎样进入任务，以及如何预览和保存结果。',
       keywords: '上传 附件 文件 图片 PDF Word Excel Markdown 预览 下载 产物 拖拽 粘贴',
-      body: `## 添加文件的四种方式
+      body: `## 添加文件的五种方式
 
 - 点击 **+ → 添加文件**；
 - 使用 **Command/Ctrl + U**；
 - 把文件拖入会话输入区；
-- 直接粘贴剪贴板图片或截图。
+- 直接粘贴剪贴板图片或截图；
+- 已选择工作空间时，在输入框中键入 **@**，按名称或相对路径搜索工作空间文件与文件夹；候选项和已选项会用标签区分类型。
 
 选择后，文件会先显示在输入框上方；点击叉号可以在发送前移除。允许只发送附件而不输入文字，但最好补充希望系统如何处理。
+
+输入 **/** 会打开统一能力列表，可选择 Skill 或连接器。连接器不再占用 **@** 触发入口。
 
 ## 图片与普通文件当前怎样处理
 
 | 类型 | 当前行为 |
 | --- | --- |
 | PNG、JPG、WEBP、GIF | 随消息发送给本地服务；每条消息最多 4 张，单张上限 8 MB |
+| 文件夹 | 采用本地路径引用，由 Agent 先列出目录内容，再按任务读取需要的文件 |
 | PDF、DOCX、XLSX、PPTX、文本等 | 采用本地路径引用，由 Agent 在需要时读取 |
 
 普通文件当前不会复制成远端云附件。发送后请不要立即移动、重命名或删除原文件；如果文件在受限工作区外，Agent 可能无法读取。
@@ -395,14 +399,17 @@ TP Cowork 可提取 PDF、DOCX、XLSX、PPTX，以及 TXT、Markdown、CSV、JSO
       title: 'Files, attachments, and artifacts',
       summary: 'Understand how images and documents enter a task and how to preview and save results.',
       keywords: 'upload attachment file image PDF Word Excel Markdown preview download artifact drag paste',
-      body: `## Four ways to add files
+      body: `## Five ways to add files
 
 - Choose **+ → Add files**;
 - Press **Command/Ctrl + U**;
 - Drag files into the composer;
-- Paste clipboard images or screenshots.
+- Paste clipboard images or screenshots;
+- With a workspace selected, type **@** to search its files by name or relative path.
 
 Files appear above the composer before sending and can be removed. Attachment-only messages are allowed, but adding an instruction is more reliable.
+
+Type **/** to open the unified capability list for Skills and connectors. Connectors no longer use the **@** trigger.
 
 ## Current handling by type
 

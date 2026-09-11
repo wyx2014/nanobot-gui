@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Plus, ArrowUp, Square, X, ChevronDown, Check, FileText, CornerDownRight, Pencil, Trash2, GraduationCap, Paperclip, ChevronRight, Puzzle, Globe, Search, BarChart3, Users, Mic, Loader2 } from 'lucide-react';
+import { Plus, ArrowUp, Square, X, ChevronDown, Check, File, FileArchive, FileCode2, FileImage, FileSpreadsheet, FileText, FileType2, Folder, CornerDownRight, Pencil, Trash2, GraduationCap, Paperclip, ChevronRight, Puzzle, Globe, Search, BarChart3, Users, Mic, Loader2, Presentation } from 'lucide-react';
 import ThinkingOrb from '@/components/common/ModalAwareThinkingOrb';
 import ExpertTeamIcon from '@/components/common/ExpertTeamIcon';
-import { dialogBridge, fsBridge, mediaBridge } from '@/lib/ipc-factory';
+import { dialogBridge, fsBridge, mediaBridge, type WorkspaceFileEntry } from '@/lib/ipc-factory';
 import { useFileDragDrop } from '@/hooks/useFileDragDrop';
 import { uint8ArrayToBase64 } from '@/utils/base64';
 import { getBaseName, IMAGE_MIME_MAP, isLocalFilePath } from '@/utils/pathUtils';
@@ -51,10 +51,14 @@ import FolderSelector from '@/components/common/FolderSelector';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { normalizeProjectPath, projectNameFromPath, visibleProjectPath } from '@/core/workspace';
 import { displaySkillName, filterAvailableSkillNames, stripUnavailableLeadingSkillMentions, usableSkillsForScope } from '@/core/skills/filter';
-import { LEGACY_LOCAL_FILE_CONTEXT_HEADER } from '@/core/nanobot/localFileContext';
+import { LOCAL_PATH_CONTEXT_HEADER } from '@/core/nanobot/localFileContext';
 import PresentationPicker from './PresentationPicker';
 import { normalizePresentationSelection, type PresentationSelection } from '@/core/presentations';
-import { Presentation } from 'lucide-react';
+import {
+  findComposerSuggestionTrigger,
+  removeComposerSuggestionTrigger,
+  searchWorkspaceFiles,
+} from '@/core/composerSuggestions';
 
 const SHOW_PRESENTATION_PLUS_MENU_ENTRY = false;
 
@@ -160,17 +164,77 @@ interface SuggestionItem {
   name: string;
   description: string;
   detail?: string;
-  kind: 'slash' | 'cli' | 'mcp' | 'skill';
+  kind: 'slash' | 'cli' | 'mcp' | 'skill' | 'file';
   slashCommand?: SlashCommand;
   cliApp?: CliAppInfo;
   mcpPreset?: McpPresetInfo;
   skillName?: string;
+  workspaceFile?: WorkspaceFileEntry;
 }
 
 interface FileAttachmentItem {
   id: string;
+  kind: 'file' | 'folder';
   path: string;
   name: string;
+}
+
+type WorkspacePathKind = 'file' | 'folder';
+
+function workspacePathKind(entry: { kind?: WorkspacePathKind } | undefined): WorkspacePathKind {
+  return entry?.kind === 'folder' ? 'folder' : 'file';
+}
+
+function WorkspacePathIcon({
+  kind,
+  name,
+  className = 'h-4 w-4',
+}: {
+  kind: WorkspacePathKind;
+  name: string;
+  className?: string;
+}) {
+  const baseClass = `${className} shrink-0`;
+  if (kind === 'folder') {
+    return <Folder data-path-icon="folder" className={`${baseClass} text-[#9a7846] dark:text-[#d1b27e]`} />;
+  }
+
+  const extension = name.split('.').pop()?.toLocaleLowerCase() ?? '';
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico', 'heic', 'avif'].includes(extension)) {
+    return <FileImage data-path-icon="image" className={`${baseClass} text-[#8b63a8] dark:text-[#c49cde]`} />;
+  }
+  if (['ppt', 'pptx', 'key'].includes(extension)) {
+    return <Presentation data-path-icon="presentation" className={`${baseClass} text-[#c65f39] dark:text-[#ef8e68]`} />;
+  }
+  if (['doc', 'docx', 'rtf', 'pages'].includes(extension)) {
+    return <FileType2 data-path-icon="document" className={`${baseClass} text-[#3f73b9] dark:text-[#76a7e8]`} />;
+  }
+  if (['xls', 'xlsx', 'csv', 'numbers'].includes(extension)) {
+    return <FileSpreadsheet data-path-icon="spreadsheet" className={`${baseClass} text-[#38805b] dark:text-[#71bd91]`} />;
+  }
+  if (extension === 'pdf') {
+    return <FileText data-path-icon="pdf" className={`${baseClass} text-[#bd4e4e] dark:text-[#eb8585]`} />;
+  }
+  if (['txt', 'md', 'mdx', 'log'].includes(extension)) {
+    return <FileText data-path-icon="text" className={`${baseClass} text-[#6e706f] dark:text-[#b4b6b5]`} />;
+  }
+  if (['js', 'jsx', 'ts', 'tsx', 'py', 'go', 'rs', 'java', 'c', 'cc', 'cpp', 'h', 'css', 'scss', 'html', 'xml', 'json', 'yaml', 'yml', 'toml', 'sh'].includes(extension)) {
+    return <FileCode2 data-path-icon="code" className={`${baseClass} text-[#5978a8] dark:text-[#8eadde]`} />;
+  }
+  if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz'].includes(extension)) {
+    return <FileArchive data-path-icon="archive" className={`${baseClass} text-[#9a7441] dark:text-[#d5ad70]`} />;
+  }
+  return <File data-path-icon="file" className={`${baseClass} text-[#77736a] dark:text-[#aaa69d]`} />;
+}
+
+function suggestionTypeLabel(item: SuggestionItem, isEnglish: boolean): string {
+  if (item.kind === 'file') {
+    return workspacePathKind(item.workspaceFile) === 'folder'
+      ? (isEnglish ? 'Folder' : '文件夹')
+      : (isEnglish ? 'File' : '文件');
+  }
+  if (item.kind === 'mcp') return isEnglish ? 'Connector' : '连接器';
+  return isEnglish ? 'Skill' : '技能';
 }
 
 interface ComposerDraft {
@@ -220,7 +284,10 @@ function normalizeDraft(value: unknown): ComposerDraft | null {
         && typeof file.path === 'string'
         && isLocalFilePath(file.path)
         && typeof file.name === 'string',
-      )
+      ).map((file) => ({
+        ...file,
+        kind: file.kind === 'folder' ? 'folder' as const : 'file' as const,
+      }))
       : [],
     skills: Array.isArray(record.skills) ? record.skills.filter((skill): skill is string => typeof skill === 'string') : [],
     cliApps: Array.isArray(record.cliApps) ? record.cliApps : [],
@@ -348,7 +415,12 @@ async function processFilePaths(
     if (newImages.length > 0) addImages(newImages);
   }
   if (filePaths.length > 0) {
-    addFiles(filePaths.map((p) => ({ id: generateAttachmentId(), path: p, name: getBaseName(p) })));
+    addFiles(filePaths.map((p) => ({
+      id: generateAttachmentId(),
+      kind: 'file',
+      path: p,
+      name: getBaseName(p),
+    })));
   }
 }
 
@@ -366,6 +438,10 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   const [queuedPrompts, setQueuedPrompts] = useState<QueuedPrompt[]>([]);
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [cursorPosition, setCursorPosition] = useState(0);
+  const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFileEntry[]>([]);
+  const [workspaceFilesLoading, setWorkspaceFilesLoading] = useState(false);
+  const [workspaceFilesError, setWorkspaceFilesError] = useState<string | null>(null);
   const [mcpPresets, setMcpPresets] = useState<McpPresetInfo[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const voiceRecorderRef = useRef<PcmVoiceRecorder | null>(null);
@@ -594,6 +670,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     if (pendingInput) {
       consumedPendingInputRef.current = true;
       setText(pendingInput);
+      setCursorPosition(pendingInput.length);
       setPendingInput(null);
       textareaRef.current?.focus();
     }
@@ -613,7 +690,9 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     }
     skipDraftPersistRef.current = true;
     const draft = readDraft(draftKey);
-    setText(draft?.text ?? '');
+    const draftText = draft?.text ?? '';
+    setText(draftText);
+    setCursorPosition(draftText.length);
     setImages(draft?.images ?? []);
     setFiles(draft?.files ?? []);
     setSelectedSkills(draft?.skills ?? []);
@@ -780,64 +859,92 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     };
   }, [refreshDiscovery]);
 
-  const activeProjectPath = visibleProjectPath(workspaceScope?.project_path ?? activeConv?.workspaceScope?.project_path ?? activeConv?.workspacePath ?? localWorkspace);
+  const activeWorkspacePath = workspaceScope?.project_path
+    ?? activeConv?.workspaceScope?.project_path
+    ?? activeConv?.workspacePath
+    ?? localWorkspace;
+  const activeProjectPath = visibleProjectPath(activeWorkspacePath);
   const activeProjectSkillNames = activeProjectPath ? projectSkillBindings[normalizeProjectPath(activeProjectPath)] ?? [] : [];
   const usableSkills = useMemo(
     () => usableSkillsForScope(skills, activeProjectPath, activeProjectSkillNames),
     [activeProjectPath, activeProjectSkillNames, skills],
   );
 
-  // `@` opens the connector (MCP) picker; `/` opens the skill picker.
-  const suggestionType = useMemo((): 'mention' | 'skill' | null => {
-    const trimmed = text.trim();
-    if (trimmed.startsWith('@')) return 'mention';
-    if (trimmed.startsWith('/')) return 'skill';
-    return null;
-  }, [text]);
+  useEffect(() => {
+    let cancelled = false;
+    setWorkspaceFiles([]);
+    setWorkspaceFilesError(null);
+    if (!activeWorkspacePath) {
+      setWorkspaceFilesLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setWorkspaceFilesLoading(true);
+    void fsBridge.listWorkspaceFiles(activeWorkspacePath)
+      .then((entries) => {
+        if (!cancelled) {
+          // Treat entries from an older Electron main process as files until
+          // the app is restarted and begins returning the explicit kind.
+          setWorkspaceFiles(entries.map((entry) => ({
+            ...entry,
+            kind: workspacePathKind(entry),
+          })));
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setWorkspaceFilesError(error instanceof Error ? error.message : String(error));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setWorkspaceFilesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWorkspacePath]);
+
+  // `@` references a file in the active workspace; `/` selects a capability.
+  const suggestionTrigger = useMemo(
+    () => findComposerSuggestionTrigger(text, cursorPosition),
+    [cursorPosition, text],
+  );
+  const suggestionType = suggestionTrigger?.type ?? null;
 
   // Slash command and capability suggestions.
-  const skillPickerOpen = showPlusMenu || suggestionType === 'skill';
+  const skillPickerOpen = showPlusMenu || suggestionType === 'capability';
   useEffect(() => {
     if (skillPickerOpen) void refreshDiscovery();
   }, [skillPickerOpen, refreshDiscovery]);
 
   const suggestions = useMemo((): SuggestionItem[] => {
-    const trimmed = text.trim();
+    if (!suggestionTrigger) return [];
 
-    // Connector (MCP) selection when typing @
-    if (suggestionType === 'mention') {
-      const query = trimmed.slice(1).toLowerCase();
-      const mcpItems: SuggestionItem[] = mcpPresets
-        .filter((preset) => {
-          if (
-            selectedMcpPresets.some((selected) => selected.name === preset.name)
-            || boundMcpPresets.some((bound) => bound.name === preset.name)
-          ) return false;
-          if (!query) return true;
-          return preset.name.toLowerCase().includes(query)
-            || preset.display_name.toLowerCase().includes(query)
-            || preset.description.toLowerCase().includes(query);
-        })
-        .map((preset) => ({
-          name: preset.name,
-          description: preset.description || preset.display_name,
-          detail: preset.display_name,
-          kind: 'mcp' as const,
-          mcpPreset: preset,
+    if (suggestionTrigger.type === 'file') {
+      const selectedPaths = new Set(
+        files.map((file) => file.path.replaceAll('\\', '/').toLocaleLowerCase()),
+      );
+      return searchWorkspaceFiles(workspaceFiles, suggestionTrigger.query, selectedPaths)
+        .map((file) => ({
+          name: file.name,
+          description: file.relativePath,
+          detail: file.relativePath,
+          kind: 'file' as const,
+          workspaceFile: file,
         }));
-      return mcpItems;
     }
 
-    // Skill selection when typing /
-    if (suggestionType === 'skill') {
-      const query = trimmed.slice(1).toLowerCase();
-      return usableSkills
+    if (suggestionTrigger.type === 'capability') {
+      const query = suggestionTrigger.query.trim().toLocaleLowerCase();
+      const skillItems: SuggestionItem[] = usableSkills
         .filter((skill) => {
           if (selectedSkills.some((selected) => selected === skill.name)) return false;
           if (!query) return true;
-          return skill.name.toLowerCase().includes(query)
-            || displaySkillName(skill.name).toLowerCase().includes(query)
-            || (skill.description ?? '').toLowerCase().includes(query);
+          return skill.name.toLocaleLowerCase().includes(query)
+            || displaySkillName(skill.name).toLocaleLowerCase().includes(query)
+            || (skill.description ?? '').toLocaleLowerCase().includes(query);
         })
         .map((skill) => ({
           name: `/${displaySkillName(skill.name)}`,
@@ -846,18 +953,45 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
           kind: 'skill' as const,
           skillName: skill.name,
         }));
+      const connectorItems: SuggestionItem[] = mcpPresets
+        .filter((preset) => {
+          if (
+            selectedMcpPresets.some((selected) => selected.name === preset.name)
+            || boundMcpPresets.some((bound) => bound.name === preset.name)
+          ) return false;
+          if (!query) return true;
+          return preset.name.toLocaleLowerCase().includes(query)
+            || preset.display_name.toLocaleLowerCase().includes(query)
+            || preset.description.toLocaleLowerCase().includes(query);
+        })
+        .map((preset) => ({
+          name: preset.display_name || preset.name,
+          description: preset.description || preset.display_name,
+          detail: preset.name,
+          kind: 'mcp' as const,
+          mcpPreset: preset,
+        }));
+      return [...skillItems, ...connectorItems];
     }
     return [];
-  }, [boundMcpPresets, text, suggestionType, mcpPresets, selectedMcpPresets, usableSkills, selectedSkills]);
+  }, [
+    boundMcpPresets,
+    files,
+    mcpPresets,
+    selectedMcpPresets,
+    selectedSkills,
+    suggestionTrigger,
+    usableSkills,
+    workspaceFiles,
+  ]);
 
   // Reset dismissed state when suggestions change
   useEffect(() => {
     setSuggestionsDismissed(false);
     if (suggestionType !== null && suggestions.length > 0) setSelectedIndex(0);
-  }, [suggestionType, suggestions.length]);
+  }, [suggestionTrigger?.query, suggestionType, suggestions.length]);
 
-  // Derived: show suggestions when there are matches and not dismissed
-  const showSuggestions = !suggestionsDismissed && suggestionType !== null && suggestions.length > 0;
+  const showSuggestions = !suggestionsDismissed && suggestionType !== null;
 
   // Auto-resize textarea
   const maxHeight = 160;
@@ -878,7 +1012,18 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   }, [selectedIndex, showSuggestions]);
 
   const applySuggestion = (item: SuggestionItem) => {
-    if (item.kind === 'cli' && item.cliApp) {
+    if (item.kind === 'file' && item.workspaceFile) {
+      setFiles((previous) => (
+        previous.some((file) => file.path === item.workspaceFile!.path)
+          ? previous
+          : [...previous, {
+            id: generateAttachmentId(),
+            kind: item.workspaceFile!.kind,
+            path: item.workspaceFile!.path,
+            name: item.workspaceFile!.relativePath,
+          }]
+      ));
+    } else if (item.kind === 'cli' && item.cliApp) {
       setSelectedCliApps((prev) => [...prev, {
         name: item.cliApp!.name,
         display_name: item.cliApp!.display_name,
@@ -906,14 +1051,23 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       textareaRef.current?.focus();
       return;
     }
-    setText('');
+
+    const next = suggestionTrigger
+      ? removeComposerSuggestionTrigger(text, suggestionTrigger)
+      : { text: '', cursor: 0 };
+    setText(next.text);
+    setCursorPosition(next.cursor);
     setSuggestionsDismissed(true);
-    textareaRef.current?.focus();
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(next.cursor, next.cursor);
+    });
   };
 
   const resetInput = () => {
     setSelectedPresentation(undefined);
     setText('');
+    setCursorPosition(0);
     setImages([]);
     setFiles([]);
     setSelectedSkills([]);
@@ -931,8 +1085,8 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     // Build file context prefix
     const fileContext = draft.files?.length
       ? [
-        LEGACY_LOCAL_FILE_CONTEXT_HEADER,
-        ...draft.files.map((f) => `- ${f.name}: ${f.path}`),
+        LOCAL_PATH_CONTEXT_HEADER,
+        ...draft.files.map((f) => `- [${f.kind}] ${f.name}: ${f.path}`),
       ].join('\n')
       : '';
 
@@ -1046,7 +1200,9 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
 
   const editQueuedPrompt = useCallback((prompt: QueuedPrompt) => {
     setQueuedPrompts((items) => items.filter((item) => item.id !== prompt.id));
-    setText(prompt.text ?? '');
+    const promptText = prompt.text ?? '';
+    setText(promptText);
+    setCursorPosition(promptText.length);
     setImages(prompt.images ?? []);
     setFiles(prompt.files ?? []);
     setSelectedSkills(prompt.skills ?? []);
@@ -1055,7 +1211,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     setSelectedPresentation(prompt.presentation);
     requestAnimationFrame(() => {
       textareaRef.current?.focus();
-      textareaRef.current?.setSelectionRange(prompt.text?.length ?? 0, prompt.text?.length ?? 0);
+      textareaRef.current?.setSelectionRange(promptText.length, promptText.length);
     });
   }, []);
 
@@ -1848,7 +2004,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                         className="w-full flex items-center justify-between px-3.5 py-2 hover:bg-[#f5f3ee] transition-colors text-left cursor-pointer disabled:cursor-not-allowed disabled:opacity-55"
                       >
                         <div className="flex flex-col min-w-0">
-                          <span className="font-medium text-[#29261b] truncate">@{preset.display_name || preset.name}</span>
+                          <span className="font-medium text-[#29261b] truncate">{preset.display_name || preset.name}</span>
                           <span className="text-[11px] text-[#8a867c] line-clamp-1 truncate">{preset.description}</span>
                         </div>
                         {isSelected && <Check className="h-3.5 w-3.5 text-[#d97757] shrink-0 ml-2" />}
@@ -2207,27 +2363,74 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
           </div>
         )}
 
-        {/* Suggestions Popup (slash commands / capabilities) */}
-        {showSuggestions && suggestions.length > 0 && (
-          <div className="absolute bottom-full left-0 mb-1.5 z-20 w-72 overflow-hidden rounded-xl border border-[#dedbd3] bg-white shadow-[0_8px_28px_rgba(0,0,0,0.12)]">
-            <div className="px-3 pb-1 pt-2 text-[11px] font-medium text-[#8a867c]">
-              {suggestionType === 'mention'
-                ? (isEn ? 'Connectors' : '连接器')
-                : (isEn ? 'Skills' : '技能')}
+        {/* Workspace file mentions and slash-triggered capabilities */}
+        {showSuggestions && (
+          <div
+            data-testid="composer-suggestions"
+            className="absolute bottom-full left-0 z-20 mb-1.5 w-[min(420px,calc(100vw-2rem))] overflow-hidden rounded-xl border border-[#dedbd3] bg-white shadow-[0_8px_28px_rgba(0,0,0,0.12)] dark:border-white/10 dark:bg-[#292929]"
+          >
+            <div className="flex items-center justify-between px-3 pb-1 pt-2 text-[11px] font-medium text-[#8a867c] dark:text-[#aaa69d]">
+              <span>
+                {suggestionType === 'file'
+                  ? (isEn ? 'Workspace files and folders' : '工作空间文件与文件夹')
+                  : (isEn ? 'Skills and connectors' : '技能与连接器')}
+              </span>
+              <span className="font-normal">
+                {isEn ? '↑↓ select · Enter confirm' : '↑↓ 选择 · Enter 确认'}
+              </span>
             </div>
-            <div className="max-h-[220px] overflow-y-auto overscroll-contain pb-1">
-              {suggestions.map((item, idx) => (
+            <div className="max-h-[280px] overflow-y-auto overscroll-contain pb-1">
+              {suggestionType === 'file' && !activeWorkspacePath ? (
+                <div className="px-3 py-3 text-center text-[12px] text-[#8a867c] dark:text-[#aaa69d]">
+                  {isEn ? 'Select a workspace before referencing files' : '请先选择工作空间，再引用其中的文件'}
+                </div>
+              ) : suggestionType === 'file' && workspaceFilesLoading ? (
+                <div className="flex items-center justify-center gap-2 px-3 py-3 text-[12px] text-[#8a867c] dark:text-[#aaa69d]">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  {isEn ? 'Indexing workspace paths…' : '正在索引工作空间文件与文件夹…'}
+                </div>
+              ) : suggestionType === 'file' && workspaceFilesError ? (
+                <div className="px-3 py-3 text-center text-[12px] text-[#a56f4f] dark:text-[#e0a384]">
+                  {isEn ? 'Could not read workspace paths' : '无法读取工作空间文件与文件夹'}
+                </div>
+              ) : suggestions.length === 0 ? (
+                <div className="px-3 py-3 text-center text-[12px] text-[#8a867c] dark:text-[#aaa69d]">
+                  {suggestionType === 'file'
+                    ? (isEn ? 'No matching files or folders' : '没有匹配的文件或文件夹')
+                    : (isEn ? 'No matching skills or connectors' : '没有匹配的技能或连接器')}
+                </div>
+              ) : suggestions.map((item, idx) => (
                 <button
-                  key={`${item.kind ?? suggestionType}-${item.name}`}
+                  data-suggestion-kind={item.kind === 'file' ? workspacePathKind(item.workspaceFile) : item.kind}
+                  key={`${item.kind}-${item.detail ?? item.name}`}
                   ref={idx === selectedIndex ? selectedSuggestionRef : undefined}
                   onClick={() => applySuggestion(item)}
                   className={cn(
-                    'btn-ghost flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px]',
-                    idx === selectedIndex ? 'bg-[#e8e5de]' : 'hover:bg-[#f5f3ee]'
+                    'btn-ghost flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] dark:text-[#eeeae2] dark:hover:bg-white/[0.07]',
+                    idx === selectedIndex ? 'bg-[#e8e5de] dark:bg-white/[0.09]' : 'hover:bg-[#f5f3ee]'
                   )}
                 >
-                  <span className="min-w-0 flex-1 truncate font-medium text-[#29261b]">{item.name}</span>
-                  <span className="max-w-[55%] shrink-0 truncate text-[11.5px] text-[#656358]">{item.description}</span>
+                  {item.kind === 'file' ? (
+                    <WorkspacePathIcon
+                      kind={workspacePathKind(item.workspaceFile)}
+                      name={item.workspaceFile?.name ?? item.name}
+                    />
+                  ) : item.kind === 'mcp' ? (
+                    <Puzzle className="h-4 w-4 shrink-0 text-emerald-700 dark:text-emerald-400" />
+                  ) : (
+                    <GraduationCap className="h-4 w-4 shrink-0 text-[#b76649] dark:text-[#e58a6c]" />
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium text-[#29261b] dark:text-[#eeeae2]">
+                      {item.name}
+                    </span>
+                    <span className="block truncate text-[11px] text-[#8a867c] dark:text-[#aaa69d]">
+                      {item.description}
+                    </span>
+                  </span>
+                  <span className="shrink-0 rounded-full bg-[#f1eee8] px-1.5 py-0.5 text-[10px] leading-none text-[#746f65] dark:bg-white/10 dark:text-[#bcb7ae]">
+                    {suggestionTypeLabel(item, isEn)}
+                  </span>
                 </button>
               ))}
             </div>
@@ -2289,14 +2492,21 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                 ))}
                 {files.map((f) => (
                   <div
+                    data-local-path-kind={f.kind}
                     key={f.id}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#f3f2ee] border border-[#dedbd3] shrink-0 group/file"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#f3f2ee] border border-[#dedbd3] shrink-0 group/file dark:border-white/10 dark:bg-white/[0.07]"
                   >
-                    <FileText className="h-3.5 w-3.5 text-[#656358] shrink-0" />
-                    <span className="text-[12px] text-[#29261b] max-w-[160px] truncate">{f.name}</span>
+                    <WorkspacePathIcon kind={f.kind} name={f.name} className="h-3.5 w-3.5" />
+                    <span className="max-w-[160px] truncate text-[12px] text-[#29261b] dark:text-[#eeeae2]">{f.name}</span>
+                    <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[9px] leading-none text-[#77736a] dark:bg-white/10 dark:text-[#bcb7ae]">
+                      {f.kind === 'folder'
+                        ? (isEn ? 'Folder' : '文件夹')
+                        : (isEn ? 'File' : '文件')}
+                    </span>
                     <button
                       onClick={() => removeFile(f.id)}
-                      className="p-0.5 rounded hover:bg-[#e8e5de] text-[#656358] hover:text-[#29261b] transition-colors"
+                      className="p-0.5 rounded hover:bg-[#e8e5de] text-[#656358] hover:text-[#29261b] transition-colors dark:text-[#aaa69d] dark:hover:bg-white/10 dark:hover:text-white"
+                      title={t.common.close}
                     >
                       <X className="h-3 w-3" />
                     </button>
@@ -2340,18 +2550,26 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
               ))}
               {selectedMcpPresets.map((preset) => (
                 <button
+                  data-selected-mcp-preset={preset.name}
                   key={`selected-mcp-${preset.name}`}
                   onClick={() => setSelectedMcpPresets((prev) => prev.filter((item) => item.name !== preset.name))}
-                  className="shrink-0 mt-[3px] mr-1.5 rounded-full bg-[#ecfdf5] px-2 py-0.5 text-[12px] font-medium text-[#047857] hover:line-through dark:bg-[#1f3a33] dark:text-[#6ee7b7] dark:hover:bg-[#26473e]"
+                  className="mt-[3px] mr-1.5 inline-flex shrink-0 items-center gap-1 rounded-full bg-[#ecfdf5] px-2 py-0.5 text-[12px] font-medium text-[#047857] hover:line-through dark:bg-[#1f3a33] dark:text-[#6ee7b7] dark:hover:bg-[#26473e]"
                   title={t.common.close}
                 >
-                  @{preset.display_name || preset.name}
+                  <Puzzle className="h-3 w-3" />
+                  {preset.display_name || preset.name}
                 </button>
               ))}
               <textarea
                 ref={textareaRef}
                 value={text}
-                onChange={(e) => setText(e.target.value)}
+                onChange={(event) => {
+                  setText(event.target.value);
+                  setCursorPosition(event.target.selectionStart ?? event.target.value.length);
+                }}
+                onSelect={(event) => {
+                  setCursorPosition(event.currentTarget.selectionStart ?? event.currentTarget.value.length);
+                }}
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
                 onCompositionStart={() => setIsComposing(true)}

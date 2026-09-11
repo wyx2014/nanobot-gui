@@ -32,6 +32,8 @@ const mockIpc = {
         return '';
       case 'fs:readDir':
         return [];
+      case 'workspace:listFiles':
+        return [];
       case 'fs:readFile':
         return new Uint8Array();
       case 'fs:lstat':

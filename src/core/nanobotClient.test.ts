@@ -356,6 +356,28 @@ describe('mapWebuiThreadToGuiMessages artifacts', () => {
     }]);
   });
 
+  it('projects a typed local folder reference as a folder card', () => {
+    const messages = mapWebuiThreadToGuiMessages([{
+      id: 'user-with-local-folder',
+      role: 'user',
+      content: [
+        '本地路径引用（文件请按路径读取；文件夹请先列出内容；如果路径超出当前工作区权限，请先说明无法访问）：',
+        '- [folder] reports: /Users/wyx/project/reports',
+        '汇总这个目录',
+      ].join('\n'),
+      createdAt: 1,
+    }]);
+
+    expect(messages[0].content).toBe('汇总这个目录');
+    expect(messages[0].mediaAttachments).toEqual([{
+      id: 'local-file:/Users/wyx/project/reports',
+      path: '/Users/wyx/project/reports',
+      localPath: '/Users/wyx/project/reports',
+      name: 'reports',
+      kind: 'folder',
+    }]);
+  });
+
   it('hides a legacy MCP mention prefix while preserving the connector attachment', () => {
     const messages = mapWebuiThreadToGuiMessages([{
       id: 'user-with-connector',

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   LEGACY_LOCAL_FILE_CONTEXT_HEADER,
+  LOCAL_PATH_CONTEXT_HEADER,
   projectLegacyLocalFileContext,
   replaceVisibleLocalFileContent,
 } from './localFileContext';
@@ -42,6 +43,28 @@ describe('legacy local file context projection', () => {
       name: '风险:明细.xlsx',
       path: 'C:\\Users\\alice\\风险明细.xlsx',
     }]);
+  });
+
+  it('projects typed file and folder path references without leaking transport labels', () => {
+    const wireContent = [
+      LOCAL_PATH_CONTEXT_HEADER,
+      '- [folder] reports: /Users/wyx/project/reports',
+      '- [file] brief.md: /Users/wyx/project/brief.md',
+      '汇总这些资料',
+    ].join('\n');
+
+    expect(projectLegacyLocalFileContext(wireContent)).toEqual({
+      visibleContent: '汇总这些资料',
+      files: [
+        { kind: 'folder', name: 'reports', path: '/Users/wyx/project/reports' },
+        { kind: 'file', name: 'brief.md', path: '/Users/wyx/project/brief.md' },
+      ],
+      contextPrefix: [
+        LOCAL_PATH_CONTEXT_HEADER,
+        '- [folder] reports: /Users/wyx/project/reports',
+        '- [file] brief.md: /Users/wyx/project/brief.md',
+      ].join('\n'),
+    });
   });
 
   it('does not rewrite similar natural-language text without a valid file path', () => {

@@ -71,7 +71,8 @@ describe('HelpManual', () => {
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 60));
     });
-    expect(container.querySelector('[data-help-article]')?.textContent).toContain('添加文件的四种方式');
+    expect(container.querySelector('[data-help-article]')?.textContent).toContain('添加文件的五种方式');
+    expect(container.querySelector('[data-help-article]')?.textContent).toContain('工作空间文件与文件夹');
 
     act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })));
     expect(onClose).toHaveBeenCalledOnce();

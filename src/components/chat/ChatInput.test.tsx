@@ -6,6 +6,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { VoiceStreamError } from '@/core/nanobot-client';
+import { fsBridge } from '@/lib/ipc-factory';
 import ChatInput from './ChatInput';
 
 const mocks = vi.hoisted(() => ({
@@ -25,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   requestMicrophoneAccess: vi.fn(),
   openMicrophoneSettings: vi.fn(),
   openFolderDialog: vi.fn(),
+  listWorkspaceFiles: vi.fn(),
   switchGatewayTextModelDefault: vi.fn(),
 }));
 
@@ -61,6 +63,10 @@ vi.mock('@/lib/ipc-factory', async () => {
     },
     dialogBridge: {
       open: mocks.openFolderDialog,
+    },
+    fsBridge: {
+      ...actual.fsBridge,
+      listWorkspaceFiles: mocks.listWorkspaceFiles,
     },
   };
 });
@@ -132,7 +138,7 @@ beforeEach(() => {
   mocks.fetchMcpPresets.mockResolvedValue({
     presets: [{
       name: 'juyuan',
-      display_name: 'juyuan',
+      display_name: '聚源金融数据',
       category: 'finance',
       description: '聚源金融数据',
       docs_url: '',
@@ -179,6 +185,7 @@ beforeEach(() => {
   });
   mocks.openMicrophoneSettings.mockResolvedValue(true);
   mocks.openFolderDialog.mockResolvedValue(null);
+  mocks.listWorkspaceFiles.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -717,6 +724,178 @@ describe('ChatInput versioned skills', () => {
     expect(onSend).toHaveBeenCalledWith('润色这段文字', undefined, undefined, expect.objectContaining({
       skillScope: { project_bound_user_skills: [], explicit_skills: ['libai-1.0.4'] },
     }));
+  });
+});
+
+describe('ChatInput workspace mentions and capabilities', () => {
+  it('indexes files in the default workspace even though it is hidden as a project', async () => {
+    useChatStore.getState().createConversation('/Users/test/workspace', { title: '默认工作空间会话' });
+    await renderChatInput();
+
+    await vi.waitFor(() => expect(mocks.listWorkspaceFiles).toHaveBeenCalledWith('/Users/test/workspace'));
+  });
+
+  it('finds a workspace file with @, preserves the prompt, and sends the existing file context', async () => {
+    const conversationId = useChatStore.getState().createConversation('/Users/test/quarterly-review', { title: '工作空间会话' });
+    expect(useChatStore.getState().conversations[conversationId].workspacePath).toBe('/Users/test/quarterly-review');
+    expect(fsBridge.listWorkspaceFiles).toBe(mocks.listWorkspaceFiles);
+    mocks.listWorkspaceFiles.mockResolvedValueOnce([
+      {
+        kind: 'file',
+        name: 'quarterly.xlsx',
+        path: '/Users/test/quarterly-review/reports/quarterly.xlsx',
+        relativePath: 'reports/quarterly.xlsx',
+      },
+      {
+        kind: 'file',
+        name: 'notes.md',
+        path: '/workspace/notes.md',
+        relativePath: 'notes.md',
+      },
+    ]);
+    const onSend = vi.fn().mockReturnValue(true);
+    const view = await renderChatInput('chat', onSend);
+    await vi.waitFor(() => expect(mocks.listWorkspaceFiles).toHaveBeenCalledWith('/Users/test/quarterly-review'));
+
+    const textarea = view.querySelector<HTMLTextAreaElement>('textarea')!;
+    const prompt = '请总结 @quarter';
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, prompt);
+      textarea.setSelectionRange(prompt.length, prompt.length);
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    const popup = view.querySelector<HTMLElement>('[data-testid="composer-suggestions"]');
+    expect(popup?.textContent).toContain('工作空间文件');
+    expect(popup?.textContent).toContain('reports/quarterly.xlsx');
+    expect(popup?.querySelector('[data-suggestion-kind="file"]')?.textContent).toContain('文件');
+    expect(popup?.textContent).not.toContain('notes.md');
+
+    await act(async () => {
+      popup?.querySelector<HTMLButtonElement>('[data-suggestion-kind="file"]')?.click();
+    });
+
+    expect(textarea.value).toBe('请总结 ');
+    expect(view.textContent).toContain('reports/quarterly.xlsx');
+    expect(view.querySelector('[data-local-path-kind="file"] [data-path-icon="spreadsheet"]')).not.toBeNull();
+    await act(async () => view.querySelector<HTMLButtonElement>('[data-codex-send-button]')!.click());
+    expect(onSend).toHaveBeenCalledWith(
+      expect.stringContaining('- [file] reports/quarterly.xlsx: /Users/test/quarterly-review/reports/quarterly.xlsx\n请总结'),
+      undefined,
+      undefined,
+      expect.any(Object),
+    );
+  });
+
+  it('finds folders with @ and keeps the folder type visible and structured', async () => {
+    useChatStore.getState().createConversation('/Users/test/quarterly-review', { title: '工作空间会话' });
+    mocks.listWorkspaceFiles.mockResolvedValueOnce([
+      {
+        kind: 'folder',
+        name: 'reports',
+        path: '/Users/test/quarterly-review/reports',
+        relativePath: 'reports',
+      },
+      {
+        kind: 'file',
+        name: 'report.md',
+        path: '/Users/test/quarterly-review/report.md',
+        relativePath: 'report.md',
+      },
+    ]);
+    const onSend = vi.fn().mockReturnValue(true);
+    const view = await renderChatInput('chat', onSend);
+    await vi.waitFor(() => expect(mocks.listWorkspaceFiles).toHaveBeenCalledWith('/Users/test/quarterly-review'));
+
+    const textarea = view.querySelector<HTMLTextAreaElement>('textarea')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, '@reports');
+      textarea.setSelectionRange(8, 8);
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    const folderSuggestion = view.querySelector<HTMLButtonElement>('[data-suggestion-kind="folder"]');
+    expect(folderSuggestion?.textContent).toContain('reports');
+    expect(folderSuggestion?.textContent).toContain('文件夹');
+    await act(async () => folderSuggestion?.click());
+
+    const folderChip = view.querySelector<HTMLElement>('[data-local-path-kind="folder"]');
+    expect(folderChip?.textContent).toContain('reports');
+    expect(folderChip?.textContent).toContain('文件夹');
+    expect(folderChip?.querySelector('[data-path-icon="folder"]')).not.toBeNull();
+    await act(async () => view.querySelector<HTMLButtonElement>('[data-codex-send-button]')!.click());
+    expect(onSend).toHaveBeenCalledWith(
+      expect.stringContaining('- [folder] reports: /Users/test/quarterly-review/reports'),
+      undefined,
+      undefined,
+      expect.any(Object),
+    );
+  });
+
+  it('uses file-type icons while keeping every path label out of the skill category', async () => {
+    useChatStore.getState().createConversation('/Users/test/design-assets', { title: '素材工作空间' });
+    mocks.listWorkspaceFiles.mockResolvedValueOnce([
+      { kind: 'folder', name: 'assets', path: '/Users/test/design-assets/assets', relativePath: 'assets' },
+      { kind: 'file', name: 'cover.png', path: '/Users/test/design-assets/cover.png', relativePath: 'cover.png' },
+      { kind: 'file', name: 'roadshow.pptx', path: '/Users/test/design-assets/roadshow.pptx', relativePath: 'roadshow.pptx' },
+      { kind: 'file', name: 'brief.docx', path: '/Users/test/design-assets/brief.docx', relativePath: 'brief.docx' },
+      { kind: 'file', name: 'notes.txt', path: '/Users/test/design-assets/notes.txt', relativePath: 'notes.txt' },
+      // Covers a renderer hot reload while the Electron main process is still
+      // returning the pre-kind file entry shape.
+      { name: 'legacy.pdf', path: '/Users/test/design-assets/legacy.pdf', relativePath: 'legacy.pdf' },
+    ]);
+    const view = await renderChatInput();
+    const textarea = view.querySelector<HTMLTextAreaElement>('textarea')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, '@');
+      textarea.setSelectionRange(1, 1);
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    await vi.waitFor(() => expect(view.querySelector('[data-path-icon="image"]')).not.toBeNull());
+    expect(view.querySelector('[data-path-icon="folder"]')).not.toBeNull();
+    expect(view.querySelector('[data-path-icon="presentation"]')).not.toBeNull();
+    expect(view.querySelector('[data-path-icon="document"]')).not.toBeNull();
+    expect(view.querySelector('[data-path-icon="text"]')).not.toBeNull();
+    expect(view.querySelector('[data-path-icon="pdf"]')).not.toBeNull();
+    expect(view.querySelector('[data-suggestion-kind="folder"]')?.textContent).toContain('文件夹');
+    [...view.querySelectorAll('[data-suggestion-kind="file"]')].forEach((item) => {
+      expect(item.textContent).toContain('文件');
+      expect(item.textContent).not.toContain('技能');
+    });
+  });
+
+  it('shows skills and connectors together under / and keeps connectors free of the @ prefix', async () => {
+    mocks.fetchSkills.mockResolvedValue({
+      skills: [{
+        name: 'writer', description: '写作助手', source: 'builtin',
+        enabled: true, available: true, user_invocable: true, tags: [],
+      }],
+      disabled: [], installed_count: 1,
+    });
+    const view = await renderChatInput();
+    const textarea = view.querySelector<HTMLTextAreaElement>('textarea')!;
+    const prompt = '/';
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, prompt);
+      textarea.setSelectionRange(prompt.length, prompt.length);
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await vi.waitFor(() => expect(view.querySelector('[data-suggestion-kind="skill"]')).not.toBeNull());
+
+    const popup = view.querySelector<HTMLElement>('[data-testid="composer-suggestions"]');
+    expect(popup?.textContent).toContain('技能与连接器');
+    expect(popup?.querySelector('[data-suggestion-kind="skill"]')?.textContent).toContain('/writer');
+    expect(popup?.querySelector('[data-suggestion-kind="mcp"]')?.textContent).toContain('聚源金融数据');
+
+    await act(async () => {
+      popup?.querySelector<HTMLButtonElement>('[data-suggestion-kind="mcp"]')?.click();
+    });
+    const connectorChip = view.querySelector<HTMLButtonElement>('[data-selected-mcp-preset="juyuan"]');
+    expect(connectorChip?.textContent).toContain('聚源金融数据');
+    expect(connectorChip?.textContent).not.toContain('@');
+    expect(connectorChip?.querySelector('svg.lucide-puzzle')).not.toBeNull();
+    expect(textarea.value).toBe('');
   });
 });
 

@@ -474,6 +474,7 @@ function mediaKindFromRecord(record: Record<string, unknown>, url?: string, name
   const raw = stringField(record, ['kind', 'type', 'mime', 'mime_type', 'content_type'])?.toLowerCase() ?? '';
   if (raw.includes('image') || raw.includes('screenshot')) return 'image';
   if (raw.includes('video') || raw.includes('mp4') || raw.includes('quicktime')) return 'video';
+  if (raw.includes('folder') || raw.includes('directory')) return 'folder';
   if (raw.includes('file') || raw.includes('document')) return 'file';
   return mediaKindFromName(name ?? url ?? '');
 }

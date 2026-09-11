@@ -659,7 +659,7 @@ export function mapWebuiThreadToGuiMessages(webuiMessages: UIMessage[]): Message
             path: file.path,
             localPath: file.path,
             name: file.name,
-            kind: 'file' as const,
+            kind: file.kind ?? 'file',
           })),
         ],
       });

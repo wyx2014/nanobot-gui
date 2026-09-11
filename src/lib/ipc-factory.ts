@@ -8,6 +8,13 @@ interface IPCBridge {
   on(channel: string, callback: (...args: any[]) => void): () => void;
 }
 
+export interface WorkspaceFileEntry {
+  kind: 'file' | 'folder';
+  name: string;
+  path: string;
+  relativePath: string;
+}
+
 export const isElectron = true;
 
 const electronBridge: IPCBridge = {
@@ -43,6 +50,9 @@ export const fsBridge = {
   },
   readDir: async (path: string): Promise<any[]> => {
     return window.ipc.invoke('fs:readDir', path);
+  },
+  listWorkspaceFiles: async (path: string): Promise<WorkspaceFileEntry[]> => {
+    return window.ipc.invoke('workspace:listFiles', path);
   },
   exists: async (path: string): Promise<boolean> => {
     return window.ipc.invoke('fs:exists', path);

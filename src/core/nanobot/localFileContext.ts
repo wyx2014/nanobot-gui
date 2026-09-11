@@ -2,8 +2,11 @@ import { isLocalFilePath } from '@/utils/pathUtils';
 
 export const LEGACY_LOCAL_FILE_CONTEXT_HEADER =
   '本地文件引用（请按路径读取这些文件；如果路径超出当前工作区权限，请先说明无法访问）：';
+export const LOCAL_PATH_CONTEXT_HEADER =
+  '本地路径引用（文件请按路径读取；文件夹请先列出内容；如果路径超出当前工作区权限，请先说明无法访问）：';
 
 export interface LocalFileReference {
+  kind?: 'file' | 'folder';
   name: string;
   path: string;
 }
@@ -14,7 +17,7 @@ export interface LocalFileContextProjection {
   contextPrefix?: string;
 }
 
-const LOCAL_FILE_LINE = /^-\s+(.+?):\s+((?:\/|[A-Za-z]:[\\/]).+)$/;
+const LOCAL_FILE_LINE = /^-\s+(?:\[(file|folder)\]\s+)?(.+?):\s+((?:\/|[A-Za-z]:[\\/]).+)$/;
 
 /**
  * Project the old prompt-prefix transport into user-facing text and file
@@ -24,7 +27,8 @@ const LOCAL_FILE_LINE = /^-\s+(.+?):\s+((?:\/|[A-Za-z]:[\\/]).+)$/;
 export function projectLegacyLocalFileContext(content: string): LocalFileContextProjection {
   const newline = content.includes('\r\n') ? '\r\n' : '\n';
   const lines = content.split(/\r?\n/);
-  if (lines[0]?.trim() !== LEGACY_LOCAL_FILE_CONTEXT_HEADER) {
+  const header = lines[0]?.trim();
+  if (header !== LEGACY_LOCAL_FILE_CONTEXT_HEADER && header !== LOCAL_PATH_CONTEXT_HEADER) {
     return { visibleContent: content, files: [] };
   }
 
@@ -33,10 +37,11 @@ export function projectLegacyLocalFileContext(content: string): LocalFileContext
   while (index < lines.length) {
     const match = LOCAL_FILE_LINE.exec(lines[index]);
     if (!match) break;
-    const name = match[1].trim();
-    const path = match[2].trim();
+    const kind = match[1] as LocalFileReference['kind'];
+    const name = match[2].trim();
+    const path = match[3].trim();
     if (!name || !isLocalFilePath(path)) break;
-    files.push({ name, path });
+    files.push({ ...(kind ? { kind } : {}), name, path });
     index += 1;
   }
 

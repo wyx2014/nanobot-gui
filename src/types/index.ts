@@ -138,7 +138,7 @@ export interface MessageMediaAttachment {
   name?: string;
   mimeType?: string;
   size?: number;
-  kind?: 'image' | 'video' | 'file';
+  kind?: 'image' | 'video' | 'file' | 'folder';
 }
 
 // Simplified tool call info for LLM context building

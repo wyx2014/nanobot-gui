@@ -83,6 +83,12 @@ export default function AppTitlebarMenu() {
     }, 0);
   };
 
+  const openDiagnosticsFromMenu = () => {
+    // Radix dispatches onSelect synchronously before releasing the menu's body
+    // pointer lock. Open the dialog after that cleanup has completed.
+    window.setTimeout(openDiagnosticsDialog, 0);
+  };
+
   const labels = isEnglish
     ? {
         edit: 'Edit',
@@ -170,7 +176,7 @@ export default function AppTitlebarMenu() {
           <DropdownMenuSeparator className="my-1 bg-[#e3e0da] dark:bg-white/10" />
           <DropdownMenuItem
             className={itemClassName}
-            onSelect={openDiagnosticsDialog}
+            onSelect={openDiagnosticsFromMenu}
           >
             {labels.diagnostics}
           </DropdownMenuItem>

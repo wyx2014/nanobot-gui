@@ -87,7 +87,7 @@ describe('AppTitlebarMenu', () => {
     input.remove();
   });
 
-  it('connects window and help actions to their real destinations', () => {
+  it('connects window and help actions to their real destinations', async () => {
     act(() => buttonWithText('关闭窗口').click());
     expect(window.ipc.invoke).toHaveBeenCalledWith('window:close');
 
@@ -101,6 +101,8 @@ describe('AppTitlebarMenu', () => {
 
     expect(container?.textContent).not.toContain('意见反馈');
     act(() => buttonWithText('导出诊断包').click());
+    expect(useSettingsStore.getState().diagnosticsDialogOpen).toBe(false);
+    await act(async () => new Promise((resolve) => window.setTimeout(resolve, 0)));
     expect(useSettingsStore.getState()).toMatchObject({
       viewMode: 'chat',
       diagnosticsDialogOpen: true,

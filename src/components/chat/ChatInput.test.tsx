@@ -35,6 +35,15 @@ const mocks = vi.hoisted(() => ({
   mkdir: vi.fn(),
   documentDir: vi.fn(),
   switchGatewayTextModelDefault: vi.fn(),
+  welcomeShortcutsInteractive: true,
+  showFixedIncomeShortcut: true,
+}));
+
+vi.mock('./welcomeShortcutAvailability', () => ({
+  getWelcomeShortcutAvailability: () => ({
+    interactive: mocks.welcomeShortcutsInteractive,
+    showFixedIncome: mocks.showFixedIncomeShortcut,
+  }),
 }));
 
 vi.mock('@/core/nanobotClient', async () => {
@@ -116,6 +125,8 @@ let root: Root | undefined;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 beforeEach(() => {
+  mocks.welcomeShortcutsInteractive = true;
+  mocks.showFixedIncomeShortcut = true;
   useOfficeGuideStore.getState().close();
   useDiscoveryStore.setState({ skills: [], agents: [], experts: [], isLoading: false });
   mocks.fetchSkills.mockResolvedValue({ skills: [], disabled: [], installed_count: 0 });
@@ -386,6 +397,21 @@ describe('ChatInput stop feedback', () => {
 });
 
 describe('ChatInput welcome layout', () => {
+  it('shows only three noninteractive category labels while retaining shortcut definitions', async () => {
+    const { getWelcomeShortcutAvailability } = await vi.importActual<typeof import('./welcomeShortcutAvailability')>('./welcomeShortcutAvailability');
+    expect(getWelcomeShortcutAvailability()).toEqual({ interactive: false, showFixedIncome: false });
+    mocks.welcomeShortcutsInteractive = false;
+    mocks.showFixedIncomeShortcut = false;
+    useSettingsStore.getState().setLanguage('zh-CN');
+    const view = await renderChatInput('welcome');
+    const shortcuts = [...view.querySelectorAll<HTMLButtonElement>('[data-welcome-shortcut]')];
+
+    expect(shortcuts.map((button) => button.textContent)).toEqual(['投资研究', '数据分析', '综合办公']);
+    expect(shortcuts.every((button) => button.disabled)).toBe(true);
+    await act(async () => shortcuts[0]?.click());
+    expect(view.querySelector('[data-welcome-shortcut-panel]')).toBeNull();
+  });
+
   it('keeps the existing compact layout while exposing scoped dark-theme hooks', async () => {
     const view = await renderChatInput('welcome');
     const shell = view.querySelector<HTMLElement>('[data-welcome-composer-shell]');
@@ -412,7 +438,7 @@ describe('ChatInput welcome layout', () => {
       'data-analysis',
       'office',
     ]);
-    expect(shortcuts[0]?.textContent).toMatch(/权益投研|Equity Research/);
+    expect(shortcuts[0]?.textContent).toMatch(/投资研究|Equity Research/);
     expect(shortcuts[1]?.textContent).toMatch(/固收业务|Fixed Income/);
     expect(shortcuts[2]?.textContent).toMatch(/数据分析|Data Analysis/);
     expect(shortcuts[3]?.textContent).toMatch(/综合办公|Office Work/);
@@ -976,6 +1002,29 @@ describe('ChatInput data and office workspace shortcuts', () => {
       '/Users/test/Documents/TPCowork Projects/我的综合办公', expect.objectContaining({
         skillScope: { explicit_skills: ['office-documents', 'image-extract'], project_bound_user_skills: [] },
       }));
+  });
+
+  it('keeps the Windows guide shade below the title bar and aligns its target', async () => {
+    document.documentElement.style.setProperty('--window-titlebar-safe-top', '36px');
+    try {
+      useOfficeGuideStore.getState().open();
+      const view = await renderChatInput('welcome');
+      const target = view.querySelector<HTMLElement>('[data-welcome-shortcut="office"]')!;
+      vi.spyOn(target, 'getBoundingClientRect').mockReturnValue({
+        left: 80, top: 100, right: 160, bottom: 140, width: 80, height: 40,
+      } as DOMRect);
+
+      expect(document.querySelector('[data-office-task-guide="welcome"]')?.classList.contains('window-modal-viewport')).toBe(true);
+
+      await clickGuidePrimary();
+
+      const guide = document.querySelector<HTMLElement>('[data-office-task-guide="category"]');
+      expect(guide?.classList.contains('window-modal-viewport')).toBe(true);
+      expect(guide?.querySelector<HTMLElement>('[data-office-guide-highlight]')?.style.top).toBe('58px');
+      expect(guide?.querySelector<HTMLElement>('.office-guide-shade')?.style.height).toBe('58px');
+    } finally {
+      document.documentElement.style.removeProperty('--window-titlebar-safe-top');
+    }
   });
 
   it('waits for real task preparation and lets the user retry a failed setup from the guide', async () => {

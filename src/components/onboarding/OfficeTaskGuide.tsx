@@ -19,6 +19,14 @@ const TARGETS: Record<OfficeGuideStep, string[]> = {
 
 const STEPS: OfficeGuideStep[] = ['category', 'task', 'workspace', 'skills', 'compose'];
 
+function guideViewport() {
+  const titlebarTop = Math.max(0, Math.min(
+    window.innerHeight,
+    Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--window-titlebar-safe-top')) || 0,
+  ));
+  return { titlebarTop, width: window.innerWidth, height: window.innerHeight - titlebarTop };
+}
+
 interface OfficeTaskGuideProps {
   activeCategory: string | null;
   preparing: boolean;
@@ -49,27 +57,31 @@ export default function OfficeTaskGuide({
   const bodyRef = useRef<HTMLDivElement>(null);
   const [layout, setLayout] = useState(() => ({
     target: null as GuideRect | null,
-    ...placeOfficeGuide(null, { width: window.innerWidth, height: window.innerHeight }, 280),
+    ...placeOfficeGuide(null, guideViewport(), 280),
   }));
 
   useLayoutEffect(() => {
     let frame = 0;
     const targets = () => selectors.flatMap((selector) => [...document.querySelectorAll<HTMLElement>(selector)]);
     const measure = () => {
+      const { titlebarTop, ...viewport } = guideViewport();
       const rects = targets().map((node) => node.getBoundingClientRect()).filter((rect) => rect.width && rect.height);
       let target: GuideRect | null = null;
       if (rects.length) {
         const left = Math.max(0, Math.min(...rects.map((rect) => rect.left)) - 6);
-        const top = Math.max(0, Math.min(...rects.map((rect) => rect.top)) - 6);
-        const right = Math.min(window.innerWidth, Math.max(...rects.map((rect) => rect.right)) + 6);
-        const bottom = Math.min(window.innerHeight, Math.max(...rects.map((rect) => rect.bottom)) + 6);
+        const top = Math.max(0, Math.min(...rects.map((rect) => rect.top)) - titlebarTop - 6);
+        const right = Math.min(viewport.width, Math.max(...rects.map((rect) => rect.right)) + 6);
+        const bottom = Math.min(
+          viewport.height,
+          Math.max(...rects.map((rect) => rect.bottom)) - titlebarTop + 6,
+        );
         if (right > left && bottom > top) target = { left, top, width: right - left, height: bottom - top };
       }
       const bodyOverflow = Math.max(0, (bodyRef.current?.scrollHeight ?? 0) - (bodyRef.current?.clientHeight ?? 0));
       const naturalHeight = cardRef.current ? cardRef.current.scrollHeight + bodyOverflow + 2 : 280;
       const next = {
         target,
-        ...placeOfficeGuide(target, { width: window.innerWidth, height: window.innerHeight }, naturalHeight),
+        ...placeOfficeGuide(target, viewport, naturalHeight),
       };
       setLayout((previous) => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
     };
@@ -186,7 +198,7 @@ export default function OfficeTaskGuide({
   const shade = 'office-guide-shade pointer-events-auto absolute';
 
   return createPortal(
-    <div data-office-task-guide={step} className="pointer-events-none fixed inset-0 z-[90] [app-region:no-drag]">
+    <div data-office-task-guide={step} className="window-modal-viewport pointer-events-none fixed inset-0 z-[90] [app-region:no-drag]">
       {target ? <>
         <div aria-hidden="true" className={shade} style={{ inset: '0 0 auto', height: target.top }} />
         <div aria-hidden="true" className={shade} style={{ top: target.top, left: 0, width: target.left, height: target.height }} />

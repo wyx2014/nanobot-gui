@@ -72,6 +72,7 @@ import {
   removeComposerSuggestionTrigger,
   searchWorkspaceFiles,
 } from '@/core/composerSuggestions';
+import { getWelcomeShortcutAvailability } from './welcomeShortcutAvailability';
 
 const SHOW_PRESENTATION_PLUS_MENU_ENTRY = false;
 
@@ -2544,9 +2545,12 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     </div>
   ) : null;
 
+  const shortcutAvailability = getWelcomeShortcutAvailability();
   const welcomeShortcuts = isWelcome ? (
     <div data-welcome-shortcuts className="cowork-welcome-shortcuts">
-      {SHORTCUT_CATEGORIES.map((category) => {
+      {SHORTCUT_CATEGORIES.filter((category) => (
+        category.id !== 'fixed-income' || shortcutAvailability.showFixedIncome
+      )).map((category) => {
         const Icon = category.icon;
         return (
           <button
@@ -2554,6 +2558,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
             data-welcome-shortcut={category.id}
             data-active={activeCategory === category.id ? 'true' : 'false'}
             aria-expanded={activeCategory === category.id}
+            disabled={!shortcutAvailability.interactive}
             onClick={() => handleShortcut(category.id)}
           >
             <Icon className="h-3.5 w-3.5" />

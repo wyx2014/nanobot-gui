@@ -60,7 +60,7 @@ export default function NewWorkspaceDialog({ open, onClose, onCreated }: NewWork
       }}
     >
       <WindowModalBackdrop className="dark:bg-black/45" />
-      <div className="relative flex max-h-[85vh] w-[480px] flex-col overflow-hidden rounded-2xl border border-black/5 bg-white shadow-lg dark:border-[#3a3a3a] dark:bg-[#262626]">
+      <div data-cowork-dialog role="dialog" aria-modal="true" aria-label={t.folder.nameProject} className="relative flex max-h-[85vh] w-[480px] flex-col overflow-hidden rounded-2xl border border-black/5 bg-white shadow-lg dark:border-[#3a3a3a] dark:bg-[#262626]">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100 shrink-0 dark:border-white/10">
           <div>

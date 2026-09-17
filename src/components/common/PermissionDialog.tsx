@@ -62,7 +62,7 @@ export default function PermissionDialog({ request, onAllow, onDeny, onChooseFol
     return (
       <div className="window-modal-viewport fixed inset-0 z-50 flex items-center justify-center">
         <WindowModalBackdrop />
-        <div className="relative mx-4 w-full max-w-sm overflow-hidden rounded-2xl border border-black/5 bg-white shadow-lg">
+        <div data-cowork-dialog className="relative mx-4 w-full max-w-sm overflow-hidden rounded-2xl border border-black/5 bg-white shadow-lg">
           {/* Close button */}
           <button
             onClick={onDeny}
@@ -151,7 +151,7 @@ export default function PermissionDialog({ request, onAllow, onDeny, onChooseFol
   return (
     <div className="window-modal-viewport fixed inset-0 z-50 flex items-center justify-center">
       <WindowModalBackdrop />
-      <div className="relative mx-4 w-full max-w-md overflow-hidden rounded-2xl border border-black/5 bg-white shadow-lg">
+      <div data-cowork-dialog className="relative mx-4 max-h-[calc(100dvh-var(--window-titlebar-safe-top)-32px)] w-full max-w-md overflow-y-auto rounded-2xl border border-black/5 bg-white shadow-lg">
         {/* Header */}
         <div className="relative px-6 pt-6 pb-4">
           <button
@@ -193,10 +193,10 @@ export default function PermissionDialog({ request, onAllow, onDeny, onChooseFol
         </div>
 
         {/* Warning */}
-        <div className="mx-6 mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+        <div className="mx-6 mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg dark:border-amber-400/25 dark:bg-amber-400/10">
           <div className="flex gap-2">
             <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-            <p className="text-[12px] text-amber-700 leading-relaxed">{config.warning}</p>
+            <p className="text-[12px] text-amber-700 leading-relaxed dark:text-amber-300">{config.warning}</p>
           </div>
         </div>
 
@@ -223,10 +223,10 @@ export default function PermissionDialog({ request, onAllow, onDeny, onChooseFol
 
         {/* Always-confirm inline warning */}
         {showAlwaysConfirm && (
-          <div className="mx-6 mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+          <div className="mx-6 mb-4 p-3 bg-red-50 border border-red-200 rounded-lg dark:border-red-400/25 dark:bg-red-400/10">
             <div className="flex gap-2">
               <AlertTriangle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
-              <p className="text-[12px] text-red-700 leading-relaxed">{t.permission.durationAlwaysConfirm}</p>
+              <p className="text-[12px] text-red-700 leading-relaxed dark:text-red-300">{t.permission.durationAlwaysConfirm}</p>
             </div>
           </div>
         )}
@@ -251,7 +251,7 @@ export default function PermissionDialog({ request, onAllow, onDeny, onChooseFol
             className={cn(
               'flex-1 h-10 text-[14px] text-white',
               showAlwaysConfirm
-                ? 'bg-red-500 hover:bg-red-600'
+                ? 'bg-red-500 hover:bg-red-600 active:bg-red-700'
                 : 'bg-[#29261b] hover:bg-[#3d3929]'
             )}
           >

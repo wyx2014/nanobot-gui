@@ -2,7 +2,6 @@ import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import tsx from 'react-syntax-highlighter/dist/esm/languages/prism/tsx';
 import python from 'react-syntax-highlighter/dist/esm/languages/prism/python';
 import bash from 'react-syntax-highlighter/dist/esm/languages/prism/bash';
@@ -353,14 +352,15 @@ function CollapsibleCodeBlock({ codeString, language }: { codeString: string; la
   }, [codeString, language]);
 
   return (
-    <div className="relative my-3 rounded-lg overflow-hidden max-w-full">
+    <div className="cowork-code-block relative my-3 rounded-lg overflow-hidden max-w-full">
       {/* Code area */}
       <div className="relative">
         <div
           style={isCollapsed ? { maxHeight: '360px', overflow: 'hidden' } : undefined}
         >
           <SyntaxHighlighter
-            style={oneDark}
+            useInlineStyles={false}
+            className="cowork-code"
             language={language || 'text'}
             PreTag="div"
             wrapLongLines={true}
@@ -378,10 +378,10 @@ function CollapsibleCodeBlock({ codeString, language }: { codeString: string; la
         </div>
         {/* Gradient overlay when collapsed */}
         {isCollapsed && (
-          <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-[#282c34] to-transparent flex items-end justify-center pb-2">
+          <div className="cowork-code-fade absolute bottom-0 left-0 right-0 h-20 flex items-end justify-center pb-2">
             <button
               onClick={() => setCollapsed(false)}
-              className="flex items-center gap-1 px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-xs text-white/80 transition-colors"
+              className="cowork-code-expand flex items-center gap-1 px-3 py-1 rounded-full text-xs transition-colors"
             >
               <ChevronDown className="h-3.5 w-3.5" />
               {format(t.chat.codeBlockExpand, { lines: String(lineCount) })}
@@ -390,13 +390,13 @@ function CollapsibleCodeBlock({ codeString, language }: { codeString: string; la
         )}
       </div>
       {/* Bottom toolbar — always visible */}
-      <div className="flex items-center justify-between px-3 py-1.5 bg-neutral-800 text-xs text-neutral-400">
+      <div className="cowork-code-toolbar flex items-center justify-between px-3 py-1.5 text-xs">
         <div className="flex items-center gap-2">
           {language && <span>{language}</span>}
           {shouldCollapse && !isCollapsed && (
             <button
               onClick={() => setCollapsed(true)}
-              className="flex items-center gap-0.5 hover:text-neutral-200 transition-colors"
+              className="flex items-center gap-0.5 transition-colors"
             >
               <ChevronUp className="h-3.5 w-3.5" />
               {t.chat.codeBlockCollapse}

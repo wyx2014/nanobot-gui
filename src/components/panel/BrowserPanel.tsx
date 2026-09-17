@@ -71,7 +71,7 @@ export default function BrowserPanel({ chatId }: BrowserPanelProps) {
   const userControl = status === 'user_control';
 
   return (
-    <section className="flex h-full min-h-0 flex-col bg-[#f5f3ee]" aria-label={t.panel.browserTitle}>
+    <section data-browser-surface className="flex h-full min-h-0 flex-col bg-[#f5f3ee]" aria-label={t.panel.browserTitle}>
       <header className={cn(
         'flex h-12 shrink-0 items-center gap-2 border-b border-[#e5e2db] px-3',
         isWindows() ? 'mt-10' : 'mt-7',
@@ -128,7 +128,7 @@ export default function BrowserPanel({ chatId }: BrowserPanelProps) {
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="relative flex min-h-[220px] flex-1 items-center justify-center overflow-hidden bg-[#24231f]">
+        <div data-browser-frame className="relative flex min-h-[220px] flex-1 items-center justify-center overflow-hidden bg-[#24231f]">
           {imageUrl ? (
             <img
               src={imageUrl}
@@ -158,7 +158,7 @@ export default function BrowserPanel({ chatId }: BrowserPanelProps) {
               <Button
                 size="sm"
                 onClick={() => control('resume')}
-                className="h-8 flex-1 bg-[#2f6f52] text-[12px] hover:bg-[#285f47]"
+                className="h-8 flex-1 bg-[#2f6f52] text-[12px] hover:bg-[#285f47] active:bg-[#1f513b]"
               >
                 <Hand className="h-3.5 w-3.5" />
                 {t.panel.browserResume}

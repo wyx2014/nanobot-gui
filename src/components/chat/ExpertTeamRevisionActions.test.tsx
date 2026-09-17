@@ -3,7 +3,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { initLanguage } from '@/i18n';
 import type { TurnPlanResource } from '@/core/types';
-import ExpertTeamRevisionActions from './ExpertTeamRevisionActions';
+import ExpertTeamRevisionActions, { RoleRevisionActions } from './ExpertTeamRevisionActions';
 
 const plan: TurnPlanResource = {
   id: 'plan-byd', turn_id: 'turn-byd', kind: 'workflow', owner: 'expert_team:asset-research-team',
@@ -14,9 +14,15 @@ const plan: TurnPlanResource = {
     { id: 'risk-assessor', title: '风险评估师 · 李录视角', status: 'completed', warning: '该角色结果已降级，Team Lead 将补齐缺失维度' },
   ],
 };
+
 let container: HTMLDivElement;
 let root: Root;
 const revise = vi.fn();
+const roleProps = {
+  runId: '04db8b3226fd',
+  roleId: 'risk-assessor',
+  roleTitle: '风险评估师 · 李录视角',
+};
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -29,24 +35,41 @@ beforeEach(() => {
 });
 afterEach(() => { act(() => root.unmount()); container.remove(); });
 
-describe('Research report revision entry', () => {
-  it('shows the degraded role directly from persisted plan, without local team metadata or expanding a timeline', () => {
-    act(() => root.render(<ExpertTeamRevisionActions plan={plan} onReviseRole={revise} />));
-    expect(container.textContent).toContain('有待补齐的角色结果');
+describe('RoleRevisionActions', () => {
+  it('passes the exact run and role to the revision action', () => {
+    act(() => root.render(<RoleRevisionActions {...roleProps} onReviseRole={revise} />));
     const supplement = container.querySelector<HTMLButtonElement>('button[title="补充资料"]');
-    expect(supplement).not.toBeNull();
+    expect(supplement?.getAttribute('aria-label')).toContain(roleProps.roleTitle);
     act(() => supplement!.click());
-    expect(revise).toHaveBeenLastCalledWith('04db8b3226fd', 'risk-assessor', 'supplement');
-    act(() => container.querySelector<HTMLButtonElement>('button[title="仅重试该角色"]')!.click());
-    expect(revise).toHaveBeenLastCalledWith('04db8b3226fd', 'risk-assessor', 'retry');
+    expect(revise).toHaveBeenLastCalledWith('04db8b3226fd', 'risk-assessor');
+    expect(container.querySelectorAll('button')).toHaveLength(1);
   });
 
   it('keeps actions visible but disabled while disconnected or busy', () => {
-    act(() => root.render(<ExpertTeamRevisionActions plan={plan} disabled onReviseRole={revise} />));
+    act(() => root.render(<RoleRevisionActions {...roleProps} disabled onReviseRole={revise} />));
     const buttons = [...container.querySelectorAll('button')];
-    expect(buttons).toHaveLength(2);
+    expect(buttons).toHaveLength(1);
     for (const button of buttons) { expect(button.disabled).toBe(true); act(() => button.click()); }
     expect(revise).not.toHaveBeenCalled();
+  });
+});
+
+describe('Research report revision actions', () => {
+  it('shows only the right-aligned actions for a finished research run', () => {
+    act(() => root.render(<ExpertTeamRevisionActions plan={plan} onReviseRole={revise} />));
+    const actions = container.querySelector('[data-research-revision-actions]');
+    expect(actions?.className).toContain('justify-end');
+    expect(actions?.textContent).toBe('补充资料');
+    expect(actions?.textContent).not.toContain('研究报告');
+    expect(actions?.textContent).not.toContain('风险评估师');
+    expect(actions?.querySelectorAll('button')).toHaveLength(1);
+    act(() => actions?.querySelector<HTMLButtonElement>('button[title="补充资料"]')?.click());
+    expect(revise).toHaveBeenCalledWith('04db8b3226fd', 'risk-assessor');
+  });
+
+  it('disables the retained actions while the conversation is busy', () => {
+    act(() => root.render(<ExpertTeamRevisionActions plan={plan} disabled onReviseRole={revise} />));
+    expect([...container.querySelectorAll('button')].every((button) => button.disabled)).toBe(true);
   });
 
   it.each([
@@ -54,8 +77,8 @@ describe('Research report revision entry', () => {
     { ...plan, team_run_id: undefined },
     { ...plan, team_id: 'another-team' },
     null,
-  ])('does not offer revision without a finished research run', (value) => {
+  ])('does not show actions without a finished research run', (value) => {
     act(() => root.render(<ExpertTeamRevisionActions plan={value} onReviseRole={revise} />));
-    expect(container.querySelector('button')).toBeNull();
+    expect(container.querySelector('[data-research-revision-actions]')).toBeNull();
   });
 });

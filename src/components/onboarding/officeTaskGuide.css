@@ -1,0 +1,42 @@
+/* The guide is portalled, so use the same root palette as the homepage. */
+.office-guide-shade {
+  background: color-mix(in srgb, var(--cowork-backdrop) 80%, transparent);
+}
+
+.office-guide-highlight {
+  border-color: var(--cowork-blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cowork-blue) 16%, transparent);
+}
+
+.office-guide-card {
+  color: var(--cowork-ink);
+  border-color: var(--cowork-line);
+  background: color-mix(in srgb, var(--cowork-surface) 94%, transparent);
+  box-shadow: var(--cowork-dialog-shadow);
+  backdrop-filter: blur(24px) saturate(1.18);
+}
+
+.office-guide-heading {
+  color: var(--cowork-muted);
+}
+
+[data-office-task-guide="compose"] .office-guide-heading {
+  color: var(--cowork-ink);
+}
+
+.office-guide-progress {
+  color: var(--cowork-blue);
+  background: var(--cowork-selected);
+}
+
+.office-guide-example {
+  color: var(--cowork-text);
+  background: color-mix(in srgb, var(--cowork-panel) 60%, transparent);
+  box-shadow: none;
+}
+
+.office-guide-example:hover {
+  color: var(--cowork-blue);
+  border-color: var(--cowork-blue);
+  background: var(--cowork-hover);
+}

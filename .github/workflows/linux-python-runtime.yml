@@ -61,6 +61,7 @@ jobs:
           CAIHUI_MCP_API_KEY: ${{ secrets.CAIHUI_MCP_API_KEY }}
           IFIND_MCP_API_KEY: ${{ secrets.IFIND_MCP_API_KEY }}
           ANYSEARCH_API_KEY: ${{ secrets.ANYSEARCH_API_KEY }}
+          TPCOWORK_IMAGE_EXTRACT_API_KEY: ${{ secrets.TPCOWORK_IMAGE_EXTRACT_API_KEY }}
         run: npm run build:linux
 
       - name: Smoke-test AppImage and DEB runtimes

@@ -2,6 +2,8 @@
  * Scheduled Task Types
  */
 
+import type { OutboundMcpPresetMention } from '@/core/types';
+
 export type ScheduleFrequency =
   | 'once'
   | 'hourly'
@@ -42,6 +44,7 @@ export interface ScheduleTaskDraft {
   schedule: ScheduleConfig;
   skillName?: string;
   workspacePath?: string;
+  mcpPresets?: OutboundMcpPresetMention[];
 }
 
 export interface ScheduledTask {
@@ -56,6 +59,8 @@ export interface ScheduledTask {
   skillName?: string;
   /** Optional workspace path */
   workspacePath?: string;
+  /** MCP connectors available to each scheduled run. */
+  mcpPresets?: OutboundMcpPresetMention[];
   createdAt: number;
   updatedAt: number;
   lastRunAt?: number;

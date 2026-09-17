@@ -2,9 +2,12 @@ import { useEffect, useCallback, useMemo, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useChatStore } from '@/stores/chatStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { useOfficeGuideStore } from '@/stores/officeGuideStore';
 import { useScheduleStore } from '@/stores/scheduleStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
+import { recordDiagnostic, startDiagnostic } from '@/core/diagnostics';
+import { diagnosticError } from '@/shared/diagnostics';
 import { useToastStore } from '@/stores/toastStore';
 import { usePromptHubStore } from '@/stores/promptHubStore';
 import { useI18n } from '@/i18n';
@@ -111,7 +114,7 @@ export default function Sidebar() {
   const addToast = useToastStore((state) => state.addToast);
   const openToolbox = useSettingsStore((s) => s.openToolbox);
   const openSystemSettings = useSettingsStore((s) => s.openSystemSettings);
-  const openGuide = useSettingsStore((s) => s.openGuide);
+  const openOfficeGuide = useOfficeGuideStore((s) => s.open);
   const viewMode = useSettingsStore((s) => s.viewMode);
   const setViewMode = useSettingsStore((s) => s.setViewMode);
   const updateInfo = useSettingsStore((s) => s.updateInfo);
@@ -125,6 +128,7 @@ export default function Sidebar() {
   const removeRecentPath = useWorkspaceStore((s) => s.removeRecentPath);
   const setProjectSkillBindings = useWorkspaceStore((s) => s.setProjectSkillBindings);
   const skills = useDiscoveryStore((s) => s.skills);
+  const discoveryLoading = useDiscoveryStore((s) => s.isLoading);
   const promptHubUser = usePromptHubStore((s) => s.user);
   const promptHubIsLoggingIn = usePromptHubStore((s) => s.isLoggingIn);
   const promptHubOpen = usePromptHubStore((s) => s.loginOpen);
@@ -503,6 +507,15 @@ export default function Sidebar() {
     ));
   }, [skillSearch, workspaceSkills]);
 
+  useEffect(() => {
+    if (!skillProject) return;
+    recordDiagnostic({ event_name: 'renderer.skills.workspace_picker', status: 'completed', details: {
+      count: skills.length, workspace_count: workspaceSkills.length,
+      visible_count: filteredWorkspaceSkills.length, granted_count: draftSkillBindings.length,
+      ready: !discoveryLoading,
+    } });
+  }, [skillProject, skills.length, workspaceSkills.length, filteredWorkspaceSkills.length, draftSkillBindings.length, discoveryLoading]);
+
   const handleArchiveConversation = async (e: React.MouseEvent, convId: string) => {
     e.stopPropagation();
     try {
@@ -618,6 +631,9 @@ export default function Sidebar() {
   };
 
   const openProjectSkills = async (path: string) => {
+    const operation = startDiagnostic('renderer.skills.project_grants', {
+      details: { count: skills.length, visible_count: workspaceSkills.length },
+    });
     const project = conversationGroups.projects.find((item) => item.path === path);
     const projectName = project?.name ?? projectNames[path] ?? projectNameFromPath(path);
     const availableWorkspaceSkills = new Set(workspaceSkills.map((skill) => skill.name));
@@ -628,7 +644,9 @@ export default function Sidebar() {
       const payload = await fetchProjectSkills(auth.token, path, auth.baseUrl);
       setDraftSkillBindings(payload.skills.filter((name) => availableWorkspaceSkills.has(name)));
       setProjectSkillBindings(path, payload.skills);
-    } catch {
+      operation.finish('completed', { granted_count: payload.skills.length });
+    } catch (err) {
+      operation.finish('failed', diagnosticError(err));
       setDraftSkillBindings((projectSkillBindings[normalizeProjectPath(path)] ?? []).filter((name) => availableWorkspaceSkills.has(name)));
     }
   };
@@ -767,6 +785,7 @@ export default function Sidebar() {
   const renderConversationButton = (conv: Conversation, nested = false) => (
     <button
       key={conv.id}
+      data-sidebar-conversation
       onClick={() => { switchConversation(conv.id); setViewMode('chat'); }}
       onContextMenu={(e) => handleContextMenu(e, conv.id)}
       aria-current={conv.id === activeConversationId && viewMode === 'chat' ? 'true' : undefined}
@@ -840,7 +859,7 @@ export default function Sidebar() {
 
   return (
     <div
-      className="flex flex-col h-full w-[260px] bg-[#f7f6f2] border-r border-[#e5e2db] dark:bg-[#242424] dark:border-[#3d3d3d]"
+      className="cowork-sidebar flex h-full w-[260px] flex-col border-r"
       onClickCapture={refreshRelativeTimes}
     >
       {/* The overlay title bar is part of the renderer on every desktop platform. */}
@@ -850,13 +869,13 @@ export default function Sidebar() {
           className={cn('shrink-0', windows ? 'h-9' : 'h-12')}
         />
       )}
-      <header className="shrink-0 px-3 pb-2.5 pt-2.5">
+      <header className="cowork-sidebar-header shrink-0 px-3 pb-2.5 pt-2.5">
         <div className="flex h-9 items-center justify-between gap-2">
           <button
             type="button"
             data-testid="sidebar-brand-trigger"
             onClick={handleBrandClick}
-            className="flex min-w-0 items-center rounded-md px-1.5 text-[20px] font-semibold leading-6 tracking-[-0.025em] text-[#34322d] outline-none select-none dark:text-[#f3f0e8]"
+            className="cowork-sidebar-brand flex min-w-0 items-center rounded-md px-1.5 text-[20px] font-semibold leading-6 tracking-[-0.025em] outline-none select-none"
             aria-label={t.common.appName}
           >
             <span className="truncate">{t.common.appName}</span>
@@ -990,9 +1009,10 @@ export default function Sidebar() {
       </header>
 
       {/* Top Navigation */}
-      <nav className="space-y-0.5 px-3 pb-4" aria-label="Main navigation">
+      <nav className="cowork-sidebar-nav space-y-0.5 px-3 pb-4" aria-label="Main navigation">
         <button
           onClick={startNewChat}
+          aria-current={activeConversationId === null && viewMode === 'chat' ? 'page' : undefined}
           className={cn(
             'btn-ghost flex h-10 w-full items-center gap-3 rounded-lg px-3 text-[15px] font-medium leading-5 tracking-[-0.01em]',
             activeConversationId === null && viewMode === 'chat'
@@ -1005,6 +1025,7 @@ export default function Sidebar() {
         </button>
         <button
           onClick={() => setViewMode('schedule')}
+          aria-current={viewMode === 'schedule' ? 'page' : undefined}
           className={cn(
             'btn-ghost flex h-10 w-full items-center gap-3 rounded-lg px-3 text-[15px] font-medium leading-5 tracking-[-0.01em]',
             viewMode === 'schedule'
@@ -1030,6 +1051,7 @@ export default function Sidebar() {
         </button>
         <button
           onClick={() => openToolbox()}
+          aria-current={viewMode === 'toolbox' ? 'page' : undefined}
           className={cn(
             'btn-ghost flex h-10 w-full items-center gap-3 rounded-lg px-3 text-[15px] font-medium leading-5 tracking-[-0.01em]',
             viewMode === 'toolbox'
@@ -1043,7 +1065,7 @@ export default function Sidebar() {
       </nav>
 
       {/* Conversation List */}
-      <ScrollArea className="flex-1 min-h-0 px-2">
+      <ScrollArea className="cowork-sidebar-list flex-1 min-h-0 px-2">
         {hasActiveSidebarConversationFilters && !hasVisibleSidebarConversations ? (
           <section className="py-1">
             <div className="px-3 pb-1.5 text-[13px] font-semibold leading-5 tracking-[-0.01em] text-[#8a867c]">
@@ -1121,6 +1143,7 @@ export default function Sidebar() {
                     return (
                       <div key={project.key} className="space-y-px">
                         <div
+                          data-sidebar-project
                           className="group/project flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-[14px] font-semibold leading-5 tracking-[-0.01em] text-[#34322d] transition-colors hover:bg-[#eeeeea] dark:text-[#e3dfd7] dark:hover:bg-[#333]"
                         >
                           <button
@@ -1194,14 +1217,14 @@ export default function Sidebar() {
       </ScrollArea>
 
       {/* User Section */}
-      <div className="shrink-0 border-t border-[#e5e2db] px-3 py-1.5">
+      <div className="cowork-sidebar-account shrink-0 border-t px-3 py-1.5">
         <div className="flex items-center gap-1.5">
           <button
             onClick={openPromptHubLogin}
             className="group flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-0.5 text-left transition-colors hover:bg-[#ebe9e4]"
             title={promptHubUser ? format(t.sidebar.loggedInAs, { name: promptHubUser.username }) : t.sidebar.login}
           >
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#d8d5ce] bg-[#f7f6f3] text-[#29261b]">
+            <div className="cowork-sidebar-avatar flex h-7 w-7 shrink-0 items-center justify-center rounded-full border">
               {promptHubUser ? (
                 <span className="text-[13px] font-medium">{accountInitial}</span>
               ) : (
@@ -1216,6 +1239,8 @@ export default function Sidebar() {
           </button>
           <button
             onClick={() => openSystemSettings('general')}
+            aria-label={isEnglish ? 'Settings' : '设置'}
+            title={isEnglish ? 'Settings' : '设置'}
             className={cn(
               'btn-ghost relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md',
               viewMode === 'settings'
@@ -1229,7 +1254,12 @@ export default function Sidebar() {
             )}
           </button>
           <button
-            onClick={openGuide}
+            onClick={() => {
+              if (activeConversationId) startNewConversation();
+              setViewMode('chat');
+              openOfficeGuide();
+            }}
+            aria-label={isEnglish ? 'Replay the getting-started tutorial' : '重新学习新手引导'}
             className="btn-ghost flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[#656358] hover:bg-[#e8e5de] hover:text-[#29261b]"
             title={t.sidebar.help}
           >
@@ -1430,7 +1460,7 @@ export default function Sidebar() {
       {skillProject && (
         <div className="window-modal-viewport fixed inset-0 z-[80] flex items-center justify-center px-4">
           <WindowModalBackdrop className="dark:bg-black/45" />
-          <div className="relative flex max-h-[85vh] w-[480px] flex-col overflow-hidden rounded-2xl border border-black/5 bg-white shadow-lg dark:border-[#3a3a3a] dark:bg-[#262626]">
+          <div data-cowork-dialog className="relative flex max-h-[85vh] w-[480px] flex-col overflow-hidden rounded-2xl border border-black/5 bg-white shadow-lg dark:border-[#3a3a3a] dark:bg-[#262626]">
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100 shrink-0 dark:border-white/10">
               <div className="min-w-0">
@@ -1521,7 +1551,7 @@ export default function Sidebar() {
       {pendingRemoveProject && (
         <div className="window-modal-viewport fixed inset-0 z-[80] flex items-center justify-center px-4">
           <WindowModalBackdrop className="dark:bg-black/45" />
-          <div className="relative w-full max-w-[500px] overflow-hidden rounded-[20px] border border-[#e6e1d8] bg-white shadow-lg dark:border-[#3a3a3a] dark:bg-[#262626] dark:shadow-lg">
+          <div data-cowork-dialog className="relative w-full max-w-[500px] overflow-hidden rounded-[20px] border border-[#e6e1d8] bg-white shadow-lg dark:border-[#3a3a3a] dark:bg-[#262626] dark:shadow-lg">
             <div className="flex items-start justify-between px-7 pt-6 pb-4">
               <div>
                 <h2 className="text-[22px] font-semibold leading-tight text-[#242424] dark:text-[#ece8e1]">
@@ -1565,7 +1595,7 @@ export default function Sidebar() {
           }}
         >
           <WindowModalBackdrop />
-          <div data-testid="prompthub-login-dialog" className="relative w-[380px] rounded-2xl border border-black/5 bg-white p-5 shadow-lg">
+          <div data-cowork-dialog data-testid="prompthub-login-dialog" className="relative w-[380px] rounded-2xl border border-black/5 bg-white p-5 shadow-lg">
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
                 <h3 className="text-[17px] font-semibold text-[#29261b]">

@@ -196,7 +196,7 @@ Press **Enter** to send and **Shift+Enter** for a new line. While a task runs, n
 
 ## 两个不同的帮助入口
 
-- 侧栏底部的问号：重新打开首次使用的三步引导；
+- 侧栏底部的问号：重新体验「综合办公 → 撰写与润色材料」的点击引导，认识工作空间、技能和资料的用法；
 - **设置 → 帮助与反馈 → 使用手册**：打开这份完整手册。`,
     },
     en: {
@@ -238,7 +238,7 @@ Editing a historical prompt only places its content in the composer. Existing co
 
 ## Two help entries
 
-- The question mark in the sidebar reopens the short first-run guide;
+- The question mark in the sidebar replays the Office → Draft and polish materials tutorial, introducing workspaces, skills, and source materials;
 - **Settings → Help & Feedback → User Manual** opens this full manual.`,
     },
   },

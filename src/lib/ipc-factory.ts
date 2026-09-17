@@ -54,6 +54,9 @@ export const fsBridge = {
   listWorkspaceFiles: async (path: string): Promise<WorkspaceFileEntry[]> => {
     return window.ipc.invoke('workspace:listFiles', path);
   },
+  importWorkspaceFile: async (workspacePath: string, sourcePath: string): Promise<string> => {
+    return window.ipc.invoke('workspace:importFile', { workspacePath, sourcePath });
+  },
   exists: async (path: string): Promise<boolean> => {
     return window.ipc.invoke('fs:exists', path);
   },

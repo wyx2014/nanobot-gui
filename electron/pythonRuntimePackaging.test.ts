@@ -70,6 +70,9 @@ describe('cross-platform Python runtime packaging', () => {
     expect(workflow).toContain('run: npm ci');
     expect(workflow).toContain('Verify packaging contracts');
     expect(workflow).toContain('run: npm run build:win');
+    expect(workflow).toContain(
+      'TPCOWORK_IMAGE_EXTRACT_API_KEY: ${{ secrets.TPCOWORK_IMAGE_EXTRACT_API_KEY }}',
+    );
     expect(workflow).toContain('win-unpacked/resources/python/python.exe');
     expect(workflow).toContain('import nanobot; from nanobot.cli.commands import app');
     expect(workflow).toContain('Get-FileHash');
@@ -94,6 +97,9 @@ describe('cross-platform Python runtime packaging', () => {
     expect(workflow).toContain('run: npm ci');
     expect(workflow).toContain('Verify packaging contracts');
     expect(workflow).toContain('run: npm run build:linux');
+    expect(workflow).toContain(
+      'TPCOWORK_IMAGE_EXTRACT_API_KEY: ${{ secrets.TPCOWORK_IMAGE_EXTRACT_API_KEY }}',
+    );
     expect(workflow).toContain('--appimage-extract');
     expect(workflow).toContain('dpkg-deb --extract');
     expect(workflow).toContain('deb_root/usr/share/applications');

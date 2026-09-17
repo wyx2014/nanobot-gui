@@ -18,6 +18,7 @@ import {
   refreshNanobotAuth,
 } from '@/core/nanobotClient';
 import type { ScheduleTasksPayload } from '@/core/types';
+import type { OutboundMcpPresetMention } from '@/core/types';
 import type {
   ScheduledTask,
   ScheduleConfig,
@@ -101,6 +102,7 @@ interface ScheduleActions {
       schedule: ScheduleConfig;
       skillName?: string;
       workspacePath?: string;
+      mcpPresets?: OutboundMcpPresetMention[];
     },
   ) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;

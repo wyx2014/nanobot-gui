@@ -120,6 +120,8 @@ function PillGroup<T extends string>({
             key={option.value}
             type="button"
             onClick={() => onChange(option.value)}
+            data-onboarding-choice
+            aria-pressed={active}
             className={cn(
               'rounded-xl border px-3.5 py-2 text-[13px] font-medium transition-colors',
               active
@@ -223,7 +225,7 @@ export default function FirstRunWelcome({ onContinue }: FirstRunWelcomeProps) {
   };
 
   return (
-    <div className="window-modal-viewport fixed inset-0 z-[10000] flex min-h-0 flex-col overflow-hidden bg-gradient-to-br from-[#fbfaf7] via-[#faf8f3] to-[#f1ede4] text-[#29261b] dark:from-[#171717] dark:via-[#1b1b1b] dark:to-[#202020] dark:text-[#f3f0e8]">
+    <div data-onboarding-surface className="window-modal-viewport fixed inset-0 z-[10000] flex min-h-0 flex-col overflow-hidden">
       <header className="relative flex h-11 shrink-0 items-center justify-center border-b border-[#ded9ce]/80 px-6 dark:border-[#393734] [app-region:drag]">
         <span className="pointer-events-none text-[11px] font-medium tabular-nums tracking-[0.18em] text-[#8b877d] dark:text-[#918d85]">
           {t.onboarding.stepIndicator}
@@ -291,6 +293,8 @@ export default function FirstRunWelcome({ onContinue }: FirstRunWelcomeProps) {
                         key={option.value}
                         type="button"
                         onClick={() => setLanguage(option.value)}
+                        data-onboarding-choice
+                        aria-pressed={active}
                         className={cn(
                           'relative h-11 rounded-xl border px-3 text-[14px] font-medium transition-colors',
                           active
@@ -323,6 +327,8 @@ export default function FirstRunWelcome({ onContinue }: FirstRunWelcomeProps) {
                         key={option.value}
                         type="button"
                         onClick={() => setTheme(option.value)}
+                        data-onboarding-choice
+                        aria-pressed={active}
                         className={cn(
                           'flex min-h-14 items-center gap-3 rounded-xl border px-4 py-3 text-left transition-colors',
                           active

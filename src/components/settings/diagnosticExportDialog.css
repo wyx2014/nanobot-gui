@@ -1,4 +1,5 @@
 .diagnostic-export-dialog {
+  position: relative;
   display: flex;
   width: min(560px, 100%);
   max-width: 560px;
@@ -7,18 +8,18 @@
   gap: 0;
   overflow: hidden;
   padding: 0;
-  border-color: #e7e1d8;
-  border-radius: 8px;
-  background: #fbfaf7;
-  color: #29261b;
-  box-shadow: 0 18px 50px rgb(50 43 33 / 0.16);
+  border-color: var(--cowork-line);
+  border-radius: 18px;
+  background: var(--cowork-surface);
+  color: var(--cowork-ink);
+  box-shadow: var(--cowork-dialog-shadow);
   letter-spacing: 0;
 }
 
 .diagnostic-export-header {
   flex-shrink: 0;
   padding: 20px 48px 18px 24px;
-  border-bottom: 1px solid #ebe7df;
+  border-bottom: 1px solid var(--cowork-line);
   text-align: left;
 }
 
@@ -26,7 +27,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #29261b;
+  color: var(--cowork-ink);
   font-size: 17px;
   line-height: 24px;
   letter-spacing: 0;
@@ -36,11 +37,11 @@
   width: 18px;
   height: 18px;
   flex-shrink: 0;
-  color: #777267;
+  color: var(--cowork-text);
 }
 
 .diagnostic-export-description {
-  color: #777267;
+  color: var(--cowork-text);
   font-size: 13px;
   line-height: 20px;
 }
@@ -53,13 +54,13 @@
   height: 28px;
   place-items: center;
   border-radius: 6px;
-  color: #918d84;
+  color: var(--cowork-muted);
   opacity: 1;
 }
 
-.diagnostic-export-dialog > button:hover {
-  background: #efede8;
-  color: #38352e;
+.diagnostic-export-dialog > button:not(:disabled):hover {
+  background: var(--cowork-hover);
+  color: var(--cowork-ink);
 }
 
 .diagnostic-export-body {
@@ -103,7 +104,7 @@
 }
 
 .diagnostic-export-field > :is(label, span) {
-  color: #38352e;
+  color: var(--cowork-ink);
   font-size: 13px;
   font-weight: 500;
   line-height: 20px;
@@ -115,10 +116,10 @@
 }
 
 .diagnostic-export-field :is([data-slot="input"], [data-slot="textarea"], button[aria-haspopup="listbox"]) {
-  border-color: #dedad2;
+  border-color: var(--cowork-line);
   border-radius: 8px;
-  background: #fff;
-  color: #29261b;
+  background: var(--cowork-surface);
+  color: var(--cowork-ink);
   font-size: 13px;
   letter-spacing: 0;
 }
@@ -131,7 +132,7 @@
 }
 
 .diagnostic-export-field [data-slot="select-content"] {
-  border-color: #dedad2;
+  border-color: var(--cowork-line);
   border-radius: 8px;
 }
 
@@ -148,9 +149,9 @@
 
 .diagnostic-export-privacy {
   padding: 10px 12px;
-  border: 1px solid #e7e1d8;
-  background: #f5f2ec;
-  color: #777267;
+  border: 1px solid var(--cowork-line);
+  background: var(--cowork-panel);
+  color: var(--cowork-text);
 }
 
 .diagnostic-export-privacy > svg,
@@ -163,8 +164,8 @@
 
 .diagnostic-export-feedback {
   padding: 10px 12px;
-  background: #f0efec;
-  color: #5f5b52;
+  background: var(--cowork-panel);
+  color: var(--cowork-text);
 }
 
 .diagnostic-export-feedback-warning {
@@ -207,9 +208,9 @@
 
 .diagnostic-export-result {
   overflow: hidden;
-  border: 1px solid #e7e1d8;
+  border: 1px solid var(--cowork-line);
   border-radius: 8px;
-  background: #fff;
+  background: var(--cowork-surface);
   font-size: 12px;
 }
 
@@ -218,7 +219,7 @@
   grid-template-columns: 88px minmax(0, 1fr);
   gap: 12px;
   padding: 11px 14px;
-  border-bottom: 1px solid #ebe7df;
+  border-bottom: 1px solid var(--cowork-line);
 }
 
 .diagnostic-export-result > div:last-child {
@@ -226,17 +227,17 @@
 }
 
 .diagnostic-export-result dt {
-  color: #8b877e;
+  color: var(--cowork-muted);
 }
 
 .diagnostic-export-result dd {
   min-width: 0;
   overflow-wrap: anywhere;
-  color: #38352e;
+  color: var(--cowork-ink);
 }
 
 .diagnostic-export-help {
-  color: #777267;
+  color: var(--cowork-text);
   font-size: 12px;
   line-height: 20px;
 }
@@ -249,7 +250,7 @@
   justify-content: flex-end;
   gap: 8px;
   padding: 16px 24px;
-  border-top: 1px solid #ebe7df;
+  border-top: 1px solid var(--cowork-line);
 }
 
 .diagnostic-export-footer > * {
@@ -265,78 +266,86 @@
 }
 
 .diagnostic-export-footer [data-slot="button"][data-variant="default"] {
-  background: #292722;
+  background: var(--cowork-action);
   color: #fff;
 }
 
-.diagnostic-export-footer [data-slot="button"][data-variant="default"]:hover {
-  background: #171613;
+.diagnostic-export-footer [data-slot="button"][data-variant="default"]:not(:disabled):hover {
+  background: var(--cowork-action-hover);
+}
+
+.diagnostic-export-footer [data-slot="button"][data-variant="default"]:not(:disabled):active {
+  background: var(--cowork-action-active);
 }
 
 .diagnostic-export-footer [data-slot="button"][data-variant="outline"] {
-  border-color: #dedad2;
+  border-color: var(--cowork-line);
   background: transparent;
   box-shadow: none;
-  color: #4f4b43;
+  color: var(--cowork-text);
 }
 
-.diagnostic-export-footer [data-slot="button"][data-variant="outline"]:hover {
-  background: #f1efeb;
+.diagnostic-export-footer [data-slot="button"][data-variant="outline"]:not(:disabled):hover {
+  background: var(--cowork-hover);
+}
+
+.diagnostic-export-footer [data-slot="button"][data-variant="outline"]:not(:disabled):active {
+  background: var(--cowork-selected);
 }
 
 .dark .diagnostic-export-dialog {
-  border-color: rgb(255 255 255 / 0.1);
-  background: #202020;
-  color: #eeeae2;
-  box-shadow: 0 22px 60px rgb(0 0 0 / 0.42);
+  border-color: var(--cowork-line);
+  background: var(--cowork-surface);
+  color: var(--cowork-ink);
+  box-shadow: var(--cowork-dialog-shadow);
 }
 
 .dark .diagnostic-export-header,
 .dark .diagnostic-export-footer,
 .dark .diagnostic-export-result > div {
-  border-color: rgb(255 255 255 / 0.1);
+  border-color: var(--cowork-line);
 }
 
 .dark .diagnostic-export-title,
 .dark .diagnostic-export-field > :is(label, span) {
-  color: #eeeae2;
+  color: var(--cowork-ink);
 }
 
 .dark .diagnostic-export-title > svg,
 .dark .diagnostic-export-description,
 .dark .diagnostic-export-help {
-  color: #aaa69d;
+  color: var(--cowork-text);
 }
 
 .dark .diagnostic-export-dialog > button {
-  color: #aaa69d;
+  color: var(--cowork-text);
 }
 
-.dark .diagnostic-export-dialog > button:hover {
-  background: #303030;
-  color: #eeeae2;
+.dark .diagnostic-export-dialog > button:not(:disabled):hover {
+  background: var(--cowork-hover);
+  color: var(--cowork-ink);
 }
 
 .dark .diagnostic-export-field :is([data-slot="input"], [data-slot="textarea"], button[aria-haspopup="listbox"]) {
-  border-color: rgb(255 255 255 / 0.1);
-  background: #242424;
-  color: #eeeae2;
+  border-color: var(--cowork-line);
+  background: var(--cowork-control);
+  color: var(--cowork-ink);
 }
 
 .dark .diagnostic-export-field [data-slot="select-content"] {
-  border-color: rgb(255 255 255 / 0.1);
-  background: #242424;
+  border-color: var(--cowork-line);
+  background: var(--cowork-control);
 }
 
 .dark .diagnostic-export-privacy {
-  border-color: rgb(255 255 255 / 0.1);
-  background: #292929;
-  color: #aaa69d;
+  border-color: var(--cowork-line);
+  background: var(--cowork-panel);
+  color: var(--cowork-text);
 }
 
 .dark .diagnostic-export-feedback {
-  background: #292929;
-  color: #c6c1b8;
+  background: var(--cowork-panel);
+  color: var(--cowork-text);
 }
 
 .dark .diagnostic-export-feedback-warning {
@@ -363,34 +372,42 @@
 }
 
 .dark .diagnostic-export-result {
-  border-color: rgb(255 255 255 / 0.1);
-  background: #242424;
+  border-color: var(--cowork-line);
+  background: var(--cowork-control);
 }
 
 .dark .diagnostic-export-result dt {
-  color: #96928a;
+  color: var(--cowork-muted);
 }
 
 .dark .diagnostic-export-result dd {
-  color: #e2ded6;
+  color: var(--cowork-ink);
 }
 
 .dark .diagnostic-export-footer [data-slot="button"][data-variant="default"] {
-  background: #eeeae2;
-  color: #23211e;
+  background: var(--cowork-action);
+  color: #fff;
 }
 
-.dark .diagnostic-export-footer [data-slot="button"][data-variant="default"]:hover {
-  background: #fff;
+.dark .diagnostic-export-footer [data-slot="button"][data-variant="default"]:not(:disabled):hover {
+  background: var(--cowork-action-hover);
+}
+
+.dark .diagnostic-export-footer [data-slot="button"][data-variant="default"]:not(:disabled):active {
+  background: var(--cowork-action-active);
 }
 
 .dark .diagnostic-export-footer [data-slot="button"][data-variant="outline"] {
-  border-color: rgb(255 255 255 / 0.1);
-  color: #d6d1c8;
+  border-color: var(--cowork-line);
+  color: var(--cowork-text);
 }
 
-.dark .diagnostic-export-footer [data-slot="button"][data-variant="outline"]:hover {
-  background: #2b2b2b;
+.dark .diagnostic-export-footer [data-slot="button"][data-variant="outline"]:not(:disabled):hover {
+  background: var(--cowork-hover);
+}
+
+.dark .diagnostic-export-footer [data-slot="button"][data-variant="outline"]:not(:disabled):active {
+  background: var(--cowork-selected);
 }
 
 @media (max-width: 520px) {

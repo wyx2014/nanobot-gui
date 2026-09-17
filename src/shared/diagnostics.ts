@@ -33,6 +33,8 @@ const DETAIL_KEYS = new Set([
   'template_id', 'document_id', 'count', 'bytes', 'cache_hit', 'dropped', 'write_failures',
   'error_category', 'provider_request_id', 'server_request_id', 'auth_mode', 'auth_header_present', 'rule_id',
   'cause_chain', 'stack_frames', 'incident_id', 'incident_snapshot', 'context_snapshot', 'recent_event_ids',
+  'workspace_count', 'eligible_count', 'disabled_count', 'unavailable_count', 'non_invocable_count',
+  'invalid_entry_count', 'invalid_tags_count', 'visible_count', 'granted_count', 'project_scoped',
 ]);
 
 export function diagnosticId(prefix: string): string {

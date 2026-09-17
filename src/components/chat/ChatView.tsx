@@ -43,7 +43,7 @@ import SecurityApprovalCard from './SecurityApprovalCard';
 import ChatInput, { type ChatInputSendOptions } from './ChatInput';
 import ActiveSkillsBar from './ActiveSkillsBar';
 import { ChevronDown, Settings } from 'lucide-react';
-import { osBridge } from '@/lib/ipc-factory';
+import { osBridge, shellBridge } from '@/lib/ipc-factory';
 import { extractUsername } from '@/utils/pathUtils';
 import StreamErrorNotice from './StreamErrorNotice';
 import { normalizeLegacyLongTaskMessages } from '@/core/nanobot/thread-display-compat';
@@ -54,7 +54,7 @@ import {
   projectLegacyLocalFileContext,
 } from '@/core/nanobot/localFileContext';
 import GenerationStatusBar, { type GenerationPhase } from './GenerationStatusBar';
-import ThinkingOrb from '@/components/common/ModalAwareThinkingOrb';
+import CenteredLoadingIndicator from '@/components/common/CenteredLoadingIndicator';
 import ConversationHeader from './ConversationHeader';
 import { historyHasPendingActivity } from '@/core/nanobot/historyActivity';
 import { buildTaskNarrativeEntries } from '@/core/nanobot/taskNarrativeTimeline';
@@ -65,6 +65,7 @@ import { isLinux, isMacOS } from '@/utils/platform';
 import { useConversationSearch } from './useConversationSearch';
 import { shouldShowConversationLoading } from './conversationHistoryLoading';
 import GatewayStartupStatus from './GatewayStartupStatus';
+import WelcomeBackdrop from './WelcomeBackdrop';
 
 interface PendingFirstMessage {
   text: string;
@@ -129,8 +130,8 @@ export default function ChatView({
   const activeConvId = activeConv?.id;
   const revisionSelection = useExpertTeamRevisionStore((state) => state.selection);
   const setRevisionSelection = useExpertTeamRevisionStore((state) => state.setSelection);
-  const handleReviseRole = useCallback<RevisionAction>((runId, roleId, mode) => {
-    if (activeConvId) setRevisionSelection({ chatId: activeConvId, runId, roleId, mode });
+  const handleReviseRole = useCallback<RevisionAction>((runId, roleId) => {
+    if (activeConvId) setRevisionSelection({ chatId: activeConvId, runId, roleId });
   }, [activeConvId, setRevisionSelection]);
   useEffect(() => { setRevisionSelection(null); }, [activeConvId, setRevisionSelection]);
   const scheduledTaskId = activeConv?.scheduledTaskId;
@@ -161,7 +162,7 @@ export default function ChatView({
     () => projectUsableSkills(skills, activeProjectSkillNames).map((skill) => skill.name),
     [activeProjectSkillNames, skills],
   );
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const gatewayConnectionStatus = useSyncExternalStore(
     subscribeNanobotConnectionStatus,
     getNanobotConnectionStatus,
@@ -211,7 +212,7 @@ export default function ChatView({
     if (activeConvId) return;
 
     const hour = new Date().getHours();
-    const isEn = useSettingsStore.getState().language === 'en-US';
+    const isEn = locale === 'en-US';
     if (hour >= 5 && hour < 12) {
       setGreeting(isEn ? 'Morning' : '早上好');
     } else if (hour >= 12 && hour < 18) {
@@ -227,7 +228,7 @@ export default function ChatView({
         }
       })
       .catch((err) => console.error('Failed to get home dir:', err));
-  }, [activeConvId]);
+  }, [activeConvId, locale]);
 
   const { containerRef, scrollElement, isAtBottom, scrollToBottom } = useAutoScroll();
   const chatSurfaceRef = useRef<HTMLDivElement>(null);
@@ -806,6 +807,19 @@ export default function ChatView({
   const welcomeProjectName = workspaceScope?.project_name
     || (workspaceScope?.project_path ? projectNameFromPath(workspaceScope.project_path) : undefined);
 
+  const openWorkspaceFolder = async () => {
+    if (!activeProjectPath) return;
+    try {
+      await shellBridge.openPath(activeProjectPath);
+    } catch (error) {
+      useToastStore.getState().addToast({
+        type: 'error',
+        title: locale === 'en-US' ? 'Could not open workspace folder' : '无法打开工作空间目录',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
   // Keep the application shell visible while the local runtime starts, and
   // use the chat surface itself for a calm, contextual readiness indicator.
   if (!gatewayReady) {
@@ -816,64 +830,75 @@ export default function ChatView({
 
   if (!activeConv) {
     return (
-      <div data-chat-surface className="flex h-full flex-col bg-[#fbfaf7]">
-        <div className="flex flex-1 flex-col items-center justify-center px-8 py-10">
-          <div className="w-full max-w-[720px] -translate-y-[2vh]">
-            {/* Title */}
-            <div className="mb-6 text-center">
-              {/* Slogan */}
-              <h1 className="flex items-center justify-center gap-3.5 font-claude-response text-[27px] font-medium leading-[1.25] text-[#29261b] select-none">
-                {welcomeProjectName ? (
-                  <span>
-                    {useSettingsStore.getState().language === 'en-US'
-                      ? `What should we build in ${welcomeProjectName}?`
-                      : `我们应该在 ${welcomeProjectName} 中构建什么？`}
+      <div
+        data-chat-surface
+        data-welcome-surface
+        className={cn(
+          'cowork-welcome',
+          isMacOS() || isLinux() ? '-mt-12 h-[calc(100%+3rem)]' : 'h-full',
+        )}
+      >
+        <WelcomeBackdrop />
+        <div className="cowork-welcome-content">
+          <div className="cowork-welcome-hero">
+            <h1 className="cowork-welcome-title">
+              {welcomeProjectName ? (
+                <>
+                  <span className="cowork-welcome-project-line">
+                    <span>{locale === 'en-US' ? 'In ' : '我们应该在「'}</span>
+                    <span className="cowork-welcome-project-name" title={welcomeProjectName}>
+                      {welcomeProjectName}
+                    </span>
+                    <span>{locale === 'en-US' ? ',' : '」中'}</span>
                   </span>
-                ) : (
-                  <span>
+                  <span>{locale === 'en-US' ? 'what should we build?' : '构建什么？'}</span>
+                </>
+              ) : (
+                <>
+                  <span className="cowork-welcome-greeting">
                     {greeting}
                     {displayUserName ? (
-                      useSettingsStore.getState().language === 'en-US' ? `, ${displayUserName}` : `，${displayUserName}`
+                      locale === 'en-US' ? `, ${displayUserName}` : `，${displayUserName}`
                     ) : ''}
-                    {useSettingsStore.getState().language === 'en-US' ? '. ' : '，'}
-                    {t.chat.welcomeTitle}
+                    {locale === 'en-US' ? ',' : '，'}
                   </span>
-                )}
-              </h1>
-            </div>
+                  <span>{t.chat.welcomeTitle}</span>
+                </>
+              )}
+            </h1>
+            <p className="cowork-welcome-subtitle">{t.chat.welcomeSubtitle}</p>
+          </div>
 
+          <div className="cowork-welcome-composer">
             {/* First-run setup prompt */}
             {needsSetup && (
-              <div className="mb-6 mx-auto max-w-md">
-                <div className="rounded-2xl border border-[#dedbd3] bg-white px-5 py-4 text-center shadow-sm">
-                  <p className="text-[15px] font-medium text-[#29261b] mb-1">
+              <div className="cowork-welcome-setup" role="status">
+                <div>
+                  <p className="cowork-welcome-setup-title">
                     {t.chat.setupRequired}
                   </p>
-                  <p className="text-[13px] text-[#656358] mb-3">
+                  <p className="cowork-welcome-setup-description">
                     {t.chat.setupRequiredDesc}
                   </p>
-                  <button
-                    onClick={() => useSettingsStore.getState().openSystemSettings('ai-services')}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#29261b] text-white text-[13px] font-medium hover:bg-[#3d3929] transition-colors"
-                  >
-                    <Settings className="h-3.5 w-3.5" />
-                    {t.chat.setupButton}
-                  </button>
                 </div>
+                <button
+                  onClick={() => useSettingsStore.getState().openSystemSettings('ai-services')}
+                  className="cowork-welcome-setup-button"
+                >
+                  <Settings className="h-3.5 w-3.5" />
+                  {t.chat.setupButton}
+                </button>
               </div>
             )}
 
             {/* Main input */}
-            <div>
-              <ChatInput
-                variant="welcome"
-                onSend={handleSend}
-                sendDisabled={!gatewayReady}
-                workspaceScope={workspaceScope}
-                onWorkspaceScopeChange={_onWorkspaceScopeChange}
-              />
-
-            </div>
+            <ChatInput
+              variant="welcome"
+              onSend={handleSend}
+              sendDisabled={!gatewayReady}
+              workspaceScope={workspaceScope}
+              onWorkspaceScopeChange={_onWorkspaceScopeChange}
+            />
           </div>
         </div>
       </div>
@@ -890,7 +915,7 @@ export default function ChatView({
       )}
     >
       {revisionSelection && revisionSelection.chatId === activeConvId && <ExpertTeamRevisionDialog
-        key={`${revisionSelection.chatId}:${revisionSelection.runId}:${revisionSelection.roleId}:${revisionSelection.mode}`}
+        key={`${revisionSelection.chatId}:${revisionSelection.runId}:${revisionSelection.roleId}`}
         {...revisionSelection}
         disabled={!gatewayReady || stream.isStreaming || generationActive}
         onClose={() => setRevisionSelection(null)}
@@ -909,7 +934,7 @@ export default function ChatView({
       />}
       <ConversationHeader
         conversationTitle={activeConv.title}
-        onOpenTerminal={() => osBridge.openTerminal(activeProjectPath ?? undefined)}
+        onOpenWorkspaceFolder={activeProjectPath ? openWorkspaceFolder : undefined}
         searchOpen={conversationSearchOpen}
         searchQuery={conversationSearchQuery}
         searchMatchCount={conversationSearch.matchCount}
@@ -940,17 +965,10 @@ export default function ChatView({
           )}>
             <div>
               {isConversationLoading ? (
-                <div
-                  data-testid="conversation-loading"
-                  className="flex min-h-[45vh] items-center justify-center"
-                  role="status"
-                  aria-live="polite"
-                >
-                  <div className="inline-flex items-center gap-2.5 text-[13px] text-[#88857b] dark:text-[#aaa69e]">
-                    <ThinkingOrb state="solving" size={64} style={{ width: 32, height: 32 }} aria-label="" />
-                    <span>{t.chat.loadingConversation}</span>
-                  </div>
-                </div>
+                <CenteredLoadingIndicator
+                  testId="conversation-loading"
+                  label={t.chat.loadingConversation}
+                />
               ) : (
                 <>
                   {historyLoadFailed ? (

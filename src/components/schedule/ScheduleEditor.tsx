@@ -3,11 +3,17 @@ import { useScheduleStore } from '@/stores/scheduleStore';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useI18n } from '@/i18n';
-import { X } from 'lucide-react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Select } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { fetchMcpPresets } from '@/core/api';
+import { getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/nanobotClient';
+import type { McpPresetInfo } from '@/core/types';
+import { projectNameFromPath } from '@/core/workspace';
+import { MCP_PRESETS_CHANGED_EVENT, installedMcpPresetsFromPayload, isMcpPresetsPayload } from '@/lib/mcp-preset-events';
 import type { ScheduleFrequency, ScheduleConfig } from '@/types/schedule';
-import WindowModalBackdrop from '@/components/common/WindowModalBackdrop';
 import { getScheduleDescription } from './scheduleFormat';
 
 const FREQUENCIES: Exclude<ScheduleFrequency, 'custom'>[] = [
@@ -61,6 +67,11 @@ export default function ScheduleEditor() {
   const [dayOfMonth, setDayOfMonth] = useState(1);
   const [skillName, setSkillName] = useState('');
   const [workspacePath, setWorkspacePath] = useState('');
+  const [connectorNames, setConnectorNames] = useState<string[]>([]);
+  const [connectors, setConnectors] = useState<McpPresetInfo[]>([]);
+  const [connectorsLoading, setConnectorsLoading] = useState(false);
+  const [connectorsLoadFailed, setConnectorsLoadFailed] = useState(false);
+  const [connectorRefreshKey, setConnectorRefreshKey] = useState(0);
   const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -69,15 +80,58 @@ export default function ScheduleEditor() {
     .filter((project) => project.kind === 'workspace' && project.status === 'active' && Boolean(project.rootPath))
     .map((project) => ({
       value: project.rootPath,
-      label: project.name || project.rootPath,
-      description: project.rootPath,
+      label: project.name || projectNameFromPath(project.rootPath),
     }));
-  const selectedWorkspacePath = workspaceOptions.some((option) => option.value === workspacePath)
-    ? workspacePath
-    : '';
+  if (workspacePath && !workspaceOptions.some((option) => option.value === workspacePath)) {
+    workspaceOptions.push({ value: workspacePath, label: t.schedule.workspaceUnavailable });
+  }
+
+  useEffect(() => {
+    if (!showEditor) return;
+    let cancelled = false;
+    const applyConnectors = (items: McpPresetInfo[]) => {
+      if (!cancelled) setConnectors(items.filter((preset) => preset.available));
+    };
+    const loadConnectors = async () => {
+      setConnectorsLoading(true);
+      setConnectorsLoadFailed(false);
+      try {
+        const status = await getNanobotStatus();
+        let token = getNanobotToken();
+        let base = `http://127.0.0.1:${status.port}`;
+        if (!token) {
+          const refreshed = await refreshNanobotAuth();
+          token = refreshed.token;
+          base = refreshed.baseUrl;
+        }
+        const payload = await fetchMcpPresets(token, base);
+        applyConnectors(installedMcpPresetsFromPayload(payload));
+      } catch {
+        if (!cancelled) setConnectorsLoadFailed(true);
+      } finally {
+        if (!cancelled) setConnectorsLoading(false);
+      }
+    };
+    const handleChange = (event: Event) => {
+      const payload = (event as CustomEvent<unknown>).detail;
+      if (isMcpPresetsPayload(payload)) {
+        applyConnectors(installedMcpPresetsFromPayload(payload));
+      } else {
+        void loadConnectors();
+      }
+    };
+    void loadConnectors();
+    window.addEventListener(MCP_PRESETS_CHANGED_EVENT, handleChange);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(MCP_PRESETS_CHANGED_EVENT, handleChange);
+    };
+  }, [showEditor, connectorRefreshKey]);
 
   // Initialize form when editing task changes
   useEffect(() => {
+    if (!showEditor) return;
+    const initialTask = editingTaskId ? useScheduleStore.getState().tasks[editingTaskId] : null;
     const initializeSchedule = (schedule: ScheduleConfig | undefined) => {
       const nextFrequency = schedule?.frequency ?? 'once';
       const once = nextFrequency === 'once' ? parseOnceDate(schedule?.at) : null;
@@ -89,13 +143,14 @@ export default function ScheduleEditor() {
       setDayOfMonth(schedule?.dayOfMonth ?? 1);
     };
 
-    if (editingTask) {
-      setName(editingTask.name);
-      setDescription(editingTask.description ?? '');
-      setPrompt(editingTask.prompt);
-      initializeSchedule(editingTask.schedule);
-      setSkillName(editingTask.skillName ?? '');
-      setWorkspacePath(editingTask.workspacePath ?? '');
+    if (initialTask) {
+      setName(initialTask.name);
+      setDescription(initialTask.description ?? '');
+      setPrompt(initialTask.prompt);
+      initializeSchedule(initialTask.schedule);
+      setSkillName(initialTask.skillName ?? '');
+      setWorkspacePath(initialTask.workspacePath ?? '');
+      setConnectorNames(initialTask.mcpPresets?.map((preset) => preset.name) ?? []);
     } else {
       setName(editorDraft?.name ?? '');
       setDescription(editorDraft?.description ?? '');
@@ -103,19 +158,10 @@ export default function ScheduleEditor() {
       initializeSchedule(editorDraft?.schedule);
       setSkillName(editorDraft?.skillName ?? '');
       setWorkspacePath(editorDraft?.workspacePath ?? '');
+      setConnectorNames(editorDraft?.mcpPresets?.map((preset) => preset.name) ?? []);
     }
     setSaveError(null);
-  }, [editingTask, editorDraft, showEditor]);
-
-  // Close on Escape key
-  useEffect(() => {
-    if (!showEditor) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !workspacePickerOpen) closeEditor();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showEditor, closeEditor, workspacePickerOpen]);
+  }, [editingTaskId, editorDraft, showEditor]);
 
   if (!showEditor) return null;
 
@@ -146,6 +192,13 @@ export default function ScheduleEditor() {
   const showDateSelector = frequency === 'once';
   const showDaySelector = frequency === 'weekly';
   const showMonthDaySelector = frequency === 'monthly';
+  const unavailableConnectors = connectorNames.filter((name) => !connectors.some((preset) => preset.name === name));
+
+  const toggleConnector = (name: string) => {
+    setConnectorNames((current) => current.includes(name)
+      ? current.filter((item) => item !== name)
+      : current.length < 8 ? [...current, name] : current);
+  };
 
   const handleSave = async () => {
     if (!name.trim() || !prompt.trim()) return;
@@ -192,6 +245,7 @@ export default function ScheduleEditor() {
           schedule,
           skillName: skillName || undefined,
           workspacePath: workspacePath || undefined,
+          mcpPresets: connectorNames.map((connector) => ({ name: connector })),
         });
       } else {
         await createTask({
@@ -201,6 +255,7 @@ export default function ScheduleEditor() {
           schedule,
           skillName: skillName || undefined,
           workspacePath: workspacePath || undefined,
+          mcpPresets: connectorNames.map((connector) => ({ name: connector })),
         });
       }
       closeEditor();
@@ -212,83 +267,61 @@ export default function ScheduleEditor() {
   };
 
   return (
-    <div data-schedule-editor-overlay className="window-modal-viewport fixed inset-0 z-50 flex items-center justify-center">
-      <WindowModalBackdrop />
-      <div data-schedule-editor className="relative flex max-h-[85vh] w-[480px] flex-col rounded-2xl border border-black/5 bg-white shadow-lg">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100 shrink-0">
-          <h2 className="text-[16px] font-semibold text-[#29261b]">
-            {editingTaskId ? t.schedule.editTask : t.schedule.newTask}
-          </h2>
+    <div data-schedule-editor className="flex min-h-0 flex-1 flex-col bg-[#fbfaf7] dark:bg-[#191919]">
+      <header className="flex min-h-[64px] shrink-0 flex-wrap items-center justify-between gap-3 border-b border-[#ebe7df] bg-[#fbfaf7] px-5 py-3 dark:border-white/10 dark:bg-[#1b1b1b] sm:px-8">
+        <div className="flex min-w-0 items-center gap-3">
+          <button type="button" onClick={closeEditor} disabled={isSaving} aria-label={t.schedule.backToList} className="grid size-8 shrink-0 place-items-center rounded-lg text-[#656358] hover:bg-[#f0eeea] disabled:opacity-40 dark:text-[#aaa69d] dark:hover:bg-white/10">
+            <ArrowLeft className="size-4" />
+          </button>
+          <h1 className="truncate text-[17px] font-semibold text-[#29261b] dark:text-[#eeeae2]">
+            {editingTaskId ? t.schedule.editTask : t.schedule.addAutomation}
+          </h1>
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          <button type="button" onClick={closeEditor} disabled={isSaving} className="rounded-lg px-3 py-2 text-[13px] text-[#656358] hover:bg-[#f0eeea] disabled:opacity-40 dark:text-[#c8c3ba] dark:hover:bg-white/10">
+            {t.common.cancel}
+          </button>
           <button
-            onClick={closeEditor}
-            aria-label={t.common.close}
-            className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 transition-colors"
+            type="button"
+            onClick={handleSave}
+            data-schedule-editor-save
+            disabled={isSaving || !name.trim() || !prompt.trim()}
+            className="rounded-lg bg-[#292722] px-4 py-2 text-[13px] font-medium text-white hover:bg-[#171613] disabled:cursor-not-allowed disabled:opacity-40 dark:bg-[#d97757] dark:hover:bg-[#e18463]"
           >
-            <X className="h-4 w-4" />
+            {isSaving ? t.common.loading : t.common.save}
           </button>
         </div>
+      </header>
 
-        {/* Form */}
-        <div
-          data-schedule-editor-scroll
-          data-workspace-picker-open={workspacePickerOpen || undefined}
-          className={cn(
-            'flex-1 space-y-4 overscroll-contain px-6 py-4',
-            workspacePickerOpen ? 'overflow-hidden' : 'overflow-auto',
-          )}
-        >
-          {/* Task name */}
-          <div>
-            <label className="block text-[13px] font-medium text-[#29261b] mb-1.5">
-              {t.schedule.taskName}
-            </label>
-            <input
-              name="schedule-name"
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder={t.schedule.taskNamePlaceholder}
-              className="w-full h-10 px-3 bg-white border border-[#e8e4dd] rounded-lg text-sm text-[#29261b] focus:outline-none focus:ring-2 focus:ring-[#d97757]/30 focus:border-[#d97757]"
-            />
+      {saveError && (
+        <div role="alert" className="shrink-0 border-b border-red-200 bg-red-50 px-8 py-2 text-[12px] text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-300">
+          {saveError}
+        </div>
+      )}
+
+      <div data-schedule-editor-scroll data-workspace-picker-open={workspacePickerOpen || undefined} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <div className="mx-auto grid w-full max-w-[1140px] gap-8 px-5 py-7 sm:px-8 lg:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.85fr)] lg:gap-12 lg:py-9">
+          <div className="min-w-0 space-y-6">
+            <div>
+              <label htmlFor="schedule-name" className="mb-2 block text-[13px] font-medium">{t.schedule.taskName}</label>
+              <Input id="schedule-name" name="schedule-name" value={name} onChange={(e) => setName(e.target.value)} placeholder={t.schedule.taskNamePlaceholder} className="h-11 text-[14px]" />
+            </div>
+            <div>
+              <label htmlFor="schedule-prompt" className="mb-2 block text-[13px] font-medium">{t.schedule.taskPrompt}</label>
+              <Textarea id="schedule-prompt" name="schedule-prompt" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder={t.schedule.taskPromptPlaceholder} rows={13} className="min-h-[300px] px-4 py-3 text-[14px] leading-6" />
+            </div>
+            <div>
+              <label htmlFor="schedule-description" className="mb-2 block text-[13px] font-medium">{t.schedule.description}</label>
+              <Textarea id="schedule-description" name="schedule-description" value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t.schedule.descriptionPlaceholder} rows={2} className="min-h-[72px]" />
+            </div>
           </div>
 
-          {/* Task description */}
-          <div>
-            <label className="block text-[13px] font-medium text-[#29261b] mb-1.5">
-              {t.schedule.description}
-            </label>
-            <textarea
-              name="schedule-description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder={t.schedule.descriptionPlaceholder}
-              rows={2}
-              className="w-full px-3 py-2 bg-white border border-[#e8e4dd] rounded-lg text-sm text-[#29261b] focus:outline-none focus:ring-2 focus:ring-[#d97757]/30 focus:border-[#d97757] resize-none"
-            />
-          </div>
-
-          {/* Task prompt */}
-          <div>
-            <label className="block text-[13px] font-medium text-[#29261b] mb-1.5">
-              {t.schedule.taskPrompt}
-            </label>
-            <textarea
-              name="schedule-prompt"
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder={t.schedule.taskPromptPlaceholder}
-              rows={4}
-              className="w-full px-3 py-2 bg-white border border-[#e8e4dd] rounded-lg text-sm text-[#29261b] focus:outline-none focus:ring-2 focus:ring-[#d97757]/30 focus:border-[#d97757] resize-none"
-            />
-          </div>
-
-          {/* Frequency selector */}
-          <div>
-            <label className="block text-[13px] font-medium text-[#29261b] mb-1.5">
-              {t.schedule.frequency}
-            </label>
-            <div className="flex flex-wrap gap-1.5">
+          <aside className="min-w-0 space-y-7 lg:border-l lg:border-[#e8e4dd] lg:pl-8 dark:lg:border-white/10">
+            <section className="space-y-4">
+              <h2 className="text-[14px] font-semibold">{t.schedule.schedule}</h2>
+              <div>
+                <div id="schedule-frequency-label" className="mb-2 text-[13px] font-medium">{t.schedule.frequency}</div>
+                <div role="group" aria-labelledby="schedule-frequency-label" className="flex flex-wrap gap-1.5">
               {frequency === 'custom' && (
                 <span className="px-3 py-1.5 rounded-lg text-[12px] font-medium bg-[#d97757] text-white">
                   {frequencyLabels.custom}
@@ -296,13 +329,15 @@ export default function ScheduleEditor() {
               )}
               {FREQUENCIES.map((freq) => (
                 <button
+                  type="button"
                   key={freq}
+                  aria-pressed={frequency === freq}
                   onClick={() => setFrequency(freq)}
                   className={cn(
                     'px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors',
                     frequency === freq
                       ? 'bg-[#d97757] text-white'
-                      : 'bg-[#f5f3ee] text-[#3d3929] hover:bg-[#e8e5de]'
+                      : 'bg-[#f0eeea] text-[#3d3929] hover:bg-[#e8e5de] dark:bg-[#292929] dark:text-[#d5d0c7] dark:hover:bg-[#333333]'
                   )}
                 >
                   {frequencyLabels[freq]}
@@ -314,10 +349,11 @@ export default function ScheduleEditor() {
           {/* One-time date selector */}
           {showDateSelector && (
             <div data-schedule-once-date>
-              <label className="block text-[13px] font-medium text-[#29261b] mb-1.5">
+              <label htmlFor="schedule-date" className="mb-1.5 block text-[13px] font-medium">
                 {t.schedule.executionDate}
               </label>
               <input
+                id="schedule-date"
                 name="schedule-date"
                 type="date"
                 min={toLocalDateValue(new Date())}
@@ -344,13 +380,14 @@ export default function ScheduleEditor() {
           {/* Time selector */}
           {showTimeSelector && (
             <div>
-              <label className="block text-[13px] font-medium text-[#29261b] mb-1.5">
+              <div className="mb-1.5 text-[13px] font-medium">
                 {frequency === 'hourly' ? t.schedule.minuteOfHour : t.schedule.executionTime}
-              </label>
+              </div>
               <div className="flex items-center gap-2">
                 {showHourSelector && (
                   <>
                     <Select
+                      ariaLabel={isEnglish ? 'Hour' : '小时'}
                       value={String(hour)}
                       onChange={(v) => setHour(Number(v))}
                       options={Array.from({ length: 24 }, (_, i) => ({
@@ -363,6 +400,7 @@ export default function ScheduleEditor() {
                   </>
                 )}
                 <Select
+                  ariaLabel={frequency === 'hourly' ? t.schedule.minuteOfHour : (isEnglish ? 'Minute' : '分钟')}
                   value={String(minute)}
                   onChange={(v) => setMinute(Number(v))}
                   options={Array.from({ length: 60 }, (_, i) => ({
@@ -378,19 +416,21 @@ export default function ScheduleEditor() {
           {/* Day of week selector */}
           {showDaySelector && (
             <div>
-              <label className="block text-[13px] font-medium text-[#29261b] mb-1.5">
+              <div className="mb-1.5 text-[13px] font-medium">
                 {t.schedule.dayOfWeek}
-              </label>
+              </div>
               <div className="flex flex-wrap gap-1.5">
                 {dayLabels.map((label, idx) => (
                   <button
+                    type="button"
                     key={idx}
+                    aria-pressed={dayOfWeek === idx}
                     onClick={() => setDayOfWeek(idx)}
                     className={cn(
-                      'px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors',
-                      dayOfWeek === idx
-                        ? 'bg-[#d97757] text-white'
-                        : 'bg-[#f5f3ee] text-[#3d3929] hover:bg-[#e8e5de]'
+                    'px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors',
+                    dayOfWeek === idx
+                      ? 'bg-[#d97757] text-white'
+                      : 'bg-[#f0eeea] text-[#3d3929] hover:bg-[#e8e5de] dark:bg-[#292929] dark:text-[#d5d0c7] dark:hover:bg-[#333333]'
                     )}
                   >
                     {label}
@@ -403,10 +443,11 @@ export default function ScheduleEditor() {
           {/* Day of month selector */}
           {showMonthDaySelector && (
             <div data-schedule-month-day>
-              <label className="block text-[13px] font-medium text-[#29261b] mb-1.5">
+              <div className="mb-1.5 text-[13px] font-medium">
                 {t.schedule.dayOfMonth}
-              </label>
+              </div>
               <Select
+                ariaLabel={t.schedule.dayOfMonth}
                 value={String(dayOfMonth)}
                 onChange={(value) => setDayOfMonth(Number(value))}
                 options={Array.from({ length: 31 }, (_, index) => ({
@@ -422,95 +463,77 @@ export default function ScheduleEditor() {
               )}
             </div>
           )}
+            </section>
 
-          {/* Skill binding */}
-          {skills.length > 0 && (
-            <div>
-              <label className="block text-[13px] font-medium text-[#29261b] mb-1.5">
-                {t.schedule.bindSkill}
-              </label>
+            <section className="border-t border-[#e8e4dd] pt-6 dark:border-white/10">
+              <h2 className="mb-3 text-[14px] font-semibold">{t.schedule.workspacePath}</h2>
               <Select
-                value={skillName}
-                onChange={setSkillName}
-                placeholder={t.schedule.bindSkillNone}
+                ariaLabel={t.schedule.workspacePath}
+                value={workspacePath}
+                onChange={setWorkspacePath}
+                placeholder={t.schedule.selectWorkspace}
                 options={[
-                  { value: '', label: t.schedule.bindSkillNone },
-                  ...skills
-                    .filter((s) => s.userInvocable)
-                    .map((s) => ({ value: s.name, label: s.name })),
+                  { value: '', label: t.schedule.noWorkspace },
+                  ...workspaceOptions,
                 ]}
+                searchPlaceholder={t.schedule.searchWorkspaces}
+                emptySearchLabel={t.schedule.noMatchingWorkspaces}
+                portalled
+                portalLayer={60}
+                portalContainer={() => workspacePickerPortal.current}
+                onOpenChange={setWorkspacePickerOpen}
               />
-            </div>
-          )}
+              {workspaceOptions.length === 0 && <p className="mt-2 text-[12px] text-[#777267] dark:text-[#aaa69d]">{t.schedule.noWorkspaces}</p>}
+            </section>
 
-          {/* Workspace path */}
-          <div>
-            <label className="block text-[13px] font-medium text-[#29261b] mb-1.5">
-              {t.schedule.workspacePath}
-            </label>
-            {workspaceOptions.length > 0 ? (
-              <div className="mb-2">
+            {skills.some((skill) => skill.userInvocable) && (
+              <section className="border-t border-[#e8e4dd] pt-6 dark:border-white/10">
+                <h2 className="mb-3 text-[14px] font-semibold">{t.schedule.bindSkill}</h2>
                 <Select
-                  ariaLabel={isEnglish ? 'Workspace path' : '工作区路径'}
-                  value={selectedWorkspacePath}
-                  onChange={setWorkspacePath}
-                  placeholder={isEnglish ? 'Select an existing workspace' : '选择已有工作空间'}
+                  ariaLabel={t.schedule.bindSkill}
+                  value={skillName}
+                  onChange={setSkillName}
                   options={[
-                    { value: '', label: isEnglish ? 'No workspace selected' : '不指定工作空间' },
-                    ...workspaceOptions,
+                    { value: '', label: t.schedule.bindSkillNone },
+                    ...skills.filter((skill) => skill.userInvocable).map((skill) => ({ value: skill.name, label: skill.name })),
                   ]}
-                  searchPlaceholder={isEnglish ? 'Search workspace name or path' : '搜索工作空间名称或路径'}
-                  emptySearchLabel={isEnglish ? 'No matching workspaces' : '没有匹配的工作空间'}
-                  portalled
-                  portalLayer={60}
-                  portalContainer={() => workspacePickerPortal.current}
-                  onOpenChange={setWorkspacePickerOpen}
                 />
-              </div>
-            ) : null}
-            <input
-              name="schedule-workspace"
-              type="text"
-              value={workspacePath}
-              onChange={(e) => setWorkspacePath(e.target.value)}
-              placeholder={workspaceOptions.length > 0
-                ? (isEnglish ? 'Or enter a custom path' : '或手动输入自定义路径')
-                : t.schedule.workspacePathPlaceholder}
-              className="w-full h-10 px-3 bg-white border border-[#e8e4dd] rounded-lg text-sm text-[#29261b] focus:outline-none focus:ring-2 focus:ring-[#d97757]/30 focus:border-[#d97757]"
-            />
-          </div>
-
-          {saveError && (
-            <div role="alert" className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-[12px] text-red-600">
-              {saveError}
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-neutral-100 shrink-0">
-          <button
-            onClick={closeEditor}
-            className="px-4 py-2 rounded-lg text-[13px] text-[#3d3929] hover:bg-[#f5f3ee] transition-colors"
-          >
-            {t.common.cancel}
-          </button>
-          <button
-            onClick={handleSave}
-            data-schedule-editor-save
-            disabled={isSaving || !name.trim() || !prompt.trim()}
-            className={cn(
-              'px-4 py-2 rounded-lg text-[13px] font-medium transition-colors',
-              !isSaving && name.trim() && prompt.trim()
-                ? 'bg-[#d97757] text-white hover:bg-[#c8664a]'
-                : 'bg-[#e8e4dd] text-[#656358] cursor-not-allowed'
+              </section>
             )}
-          >
-            {isSaving ? t.common.loading : t.common.save}
-          </button>
+
+            <section className="border-t border-[#e8e4dd] pt-6 dark:border-white/10">
+              <h2 className="mb-3 text-[14px] font-semibold">{t.schedule.bindConnectors}</h2>
+              {connectorsLoadFailed && (
+                <div className="mb-2 flex flex-wrap items-center gap-2 text-[12px] text-[#777267] dark:text-[#aaa69d]">
+                  <span>{t.schedule.connectorsLoadFailed}</span>
+                  <button type="button" onClick={() => setConnectorRefreshKey((key) => key + 1)} className="font-medium text-[#d97757] hover:underline">{t.schedule.retry}</button>
+                </div>
+              )}
+              {connectorsLoading && connectors.length === 0 ? (
+                <span role="status" className="inline-flex items-center gap-2 text-[12px] text-[#777267]"><Loader2 className="size-3.5 animate-spin" />{t.common.loading}</span>
+              ) : connectors.length === 0 && unavailableConnectors.length === 0 ? (
+                !connectorsLoadFailed && <p className="text-[12px] text-[#777267] dark:text-[#aaa69d]">{t.schedule.noConnectors}</p>
+              ) : (
+                <div data-schedule-connectors className="max-h-52 overflow-y-auto border-y border-[#e8e4dd] dark:border-white/10">
+                  {connectors.map((connector) => (
+                    <label key={connector.name} className="flex min-h-10 cursor-pointer items-center gap-2 border-b border-[#e8e4dd] py-2 text-[13px] last:border-0 dark:border-white/10">
+                      <input type="checkbox" checked={connectorNames.includes(connector.name)} disabled={connectorNames.length >= 8 && !connectorNames.includes(connector.name)} onChange={() => toggleConnector(connector.name)} className="size-4 shrink-0 accent-[#d97757]" />
+                      <span className="min-w-0 truncate" title={connector.display_name}>{connector.display_name || connector.name}</span>
+                    </label>
+                  ))}
+                  {unavailableConnectors.map((connector) => (
+                    <label key={connector} className="flex min-h-10 cursor-pointer items-center gap-2 border-b border-[#e8e4dd] py-2 text-[13px] last:border-0 dark:border-white/10">
+                      <input type="checkbox" checked onChange={() => toggleConnector(connector)} className="size-4 shrink-0 accent-[#d97757]" />
+                      <span className="min-w-0 truncate">{connector} ({connectorsLoadFailed ? t.schedule.connectorUnverified : t.schedule.connectorUnavailable})</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </section>
+          </aside>
         </div>
-        <div ref={workspacePickerPortal} className="contents" />
       </div>
+      <div ref={workspacePickerPortal} className="contents" />
     </div>
   );
 }

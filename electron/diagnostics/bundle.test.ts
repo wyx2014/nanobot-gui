@@ -30,6 +30,8 @@ describe('diagnostic bundle', () => {
       JSON.stringify({ timestamp, event_name: 'renderer.uncaught', status: 'failed', details: {
         incident_id: 'incident-observed', incident_snapshot: { captured_at: timestamp, chat_id: 'chat-failed', messages: ['private body'] },
         stack_frames: [{ module: 'catalog.js', function: 'fetchCatalog', line: 42, column: 7, body: 'private body' }] } }),
+      JSON.stringify({ timestamp, event_name: 'renderer.skills.fetch', status: 'completed', client_action_id: 'action-skills',
+        details: { count: 4, eligible_count: 1, disabled_count: 1, unavailable_count: 1, non_invocable_count: 1, invalid_tags_count: 0 } }),
       '{malformed',
     ].join('\n'));
     await writeFile(path.join(input.userData, 'startup.log'), `[${timestamp}] [stdout] private model body opaque-credential\n[${timestamp}] [stderr] Error: private response`);
@@ -60,6 +62,8 @@ describe('diagnostic bundle', () => {
       snapshot: { chat_id: 'chat-failed' }, evidence: { file: 'events/desktop.jsonl', line: 2 } });
     const desktop = (await zip.file('events/desktop.jsonl')!.async('string')).trim().split('\n').map((line) => JSON.parse(line));
     expect(desktop[1].details.stack_frames[0]).toEqual({ module: 'catalog.js', function: 'fetchCatalog', line: 42, column: 7 });
+    expect(desktop[2]).toMatchObject({ event_name: 'renderer.skills.fetch', client_action_id: 'action-skills',
+      details: { count: 4, eligible_count: 1, disabled_count: 1, unavailable_count: 1, non_invocable_count: 1, invalid_tags_count: 0 } });
   });
 
   it('filters desktop scope and time and excludes unscoped text logs', async () => {

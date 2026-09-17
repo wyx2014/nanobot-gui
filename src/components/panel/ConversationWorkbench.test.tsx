@@ -127,10 +127,9 @@ describe("ConversationWorkbench progress activity", () => {
     expect(supplement).not.toBeNull();
     act(() => supplement!.click());
     expect(useExpertTeamRevisionStore.getState().selection).toEqual({
-      chatId: 'chat-progress', runId: '04db8b3226fd', roleId: 'risk-assessor', mode: 'supplement',
+      chatId: 'chat-progress', runId: '04db8b3226fd', roleId: 'risk-assessor',
     });
-    act(() => view.querySelector<HTMLButtonElement>('button[title="Retry this role"]')!.click());
-    expect(useExpertTeamRevisionStore.getState().selection?.mode).toBe('retry');
+    expect(view.querySelector('button[title="Retry this role"]')).toBeNull();
   });
 
   it("renders only progress and artifacts in the pinned summary", () => {

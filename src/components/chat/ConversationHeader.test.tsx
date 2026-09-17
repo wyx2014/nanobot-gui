@@ -13,7 +13,7 @@ let root: Root | undefined;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 function renderHeader({
-  onOpenTerminal = vi.fn(),
+  onOpenWorkspaceFolder = vi.fn(),
   searchOpen = false,
   searchQuery = '',
   searchMatchCount = 0,
@@ -32,7 +32,7 @@ function renderHeader({
       <TooltipProvider>
         <ConversationHeader
           conversationTitle="这是一个超过十五个字符的会话标题用于测试"
-          onOpenTerminal={onOpenTerminal}
+          onOpenWorkspaceFolder={onOpenWorkspaceFolder}
           searchOpen={searchOpen}
           searchQuery={searchQuery}
           searchMatchCount={searchMatchCount}
@@ -48,7 +48,7 @@ function renderHeader({
   });
   return {
     view: container,
-    onOpenTerminal,
+    onOpenWorkspaceFolder,
     onOpenSearch,
     onCloseSearch,
     onSearchQueryChange,
@@ -100,12 +100,14 @@ describe('ConversationHeader', () => {
     expect(summaryToggle?.getAttribute('aria-expanded')).toBe('true');
   });
 
-  it('connects the open-terminal icon to the real conversation action', () => {
-    const onOpenTerminal = vi.fn();
-    const { view } = renderHeader({ onOpenTerminal });
+  it('connects the workspace-folder icon to the conversation action', () => {
+    const onOpenWorkspaceFolder = vi.fn();
+    const { view } = renderHeader({ onOpenWorkspaceFolder });
 
-    act(() => view.querySelector<HTMLButtonElement>('[data-conversation-header-open-terminal]')?.click());
-    expect(onOpenTerminal).toHaveBeenCalledOnce();
+    const button = view.querySelector<HTMLButtonElement>('[data-conversation-header-open-workspace]');
+    expect(button?.getAttribute('aria-label')).toBe('打开工作空间目录');
+    act(() => button?.click());
+    expect(onOpenWorkspaceFolder).toHaveBeenCalledOnce();
   });
 
   it('places the conversation search button immediately before the pinned summary', () => {

@@ -29,13 +29,14 @@ export default function GuideModal({ open, onClose }: GuideModalProps) {
 
   return (
     <div
+      data-guide-surface
       className="window-modal-viewport fixed inset-0 z-[9999] flex items-center justify-center"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <WindowModalBackdrop />
-      <div className="relative w-[420px] rounded-2xl border border-black/5 bg-white p-6 shadow-lg">
+      <div data-cowork-dialog className="relative w-[420px] rounded-2xl border border-black/5 bg-white p-6 shadow-lg">
         <h3 className="text-[16px] font-semibold text-[#29261b] mb-5">
           {t.guide.title}
         </h3>

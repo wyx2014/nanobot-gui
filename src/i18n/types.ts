@@ -98,6 +98,7 @@ export interface TranslationDict {
   // Chat/Welcome
   chat: {
     inputPlaceholder: string;
+    welcomeInputPlaceholder: string;
     inputPlaceholderBusy: string;
     inputPlaceholderWithSkill: string;
     inputPlaceholderWithAgent: string;
@@ -125,7 +126,7 @@ export interface TranslationDict {
     showAllSources: string;
     collapseSources: string;
     scrollToBottom: string;
-    openTerminal: string;
+    openWorkspaceFolder: string;
     searchConversation: string;
     searchConversationPlaceholder: string;
     previousSearchMatch: string;
@@ -149,6 +150,8 @@ export interface TranslationDict {
     inputTokens: string;
     outputTokens: string;
     addAttachment: string;
+    shortcutInvestmentAnalysis: string;
+    shortcutFixedIncome: string;
     shortcutDataAnalysis: string;
     shortcutOffice: string;
   };
@@ -731,7 +734,17 @@ export interface TranslationDict {
     bindSkill: string;
     bindSkillNone: string;
     workspacePath: string;
-    workspacePathPlaceholder: string;
+    selectWorkspace: string;
+    noWorkspace: string;
+    noWorkspaces: string;
+    workspaceUnavailable: string;
+    searchWorkspaces: string;
+    noMatchingWorkspaces: string;
+    bindConnectors: string;
+    noConnectors: string;
+    connectorsLoadFailed: string;
+    connectorUnavailable: string;
+    connectorUnverified: string;
     statusActive: string;
     statusPaused: string;
     statusCompleted: string;

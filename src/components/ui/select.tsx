@@ -104,23 +104,22 @@ export function Select({ value, onChange, options, ariaLabel, placeholder, searc
   const trigger = (
     <button
       type="button"
+      data-slot="select-trigger"
       aria-label={ariaLabel}
       aria-expanded={open}
       aria-haspopup="listbox"
       title={selectedOption?.label}
       onClick={() => changeOpen(!open)}
       className={cn(
-        'flex items-center gap-2 rounded-lg border border-[#e8e4dd] text-sm text-left transition-all',
-        'focus:outline-none focus:ring-2 focus:ring-[#d97757]/30 focus:border-[#d97757]',
-        'hover:border-[#d0cdc6]',
-        'dark:border-[#3a3a3a] dark:hover:border-[#555]',
-        open && 'ring-2 ring-[#d97757]/30 border-[#d97757]',
+        'flex min-w-0 items-center gap-2 rounded-lg border border-[var(--cowork-line)] bg-[var(--cowork-control)] text-[13px] text-left transition-colors',
+        'focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-ring hover:border-ring/50',
+        open && 'ring-2 ring-ring/20 border-ring',
         isInline
-          ? 'px-3 py-1.5 bg-[#faf9f5] dark:bg-[#262624]'
-          : 'w-full h-9 px-3 justify-between bg-[#faf9f7] dark:bg-[#262624]',
+          ? 'px-3 py-1.5'
+          : 'w-full h-9 px-3 justify-between',
       )}
     >
-      <span className={cn('min-w-0 truncate', !selectedOption ? 'text-[#b8b5ab] dark:text-[#77746d]' : 'text-[#29261b] dark:text-[#ece8e1]')}>
+      <span className={cn('min-w-0 truncate', !selectedOption ? 'text-[var(--cowork-muted)]' : 'text-[var(--cowork-ink)]')}>
         {selectedOption?.label ?? placeholder ?? '...'}
       </span>
       <ChevronDown

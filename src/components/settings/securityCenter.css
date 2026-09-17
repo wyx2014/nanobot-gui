@@ -4,7 +4,7 @@
 .security-nav-list, .security-audit-entry, .security-audit-content { container: security / inline-size; }
 .security-nav-row { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; transition: background-color 120ms; }
 .security-nav-row:hover { background: var(--settings-page-hover); }
-.security-nav-row:focus-visible { outline: 2px solid #d97757; outline-offset: 2px; }
+.security-nav-row:focus-visible { outline: 2px solid var(--cowork-blue); outline-offset: 2px; }
 .security-nav-icon { display: grid; flex: 0 0 24px; place-items: center; color: var(--settings-page-secondary); }
 .security-nav-status { color: var(--settings-page-secondary); font-size: 12px; line-height: 18px; }
 .security-nav-status-desktop { display: none; flex: 0 1 148px; text-align: right; }
@@ -33,7 +33,7 @@
 .security-remove { display: grid; flex: 0 0 28px; width: 28px; height: 28px; place-items: center; border-radius: 6px; color: var(--settings-page-muted); }
 .security-remove:hover { background: var(--settings-page-hover); color: #dc2626; }
 .security-remove:disabled { opacity: 0.5; }
-.security-remove:focus-visible { outline: 2px solid #d97757; }
+.security-remove:focus-visible { outline: 2px solid var(--cowork-blue); }
 .security-note { display: flex; align-items: flex-start; gap: 8px; color: var(--settings-page-secondary); font-size: 13px; line-height: 20px; }
 .security-note > svg { flex-shrink: 0; margin-top: 2px; }
 .security-footer { padding-top: 16px; border-top: 1px solid var(--settings-page-line); }
@@ -56,7 +56,7 @@
 .security-event-summary { display: grid; grid-template-columns: 24px minmax(0, 1fr) 16px; align-items: start; column-gap: 12px; row-gap: 6px; padding: 14px 12px; list-style: none; cursor: pointer; }
 .security-event-summary::-webkit-details-marker { display: none; }
 .security-event-summary:hover { background: var(--settings-page-row); }
-.security-event-summary:focus-visible { outline: 2px solid #d97757; outline-offset: -2px; }
+.security-event-summary:focus-visible { outline: 2px solid var(--cowork-blue); outline-offset: -2px; }
 .security-event-icon { display: grid; width: 24px; height: 24px; place-items: center; color: var(--settings-page-secondary); }
 .security-event-result { display: flex; grid-column: 2; grid-row: 2; min-width: 0; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 .security-event-chevron { grid-column: 3; grid-row: 1; width: 16px; height: 16px; margin-top: 3px; color: var(--settings-page-muted); transition: transform 120ms; }

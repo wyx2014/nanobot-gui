@@ -20,33 +20,33 @@ interface CommandConfirmDialogProps {
 const levelConfig = {
   warn: {
     icon: AlertTriangle,
-    iconColor: 'text-amber-500',
+    iconColor: 'text-amber-500 dark:text-amber-300',
     bgColor: 'bg-amber-500/10',
-    borderColor: 'border-amber-200',
+    borderColor: 'border-amber-200 dark:border-amber-400/25',
     titleKey: 'title' as const,
     descKey: 'description' as const,
   },
   danger: {
     icon: ShieldAlert,
-    iconColor: 'text-red-500',
+    iconColor: 'text-red-500 dark:text-red-300',
     bgColor: 'bg-red-500/10',
-    borderColor: 'border-red-200',
+    borderColor: 'border-red-200 dark:border-red-400/25',
     titleKey: 'titleDanger' as const,
     descKey: 'descriptionDanger' as const,
   },
   block: {
     icon: ShieldX,
-    iconColor: 'text-red-600',
+    iconColor: 'text-red-600 dark:text-red-300',
     bgColor: 'bg-red-600/10',
-    borderColor: 'border-red-300',
+    borderColor: 'border-red-300 dark:border-red-400/25',
     titleKey: 'titleBlock' as const,
     descKey: 'descriptionBlock' as const,
   },
   safe: {
     icon: AlertTriangle,
-    iconColor: 'text-green-500',
+    iconColor: 'text-green-500 dark:text-green-300',
     bgColor: 'bg-green-500/10',
-    borderColor: 'border-green-200',
+    borderColor: 'border-green-200 dark:border-green-400/25',
     titleKey: 'title' as const,
     descKey: 'description' as const,
   },
@@ -77,7 +77,7 @@ export default function CommandConfirmDialog({
   return (
     <div className="window-modal-viewport fixed inset-0 z-50 flex items-center justify-center">
       <WindowModalBackdrop />
-      <div className="relative mx-4 flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-black/5 bg-white shadow-lg">
+      <div data-cowork-dialog className="relative mx-4 flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-black/5 bg-white shadow-lg">
         {/* Header */}
         <div className="relative px-6 pt-6 pb-2 shrink-0">
           <button
@@ -105,8 +105,8 @@ export default function CommandConfirmDialog({
         {/* Scrollable Content Area */}
         <div className="flex-1 overflow-y-auto min-h-0 px-6 py-2">
           {/* Command display */}
-          <div className="px-4 py-3 bg-[#1a1a1a] rounded-lg border border-[#333]">
-            <code className="text-[13px] text-[#e0e0e0] font-mono break-all whitespace-pre-wrap leading-relaxed">
+          <div className="px-4 py-3 bg-[var(--cowork-control)] rounded-lg border border-[var(--cowork-line)]">
+            <code className="text-[13px] text-[var(--cowork-ink)] font-mono break-all whitespace-pre-wrap leading-relaxed">
               {request.command}
             </code>
           </div>
@@ -138,7 +138,7 @@ export default function CommandConfirmDialog({
               onClick={onConfirm}
               className={`flex-1 h-10 text-[14px] ${
                 request.level === 'danger'
-                  ? 'bg-red-600 hover:bg-red-700'
+                  ? 'bg-red-600 hover:bg-red-700 active:bg-red-800'
                   : 'bg-[#29261b] hover:bg-[#3d3929]'
               } text-white`}
             >

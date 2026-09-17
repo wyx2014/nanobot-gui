@@ -235,6 +235,38 @@ describe('PythonBridge lifecycle', () => {
     }
   });
 
+  it('passes the managed image extraction service to the nanobot child process', async () => {
+    const previous = {
+      NANOBOT_IMAGE_EXTRACT_API_URL: process.env.NANOBOT_IMAGE_EXTRACT_API_URL,
+      NANOBOT_IMAGE_EXTRACT_API_KEY: process.env.NANOBOT_IMAGE_EXTRACT_API_KEY,
+      NANOBOT_IMAGE_EXTRACT_MODEL: process.env.NANOBOT_IMAGE_EXTRACT_MODEL,
+    };
+    Object.assign(process.env, {
+      NANOBOT_IMAGE_EXTRACT_API_URL: 'http://vision.example/v1/chat/completions',
+      NANOBOT_IMAGE_EXTRACT_API_KEY: 'managed-key',
+      NANOBOT_IMAGE_EXTRACT_MODEL: 'qwen-vl',
+    });
+    try {
+      const child = processStub();
+      spawn.mockReturnValue(child);
+      const { PythonBridge } = await import('./pythonBridge');
+      const bridge = new PythonBridge();
+
+      await bridge.start();
+
+      expect(spawn.mock.calls[0][2]?.env).toMatchObject({
+        NANOBOT_IMAGE_EXTRACT_API_URL: 'http://vision.example/v1/chat/completions',
+        NANOBOT_IMAGE_EXTRACT_API_KEY: 'managed-key',
+        NANOBOT_IMAGE_EXTRACT_MODEL: 'qwen-vl',
+      });
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
   it('uses the precompiled installed wheel in packaged apps', async () => {
     appIsPackaged = true;
     const previousPythonPath = process.env.PYTHONPATH;

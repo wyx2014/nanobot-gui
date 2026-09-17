@@ -5,6 +5,7 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { DEFAULT_WORKSPACE_DIRECTORY_NAME } from '../src/config/appDirectories';
 import { desktopMcpGatewayEnvironment } from './builtinMcpCredentials';
+import { desktopImageExtractGatewayEnvironment } from './builtinImageExtractService';
 import {
   NanobotDiagnosticBuffer,
   redactNanobotDiagnosticText,
@@ -238,6 +239,7 @@ export class PythonBridge {
         // ${ENV_VAR} references, while a literal key saved by the user takes
         // precedence and no longer depends on these defaults.
         ...desktopMcpGatewayEnvironment(),
+        ...desktopImageExtractGatewayEnvironment(),
         ...(this._mermaidRenderer && {
           NANOBOT_MERMAID_RENDER_URL: this._mermaidRenderer.url,
           NANOBOT_MERMAID_RENDER_TOKEN: this._mermaidRenderer.token,

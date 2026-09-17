@@ -28,20 +28,20 @@ export const MAIN_WINDOW_BOUNDS = Object.freeze({
   minHeight: 640,
 });
 
-export const MAIN_WINDOW_BACKGROUND = '#fbfaf7';
+export const MAIN_WINDOW_BACKGROUND = '#f5f9ff';
 export const WINDOWS_TITLE_BAR_LIGHT = Object.freeze({
-  color: '#f7f6f2',
-  symbolColor: '#29261b',
+  color: '#edf4ff',
+  symbolColor: '#0b1744',
 });
 export const WINDOWS_TITLE_BAR_DARK = Object.freeze({
-  color: '#242424',
-  symbolColor: '#f3f0e8',
+  color: '#17263b',
+  symbolColor: '#e4edff',
 });
 export const LINUX_TITLE_BAR_LIGHT = Object.freeze({
-  color: '#fbfaf7',
+  color: '#edf4ff',
 });
 export const LINUX_TITLE_BAR_DARK = Object.freeze({
-  color: '#1f1f1f',
+  color: '#17263b',
 });
 
 const MACOS_WINDOW_CHROME = Object.freeze({

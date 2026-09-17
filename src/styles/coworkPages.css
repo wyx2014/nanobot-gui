@@ -1,0 +1,1018 @@
+/* Shared page geometry and surfaces. Colours come from coworkTheme.css. */
+:root body :is([data-toolbox-surface], [data-settings-surface], [data-schedule-surface], [data-schedule-detail], [data-schedule-editor], [data-onboarding-surface], [data-help-manual], [data-guide-surface], [data-cowork-dialog], [data-confirm-dialog], [role="dialog"]) :is(h1, h2, h3, h4) {
+  color: var(--cowork-ink);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+:root body :is(
+  button[data-cowork-button="primary"],
+  button[class~="bg-[#202020]"],
+  button[class~="bg-[#29261b]"],
+  button[class~="bg-[#292722]"],
+  button[class~="bg-[#d97757]"]
+) {
+  color: #fff;
+  border-color: var(--cowork-action);
+  background: var(--cowork-action);
+}
+
+:root body :is(
+  button[data-cowork-button="primary"],
+  button[class~="bg-[#202020]"],
+  button[class~="bg-[#29261b]"],
+  button[class~="bg-[#292722]"],
+  button[class~="bg-[#d97757]"],
+  button[class~="bg-[#29261b]/85"]
+):not(:disabled):hover {
+  color: #fff;
+  border-color: var(--cowork-action-hover);
+  background: var(--cowork-action-hover);
+}
+
+:root body :is(
+  button[data-cowork-button="primary"],
+  button[class~="bg-[#202020]"],
+  button[class~="bg-[#29261b]"],
+  button[class~="bg-[#292722]"],
+  button[class~="bg-[#d97757]"],
+  button[class~="bg-[#29261b]/85"]
+):not(:disabled):active {
+  color: #fff;
+  border-color: var(--cowork-action-active);
+  background: var(--cowork-action-active);
+}
+
+:root body button[class~="bg-[#29261b]/85"] {
+  color: #fff;
+  background: color-mix(in srgb, var(--cowork-action) 85%, transparent);
+}
+
+:root body button:not([class*="transition"]):not(:disabled) {
+  transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+}
+
+:root body button:not([class*="focus-visible:"]):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--cowork-blue) 72%, transparent);
+  outline-offset: 2px;
+}
+
+:root body :is([data-window-titlebar-platform="windows"], [data-window-titlebar-platform="linux"]) {
+  background: var(--cowork-panel);
+}
+
+:root body :is([data-toolbox-surface], [data-schedule-surface], [data-schedule-detail]) {
+  color: var(--cowork-ink);
+  background: var(--cowork-page-wash);
+}
+
+:root body :is([data-toolbox-header], [data-schedule-header], [data-settings-header]) {
+  color: var(--cowork-ink);
+  border-color: var(--cowork-line);
+  background: color-mix(in srgb, var(--cowork-surface) 55%, transparent);
+}
+
+:root body :is([data-toolbox-sidebar], [data-settings-sidebar]) {
+  color: var(--cowork-text);
+  border-color: var(--cowork-line);
+  background: var(--cowork-panel);
+}
+
+:root body :is([data-toolbox-nav-item], [data-settings-nav-item]) {
+  min-height: 40px;
+  border-radius: 9px;
+  color: var(--cowork-text);
+  background: transparent;
+  box-shadow: none;
+}
+
+:root body :is([data-toolbox-nav-item], [data-settings-nav-item]):hover {
+  color: var(--cowork-ink);
+  background: var(--cowork-hover);
+}
+
+:root body :is([data-toolbox-nav-item], [data-settings-nav-item])[data-active="true"] {
+  color: var(--cowork-blue);
+  background: var(--cowork-selected);
+  font-weight: 600;
+}
+
+:root body :is([data-toolbox-nav-item], [data-settings-nav-item])[data-active="true"] svg {
+  color: var(--cowork-blue);
+}
+
+:root body [data-toolbox-search] {
+  border-color: var(--cowork-line);
+  background: color-mix(in srgb, var(--cowork-canvas) 72%, transparent);
+}
+
+:root body :is([data-settings-dialog], [data-guide-surface] > div:last-child, [data-help-manual] > section) {
+  color: var(--cowork-ink);
+  border: 1px solid var(--cowork-line);
+  border-radius: 20px;
+  background: var(--cowork-surface);
+  box-shadow: var(--cowork-dialog-shadow);
+}
+
+:root body [data-window-modal-backdrop] {
+  background-color: var(--cowork-backdrop);
+}
+
+:root body [data-settings-content] {
+  background: var(--cowork-canvas);
+}
+
+:root body [data-settings-surface] [data-settings-card] {
+  color: var(--cowork-ink);
+  border: 1px solid var(--cowork-line);
+  border-radius: 12px;
+  background: var(--cowork-surface);
+  box-shadow: var(--cowork-shadow);
+}
+
+:root body [data-toolbox-surface] :is([data-skill-card], [data-mcp-card], [data-skill-store-card]),
+:root body :is([data-schedule-card], [data-automation-template], [data-expert-team-card], [data-expert-team-summary], [data-expert-member-card]) {
+  color: var(--cowork-ink);
+  border-color: var(--cowork-line);
+  background: var(--cowork-surface);
+  box-shadow: var(--cowork-shadow);
+}
+
+:root body [data-toolbox-surface] :is([data-skill-card], [data-mcp-card], [data-skill-store-card]):hover,
+:root body :is([data-automation-template], [data-expert-team-card]):hover {
+  border-color: color-mix(in srgb, var(--cowork-blue) 45%, var(--cowork-line));
+  background: color-mix(in srgb, var(--cowork-surface) 94%, var(--cowork-selected));
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--cowork-blue) 9%, transparent);
+}
+
+:root body :is([data-skill-name], [data-mcp-name], [data-skill-store-name]) {
+  color: var(--cowork-ink);
+}
+
+:root body :is([data-skill-description], [data-mcp-description], [data-skill-store-description]) {
+  color: var(--cowork-text);
+}
+
+:root body :is([data-skill-icon], [data-mcp-icon], [data-skill-store-icon], [data-automation-template] > span:first-child) {
+  color: var(--cowork-blue);
+  background: var(--cowork-panel);
+}
+
+:root body :is([data-skill-tabs], [data-schedule-header] [role="tablist"]) {
+  padding: 4px;
+  border: 1px solid var(--cowork-line);
+  border-radius: 11px;
+  background: var(--cowork-panel);
+}
+
+:root body :is([data-skill-tab], [data-schedule-tab]) {
+  color: var(--cowork-text);
+  background: transparent;
+  box-shadow: none;
+}
+
+:root body :is([data-skill-tab][data-active="true"], [data-schedule-tab][aria-selected="true"]) {
+  color: var(--cowork-blue);
+  background: var(--cowork-surface);
+  box-shadow: var(--cowork-shadow);
+}
+
+:root body [data-skill-tab-count] {
+  color: var(--cowork-muted);
+  border-color: var(--cowork-line);
+  background: var(--cowork-hover);
+}
+
+:root body [data-skill-tab-count][data-active="true"] {
+  color: var(--cowork-blue);
+  border-color: color-mix(in srgb, var(--cowork-blue) 30%, transparent);
+  background: var(--cowork-selected);
+}
+
+.cowork-expert-page {
+  container: expert-teams / inline-size;
+}
+
+.cowork-expert-content {
+  width: 100%;
+  max-width: 1320px;
+  margin-inline: auto;
+  padding: 20px 24px 40px;
+}
+
+.cowork-expert-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+@container expert-teams (min-width: 760px) {
+  .cowork-expert-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.cowork-expert-secondary {
+  color: var(--cowork-text);
+}
+
+.cowork-expert-muted {
+  color: var(--cowork-muted);
+}
+
+.cowork-expert-accent {
+  color: var(--cowork-blue);
+}
+
+.cowork-expert-badge {
+  color: var(--cowork-blue);
+  background: var(--cowork-panel);
+}
+
+.cowork-expert-card-actions {
+  border-color: var(--cowork-line);
+}
+
+.cowork-expert-primary-action {
+  color: #fff;
+  background: var(--cowork-action);
+  box-shadow: var(--cowork-shadow);
+  transition: background-color .15s;
+}
+
+.cowork-expert-primary-action:not(:disabled):hover {
+  background: var(--cowork-action-hover);
+}
+
+.cowork-expert-primary-action:not(:disabled):active {
+  background: var(--cowork-action-active);
+}
+
+.cowork-expert-primary-action:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+
+.cowork-expert-secondary-action {
+  color: var(--cowork-text);
+  transition: background-color .15s, color .15s;
+}
+
+.cowork-expert-secondary-action:not(:disabled):hover {
+  color: var(--cowork-ink);
+  background: var(--cowork-hover);
+}
+
+.cowork-expert-secondary-action:not(:disabled):active {
+  color: var(--cowork-ink);
+  background: var(--cowork-selected);
+}
+
+:root body :is(.cowork-expert-primary-action, .cowork-expert-secondary-action):focus-visible {
+  outline: 2px solid var(--cowork-blue);
+  outline-offset: 3px;
+}
+
+:root body .cowork-team-avatar {
+  color: var(--cowork-blue);
+  background: var(--cowork-panel);
+}
+
+:root body :is([data-expert-quality], [data-expert-dependency], [data-expert-mcp-group], [data-expert-workflow-group]) {
+  border-color: var(--cowork-line);
+  background: var(--cowork-surface);
+  box-shadow: var(--cowork-shadow);
+}
+
+:root body [data-expert-mcp] {
+  background: var(--cowork-panel);
+}
+
+:root body [data-expert-workflow]:hover {
+  background: var(--cowork-hover);
+}
+
+:root body [data-model-page-tabs] {
+  border-color: var(--cowork-line);
+}
+
+:root body [data-model-page-tab] {
+  color: var(--cowork-text);
+}
+
+:root body [data-model-page-tab][data-active="true"] {
+  color: var(--cowork-blue);
+}
+
+:root body [data-model-page-tab][data-active="true"]::after {
+  background: var(--cowork-blue);
+}
+
+:root body [data-model-capability-picker] {
+  background: var(--cowork-panel);
+  box-shadow: inset 0 0 0 1px var(--cowork-line);
+}
+
+:root body [data-model-capability-option] {
+  color: var(--cowork-text);
+}
+
+:root body [data-model-capability-option][data-active="true"] {
+  color: var(--cowork-blue);
+  background: var(--cowork-selected);
+  box-shadow: none;
+}
+
+:root body :is([data-model-preset-card], [data-model-provider-list], [data-model-form-card]) {
+  color: var(--cowork-ink);
+  border-color: var(--cowork-line);
+  border-radius: 12px;
+  background: var(--cowork-surface);
+  box-shadow: var(--cowork-shadow);
+}
+
+:root body [data-model-preset-card]:not([data-active="true"]):hover,
+:root body [data-model-provider-card]:hover {
+  color: var(--cowork-ink);
+  border-color: var(--cowork-blue);
+  background: var(--cowork-hover);
+}
+
+:root body [data-model-preset-card][data-active="true"] {
+  color: var(--cowork-ink);
+  border-color: var(--cowork-blue);
+  background: var(--cowork-selected);
+  box-shadow: var(--cowork-shadow);
+}
+
+:root body [data-model-preset-card] [data-model-selection] {
+  color: transparent;
+  border-color: var(--cowork-line);
+  background: var(--cowork-control);
+}
+
+:root body [data-model-preset-card][data-active="true"] [data-model-selection] {
+  color: #fff;
+  border-color: var(--cowork-action);
+  background: var(--cowork-action);
+}
+
+:root body [data-model-icon],
+:root body [data-model-preset-card][data-active="true"] [data-model-icon] {
+  color: var(--cowork-blue);
+  background: var(--cowork-panel);
+}
+
+:root body :is([data-model-title], [data-model-heading], [data-model-id]) {
+  color: var(--cowork-ink);
+}
+
+:root body :is([data-model-secondary], [data-model-meta], [data-model-meta-label]) {
+  color: var(--cowork-text);
+}
+
+:root body [data-model-current-label] {
+  color: var(--cowork-blue);
+}
+
+:root body :is([data-model-provider-card], [data-model-form-actions]) {
+  border-color: var(--cowork-line);
+}
+
+:root body :is([data-model-back-button], [data-model-secondary-action]) {
+  color: var(--cowork-text);
+  border-color: var(--cowork-line);
+  background: var(--cowork-control);
+}
+
+:root body :is([data-model-back-button], [data-model-secondary-action]):not(:disabled):hover {
+  color: var(--cowork-ink);
+  background: var(--cowork-hover);
+}
+
+:root body :is([data-model-back-button], [data-model-secondary-action]):not(:disabled):active {
+  color: var(--cowork-ink);
+  background: var(--cowork-selected);
+}
+
+:root body [data-model-primary-action] {
+  color: #fff;
+  background: var(--cowork-action);
+}
+
+:root body [data-model-primary-action]:not(:disabled):hover {
+  background: var(--cowork-action-hover);
+}
+
+:root body [data-model-primary-action]:not(:disabled):active {
+  background: var(--cowork-action-active);
+}
+
+:root body :is([data-skill-detail], [data-skill-store-detail], [data-skill-create-dialog]) {
+  color: var(--cowork-ink);
+  border-color: var(--cowork-line);
+  border-radius: 18px;
+  background: var(--cowork-surface);
+  box-shadow: var(--cowork-dialog-shadow);
+}
+
+:root body [data-schedule-editor] {
+  color: var(--cowork-ink);
+  background: var(--cowork-surface);
+}
+
+:root body :is([data-skill-detail-header], [data-personalization-footer]) {
+  border-color: var(--cowork-line);
+  background: var(--cowork-panel);
+}
+
+:root body :is([data-personalization-panel], [data-personalization-tabs]) {
+  color: var(--cowork-ink);
+  border-color: var(--cowork-line);
+  background: var(--cowork-surface);
+  box-shadow: var(--cowork-shadow);
+}
+
+:root body [data-personalization-tab] {
+  color: var(--cowork-text);
+  border-color: transparent;
+  background: transparent;
+}
+
+:root body [data-personalization-tab]:hover {
+  color: var(--cowork-ink);
+  background: var(--cowork-hover);
+}
+
+:root body [data-personalization-tab][data-active="true"] {
+  color: var(--cowork-blue);
+  border-color: var(--cowork-line);
+  background: var(--cowork-selected);
+  box-shadow: none;
+}
+
+:root body [data-personalization-tab][data-active="true"] [data-personalization-tab-icon],
+:root body [data-personalization-editor-icon] {
+  color: var(--cowork-blue);
+  background: var(--cowork-panel);
+  box-shadow: none;
+}
+
+:root body :is([data-personalization-editor-title], [data-personalization-tab-label]) {
+  color: var(--cowork-ink);
+}
+
+:root body :is([data-personalization-editor-hint], [data-personalization-count], [data-personalization-file]) {
+  color: var(--cowork-muted);
+}
+
+:root body [data-settings-surface] [data-personalization-editor] {
+  color: var(--cowork-ink);
+  border-color: var(--cowork-line);
+  background: var(--cowork-control);
+}
+
+:root body [data-settings-surface] [data-personalization-editor]:focus {
+  border-color: var(--cowork-blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cowork-blue) 12%, transparent);
+}
+
+:root body :is([data-personalization-save], [data-schedule-header-action="create"]) {
+  color: #fff;
+  border-color: transparent;
+  background: var(--cowork-action);
+}
+
+:root body :is([data-personalization-save], [data-schedule-header-action="create"]):not(:disabled):hover {
+  background: var(--cowork-action-hover);
+}
+
+:root body :is([data-personalization-save], [data-schedule-header-action="create"]):not(:disabled):active {
+  border-color: var(--cowork-action-active);
+  background: var(--cowork-action-active);
+}
+
+:root body [role="switch"][aria-checked="true"],
+:root body :is([data-settings-surface], [data-skills-surface], [data-mcp-surface]) [role="switch"][aria-checked="true"],
+:root body [data-schedule-toggle][data-active="true"] {
+  background: var(--cowork-action);
+}
+
+:root body [role="switch"][aria-checked="false"],
+:root body :is([data-settings-surface], [data-skills-surface], [data-mcp-surface]) [role="switch"][aria-checked="false"],
+:root body [data-schedule-toggle][data-active="false"] {
+  background: var(--cowork-disabled);
+}
+
+:root body [role="switch"] > span,
+:root body :is([data-settings-surface], [data-skills-surface], [data-mcp-surface]) [role="switch"] > span,
+:root body [data-schedule-toggle] [data-schedule-toggle-thumb] {
+  background: #fff;
+}
+
+:root body [data-font-size-track],
+:root body [data-font-size-tick] {
+  background: var(--cowork-disabled);
+}
+
+:root body [data-font-size-thumb] {
+  background: var(--cowork-action);
+  border-color: var(--cowork-surface);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cowork-blue) 14%, transparent);
+}
+
+:root body :is([data-toolbox-surface], [data-settings-surface], [data-schedule-editor], [data-onboarding-surface], [role="dialog"]) :is(input:not([type="checkbox"]):not([type="radio"]), textarea, select) {
+  color: var(--cowork-ink);
+  border-color: var(--cowork-line);
+  accent-color: var(--cowork-action);
+}
+
+/* Embedded inputs share their wrapper's surface through bg-transparent. */
+:root body :is([data-toolbox-surface], [data-settings-surface], [data-schedule-editor], [data-onboarding-surface], [role="dialog"]) :is(input:not([type="checkbox"]):not([type="radio"]), textarea, select):not(.bg-transparent) {
+  background-color: var(--cowork-control);
+}
+
+:root body :is([data-toolbox-surface], [data-settings-surface], [data-schedule-editor], [data-onboarding-surface], [role="dialog"]) :is(input, textarea)::placeholder {
+  color: var(--cowork-muted);
+}
+
+:root body :is([data-toolbox-surface], [data-settings-surface], [data-schedule-editor], [data-onboarding-surface], [role="dialog"]) :is(input, textarea, select):focus {
+  border-color: var(--cowork-blue);
+  --tw-ring-color: color-mix(in srgb, var(--cowork-blue) 20%, transparent);
+}
+
+:root body [data-onboarding-surface] {
+  isolation: isolate;
+  color: var(--cowork-ink);
+  background: var(--cowork-page-wash);
+}
+
+[data-onboarding-surface]::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background: var(--cowork-welcome-art) center / cover no-repeat;
+  content: '';
+  opacity: .35;
+  pointer-events: none;
+  mask-image: linear-gradient(180deg, #0006, #000);
+}
+
+:root body [data-onboarding-surface] > :is(header, footer) {
+  border-color: var(--cowork-line);
+  background: color-mix(in srgb, var(--cowork-panel) 80%, transparent);
+}
+
+:root body [data-onboarding-choice] {
+  color: var(--cowork-text);
+  border-color: var(--cowork-line);
+  background: var(--cowork-surface);
+  box-shadow: var(--cowork-shadow);
+}
+
+:root body [data-onboarding-choice]:hover {
+  background: var(--cowork-hover);
+}
+
+:root body [data-onboarding-choice][aria-pressed="true"] {
+  color: var(--cowork-blue);
+  border-color: var(--cowork-blue);
+  background: var(--cowork-selected);
+}
+
+:root body [data-onboarding-choice][aria-pressed="true"] svg {
+  color: var(--cowork-blue);
+}
+
+:root body [data-onboarding-surface] [class~="bg-gradient-to-br"] {
+  color: #fff;
+  background: linear-gradient(140deg, var(--cowork-action), #5c9bff);
+}
+
+:root body [data-help-manual] {
+  color: var(--cowork-ink);
+}
+
+:root body [data-help-manual] :is([class~="text-[#b96346]"], [class~="text-[#d97757]"]) {
+  color: var(--cowork-blue);
+  background: var(--cowork-selected);
+}
+
+:root body [data-help-manual] > section > aside {
+  border-color: var(--cowork-line);
+  background: var(--cowork-panel);
+}
+
+:root body [data-help-article] {
+  background: var(--cowork-surface);
+}
+
+:root body [data-help-article] .claude-markdown {
+  color: var(--cowork-ink);
+}
+
+:root body [data-help-manual] [data-help-chapter] {
+  color: var(--cowork-text);
+}
+
+:root body [data-help-manual] [data-help-chapter]:hover {
+  color: var(--cowork-ink);
+  background: var(--cowork-hover);
+}
+
+:root body [data-help-manual] [data-help-chapter][data-active="true"] {
+  color: var(--cowork-blue);
+  background: var(--cowork-selected);
+  box-shadow: none;
+}
+
+@media (max-width: 1000px) {
+  :root body [data-settings-sidebar] {
+    width: 188px;
+    padding-inline: 10px;
+  }
+
+  [data-settings-header],
+  [data-settings-content] > div > div:last-child {
+    padding-inline: 24px;
+  }
+
+  [data-toolbox-sidebar] {
+    width: 152px;
+    padding-inline: 8px;
+  }
+}
+
+@media (max-width: 760px) {
+  :root body [data-settings-dialog] {
+    width: calc(100vw - 24px);
+    height: calc(100dvh - var(--window-titlebar-safe-top) - 24px);
+  }
+
+  :root body [data-settings-sidebar] {
+    width: 152px;
+  }
+
+  :root body [data-settings-surface] {
+    padding: 12px;
+  }
+
+  [data-settings-header],
+  [data-settings-content] > div > div:last-child {
+    padding: 20px 16px;
+  }
+}
+
+/* Page rhythm shared with the automation center. */
+:root body [data-toolbox-header] {
+  min-height: 64px;
+  padding-block: 16px;
+}
+
+:root body [data-toolbox-header] h2 {
+  font-size: 17px;
+}
+
+:root body :is([data-toolbox-nav-item], [data-settings-nav-item]) {
+  font-size: 13px;
+}
+
+:root body [data-settings-sidebar] {
+  width: 180px;
+}
+
+:root body [data-settings-nav-item] > span {
+  white-space: normal;
+  overflow: visible;
+  text-align: left;
+  line-height: 18px;
+}
+
+:root body [data-settings-content] {
+  background: var(--cowork-page-wash);
+}
+
+:root body [data-settings-surface] [data-model-empty] {
+  color: var(--cowork-text);
+}
+
+:root body :is([data-skills-surface], [data-mcp-surface], [data-skill-store-surface]) {
+  container: toolbox-page / inline-size;
+  color: var(--cowork-ink);
+  background: transparent;
+}
+
+[data-page-section-heading] {
+  flex-shrink: 0;
+  padding: 20px var(--cowork-content-padding) 16px;
+}
+
+[data-page-section-heading] h2 {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 24px;
+  letter-spacing: -.01em;
+}
+
+[data-page-section-heading] p {
+  margin-top: 2px;
+  color: var(--cowork-text);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+:root body :is([data-toolbox-tabs], .mcp-toolbar) {
+  padding: 0 var(--cowork-content-padding) 12px;
+}
+
+:root body :is([data-toolbox-list-body], .mcp-server-list) {
+  padding: 0 var(--cowork-content-padding) 40px;
+}
+
+[data-toolbox-card-grid],
+.mcp-server-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 12px;
+}
+
+[data-toolbox-card-grid] > *,
+.mcp-server-row + .mcp-server-row {
+  margin-block: 0;
+}
+
+@container toolbox-page (min-width: 760px) {
+  [data-toolbox-card-grid],
+  .mcp-server-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mcp-server-list > :not([data-mcp-card]) {
+    grid-column: 1 / -1;
+  }
+}
+
+:root body [data-toolbox-surface] :is([data-skill-card], [data-skill-store-card], [data-mcp-card]) {
+  min-width: 0;
+  min-height: 96px;
+  padding: 16px 20px;
+  border-radius: var(--cowork-card-radius);
+}
+
+:root body [data-toolbox-surface] [data-mcp-card] {
+  min-height: 144px;
+}
+
+:root body :is([data-skill-icon], [data-skill-store-icon], [data-mcp-icon]) {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+}
+
+:root body [data-skill-card-controls] {
+  align-self: start;
+}
+
+:root body :is([data-skill-name], [data-skill-store-name], [data-mcp-name]) {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+:root body :is([data-skill-description], [data-skill-store-description], [data-mcp-description]) {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+:root body :is([data-skill-action], [data-skill-store-action]):focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--cowork-blue);
+  outline-offset: 2px;
+}
+
+:root body [data-skill-store-login] {
+  color: var(--cowork-ink);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.cowork-empty-icon {
+  display: flex;
+  width: 64px;
+  height: 64px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--cowork-muted);
+  background: var(--cowork-panel);
+}
+
+/* Detail views keep the same canvas and header as their parent pages. */
+:root body [data-toolbox-surface] :is([data-skill-detail], [data-skill-store-detail]) {
+  color: var(--cowork-ink);
+  background: var(--cowork-page-wash);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+:root body [data-toolbox-surface] [data-skill-detail-header] {
+  min-height: 64px;
+  padding: 16px 24px;
+  border-color: var(--cowork-line);
+  background: var(--cowork-surface);
+}
+
+:root body [data-toolbox-surface] :is([data-skill-detail], [data-skill-store-detail]) pre {
+  color: var(--cowork-text);
+  border-color: var(--cowork-line);
+  background: var(--cowork-control);
+}
+
+:root body [data-toolbox-surface] :is([data-skill-detail], [data-skill-store-detail]) :is(h3, [class~="text-neutral-900"]) {
+  color: var(--cowork-ink);
+}
+
+:root body [data-toolbox-surface] :is([data-skill-detail], [data-skill-store-detail]) [class~="text-neutral-700"] {
+  color: var(--cowork-text);
+}
+
+:root body [data-toolbox-surface] :is([data-skill-detail], [data-skill-store-detail]) :is([class~="text-neutral-500"], [class~="text-neutral-400"]),
+:root body [data-toolbox-surface] [data-skill-store-card] [class~="text-[#8a867c]"] {
+  color: var(--cowork-muted);
+}
+
+:root body [data-toolbox-surface] [data-skill-store-detail] span[class~="bg-white"] {
+  background: var(--cowork-panel);
+  border-color: var(--cowork-line);
+}
+
+:root body [data-toolbox-surface] [data-skill-create-dialog] {
+  background: var(--cowork-surface);
+  border-color: var(--cowork-line);
+  box-shadow: var(--cowork-dialog-shadow);
+  max-height: calc(100dvh - var(--window-titlebar-safe-top) - 32px);
+  overflow-y: auto;
+}
+
+:root body [data-personalization-tab][data-active] [data-personalization-file] {
+  color: var(--cowork-muted);
+}
+
+:root body [data-settings-surface] [data-personalization-save]:disabled {
+  color: #fff;
+  background: var(--cowork-action);
+  opacity: .45;
+}
+
+:root body [data-help-manual] [class~="text-[#8a867c]"] {
+  color: var(--cowork-muted);
+}
+
+/* Native controls, menus and dialogs use the same palette outside page roots. */
+:root body [data-slot="select-content"],
+:root body :is([data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"]) {
+  color: var(--cowork-ink);
+  border-color: var(--cowork-line);
+  border-radius: 12px;
+  background: var(--cowork-surface);
+  box-shadow: var(--cowork-dialog-shadow);
+}
+
+:root body [data-slot="select-content"] [role="option"] {
+  color: var(--cowork-ink);
+  font-size: 13px;
+}
+
+:root body [data-slot="select-content"] [role="option"]:hover {
+  background: var(--cowork-hover);
+}
+
+:root body [data-slot="select-content"] [role="option"][aria-selected="true"] {
+  color: var(--cowork-blue);
+  background: var(--cowork-selected);
+}
+
+:root body :is([data-cowork-dialog], [data-slot="dialog-content"], [data-confirm-dialog], [data-testid="conversation-search-dialog"]) {
+  color: var(--cowork-ink);
+  border-color: var(--cowork-line);
+  border-radius: var(--cowork-card-radius);
+  background: var(--cowork-surface);
+  box-shadow: var(--cowork-dialog-shadow);
+}
+
+:root body :is([data-cowork-dialog], [data-confirm-dialog]) :is(h2, h3),
+:root body [data-slot="dialog-title"] {
+  font-size: 17px;
+  line-height: 24px;
+}
+
+/* Conversation controls and document frames follow the page surfaces. */
+:root body :is([data-chat-surface], [data-artifact-preview-surface], [data-browser-surface]) {
+  color: var(--cowork-ink);
+  background: var(--cowork-canvas);
+}
+
+:root body :is([data-conversation-header], [data-artifact-preview-header], [data-browser-surface] > header) {
+  color: var(--cowork-ink);
+  border-color: var(--cowork-line);
+  background: var(--cowork-surface);
+}
+
+:root body [data-conversation-summary] {
+  color: var(--cowork-ink);
+  border-color: var(--cowork-line);
+  border-radius: var(--cowork-card-radius);
+  background: var(--cowork-surface);
+  box-shadow: var(--cowork-shadow);
+}
+
+:root body [data-summary-section] {
+  border-color: var(--cowork-line);
+}
+
+:root body [data-chat-surface] [data-codex-composer-shell] [data-composer-action] {
+  color: var(--cowork-text);
+}
+
+:root body [data-browser-frame] {
+  background: var(--cowork-canvas);
+}
+
+.cowork-code-block {
+  border: 1px solid var(--cowork-line);
+}
+
+.cowork-code {
+  color: var(--cowork-ink);
+  background: var(--cowork-panel);
+  font-family: var(--font-mono);
+  font-variant-ligatures: none;
+  tab-size: 2;
+}
+
+.cowork-code code {
+  color: inherit;
+  background: transparent;
+  font-family: inherit;
+}
+
+.cowork-code .token:is(.comment, .prolog, .doctype, .cdata) { color: var(--cowork-muted); }
+.cowork-code .token:is(.punctuation, .operator, .entity, .url) { color: var(--cowork-text); }
+.cowork-code .token:is(.keyword, .atrule, .tag, .selector) { color: var(--cowork-code-keyword); }
+.cowork-code .token:is(.string, .char, .attr-value, .builtin, .inserted) { color: var(--cowork-code-string); }
+.cowork-code .token:is(.function, .class-name, .attr-name) { color: var(--cowork-code-function); }
+.cowork-code .token:is(.number, .boolean, .constant, .symbol, .regex, .variable) { color: var(--cowork-code-number); }
+.cowork-code .token.deleted { color: var(--destructive); }
+.cowork-code .token.bold { font-weight: 700; }
+.cowork-code .token.italic { font-style: italic; }
+
+.cowork-code-toolbar {
+  color: var(--cowork-text);
+  background: var(--cowork-surface);
+  border-top: 1px solid var(--cowork-line);
+}
+
+.cowork-code-fade {
+  background: linear-gradient(0deg, var(--cowork-panel), transparent);
+}
+
+.cowork-code-expand {
+  color: var(--cowork-blue);
+  background: var(--cowork-surface);
+  border: 1px solid var(--cowork-line);
+}
+
+.cowork-code-block button:hover {
+  color: var(--cowork-blue);
+  background: var(--cowork-hover);
+}
+
+:root body [data-onboarding-surface]::before {
+  opacity: .08;
+}
+
+:root body [data-onboarding-surface] h1 {
+  font-size: 22px;
+  line-height: 32px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--cowork-muted) 30%, transparent);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--cowork-muted) 50%, transparent);
+}
+
+@media (max-width: 1000px) {
+  :root body [data-settings-sidebar] {
+    width: 160px;
+  }
+}

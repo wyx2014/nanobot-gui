@@ -7,7 +7,6 @@ import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import MarkdownRenderer from '@/components/chat/MarkdownRenderer';
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import {
   ArrowLeft,
   Check,
@@ -221,7 +220,7 @@ export default function PreviewPanel() {
   if (!previewArtifact) return null;
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[#f5f3ee] dark:bg-[#202020]">
+    <div data-artifact-preview-surface className="flex h-full min-h-0 flex-col bg-[#f5f3ee] dark:bg-[#202020]">
       {/* Share the renderer title-bar row with the conversation header. */}
       <div
         data-artifact-preview-header
@@ -381,7 +380,7 @@ export default function PreviewPanel() {
               alt={fileName}
               className="mx-auto block max-w-full rounded-lg border border-[#d9d5cc] object-contain"
               style={{
-                background: 'repeating-conic-gradient(#f7f5f0 0% 25%, #e7e3db 0% 50%) 0 0 / 20px 20px',
+                background: 'repeating-conic-gradient(var(--cowork-surface) 0% 25%, var(--cowork-disabled) 0% 50%) 0 0 / 20px 20px',
               }}
             />
           </div>
@@ -398,7 +397,8 @@ export default function PreviewPanel() {
         ) : rendererType === 'code' && content !== null ? (
           <ScrollArea className="h-full bg-[#fbfaf7]">
             <SyntaxHighlighter
-              style={oneLight}
+              useInlineStyles={false}
+              className="cowork-code"
               language={getLanguage(previewArtifact.name)}
               showLineNumbers
               customStyle={{
@@ -407,9 +407,9 @@ export default function PreviewPanel() {
                 padding: '22px 26px',
                 fontSize: '12.5px',
                 lineHeight: 1.55,
-                background: '#fbfaf7',
+                background: 'var(--cowork-canvas)',
               }}
-              lineNumberStyle={{ minWidth: '2.5em', paddingRight: '0.75em', color: '#aaa69c' }}
+              lineNumberStyle={{ minWidth: '2.5em', paddingRight: '0.75em', color: 'var(--cowork-muted)' }}
             >
               {content}
             </SyntaxHighlighter>

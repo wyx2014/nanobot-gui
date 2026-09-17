@@ -1,0 +1,360 @@
+/* Shared palette for the desktop, full-page views, and portalled dialogs. */
+:root {
+  color-scheme: light;
+  --cowork-card-radius: 16px;
+  --cowork-control-radius: 8px;
+  --cowork-content-padding: 24px;
+  --cowork-ink: #0b1744;
+  --cowork-text: #36558b;
+  --cowork-muted: #7186ad;
+  --cowork-blue: #2983ff;
+  --cowork-action: #2983ff;
+  --cowork-action-hover: #1875ee;
+  --cowork-action-active: #1068d8;
+  --cowork-line: #d8e5f8;
+  --cowork-hover: #e8f0fc;
+  --cowork-selected: #dfeaff;
+  --cowork-selected-hover: #d2e3ff;
+  --cowork-canvas: #f5f9ff;
+  --cowork-surface: #ffffff;
+  --cowork-panel: #edf4ff;
+  --cowork-control: #ffffff;
+  --cowork-disabled: #d6e1f2;
+  --cowork-code-keyword: #7445b5;
+  --cowork-code-string: #216448;
+  --cowork-code-function: #205fb5;
+  --cowork-code-number: #9a5b14;
+  --cowork-page-wash: linear-gradient(145deg, #eaf3ff 0%, #f7faff 42%, #f3f8ff 100%);
+  --cowork-shadow: 0 6px 24px #315f9a0a, 0 1px 3px #315f9a08;
+  --cowork-dialog-shadow: 0 24px 90px #173b6c26, 0 2px 10px #173b6c0d;
+  --cowork-backdrop: #16375c2e;
+  --cowork-welcome-art: url('../assets/cowork-background-light.png');
+
+  --claude-bg: var(--cowork-canvas);
+  --claude-surface: var(--cowork-panel);
+  --claude-elevated: var(--cowork-surface);
+  --claude-text-100: var(--cowork-ink);
+  --claude-text-200: var(--cowork-ink);
+  --claude-text-400: var(--cowork-text);
+  --claude-text-500: var(--cowork-muted);
+  --claude-border: var(--cowork-line);
+  --claude-border-strong: var(--cowork-blue);
+  --claude-clay: var(--cowork-blue);
+  --placeholder-foreground: var(--cowork-muted);
+
+  --background: var(--cowork-canvas);
+  --foreground: var(--cowork-ink);
+  --card: var(--cowork-surface);
+  --card-foreground: var(--cowork-ink);
+  --popover: var(--cowork-surface);
+  --popover-foreground: var(--cowork-ink);
+  --primary: var(--cowork-action);
+  --primary-foreground: #ffffff;
+  --secondary: var(--cowork-panel);
+  --secondary-foreground: var(--cowork-text);
+  --muted: var(--cowork-panel);
+  --muted-foreground: var(--cowork-muted);
+  --accent: var(--cowork-hover);
+  --accent-foreground: var(--cowork-ink);
+  --destructive: #dc2626;
+  --border: var(--cowork-line);
+  --input: var(--cowork-line);
+  --ring: var(--cowork-blue);
+  --sidebar: var(--cowork-panel);
+  --sidebar-foreground: var(--cowork-ink);
+  --sidebar-primary: var(--cowork-blue);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: var(--cowork-selected);
+  --sidebar-accent-foreground: var(--cowork-ink);
+  --sidebar-border: var(--cowork-line);
+  --sidebar-ring: var(--cowork-blue);
+}
+
+/* Only the palette changes; every shared surface keeps the same hierarchy. */
+:root.dark {
+  color-scheme: dark;
+  --cowork-ink: #e4edff;
+  --cowork-text: #b0c3e4;
+  --cowork-muted: #849abb;
+  --cowork-blue: #6aa8ff;
+  --cowork-action: #3887f5;
+  --cowork-action-hover: #529aff;
+  --cowork-action-active: #2f78df;
+  --cowork-line: #2d405d;
+  --cowork-hover: #253854;
+  --cowork-selected: #233f66;
+  --cowork-selected-hover: #2c4c76;
+  --cowork-canvas: #121d30;
+  --cowork-surface: #1b2a40;
+  --cowork-panel: #17263b;
+  --cowork-control: #142237;
+  --cowork-disabled: #354762;
+  --cowork-code-keyword: #c6a6f2;
+  --cowork-code-string: #a4d7ac;
+  --cowork-code-function: #9cc5ff;
+  --cowork-code-number: #edbd80;
+  --cowork-page-wash: linear-gradient(145deg, #1a2d49 0%, #142237 45%, #121d30 100%);
+  --cowork-shadow: 0 6px 24px #050d191a, 0 1px 3px #050d1924;
+  --cowork-dialog-shadow: 0 24px 90px #030a1866, 0 2px 10px #030a1840;
+  --cowork-backdrop: #050e2099;
+  --cowork-welcome-art: url('../assets/cowork-background-dark.png');
+  --destructive: #f87171;
+}
+
+:root body,
+:root #root {
+  color: var(--cowork-ink);
+  background: var(--cowork-canvas);
+}
+
+/* Bridge legacy palette utilities to the shared tokens. These selectors keep
+   status colours and artwork intact and also reach menus rendered in portals. */
+/* Legacy utility mappings. */
+:root body :is(
+  [class~="bg-[#202020]"], [class~="bg-[#29261b]"], [class~="bg-[#292722]"],
+  [class~="bg-[#d97757]"]
+) { background-color: var(--cowork-action); }
+
+:root body :is(
+  [class~="hover:bg-[#171613]"], [class~="hover:bg-[#29261b]"], [class~="hover:bg-[#333]"],
+  [class~="hover:bg-[#3a3628]"], [class~="hover:bg-[#3d3929]"], [class~="hover:bg-[#3d3a2f]"],
+  [class~="hover:bg-[#403c2d]"], [class~="hover:bg-[#423d32]"], [class~="hover:bg-[#423e31]"],
+  [class~="hover:bg-[#c4684a]"], [class~="hover:bg-[#c66646]"], [class~="hover:bg-[#c86647]"],
+  [class~="hover:bg-[#c8664a]"], [class~="hover:bg-[#c86a4d]"], [class~="hover:bg-[#c96747]"]
+):not(:disabled):hover { background-color: var(--cowork-action-hover); }
+
+:root body :is(
+  [class~="bg-[#faf8f5]"], [class~="bg-[#faf9f5]"], [class~="bg-[#faf9f6]"],
+  [class~="bg-[#faf9f7]"], [class~="bg-[#fbfaf7]"], [class~="bg-[#fbfaf7]/80"],
+  [class~="bg-[#fbfaf7]/90"], [class~="bg-[#fbfaf7]/95"], [class~="bg-[#fbfaf7]/96"],
+  [class~="bg-neutral-50"], [class~="bg-neutral-50/50"]
+) { background-color: var(--cowork-canvas); }
+
+:root body :is(
+  [class~="bg-[#8b887c]"], [class~="bg-[#aaa69c]"], [class~="bg-[#bdbdbd]"],
+  [class~="bg-[#c9c6c0]"], [class~="bg-[#d4d1c9]"], [class~="bg-[#d8d3c9]"],
+  [class~="bg-[#d8d8d8]"], [class~="bg-[#deddd9]"], [class~="bg-[#e3e0d9]"],
+  [class~="bg-[#e3e0da]"], [class~="bg-neutral-200"], [class~="bg-neutral-300"]
+) { background-color: var(--cowork-disabled); }
+
+:root body :is(
+  [class~="hover:bg-[#ddd9d0]"], [class~="hover:bg-[#dedbd3]"], [class~="hover:bg-[#e5e2db]"],
+  [class~="hover:bg-[#e7e4de]"], [class~="hover:bg-[#e8e5de]"], [class~="hover:bg-[#e8e5de]/60"],
+  [class~="hover:bg-[#e8e6e1]"], [class~="hover:bg-[#e9e9e9]"], [class~="hover:bg-[#e9e9ea]"],
+  [class~="hover:bg-[#eae7e0]"], [class~="hover:bg-[#ebe8e1]"], [class~="hover:bg-[#ebe9e4]"],
+  [class~="hover:bg-[#ece9e3]"], [class~="hover:bg-[#edeae4]"], [class~="hover:bg-[#eeece8]"],
+  [class~="hover:bg-[#eeeeea]"], [class~="hover:bg-[#efede8]"], [class~="hover:bg-[#efede9]"],
+  [class~="hover:bg-[#efeeeb]"], [class~="hover:bg-[#f0ede6]"], [class~="hover:bg-[#f0ede7]"],
+  [class~="hover:bg-[#f1f1ef]"], [class~="hover:bg-[#f1f1f1]"], [class~="hover:bg-[#f1f1f2]"],
+  [class~="hover:bg-[#f2eee6]"], [class~="hover:bg-[#f2efea]"], [class~="hover:bg-[#f3f0ea]"],
+  [class~="hover:bg-[#f3f1eb]"], [class~="hover:bg-[#f3f1ed]"], [class~="hover:bg-[#f4f4f2]"],
+  [class~="hover:bg-[#f5f3ee]"], [class~="hover:bg-[#f5f4f2]"],
+  [class~="hover:bg-[#f5f5f5]"], [class~="hover:bg-[#f8f6f2]"],
+  [class~="hover:bg-[#faf8f4]"], [class~="hover:bg-[#faf8f5]"], [class~="hover:bg-[#fbfaf7]"],
+  [class~="hover:bg-[#fcfbfa]"], [class~="hover:bg-neutral-100"], [class~="hover:bg-neutral-200"],
+  [class~="hover:bg-neutral-50"], [class~="hover:bg-white/50"]
+):not(:disabled):hover { background-color: var(--cowork-hover); }
+
+:root body :is(
+  [class~="hover:bg-[#d97757]/10"], [class~="hover:bg-[#d97757]/15"],
+  [class~="hover:bg-[#d97757]/20"], [class~="hover:bg-[#f6ddd4]"]
+):not(:disabled):hover { background-color: var(--cowork-selected-hover); }
+
+:root body :is(
+  [class~="focus:bg-[#ece9e3]"]
+):focus { background-color: var(--cowork-panel); }
+
+:root body :is(
+  [class~="focus-visible:bg-[#e7e4de]"], [class~="focus-visible:bg-[#f5f3ee]"]
+):focus-visible { background-color: var(--cowork-panel); }
+
+:root body :is(
+  [class~="bg-[#e7e7e8]"], [class~="bg-[#e8e4dd]"], [class~="bg-[#e8e5de]"],
+  [class~="bg-[#e8e5de]/50"], [class~="bg-[#e9e7e2]"], [class~="bg-[#ecebe7]"],
+  [class~="bg-[#ececee]"], [class~="bg-[#edeae4]"], [class~="bg-[#eee9df]"],
+  [class~="bg-[#eeece6]"], [class~="bg-[#eeece8]"], [class~="bg-[#eeeeea]"],
+  [class~="bg-[#efede8]"], [class~="bg-[#efeeeb]"], [class~="bg-[#efefef]"],
+  [class~="bg-[#f0ede7]"], [class~="bg-[#f0ede8]"], [class~="bg-[#f0eee8]"],
+  [class~="bg-[#f0eeea]"], [class~="bg-[#f0efeb]"], [class~="bg-[#f0efec]"],
+  [class~="bg-[#f0f0ee]"], [class~="bg-[#f1eee8]"], [class~="bg-[#f1efe9]"],
+  [class~="bg-[#f1efeb]"], [class~="bg-[#f1f1f0]"], [class~="bg-[#f1f1f2]"],
+  [class~="bg-[#f1f5f1]"], [class~="bg-[#f2efe9]"], [class~="bg-[#f2f0eb]"],
+  [class~="bg-[#f2f2f3]"], [class~="bg-[#f3eee8]"], [class~="bg-[#f3eee9]"],
+  [class~="bg-[#f3efea]"], [class~="bg-[#f3f2ee]"], [class~="bg-[#f3f2f0]"],
+  [class~="bg-[#f3f3f2]"], [class~="bg-[#f4f1e8]"], [class~="bg-[#f4f3f1]"],
+  [class~="bg-[#f5eee9]"], [class~="bg-[#f5f2ec]"], [class~="bg-[#f5f2ed]"],
+  [class~="bg-[#f5f3ee]"], [class~="bg-[#f6f3ef]"], [class~="bg-[#f7e8df]"],
+  [class~="bg-[#f8e7df]"], [class~="bg-[#fbe9e3]"],
+  [class~="bg-[#fff0e9]"], [class~="bg-[#fff1e8]"], [class~="bg-neutral-100"],
+  [class~="bg-neutral-100/80"], [class~="bg-neutral-200/60"]
+) { background-color: var(--cowork-panel); }
+
+:root body :is(
+  [class~="bg-[#d97757]/10"], [class~="bg-[#d97757]/12"],
+  [class~="bg-[#d97757]/14"], [class~="bg-[#d97757]/15"], [class~="bg-[#d97757]/20"],
+  [class~="bg-[#d97757]/5"], [class~="bg-[#d97757]/8"]
+) { background-color: var(--cowork-selected); }
+
+:root body [class~="bg-[#29261b]/85"] {
+  background-color: color-mix(in srgb, var(--cowork-action) 85%, transparent);
+}
+
+:root body :is(
+  [class~="bg-[#f7f5f1]"], [class~="bg-[#f7f6f3]"], [class~="bg-[#f7f7f8]"],
+  [class~="bg-[#f7fbf8]"], [class~="bg-[#faf9fd]"], [class~="bg-[#fcfbfa]"],
+  [class~="bg-[#fcfcfc]"], [class~="bg-[#fdfdfc]"], [class~="bg-[#fff7f1]"],
+  [class~="bg-[#fff9f6]"], [class~="bg-[#fffaf0]"], [class~="bg-[#fffdf8]"],
+  [class~="bg-[#fffefa]"], [class~="bg-white"], [class~="bg-white/50"],
+  [class~="bg-white/55"], [class~="bg-white/65"], [class~="bg-white/70"],
+  [class~="bg-white/80"], [class~="bg-white/90"]
+) { background-color: var(--cowork-surface); }
+
+:root body :is(
+  [class~="focus:border-[#d97757]"]
+):focus { border-color: var(--cowork-blue); }
+
+:root body :is(
+  [class~="hover:border-[#d97757]/40"]
+):not(:disabled):hover { border-color: var(--cowork-blue); }
+
+:root body :is(
+  [class~="border-[#d97757]"], [class~="border-[#d97757]/30"]
+) { border-color: var(--cowork-blue); }
+
+:root body :is(
+  [class~="hover:border-[#c9c6c0]"], [class~="hover:border-[#d0cdc6]"],
+  [class~="hover:border-[#d4d0c8]"], [class~="hover:border-[#d8c9bd]"], [class~="hover:border-[#d8d2c7]"],
+  [class~="hover:border-[#d9d3c9]"], [class~="hover:border-[#e3dfd7]"]
+):not(:disabled):hover { border-color: var(--cowork-line); }
+
+:root body [class~="hover:border-[#171613]"]:not(:disabled):hover {
+  border-color: var(--cowork-action-hover);
+}
+
+:root body :is(
+  [class~="border-[#292722]"], [class~="border-[#333]"], [class~="border-[#8b887c]/20"],
+  [class~="border-[#8b887c]/30"], [class~="border-[#aaa69c]"], [class~="border-[#bbb7ad]"],
+  [class~="border-[#d2c9ba]"], [class~="border-[#d4d0c7]"], [class~="border-[#d5d2c9]"],
+  [class~="border-[#d5d3ce]"], [class~="border-[#d7d3ca]"], [class~="border-[#d7d4cd]"],
+  [class~="border-[#d8d3cb]"], [class~="border-[#d8d4ca]"], [class~="border-[#d8d4cb]/80"],
+  [class~="border-[#d9d5cc]"], [class~="border-[#dcd8d0]"], [class~="border-[#dcdad5]"],
+  [class~="border-[#dce9df]"], [class~="border-[#ddd8cd]"], [class~="border-[#ddd9d0]"],
+  [class~="border-[#ded9ce]/80"], [class~="border-[#ded9d0]"], [class~="border-[#dedad1]"],
+  [class~="border-[#dedad2]"], [class~="border-[#dedbd3]"], [class~="border-[#dfddd8]"],
+  [class~="border-[#e1dfdb]"], [class~="border-[#e2ded6]"], [class~="border-[#e2e0ec]"],
+  [class~="border-[#e3e3e5]"], [class~="border-[#e4e0d8]/70"], [class~="border-[#e4e4e6]"],
+  [class~="border-[#e5ded4]"], [class~="border-[#e5e0d7]"], [class~="border-[#e5e2db]"],
+  [class~="border-[#e5e3df]"], [class~="border-[#e5e4e1]"], [class~="border-[#e5e5e5]"],
+  [class~="border-[#e6e0d7]"], [class~="border-[#e6e1d8]"], [class~="border-[#e6e2da]"],
+  [class~="border-[#e7d7cc]"], [class~="border-[#e7e1d8]"], [class~="border-[#e7e5e1]"],
+  [class~="border-[#e8e4dd]"], [class~="border-[#e8e5de]"], [class~="border-[#e8e5de]/60"],
+  [class~="border-[#e8e5df]"], [class~="border-[#e8e6e1]"], [class~="border-[#e9e5de]"],
+  [class~="border-[#e9e8e5]"], [class~="border-[#ebe7df]"], [class~="border-[#ebe7df]/70"],
+  [class~="border-[#ebe7df]/75"], [class~="border-[#ebe7df]/80"], [class~="border-[#ebe7df]/90"],
+  [class~="border-[#ece8e2]"], [class~="border-[#eceae6]"], [class~="border-[#eee9e2]"],
+  [class~="border-[#eeeae1]"], [class~="border-[#eeeae3]"], [class~="border-[#eeece9]"],
+  [class~="border-[#eeeeef]"], [class~="border-[#efede9]"], [class~="border-[#f0ede6]"],
+  [class~="border-[#f0ede7]"], [class~="border-[#fbfaf7]"], [class~="border-black/10"],
+  [class~="border-black/5"], [class~="border-neutral-100"], [class~="border-neutral-200"],
+  [class~="border-neutral-300"]
+) { border-color: var(--cowork-line); }
+
+:root body :is(
+  [class~="focus-visible:outline-[#d97757]"]
+):focus-visible { outline-color: var(--cowork-blue); }
+
+:root body :is(
+  [class~="focus:ring-[#d97757]/30"]
+):focus { --tw-ring-color: var(--cowork-blue); }
+
+:root body :is(
+  [class~="focus-visible:ring-[#d97757]/30"], [class~="focus-visible:ring-[#d97757]/35"], [class~="focus-visible:ring-[#d97757]/40"]
+):focus-visible { --tw-ring-color: var(--cowork-blue); }
+
+:root body :is(
+  [class~="ring-[#d97757]/20"], [class~="ring-[#d97757]/30"]
+) { --tw-ring-color: var(--cowork-blue); }
+
+:root body :is(
+  [class~="focus-visible:ring-[#aaa7a0]/40"], [class~="focus-visible:ring-[#aaa7a0]/45"]
+):focus-visible { --tw-ring-color: var(--cowork-line); }
+
+:root body :is(
+  [class~="ring-[#e5e2db]"], [class~="ring-[#f0c9bb]"], [class~="ring-[#f5f3ee]"]
+) { --tw-ring-color: var(--cowork-line); }
+
+:root body :is(
+  [class~="hover:text-[#bd6247]"], [class~="hover:text-[#c5684a]"],
+  [class~="hover:text-[#c96a45]"], [class~="hover:text-[#d97757]"]
+):not(:disabled):hover { color: var(--cowork-action-hover); }
+
+:root body :is(
+  [class~="text-[#a65034]"], [class~="text-[#a85a40]"], [class~="text-[#b65f41]"],
+  [class~="text-[#b76043]"], [class~="text-[#b85c3d]"], [class~="text-[#b85f43]"],
+  [class~="text-[#b96346]"], [class~="text-[#bd6243]"], [class~="text-[#bf694b]"],
+  [class~="text-[#c26f4f]"], [class~="text-[#c56c4d]"], [class~="text-[#d97757]"]
+) { color: var(--cowork-blue); }
+
+:root body :is(
+  [class~="hover:text-[#202020]"], [class~="hover:text-[#29261b]"], [class~="hover:text-[#34322d]"],
+  [class~="hover:text-[#3d3929]"], [class~="hover:text-[#3d392f]"], [class~="hover:text-[#4b483f]"],
+  [class~="hover:text-[#555148]"]
+):not(:disabled):hover { color: var(--cowork-ink); }
+
+:root body :is(
+  [class~="text-[#161616]"], [class~="text-[#191814]"], [class~="text-[#202020]"],
+  [class~="text-[#222]"], [class~="text-[#242424]"], [class~="text-[#272725]"],
+  [class~="text-[#28251d]"], [class~="text-[#29261b]"], [class~="text-[#292929]"],
+  [class~="text-[#30302e]"], [class~="text-[#342f2b]"], [class~="text-[#34312b]"],
+  [class~="text-[#34322d]"], [class~="text-[#36332d]"], [class~="text-[#38342c]"],
+  [class~="text-[#38352e]"], [class~="text-[#3a372f]"], [class~="text-[#3d3929]"],
+  [class~="text-[#3d392f]"], [class~="text-[#403a35]"], [class~="text-[#403b2f]"],
+  [class~="text-[#474238]"], [class~="text-[#49453c]"], [class~="text-[#4b483f]"],
+  [class~="text-[#4b4943]"], [class~="text-[#4b4b4b]"], [class~="text-[#4d4a42]"],
+  [class~="text-[#514d43]"], [class~="text-[#55524b]"], [class~="text-[#555]"],
+  [class~="text-[#56534c]"], [class~="text-[#595854]"], [class~="text-[#5d5751]"],
+  [class~="text-[#5d584f]"], [class~="text-[#5d5b57]"], [class~="text-[#5f5a50]"],
+  [class~="text-[#5f5c54]"], [class~="text-black"], [class~="text-neutral-700"],
+  [class~="text-neutral-800"], [class~="text-neutral-900"]
+) { color: var(--cowork-ink); }
+
+:root body :is(
+  [class~="text-[#8d8d8d]"], [class~="text-[#909096]"], [class~="text-[#928d83]"],
+  [class~="text-[#969187]"], [class~="text-[#969188]"], [class~="text-[#98958d]"],
+  [class~="text-[#98958e]"], [class~="text-[#99958c]"], [class~="text-[#999]"],
+  [class~="text-[#9a9689]"], [class~="text-[#9a968c]"], [class~="text-[#9a968d]"],
+  [class~="text-[#9a9790]"], [class~="text-[#9b978d]"], [class~="text-[#a09b91]"],
+  [class~="text-[#a1a1a9]"], [class~="text-[#a8a49a]"], [class~="text-[#a8a59d]"],
+  [class~="text-[#aaa59a]"], [class~="text-[#aaa69b]"], [class~="text-[#aaa69c]"],
+  [class~="text-[#aaa69d]"], [class~="text-[#aaa69e]"], [class~="text-[#aaa]"],
+  [class~="text-[#b0ac9f]"], [class~="text-[#b0aca3]"], [class~="text-[#b4b0a6]"],
+  [class~="text-[#b8b5ab]"], [class~="text-[#d8dbd4]"], [class~="text-neutral-300"],
+  [class~="text-neutral-400"]
+) { color: var(--cowork-muted); }
+
+:root body :is(
+  [class~="hover:text-[#656358]"]
+):not(:disabled):hover { color: var(--cowork-text); }
+
+:root body :is(
+  [class~="text-[#5f5d57]"], [class~="text-[#5f5d59]"], [class~="text-[#625f55]"],
+  [class~="text-[#625f57]"], [class~="text-[#656158]"], [class~="text-[#656358]"],
+  [class~="text-[#656358]/50"], [class~="text-[#66645f]"], [class~="text-[#67676d]"],
+  [class~="text-[#6b685e]"], [class~="text-[#6d695f]"], [class~="text-[#6e706f]"],
+  [class~="text-[#6f6758]"], [class~="text-[#6f6b60]"], [class~="text-[#6f6d68]"],
+  [class~="text-[#6f6f73]"], [class~="text-[#70675f]"], [class~="text-[#706d63]"],
+  [class~="text-[#737278]"], [class~="text-[#746b63]"], [class~="text-[#746f65]"],
+  [class~="text-[#76767c]"], [class~="text-[#777267]"], [class~="text-[#777368]"],
+  [class~="text-[#77736a]"], [class~="text-[#77736b]"], [class~="text-[#77746b]"],
+  [class~="text-[#77746e]"], [class~="text-[#77777d]"], [class~="text-[#777]"],
+  [class~="text-[#78777c]"], [class~="text-[#78787e]"], [class~="text-[#7a6658]"],
+  [class~="text-[#7a7568]"], [class~="text-[#7d796f]"], [class~="text-[#81776f]"],
+  [class~="text-[#817b70]"], [class~="text-[#85837e]"], [class~="text-[#858581]"],
+  [class~="text-[#888579]"], [class~="text-[#88857b]"], [class~="text-[#8a7452]"],
+  [class~="text-[#8a827a]"], [class~="text-[#8a867c]"], [class~="text-[#8b8578]"],
+  [class~="text-[#8b877d]"], [class~="text-[#8b877e]"], [class~="text-[#8b887c]"],
+  [class~="text-[#8b887c]/70"], [class~="text-[#8b887c]/75"], [class~="text-[#8b8985]"],
+  [class~="text-[#8c664f]"], [class~="text-[#8c877d]"], [class~="text-[#8c8982]"],
+  [class~="text-[#8d897f]"], [class~="text-gray-500"], [class~="text-gray-600"],
+  [class~="text-neutral-500"], [class~="text-neutral-600"]
+) { color: var(--cowork-text); }

@@ -1,12 +1,12 @@
 .settings-page {
-  --settings-page-text: #202020;
-  --settings-page-secondary: #6f6f73;
-  --settings-page-muted: #85858b;
-  --settings-page-row: #f7f7f8;
-  --settings-page-hover: #eeeef0;
-  --settings-page-line: #e5e5e7;
-  --settings-page-control: #fff;
-  --settings-page-primary: #202020;
+  --settings-page-text: var(--cowork-ink);
+  --settings-page-secondary: var(--cowork-text);
+  --settings-page-muted: var(--cowork-muted);
+  --settings-page-row: var(--cowork-surface);
+  --settings-page-hover: var(--cowork-hover);
+  --settings-page-line: var(--cowork-line);
+  --settings-page-control: var(--cowork-control);
+  --settings-page-primary: var(--cowork-action);
   --settings-page-primary-text: #fff;
   width: 100%;
   color: var(--settings-page-text);
@@ -16,20 +16,8 @@
   letter-spacing: 0;
 }
 
-.dark .settings-page {
-  --settings-page-text: #f2eee6;
-  --settings-page-secondary: #aaa8a2;
-  --settings-page-muted: #85817a;
-  --settings-page-row: #262626;
-  --settings-page-hover: #323232;
-  --settings-page-line: #3c3c3c;
-  --settings-page-control: #1e1e1e;
-  --settings-page-primary: #ece8e1;
-  --settings-page-primary-text: #202020;
-}
-
 .settings-page-stack { display: flex; flex-direction: column; gap: 24px; padding-block: 4px; }
-.settings-page-row { min-height: 76px; padding: 14px 16px; border-radius: 6px; background: var(--settings-page-row); }
+.settings-page-row { min-height: 76px; padding: 14px 16px; border: 1px solid var(--settings-page-line); border-radius: 12px; background: var(--settings-page-row); box-shadow: var(--cowork-shadow); }
 .settings-page-title { color: var(--settings-page-text); font-family: inherit; font-size: 15px; font-weight: 600; line-height: 22px; letter-spacing: 0; }
 .settings-page-secondary, .settings-page-copy { color: var(--settings-page-secondary); }
 .settings-page-copy { font-size: 13px; line-height: 20px; }
@@ -41,14 +29,18 @@
 /* Match the settings action palette while keeping the shared controls' sizing. */
 .settings-page [data-slot="button"] { letter-spacing: 0; }
 .settings-page [data-slot="button"][data-variant="default"] { background: var(--settings-page-primary); color: var(--settings-page-primary-text); }
-.settings-page [data-slot="button"][data-variant="default"]:hover { opacity: 0.85; }
+.settings-page [data-slot="button"][data-variant="default"]:not(:disabled):hover { background: var(--cowork-action-hover); }
+.settings-page [data-slot="button"][data-variant="default"]:not(:disabled):active { background: var(--cowork-action-active); }
 .settings-page [data-slot="button"][data-variant="outline"] { background: var(--settings-page-control); border-color: var(--settings-page-line); color: var(--settings-page-text); }
 .settings-page [data-slot="button"][data-variant="ghost"] { color: var(--settings-page-secondary); }
-.settings-page [data-slot="button"]:is([data-variant="outline"], [data-variant="ghost"]):hover { background: var(--settings-page-hover); }
+.settings-page [data-slot="button"]:is([data-variant="outline"], [data-variant="ghost"]):not(:disabled):hover { background: var(--settings-page-hover); }
+.settings-page [data-slot="button"]:is([data-variant="outline"], [data-variant="ghost"]):not(:disabled):active { background: var(--cowork-selected); }
 .settings-page [data-slot="button"].settings-action-danger { color: #dc2626; }
-.settings-page [data-slot="button"].settings-action-danger:hover { background: #fef2f2; color: #b91c1c; }
+.settings-page [data-slot="button"].settings-action-danger:not(:disabled):hover { background: #fef2f2; color: #b91c1c; }
+.settings-page [data-slot="button"].settings-action-danger:not(:disabled):active { background: #fee2e2; color: #991b1b; }
 .dark .settings-page [data-slot="button"].settings-action-danger { color: #f87171; }
-.dark .settings-page [data-slot="button"].settings-action-danger:hover { background: #3b2222; color: #fca5a5; }
+.dark .settings-page [data-slot="button"].settings-action-danger:not(:disabled):hover { background: #3b2222; color: #fca5a5; }
+.dark .settings-page [data-slot="button"].settings-action-danger:not(:disabled):active { background: #4c2424; color: #fecaca; }
 
 .settings-page-alert { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; padding: 12px 14px; border: 1px solid #f1d99b; border-radius: 8px; background: #fffbeb; color: #92400e; font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
 .dark .settings-page-alert { border-color: #66502c; background: #30291e; color: #e5c78f; }

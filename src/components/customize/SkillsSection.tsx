@@ -9,6 +9,9 @@ import { fetchSkillDetail, fetchSkills, runSkillAction, saveSkill } from '@/core
 import { getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/nanobotClient';
 import { fetchPromptHubSkills, publishPromptHubSkill } from '@/core/prompthubApi';
 import { displaySkillName } from '@/core/skills/filter';
+import { skillCatalogCounts } from '@/core/skills/diagnostics';
+import { startDiagnostic } from '@/core/diagnostics';
+import { diagnosticError } from '@/shared/diagnostics';
 import type { NanobotSkillInfo, SkillsPayload } from '@/core/types';
 import { ipc, shellBridge } from '@/lib/ipc-factory';
 import SubTabBar from './SubTabBar';
@@ -17,6 +20,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { normalizeSkillName, SKILL_NAME_RE } from '@/utils/validation';
 import WindowModalBackdrop from '@/components/common/WindowModalBackdrop';
+import CenteredLoadingIndicator from '@/components/common/CenteredLoadingIndicator';
 import {
   AlertCircle,
   FileText,
@@ -47,7 +51,7 @@ function getSkillIcon(name: string) {
     'memory': Brain,
   };
   const IconComponent = iconMap[name.toLowerCase()] || FileText;
-  return <IconComponent className="h-4 w-4" />;
+  return <IconComponent className="h-[18px] w-[18px]" />;
 }
 
 
@@ -125,12 +129,16 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
   const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
+    const operation = startDiagnostic('renderer.skills.toolbox_load');
+    let stage = 'authentication';
     setLoading(true);
     setError(null);
     try {
       const { token, baseUrl } = await getSkillsAuth();
+      stage = 'fetch';
       const next = await fetchSkills(token, baseUrl);
       setPayload(next);
+      operation.finish('completed', skillCatalogCounts(next));
       void refreshDiscovery();
       if (promptHubToken) {
         const hub = await fetchPromptHubSkills(promptHubBaseUrl, promptHubToken);
@@ -139,6 +147,7 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
         setHubSkillNames(new Set());
       }
     } catch (err) {
+      operation.finish('failed', { stage, ...diagnosticError(err) });
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
@@ -322,7 +331,11 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
 
   return (
     <div data-skills-surface className="relative flex h-full flex-col overflow-hidden">
-      <div className="shrink-0 px-4 pt-4 pb-2">
+      <header data-page-section-heading>
+        <h2>{isEnglish ? 'Skills' : '技能'}</h2>
+        <p>{isEnglish ? 'Manage the skills your assistant uses for research and everyday work.' : '管理研究与日常办公中使用的技能，按需启用。'}</p>
+      </header>
+      <div data-toolbox-tabs className="shrink-0 px-4 pt-4 pb-2">
         <SubTabBar
           tabs={subTabs}
           activeTab={activeSubTab}
@@ -330,7 +343,7 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
         />
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 pb-4">
+      <div data-toolbox-list-body className="flex-1 overflow-y-auto px-4 pb-4">
         {error && (
           <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
@@ -345,14 +358,14 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
         )}
 
         {loading ? (
-          <div className="flex items-center justify-center gap-2 py-12 text-sm text-neutral-400">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            {isEnglish ? 'Loading skills' : '正在读取技能'}
-          </div>
+          <CenteredLoadingIndicator
+            label={isEnglish ? 'Loading skills' : '正在读取技能'}
+            className="min-h-[240px]"
+          />
         ) : filtered.length === 0 ? (
           <div className="py-8 text-center text-sm text-neutral-400">{isEnglish ? 'No skills found' : '没有找到技能'}</div>
         ) : (
-          <div className="space-y-2">
+          <div data-toolbox-card-grid className="space-y-2">
             {filtered.map((skill) => {
               const busy = actingName === skill.name;
               return (
@@ -361,19 +374,19 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
                   onClick={() => void openDetail(skill)}
                   data-skill-card
                   data-enabled={skill.enabled ? "true" : "false"}
-                  className="group flex cursor-pointer items-center gap-3 rounded-lg border border-neutral-200/70 bg-white p-3 transition-colors hover:border-neutral-300"
+                  className="group grid cursor-pointer grid-cols-[40px_minmax(0,1fr)_auto] items-start gap-x-3 rounded-lg border border-neutral-200/70 bg-white p-3 transition-colors hover:border-neutral-300"
                 >
                   <div data-skill-icon className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-500">
                     {getSkillIcon(skill.name)}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span data-skill-name className="truncate text-sm font-medium text-neutral-900">/{displaySkillName(skill.name)}</span>
-                      <span data-skill-source={skill.source} className={`rounded border px-1.5 py-0.5 text-[10px] ${sourceClass(skill.source)}`}>
+                    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                      <span data-skill-name className="min-w-0 text-sm font-medium text-neutral-900">/{displaySkillName(skill.name)}</span>
+                      <span data-skill-source={skill.source} className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] ${sourceClass(skill.source)}`}>
                         {sourceLabel(skill.source, isEnglish)}
                       </span>
                       {!skill.available && (
-                        <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">
+                        <span className="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">
                           {isEnglish ? 'Dependency missing' : '依赖缺失'}
                         </span>
                       )}
@@ -383,39 +396,43 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
                       <p className="mt-1 truncate text-[11px] text-amber-600">{skill.missing}</p>
                     )}
                   </div>
-                  <Toggle
-                    checked={skill.enabled}
-                    onChange={() => void handleToggle(skill)}
-                    disabled={busy}
-                  />
-                  {skill.source === 'workspace' && !hubSkillNames.has(skill.name.toLowerCase()) && (
-                    <button
-                      data-skill-action="upload"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void handleUpload(skill);
-                      }}
+                  <div data-skill-card-controls className="flex h-10 shrink-0 items-center gap-1">
+                    <Toggle
+                      checked={skill.enabled}
+                      onChange={() => void handleToggle(skill)}
                       disabled={busy}
-                      className="shrink-0 rounded p-1.5 text-neutral-400 opacity-0 transition-colors hover:bg-emerald-50 hover:text-emerald-600 group-hover:opacity-100 disabled:opacity-40"
-                      title="上传到技能商店"
-                    >
-                      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
-                    </button>
-                  )}
-                  {skill.source === 'workspace' && (
-                    <button
-                      data-skill-action="delete"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void handleDelete(skill);
-                      }}
-                      disabled={busy}
-                      className="shrink-0 rounded p-1.5 text-neutral-400 opacity-0 transition-colors hover:bg-red-50 hover:text-red-500 group-hover:opacity-100 disabled:opacity-40"
-                      title="删除我的技能"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  )}
+                      size="md"
+                      aria-label={`${displaySkillName(skill.name)} ${skill.enabled ? (isEnglish ? 'enabled' : '已启用') : (isEnglish ? 'disabled' : '已停用')}`}
+                    />
+                    {skill.source === 'workspace' && !hubSkillNames.has(skill.name.toLowerCase()) && (
+                      <button
+                        data-skill-action="upload"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void handleUpload(skill);
+                        }}
+                        disabled={busy}
+                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-neutral-400 opacity-60 transition-colors hover:bg-emerald-50 hover:text-emerald-600 group-hover:opacity-100 disabled:opacity-40"
+                        title="上传到技能商店"
+                      >
+                        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+                      </button>
+                    )}
+                    {skill.source === 'workspace' && (
+                      <button
+                        data-skill-action="delete"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void handleDelete(skill);
+                        }}
+                        disabled={busy}
+                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-neutral-400 opacity-60 transition-colors hover:bg-red-50 hover:text-red-500 group-hover:opacity-100 disabled:opacity-40"
+                        title="删除我的技能"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               );
             })}

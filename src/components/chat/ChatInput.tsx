@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Plus, ArrowUp, Square, X, ChevronDown, Check, File, FileArchive, FileCode2, FileImage, FileSpreadsheet, FileText, FileType2, Folder, CornerDownRight, Pencil, Trash2, GraduationCap, Paperclip, ChevronRight, Puzzle, Globe, Search, BarChart3, Users, Mic, Loader2, Presentation } from 'lucide-react';
+import { Plus, ArrowUp, Square, X, ChevronDown, Check, File, FileArchive, FileCode2, FileImage, FileSpreadsheet, FileText, FileType2, Folder, CornerDownRight, Pencil, Trash2, GraduationCap, Paperclip, ChevronRight, Puzzle, Globe, Search, BarChart3, TrendingUp, Landmark, Users, Mic, Loader2, Presentation, Terminal } from 'lucide-react';
 import ThinkingOrb from '@/components/common/ModalAwareThinkingOrb';
 import ExpertTeamIcon from '@/components/common/ExpertTeamIcon';
-import { dialogBridge, fsBridge, mediaBridge, type WorkspaceFileEntry } from '@/lib/ipc-factory';
+import { dialogBridge, fsBridge, mediaBridge, osBridge, type WorkspaceFileEntry } from '@/lib/ipc-factory';
 import { useFileDragDrop } from '@/hooks/useFileDragDrop';
 import { uint8ArrayToBase64 } from '@/utils/base64';
 import { getBaseName, IMAGE_MIME_MAP, isLocalFilePath } from '@/utils/pathUtils';
@@ -12,14 +12,16 @@ import { DEFAULT_FALLBACK_MODEL, useSettingsStore, getEffectiveModel } from '@/s
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { usePermissionStore } from '@/stores/permissionStore';
 import { useToastStore } from '@/stores/toastStore';
+import { useOfficeGuideStore } from '@/stores/officeGuideStore';
+import OfficeTaskGuide from '@/components/onboarding/OfficeTaskGuide';
 import type { PermissionDuration } from '@/stores/permissionStore';
 import { useI18n } from '@/i18n';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import type { ImageAttachment } from '@/types';
+import type { ImageAttachment, SkillMetadata } from '@/types';
 import type { OutboundCliAppMention, OutboundMcpPresetMention, OutboundSkillScope } from '@/core/types';
 import type { CliAppInfo, ExpertTeamBinding, ExpertTeamSummary, McpPresetInfo, SlashCommand, WorkspaceScopePayload } from '@/core/types';
-import { fetchExpertTeams, fetchMcpPresets } from '@/core/api';
+import { fetchExpertTeams, fetchMcpPresets, fetchSkills } from '@/core/api';
 import {
   getNanobotClient,
   getNanobotStatus,
@@ -49,11 +51,22 @@ import { generateAttachmentId, readFileAsBase64, SUPPORTED_IMAGE_TYPES } from '@
 import PermissionDialog from '@/components/common/PermissionDialog';
 import FolderSelector from '@/components/common/FolderSelector';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
+import { recordDiagnostic } from '@/core/diagnostics';
 import { normalizeProjectPath, projectNameFromPath, visibleProjectPath } from '@/core/workspace';
 import { displaySkillName, filterAvailableSkillNames, stripUnavailableLeadingSkillMentions, usableSkillsForScope } from '@/core/skills/filter';
 import { LOCAL_PATH_CONTEXT_HEADER } from '@/core/nanobot/localFileContext';
 import PresentationPicker from './PresentationPicker';
+import ComposerSelectionChip from './ComposerSelectionChip';
 import { normalizePresentationSelection, type PresentationSelection } from '@/core/presentations';
+import { USER_PROJECTS_DIRECTORY_NAME } from '@/config/appDirectories';
+import { INVESTMENT_WORKSPACE_NAME, RESEARCH_SHORTCUTS, type ResearchShortcutBinding } from './researchShortcuts';
+import {
+  FIXED_INCOME_CONNECTORS,
+  FIXED_INCOME_SHORTCUTS,
+  FIXED_INCOME_WORKSPACE_NAME,
+  type FixedIncomeShortcutBinding,
+} from './fixedIncomeShortcuts';
+import { DATA_ANALYSIS_SHORTCUTS, OFFICE_SHORTCUTS, type WorkspaceTaskBinding } from './workspaceTaskShortcuts';
 import {
   findComposerSuggestionTrigger,
   removeComposerSuggestionTrigger,
@@ -76,12 +89,15 @@ interface ShortcutOption {
   labelEn: string;
   promptZh: string;
   promptEn: string;
+  research?: ResearchShortcutBinding;
+  fixedIncome?: FixedIncomeShortcutBinding;
+  workspaceTask?: WorkspaceTaskBinding;
 }
 
 interface ShortcutCategory {
   id: string;
   icon: any;
-  labelKey: 'shortcutDataAnalysis' | 'shortcutOffice';
+  labelKey: 'shortcutInvestmentAnalysis' | 'shortcutFixedIncome' | 'shortcutDataAnalysis' | 'shortcutOffice';
   options: ShortcutOption[];
 }
 
@@ -91,60 +107,28 @@ function modelDisplayName(model: string): string {
 
 const SHORTCUT_CATEGORIES: ShortcutCategory[] = [
   {
+    id: 'investment-analysis',
+    icon: TrendingUp,
+    labelKey: 'shortcutInvestmentAnalysis',
+    options: RESEARCH_SHORTCUTS,
+  },
+  {
+    id: 'fixed-income',
+    icon: Landmark,
+    labelKey: 'shortcutFixedIncome',
+    options: FIXED_INCOME_SHORTCUTS,
+  },
+  {
     id: 'data-analysis',
     icon: BarChart3,
     labelKey: 'shortcutDataAnalysis',
-    options: [
-      {
-        key: 'spreadsheet_analysis',
-        labelZh: '表格智能分析',
-        labelEn: 'Smart spreadsheet analysis',
-        promptZh: '请帮我智能分析一份表格或数据文件。先提醒我上传文件并确认分析目标；再检查数据质量、识别异常和趋势，提炼关键结论，并给出可执行的业务建议。',
-        promptEn: 'Help me analyze a spreadsheet or data file. First ask me to upload it and confirm the objective, then check data quality, identify anomalies and trends, summarize key findings, and provide actionable recommendations.',
-      },
-      {
-        key: 'metric_comparison',
-        labelZh: '指标查询与对比',
-        labelEn: 'Metric lookup and comparison',
-        promptZh: '请帮我查询并对比关键指标。先确认指标口径、对比对象、时间范围和数据来源；再整理数据、计算变化和差异，并说明可能原因与需关注的信号。',
-        promptEn: 'Help me look up and compare key metrics. First confirm the metric definition, comparison targets, time range, and data sources, then organize the data, calculate changes and differences, and explain likely drivers and signals to watch.',
-      },
-      {
-        key: 'data_summary_charts',
-        labelZh: '数据总结与图表',
-        labelEn: 'Data summaries and charts',
-        promptZh: '请基于我提供的数据制作总结和图表。先确认受众、汇报场景和希望回答的问题；再提炼核心结论，推荐合适图表，并输出可直接用于汇报的图表说明和摘要。',
-        promptEn: 'Create a concise summary and charts from my data. First confirm the audience, reporting context, and questions to answer, then identify the main findings, recommend suitable charts, and produce presentation-ready captions and a summary.',
-      },
-    ],
+    options: DATA_ANALYSIS_SHORTCUTS,
   },
   {
     id: 'office',
     icon: FileText,
     labelKey: 'shortcutOffice',
-    options: [
-      {
-        key: 'draft_material',
-        labelZh: '撰写与润色材料',
-        labelEn: 'Draft and polish materials',
-        promptZh: '请帮我撰写或润色一份工作材料。先询问材料用途、受众、篇幅和语气；如果我已有草稿或参考资料，请提醒我上传或粘贴。',
-        promptEn: 'Help me draft or polish a business document. First ask about its purpose, audience, length, and tone, and remind me to provide any draft or reference files I already have.',
-      },
-      {
-        key: 'meeting_minutes_actions',
-        labelZh: '会议纪要与待办',
-        labelEn: 'Meeting minutes and action items',
-        promptZh: '请帮我整理会议纪要和待办事项。提醒我上传或粘贴会议记录，并按议题、核心观点、决策事项、负责人、截止时间和后续行动形成清晰纪要。',
-        promptEn: 'Help me prepare meeting minutes and action items. Ask me to upload or paste the meeting record, then organize it by agenda item, key points, decisions, owners, due dates, and follow-up actions.',
-      },
-      {
-        key: 'document_summary',
-        labelZh: '文档阅读与总结',
-        labelEn: 'Document reading and summary',
-        promptZh: '请帮我阅读并总结一份文档。提醒我上传文件或粘贴内容，并根据我的用途提炼核心观点、重要数据、风险事项和待办；必要时给出一页式摘要。',
-        promptEn: 'Help me read and summarize a document. Ask me to upload it or paste the content, then extract the key points, important data, risks, and action items for my intended use; provide a one-page brief when useful.',
-      },
-    ],
+    options: OFFICE_SHORTCUTS,
   },
 ];
 
@@ -426,10 +410,12 @@ async function processFilePaths(
 
 export default function ChatInput({ variant, onSend, onStop, isStreaming: isStreamingProp, isStopping = false, disabled, sendDisabled, workspaceScope, onWorkspaceScopeChange }: ChatInputProps) {
   const isWelcome = variant === 'welcome';
+  const officeGuideOpen = useOfficeGuideStore((state) => state.step !== null);
 
   const [text, setText] = useState('');
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const [files, setFiles] = useState<FileAttachmentItem[]>([]);
+  const [pendingFileImports, setPendingFileImports] = useState(0);
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [selectedCliApps, setSelectedCliApps] = useState<OutboundCliAppMention[]>([]);
   const [selectedMcpPresets, setSelectedMcpPresets] = useState<OutboundMcpPresetMention[]>([]);
@@ -464,6 +450,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
 
   const [showPlusMenu, setShowPlusMenu] = useState(false);
   const [activeSubmenu, setActiveSubmenu] = useState<'project' | 'expert-team' | 'skills' | 'connector' | null>(null);
+  const [submenuMaxHeight, setSubmenuMaxHeight] = useState<number>();
   const [expertTeamSearchQuery, setExpertTeamSearchQuery] = useState('');
   const [skillSearchQuery, setSkillSearchQuery] = useState('');
   const [connectorSearchQuery, setConnectorSearchQuery] = useState('');
@@ -474,6 +461,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   const [mcpPresetsUpdating, setMcpPresetsUpdating] = useState(false);
   const plusMenuRef = useRef<HTMLDivElement>(null);
   const skills = useDiscoveryStore((s) => s.skills);
+  const discoveryLoading = useDiscoveryStore((s) => s.isLoading);
   const refreshDiscovery = useDiscoveryStore((s) => s.refresh);
   const useBuiltinWebSearch = useSettingsStore((s) => s.useBuiltinWebSearch);
   const setUseBuiltinWebSearch = useSettingsStore((s) => s.setUseBuiltinWebSearch);
@@ -481,6 +469,8 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
 
   // Welcome-only state (always declared for hook stability)
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [preparingShortcutKey, setPreparingShortcutKey] = useState<string | null>(null);
+  const shortcutPreparationRef = useRef<symbol | null>(null);
   const categoryPanelRef = useRef<HTMLDivElement>(null);
   const [hoverPrompt, setHoverPrompt] = useState<string | null>(null);
   const [pendingFolder, setPendingFolder] = useState<string | null>(null);
@@ -526,10 +516,23 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   const { t } = useI18n();
   const language = useSettingsStore((s) => s.language);
   const isEn = language === 'en-US';
+  const activeWorkspacePath = workspaceScope?.project_path
+    ?? activeConv?.workspaceScope?.project_path
+    ?? activeConv?.workspacePath
+    ?? localWorkspace;
+  const activeWorkspacePathRef = useRef(activeWorkspacePath);
+  activeWorkspacePathRef.current = activeWorkspacePath;
 
   // Chat-only derived state
   const isRunning = activeConv?.status === 'running';
   const isStreaming = isStreamingProp ?? (!isWelcome && isRunning);
+  const missingShortcutSubject = isWelcome && SHORTCUT_CATEGORIES.some((category) => (
+    category.options.some((option) => {
+      const binding = option.research ?? option.fixedIncome ?? option.workspaceTask;
+      return (binding?.subjectZh && text.includes(binding.subjectZh))
+        || (binding?.subjectEn && text.includes(binding.subjectEn));
+    })
+  ));
   const activeTextModel = gatewayTextModels.find((model) => (
     model.presetName === activeTextModelPreset
   ));
@@ -562,29 +565,188 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
 
   const handleShortcut = (type: string) => {
     setActiveCategory(type);
+    if (type === 'office') useOfficeGuideStore.getState().advance('category', 'task');
   };
 
-  const handleShortcutOptionClick = (prompt: string) => {
-    const draft = {
-      text: prompt,
-      images: [],
-      files: [],
-      skills: [],
-      cliApps: [],
-      mcpPresets: [],
-    };
-    if (!submitDraft(draft)) return;
-    isSubmittingRef.current = true;
-    writeDraft(draftKey, { text: '', images: [], files: [], skills: [], cliApps: [], mcpPresets: [] });
-    setActiveCategory(null);
-    setHoverPrompt(null);
-    resetInput();
+  useEffect(() => () => {
+    shortcutPreparationRef.current = null;
+  }, []);
+
+  const prepareWorkspaceShortcut = async (option: ShortcutOption) => {
+    const binding = option.research ?? option.fixedIncome ?? option.workspaceTask;
+    if (!binding || !isWelcome || activeConv || disabled || shortcutPreparationRef.current) return;
+    const team = expertTeams.find((candidate) => candidate.id === option.research?.teamId);
+    if (option.research && !team?.available) {
+      addToast({
+        type: 'error',
+        title: isEn ? 'Research team unavailable' : '投研团队暂不可用',
+        message: team?.unavailable_reason || expertTeamsError || (isEn
+          ? 'Check the team status in Toolbox → Expert Teams and try again.'
+          : '请在工具箱的专家团队中检查团队状态后重试。'),
+      });
+      return;
+    }
+
+    const request = Symbol(option.key);
+    shortcutPreparationRef.current = request;
+    setPreparingShortcutKey(option.key);
+    if (option.key === 'draft_material') useOfficeGuideStore.getState().preparationFailed(null);
+    const isCurrentRequest = () => shortcutPreparationRef.current === request
+      && !useChatStore.getState().activeConversationId;
+    try {
+      const workspaceName = option.workspaceTask?.workspaceName
+        ?? (option.fixedIncome ? FIXED_INCOME_WORKSPACE_NAME : INVESTMENT_WORKSPACE_NAME);
+      const documentsPath = await osBridge.documentDir();
+      if (!isCurrentRequest()) return;
+      const separator = documentsPath.includes('\\') ? '\\' : '/';
+      const workspacePath = `${documentsPath.replace(/[\\/]+$/, '')}${separator}${USER_PROJECTS_DIRECTORY_NAME}${separator}${workspaceName}`;
+      let connectors: OutboundMcpPresetMention[] = [];
+      let availableSkills: SkillMetadata[] | null = null;
+      const taskSkills = option.workspaceTask?.skillNames ?? [];
+      if (option.fixedIncome || option.workspaceTask) {
+        // Resolve actual configured presets so these attachments scope the
+        // gateway's tools; never silently substitute another financial source.
+        const status = await getNanobotStatus();
+        if (!isCurrentRequest()) return;
+        if (!status.ready) throw new Error(isEn ? 'TP Cowork is not ready' : 'TP Cowork 服务尚未就绪');
+        let token = getNanobotToken();
+        let base = `http://127.0.0.1:${status.port}`;
+        if (!token) {
+          const refreshed = await refreshNanobotAuth();
+          if (!isCurrentRequest()) return;
+          token = refreshed.token;
+          base = refreshed.baseUrl;
+        }
+        const [skillsPayload, mcpPayload] = await Promise.all([
+          option.workspaceTask ? fetchSkills(token, base) : Promise.resolve(null),
+          option.fixedIncome || option.workspaceTask?.financialData
+            ? fetchMcpPresets(token, base).catch((error) => {
+              // Holdings files remain useful without optional market data.
+              if (option.fixedIncome) throw error;
+              return null;
+            })
+            : Promise.resolve(null),
+        ]);
+        if (!isCurrentRequest()) return;
+        if (skillsPayload) {
+          availableSkills = skillsPayload.skills
+            .filter((skill) => skill.enabled && skill.available && skill.user_invocable !== false)
+            .map((skill) => ({
+              name: skill.name,
+              description: skill.description,
+              userInvocable: skill.user_invocable,
+              tags: [skill.source, ...skill.tags],
+            }));
+          const usable = usableSkillsForScope(
+            availableSkills,
+            workspacePath,
+            useWorkspaceStore.getState().projectSkillBindings[normalizeProjectPath(workspacePath)] ?? [],
+          );
+          const missingSkills = taskSkills.filter((name) => !usable.some((skill) => skill.name === name));
+          if (missingSkills.length) {
+            const names = missingSkills.map(displaySkillName).join(isEn ? ', ' : '、');
+            throw new Error(isEn
+              ? `${names} unavailable in this workspace. Check the skill in Toolbox and try again.`
+              : `${names} 技能在此工作空间暂不可用，请在工具箱中检查是否已安装并启用。`);
+          }
+        }
+        const available = mcpPayload
+          ? installedMcpPresetsFromPayload(mcpPayload).filter((preset) => preset.available)
+          : [];
+        const missing = option.fixedIncome
+          ? FIXED_INCOME_CONNECTORS.filter(({ name }) => !available.some((preset) => preset.name === name))
+          : [];
+        if (missing.length) {
+          const names = missing.map((preset) => isEn ? preset.labelEn : preset.labelZh).join(isEn ? ', ' : '、');
+          throw new Error(isEn
+            ? `${names} unavailable. Configure and enable these connectors in Toolbox, then try again.`
+            : `${names}连接器暂不可用，请在工具箱中完成配置并启用后重试。`);
+        }
+        connectors = FIXED_INCOME_CONNECTORS.flatMap(({ name }) => {
+          const preset = available.find((candidate) => candidate.name === name);
+          return preset ? [{
+            name: preset.name,
+            display_name: preset.display_name,
+            category: preset.category,
+            transport: preset.transport,
+            status: preset.status,
+            configured: preset.configured,
+            logo_url: preset.logo_url,
+            brand_color: preset.brand_color,
+          }] : [];
+        });
+      }
+
+      await fsBridge.mkdir(workspacePath, { recursive: true });
+      if (!isCurrentRequest()) return;
+
+      const accessMode = workspaceScope?.access_mode ?? 'full';
+      onWorkspaceScopeChange?.({
+        project_path: workspacePath,
+        project_name: workspaceName,
+        access_mode: accessMode,
+        restrict_to_workspace: accessMode === 'restricted',
+      });
+      setLocalWorkspace(workspacePath);
+      useWorkspaceStore.getState().setWorkspace(workspacePath);
+      setPendingExpertTeam(team ? {
+        id: team.id,
+        name: team.name,
+        version: team.version,
+        member_count: team.member_count,
+      } : null);
+      // Publish the gateway's fresh skill list before submitDraft filters skills.
+      if (availableSkills) useDiscoveryStore.setState({ skills: availableSkills });
+      // Keep source materials and select only the new task's capabilities.
+      setSelectedMcpPresets(connectors);
+      setSelectedSkills(taskSkills);
+      setSelectedCliApps([]);
+      // Presentation generation and expert-team runs use different gateway flows.
+      setSelectedPresentation(undefined);
+      setShowPresentationPicker(false);
+      const prompt = isEn ? option.promptEn : option.promptZh;
+      const subject = isEn ? binding.subjectEn : binding.subjectZh;
+      const subjectStart = subject ? prompt.indexOf(subject) : 0;
+      setText(prompt);
+      setCursorPosition(subjectStart);
+      setSuggestionsDismissed(true);
+      setActiveCategory(null);
+      setHoverPrompt(null);
+      if (option.key === 'draft_material') useOfficeGuideStore.getState().advance('task', 'workspace');
+      requestAnimationFrame(() => {
+        const textarea = textareaRef.current;
+        if (!textarea) return;
+        textarea.focus();
+        textarea.setSelectionRange(subjectStart, subjectStart + (subject?.length ?? 0));
+        if (!subject) textarea.scrollTop = 0;
+      });
+    } catch (error) {
+      if (!isCurrentRequest()) return;
+      if (option.key === 'draft_material') {
+        useOfficeGuideStore.getState().preparationFailed(error instanceof Error ? error.message : String(error));
+      }
+      addToast({
+        type: 'error',
+        title: option.fixedIncome
+          ? (isEn ? 'Could not prepare fixed-income research' : '固收任务准备失败')
+          : option.research
+            ? (isEn ? 'Could not prepare research' : '投研任务准备失败')
+            : (isEn ? 'Could not prepare task' : '任务准备失败'),
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      if (shortcutPreparationRef.current === request) {
+        shortcutPreparationRef.current = null;
+        setPreparingShortcutKey(null);
+      }
+    }
   };
 
   // Close category panel on click outside
   useEffect(() => {
     if (!activeCategory) return;
     const handleClickOutside = (e: MouseEvent) => {
+      if (e.target instanceof Element && e.target.closest('[data-office-task-guide]')) return;
       if (categoryPanelRef.current && !categoryPanelRef.current.contains(e.target as Node)) {
         setActiveCategory(null);
       }
@@ -751,15 +913,58 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     }
   };
 
+  const addLocalFiles = useCallback(async (paths: string[]) => {
+    if (!paths.length) return;
+    setPendingFileImports((count) => count + 1);
+    try {
+      const targetWorkspacePath = activeWorkspacePathRef.current;
+      const workspace = targetWorkspacePath;
+      let preparedPaths = paths;
+      if (workspace) {
+        const results = await Promise.allSettled(
+          paths.map((source) => fsBridge.importWorkspaceFile(workspace, source)),
+        );
+        preparedPaths = results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []);
+        const failures = results.flatMap((result, index) => (
+          result.status === 'rejected' ? [getBaseName(paths[index])] : []
+        ));
+        if (activeWorkspacePathRef.current !== targetWorkspacePath) return;
+        if (failures.length) {
+          addToast({
+            type: 'error',
+            title: isEn ? 'Could not add files to workspace' : '无法将文件添加到工作空间',
+            message: isEn ? `Copy failed: ${failures.join(', ')}` : `复制失败：${failures.join('、')}`,
+            duration: 5000,
+          });
+        }
+      }
+
+      await processFilePaths(
+        preparedPaths,
+        (imgs) => {
+          if (activeWorkspacePathRef.current === targetWorkspacePath) {
+            setImages((prev) => [...prev, ...imgs].slice(0, MAX_IMAGES_PER_MESSAGE));
+          }
+        },
+        (items) => {
+          if (activeWorkspacePathRef.current === targetWorkspacePath) {
+            setFiles((prev) => [...prev, ...items]);
+          }
+        },
+      );
+      if (workspace && preparedPaths.length && activeWorkspacePathRef.current === targetWorkspacePath) {
+        void fsBridge.listWorkspaceFiles(workspace).then((entries) => {
+          if (activeWorkspacePathRef.current === targetWorkspacePath) setWorkspaceFiles(entries);
+        }).catch(() => {});
+      }
+    } finally {
+      setPendingFileImports((count) => count - 1);
+    }
+  }, [addToast, isEn]);
+
   // File drag & drop (always called; works for both variants)
   const { isDragging } = useFileDragDrop(async (paths, unresolvedNames) => {
-    if (paths.length > 0) {
-      await processFilePaths(
-        paths,
-        (imgs) => setImages((prev) => [...prev, ...imgs].slice(0, MAX_IMAGES_PER_MESSAGE)),
-        (items) => setFiles((prev) => [...prev, ...items]),
-      );
-    }
+    if (paths.length > 0) await addLocalFiles(paths);
     if (unresolvedNames.length > 0) {
       const names = unresolvedNames.slice(0, 3).join('、');
       const more = unresolvedNames.length > 3 ? ` +${unresolvedNames.length - 3}` : '';
@@ -859,10 +1064,6 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     };
   }, [refreshDiscovery]);
 
-  const activeWorkspacePath = workspaceScope?.project_path
-    ?? activeConv?.workspaceScope?.project_path
-    ?? activeConv?.workspacePath
-    ?? localWorkspace;
   const activeProjectPath = visibleProjectPath(activeWorkspacePath);
   const activeProjectSkillNames = activeProjectPath ? projectSkillBindings[normalizeProjectPath(activeProjectPath)] ?? [] : [];
   const usableSkills = useMemo(
@@ -918,6 +1119,15 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   useEffect(() => {
     if (skillPickerOpen) void refreshDiscovery();
   }, [skillPickerOpen, refreshDiscovery]);
+
+  useEffect(() => {
+    if (!skillPickerOpen) return;
+    recordDiagnostic({ event_name: 'renderer.skills.chat_picker', status: 'completed', details: {
+      stage: 'scope_filter', count: skills.length, visible_count: usableSkills.length,
+      project_scoped: Boolean(activeProjectPath), granted_count: activeProjectSkillNames.length,
+      ready: !discoveryLoading,
+    } });
+  }, [skillPickerOpen, skills.length, usableSkills.length, activeProjectPath, activeProjectSkillNames.length, discoveryLoading]);
 
   const suggestions = useMemo((): SuggestionItem[] => {
     if (!suggestionTrigger) return [];
@@ -1118,7 +1328,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     return onSend(
       message,
       draft.images?.length ? draft.images : undefined,
-      isWelcome ? workspacePath ?? localWorkspace : undefined,
+      isWelcome ? workspacePath ?? workspaceScope?.project_path ?? localWorkspace : undefined,
       {
         ...(draft.presentation ? { presentation: draft.presentation } : {}),
         ...(draft.cliApps?.length ? { cliApps: draft.cliApps } : {}),
@@ -1165,7 +1375,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
 
   const handleSend = () => {
     const draft = currentDraft();
-    if (!hasDraftPayload(draft) || disabled || sendDisabled) return;
+    if (!hasDraftPayload(draft) || disabled || sendDisabled || pendingFileImports > 0 || shortcutPreparationRef.current || missingShortcutSubject) return;
     if (
       voiceState !== 'idle'
       || voiceRecorderRef.current
@@ -1187,6 +1397,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     }
 
     if (!submitDraft(draft)) return;
+    if (isWelcome) useOfficeGuideStore.getState().close();
     isSubmittingRef.current = true;
     writeDraft(draftKey, { text: '', images: [], files: [], skills: [], cliApps: [], mcpPresets: [] });
     resetInput();
@@ -1302,14 +1513,10 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     const selected = await dialogBridge.open({ multiple: true, directory: false });
     if (selected) {
       const paths = Array.isArray(selected) ? selected : [selected];
-      await processFilePaths(
-        paths,
-        (imgs) => setImages((prev) => [...prev, ...imgs].slice(0, MAX_IMAGES_PER_MESSAGE)),
-        (items) => setFiles((prev) => [...prev, ...items]),
-      );
+      await addLocalFiles(paths);
       textareaRef.current?.focus();
     }
-  }, []);
+  }, [addLocalFiles]);
 
   const clearVoiceTimeout = () => {
     if (voiceTimeoutRef.current) {
@@ -1703,6 +1910,13 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     updateBoundMcpPresets(boundMcpPresets.filter((preset) => preset.name !== name));
   };
 
+  const openPlusSubmenu = (submenu: 'expert-team' | 'skills' | 'connector', trigger: HTMLElement) => {
+    const surface = trigger.closest<HTMLElement>('[data-chat-surface], .cowork-welcome');
+    const visibleTop = Math.max(0, surface?.getBoundingClientRect().top ?? 0) + 12;
+    setSubmenuMaxHeight(Math.max(0, trigger.getBoundingClientRect().bottom - visibleTop));
+    setActiveSubmenu(submenu);
+  };
+
   const renderPlusMenu = () => {
     const filteredExpertTeams = expertTeams.filter((team) => {
       const query = expertTeamSearchQuery.trim().toLowerCase();
@@ -1727,12 +1941,8 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     return (
       <div
         ref={plusMenuRef}
-        className={cn(
-          "absolute left-0 w-64 bg-white rounded-2xl border border-[#dedbd3] shadow-lg py-1.5 z-50 text-[13px] duration-150 animate-in fade-in",
-          isWelcome
-            ? "top-full mt-2 slide-in-from-top-2"
-            : "bottom-full mb-2 slide-in-from-bottom-2"
-        )}
+        data-composer-plus-menu
+        className="absolute bottom-full left-0 mb-2 w-64 rounded-2xl border border-[#dedbd3] bg-white py-1.5 text-[13px] shadow-lg z-50 duration-150 animate-in fade-in slide-in-from-bottom-2"
       >
         {/* Add files or photos */}
         <button
@@ -1754,7 +1964,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
         <div
           data-plus-menu-item="expert-team"
           className="relative"
-          onMouseEnter={() => setActiveSubmenu('expert-team')}
+          onMouseEnter={(event) => openPlusSubmenu('expert-team', event.currentTarget)}
           onMouseLeave={() => setActiveSubmenu(null)}
         >
           <button
@@ -1771,8 +1981,8 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
           </button>
 
           {activeSubmenu === 'expert-team' && (
-            <div className="absolute left-full bottom-0 w-72 bg-white rounded-2xl border border-[#dedbd3] shadow-lg py-1.5 z-50 animate-in fade-in slide-in-from-left-1 duration-150">
-              <div className="px-3.5 py-1.5 border-b border-[#f0ede6] flex items-center gap-2">
+            <div style={{ maxHeight: submenuMaxHeight }} className="absolute left-full bottom-0 flex w-72 flex-col bg-white rounded-2xl border border-[#dedbd3] shadow-lg py-1.5 z-50 animate-in fade-in slide-in-from-left-1 duration-150">
+              <div className="shrink-0 px-3.5 py-1.5 border-b border-[#f0ede6] flex items-center gap-2">
                 <Search className="h-4 w-4 text-[#8a867c] shrink-0" />
                 <input
                   type="text"
@@ -1800,7 +2010,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                   {isEn ? 'No expert teams found' : '未找到专家团队'}
                 </div>
               ) : (
-                <div className="max-h-64 overflow-y-auto">
+                <div className="min-h-0 max-h-64 overflow-y-auto overscroll-contain">
                   {filteredExpertTeams.map((team) => {
                     const isSelected = selectedExpertTeam?.id === team.id;
                     return (
@@ -1858,7 +2068,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
         <div
           data-plus-menu-item="skills"
           className="relative"
-          onMouseEnter={() => setActiveSubmenu('skills')}
+          onMouseEnter={(event) => openPlusSubmenu('skills', event.currentTarget)}
           onMouseLeave={() => setActiveSubmenu(null)}
         >
           <button
@@ -1875,10 +2085,8 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
           </button>
 
           {activeSubmenu === 'skills' && (
-            <div className={cn(
-              "absolute left-full bottom-0 w-64 bg-white rounded-2xl border border-[#dedbd3] shadow-lg py-1.5 z-50 animate-in fade-in slide-in-from-left-1 duration-150"
-            )}>
-              <div className="px-3.5 py-1.5 border-b border-[#f0ede6] flex items-center gap-2">
+            <div style={{ maxHeight: submenuMaxHeight }} className="absolute left-full bottom-0 flex w-64 flex-col bg-white rounded-2xl border border-[#dedbd3] shadow-lg py-1.5 z-50 animate-in fade-in slide-in-from-left-1 duration-150">
+              <div className="shrink-0 px-3.5 py-1.5 border-b border-[#f0ede6] flex items-center gap-2">
                 <Search className="h-4 w-4 text-[#8a867c] shrink-0" />
                 <input
                   type="text"
@@ -1898,7 +2106,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                   {isEn ? 'No skills found' : '未找到技能'}
                 </div>
               ) : (
-                <div className="max-h-48 overflow-y-auto">
+                <div className="min-h-0 max-h-48 overflow-y-auto overscroll-contain">
                   {filteredSkills.map((skill) => {
                     const isSelected = selectedSkills.includes(skill.name);
                     return (
@@ -1932,7 +2140,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
         <div
           data-plus-menu-item="connector"
           className="relative"
-          onMouseEnter={() => setActiveSubmenu('connector')}
+          onMouseEnter={(event) => openPlusSubmenu('connector', event.currentTarget)}
           onMouseLeave={() => setActiveSubmenu(null)}
         >
           <button
@@ -1949,10 +2157,8 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
           </button>
 
           {activeSubmenu === 'connector' && (
-            <div className={cn(
-              "absolute left-full bottom-0 w-64 bg-white rounded-2xl border border-[#dedbd3] shadow-lg py-1.5 z-50 animate-in fade-in slide-in-from-left-1 duration-150"
-            )}>
-              <div className="px-3.5 py-1.5 border-b border-[#f0ede6] flex items-center gap-2">
+            <div style={{ maxHeight: submenuMaxHeight }} className="absolute left-full bottom-0 flex w-64 flex-col bg-white rounded-2xl border border-[#dedbd3] shadow-lg py-1.5 z-50 animate-in fade-in slide-in-from-left-1 duration-150">
+              <div className="shrink-0 px-3.5 py-1.5 border-b border-[#f0ede6] flex items-center gap-2">
                 <Search className="h-4 w-4 text-[#8a867c] shrink-0" />
                 <input
                   type="text"
@@ -1972,7 +2178,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                   {isEn ? 'No connectors found' : '未找到连接器'}
                 </div>
               ) : (
-                <div className="max-h-48 overflow-y-auto">
+                <div className="min-h-0 max-h-48 overflow-y-auto overscroll-contain">
                   {filteredMcpPresets.map((preset) => {
                     const isBound = boundMcpPresets.some((item) => item.name === preset.name);
                     const isSelected = isBound || selectedMcpPresets.some((s) => s.name === preset.name);
@@ -2085,6 +2291,8 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   }, [showPlusMenu]);
 
   const hasAttachments = images.length > 0 || files.length > 0;
+  const hasCapabilitySelections = !!selectedExpertTeam || selectedSkills.length > 0
+    || selectedCliApps.length > 0 || selectedMcpPresets.length > 0 || boundMcpPresets.length > 0;
   const hasContent = text.trim().length > 0 || selectedSkills.length > 0 || selectedCliApps.length > 0 || selectedMcpPresets.length > 0 || hasAttachments;
   const showProjectSelector = !activeConv?.scheduledTaskId
     && !activeConv?.workspacePath
@@ -2113,41 +2321,34 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       ? t.chat.inputPlaceholderBusy
       : isRunning
         ? t.chat.inputPlaceholderMidTask
-        : t.chat.inputPlaceholder;
+        : isWelcome
+          ? t.chat.welcomeInputPlaceholder
+          : t.chat.inputPlaceholder;
 
   const clearSelectedExpertTeam = () => {
     updateSelectedExpertTeam(null);
   };
 
   const renderSelectedExpertTeam = () => selectedExpertTeam ? (
-    <button
-      type="button"
-      data-composer-action
+    <ComposerSelectionChip
+      icon={<ExpertTeamIcon teamId={selectedExpertTeam.id} className="h-4 w-4" />}
       data-selected-expert-team={selectedExpertTeam.id}
       onClick={clearSelectedExpertTeam}
       disabled={expertTeamUpdating}
       aria-busy={expertTeamUpdating}
       title={isEn ? `Remove ${selectedExpertTeam.name || selectedExpertTeam.id}` : `取消专家团队：${selectedExpertTeam.name || selectedExpertTeam.id}`}
       aria-label={isEn ? `Remove expert team ${selectedExpertTeam.name || selectedExpertTeam.id}` : `取消专家团队 ${selectedExpertTeam.name || selectedExpertTeam.id}`}
-      className="group/team inline-flex h-8 max-w-[220px] shrink-0 items-center gap-1.5 rounded-xl bg-[#f0efec] px-2.5 text-[13px] font-medium text-[#29261b] transition-colors hover:bg-[#e8e6e1] disabled:cursor-wait disabled:opacity-60"
+      className="disabled:cursor-wait"
     >
-      <span className="relative h-4 w-4 shrink-0">
-        <ExpertTeamIcon
-          teamId={selectedExpertTeam.id}
-          className="absolute inset-0 h-4 w-4 text-[#656358] transition-opacity group-hover/team:opacity-0"
-        />
-        <X className="absolute inset-0 h-4 w-4 text-[#656358] opacity-0 transition-opacity group-hover/team:opacity-100" />
-      </span>
-      <span className="truncate">{selectedExpertTeam.name || selectedExpertTeam.id}</span>
-    </button>
+      {selectedExpertTeam.name || selectedExpertTeam.id}
+    </ComposerSelectionChip>
   ) : null;
 
   const renderBoundMcpPresets = () => !selectedExpertTeam && boundMcpPresets.length > 0 ? (
-    <div data-bound-mcp-presets className="inline-flex min-w-0 items-center gap-1.5">
+    <div data-bound-mcp-presets className="contents">
       {boundMcpPresets.map((preset) => (
-        <button
-          type="button"
-          data-composer-action
+        <ComposerSelectionChip
+          icon={<Puzzle className="h-4 w-4" />}
           data-bound-mcp-preset={preset.name}
           key={`bound-mcp-${preset.name}`}
           onClick={() => removeBoundMcpPreset(preset.name)}
@@ -2159,17 +2360,62 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
           aria-label={isEn
             ? `Remove connector ${preset.display_name || preset.name}`
             : `移除连接器 ${preset.display_name || preset.name}`}
-          className="group/mcp inline-flex h-8 max-w-[180px] shrink-0 items-center gap-1.5 rounded-xl bg-[#f0efec] px-2.5 text-[13px] font-medium text-[#29261b] transition-colors hover:bg-[#e8e6e1] disabled:cursor-not-allowed disabled:opacity-60"
         >
-          <span className="relative h-4 w-4 shrink-0">
-            <Puzzle className="absolute inset-0 h-4 w-4 text-[#656358] transition-opacity group-hover/mcp:opacity-0" />
-            <X className="absolute inset-0 h-4 w-4 text-[#656358] opacity-0 transition-opacity group-hover/mcp:opacity-100" />
-          </span>
-          <span className="truncate">{preset.display_name || preset.name}</span>
-        </button>
+          {preset.display_name || preset.name}
+        </ComposerSelectionChip>
       ))}
     </div>
   ) : null;
+
+  const renderDraftCapabilities = () => (
+    <>
+      {selectedSkills.map((skill) => (
+        <ComposerSelectionChip
+          key={`selected-skill-${skill}`}
+          icon={<GraduationCap className="h-4 w-4" />}
+          data-selected-skill={skill}
+          onClick={() => {
+            setSelectedSkills((prev) => prev.filter((item) => item !== skill));
+            textareaRef.current?.focus();
+          }}
+          title={isEn ? `Remove skill ${displaySkillName(skill)}` : `移除技能 ${displaySkillName(skill)}`}
+          aria-label={isEn ? `Remove skill ${displaySkillName(skill)}` : `移除技能 ${displaySkillName(skill)}`}
+        >
+          {displaySkillName(skill)}
+        </ComposerSelectionChip>
+      ))}
+      {selectedCliApps.map((app) => (
+        <ComposerSelectionChip
+          key={`selected-cli-${app.name}`}
+          icon={<Terminal className="h-4 w-4" />}
+          data-selected-cli-app={app.name}
+          onClick={() => {
+            setSelectedCliApps((prev) => prev.filter((item) => item.name !== app.name));
+            textareaRef.current?.focus();
+          }}
+          title={isEn ? `Remove app ${app.display_name || app.name}` : `移除应用 ${app.display_name || app.name}`}
+          aria-label={isEn ? `Remove app ${app.display_name || app.name}` : `移除应用 ${app.display_name || app.name}`}
+        >
+          {app.display_name || app.name}
+        </ComposerSelectionChip>
+      ))}
+      {selectedMcpPresets.map((preset) => (
+        <ComposerSelectionChip
+          key={`selected-mcp-${preset.name}`}
+          icon={<Puzzle className="h-4 w-4" />}
+          data-selected-mcp-preset={preset.name}
+          onClick={() => {
+            setSelectedMcpPresets((prev) => prev.filter((item) => item.name !== preset.name));
+            textareaRef.current?.focus();
+          }}
+          title={isEn ? `Remove connector ${preset.display_name || preset.name}` : `移除连接器 ${preset.display_name || preset.name}`}
+          aria-label={isEn ? `Remove connector ${preset.display_name || preset.name}` : `移除连接器 ${preset.display_name || preset.name}`}
+        >
+          {preset.display_name || preset.name}
+        </ComposerSelectionChip>
+      ))}
+    </>
+  );
 
   const renderVoiceControl = () => {
     const elapsed = `${Math.floor(voiceElapsedSec / 60)}:${String(voiceElapsedSec % 60).padStart(2, '0')}`;
@@ -2258,7 +2504,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
           : <ChevronDown className={cn('h-3 w-3 transition-transform', showModelPicker && 'rotate-180')} />}
       </button>
       {showModelPicker && gatewayTextModels.length > 0 && (
-        <div data-codex-model-menu className="absolute bottom-full right-0 z-50 mb-1.5 max-h-72 w-72 overflow-y-auto rounded-lg border border-[#dedbd3] bg-white py-1 shadow-lg">
+        <div data-codex-model-menu className="absolute bottom-full right-0 z-50 mb-1.5 max-h-72 w-max min-w-full max-w-64 overflow-y-auto rounded-lg border border-[#dedbd3] bg-white py-1 shadow-lg">
           {gatewayTextModels.map((model) => (
             <button
               key={model.presetName}
@@ -2284,13 +2530,8 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     <div
       data-codex-project-selector
       data-welcome-project-selector={isWelcome ? 'true' : undefined}
-      data-composer-project-selector-placement={isWelcome ? 'outside' : 'inside'}
-      className={cn(
-        'z-10 flex items-center gap-4 px-4 py-1.5 text-[12.5px] text-[#656358] select-none',
-        isWelcome
-          ? 'rounded-b-[20px]'
-          : 'rounded-b-[24px] border-t border-[#e4e0d8]/70 bg-transparent',
-      )}
+      data-composer-project-selector-placement="outside"
+      className="z-10 flex items-center gap-4 rounded-b-[20px] px-4 py-1.5 text-[12.5px] text-[#656358] select-none"
     >
       <FolderSelector
         variant="pill"
@@ -2303,8 +2544,56 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     </div>
   ) : null;
 
+  const welcomeShortcuts = isWelcome ? (
+    <div data-welcome-shortcuts className="cowork-welcome-shortcuts">
+      {SHORTCUT_CATEGORIES.map((category) => {
+        const Icon = category.icon;
+        return (
+          <button
+            key={category.id}
+            data-welcome-shortcut={category.id}
+            data-active={activeCategory === category.id ? 'true' : 'false'}
+            aria-expanded={activeCategory === category.id}
+            onClick={() => handleShortcut(category.id)}
+          >
+            <Icon className="h-3.5 w-3.5" />
+            <span>{t.chat[category.labelKey]}</span>
+          </button>
+        );
+      })}
+    </div>
+  ) : null;
+
   return (
     <>
+      {isWelcome && officeGuideOpen && <OfficeTaskGuide
+        activeCategory={activeCategory}
+        preparing={preparingShortcutKey !== null}
+        disabled={!!disabled || voiceState !== 'idle'}
+        needsModel={gatewayTextModelsHydrated && gatewayTextModels.length === 0}
+        onStart={() => {
+          setActiveCategory(null);
+          setShowPlusMenu(false);
+          setShowModelPicker(false);
+        }}
+        onSelectCategory={() => handleShortcut('office')}
+        onSelectTask={() => {
+          const option = OFFICE_SHORTCUTS.find((candidate) => candidate.key === 'draft_material');
+          if (option) void prepareWorkspaceShortcut(option);
+        }}
+        onEdit={() => requestAnimationFrame(() => textareaRef.current?.focus())}
+        onConfigureModel={() => openSystemSettings('ai-services')}
+        onUseExample={(example) => {
+          const prompt = `${text.trimEnd()}\n\n${isEn ? example.promptEn : example.promptZh}`;
+          setText(prompt);
+          setCursorPosition(prompt.length);
+          setSuggestionsDismissed(true);
+          requestAnimationFrame(() => {
+            textareaRef.current?.focus();
+            textareaRef.current?.setSelectionRange(prompt.length, prompt.length);
+          });
+        }}
+      />}
       {showPresentationPicker && <PresentationPicker chatId={activeConv?.id} isEnglish={isEn} onClose={() => setShowPresentationPicker(false)} onSelect={(selection) => { setSelectedPresentation(selection); textareaRef.current?.focus(); }} />}
       {/* Welcome-only: Permission Dialog */}
       {isWelcome && pendingFolder && (
@@ -2442,12 +2731,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
           data-codex-composer-shell
           data-composer-variant={isWelcome ? 'welcome' : 'chat'}
           data-welcome-composer-shell={isWelcome ? 'true' : undefined}
-          className={cn(
-            'relative flex flex-col',
-            isWelcome
-              ? 'rounded-[20px] border border-[#e8e4dd] bg-[#faf9f6] shadow-[0_4px_18px_rgba(41,38,27,0.055)]'
-              : 'rounded-[24px] border border-transparent bg-transparent shadow-none',
-          )}
+          className="relative flex flex-col rounded-[20px] border border-[#e8e4dd] bg-[#faf9f6] shadow-[0_4px_18px_rgba(41,38,27,0.055)]"
         >
           {/* Input Card */}
           <div
@@ -2455,10 +2739,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
             data-welcome-composer-card={isWelcome ? 'true' : undefined}
             data-floating-composer={isWelcome ? undefined : 'true'}
             className={cn(
-              'relative border transition-[border-color,background-color,box-shadow]',
-              isWelcome
-                ? 'rounded-[20px] border-[#e8e5de]/60 bg-white shadow-[0_2px_8px_rgba(41,38,27,0.025)]'
-                : 'rounded-[24px] border-[#d8d4cb]/80 bg-white/[0.86] shadow-[0_14px_42px_rgba(41,38,27,0.13),0_2px_8px_rgba(41,38,27,0.055)] backdrop-blur-xl backdrop-saturate-150',
+              'relative rounded-[20px] border border-[#e8e5de]/60 bg-white shadow-[0_2px_8px_rgba(41,38,27,0.025)] transition-[border-color,background-color,box-shadow]',
               !isWelcome && isDragging
                 ? 'border-[#d97757] ring-2 ring-[#d97757]/20'
                 : ''
@@ -2466,14 +2747,14 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
           >
             {/* Chat-only: Drag overlay */}
             {!isWelcome && isDragging && (
-              <div className="absolute inset-0 flex items-center justify-center rounded-[24px] bg-[#fbfaf7]/90 z-10">
+              <div className="absolute inset-0 flex items-center justify-center rounded-[20px] bg-[#fbfaf7]/90 z-10">
                 <span className="text-sm text-[#d97757] font-medium">{t.chat.dropFilesHere}</span>
               </div>
             )}
 
             {/* Attachment Strip (images + file badges) */}
             {hasAttachments && (
-              <div className={cn('flex items-center gap-2 overflow-x-auto', isWelcome ? 'px-5 pt-3 pb-1' : 'px-4 pt-3 pb-1')}>
+              <div className="flex items-center gap-2 overflow-x-auto px-5 pt-3 pb-1">
                 {images.map((img) => (
                   <div key={img.id} className="relative group/img shrink-0">
                     <img
@@ -2520,46 +2801,8 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
               <button className="min-w-0 truncate text-emerald-800" title={isEn ? 'Change presentation' : '选择模板或文稿'} onClick={() => setShowPresentationPicker(true)}>{selectedPresentation.name}{selectedPresentation.page ? ` · ${isEn ? 'Page' : '第'} ${selectedPresentation.page} ${isEn ? '' : '页'}` : ''}</button>
               <button title={isEn ? 'Remove presentation' : '移除文稿选择'} className="grid size-6 shrink-0 place-items-center rounded hover:bg-black/5" onClick={() => setSelectedPresentation(undefined)}><X className="size-3" /></button>
             </div>}
-            {/* Textarea Row with inline command prefix */}
-            <div className={cn(
-              'flex items-start gap-0',
-              isWelcome
-                ? hasAttachments ? 'px-4 pt-1 pb-1' : 'px-4 pt-4 pb-0.5'
-                : hasAttachments ? 'px-4 pt-1 pb-1' : 'px-4 pt-3.5 pb-1'
-            )}>
-              {/* Inline command prefix (unified for both variants) */}
-              {selectedSkills.map((skill) => (
-                <button
-                  key={`selected-skill-${skill}`}
-                  onClick={() => setSelectedSkills((prev) => prev.filter((item) => item !== skill))}
-                  className="shrink-0 mt-[3px] mr-1.5 rounded-full bg-[#f2efe9] px-2 py-0.5 text-[12px] font-medium text-[#6b685e] hover:line-through dark:bg-[#4a4a4a] dark:text-[#e2ded5] dark:hover:bg-[#555]"
-                  title={t.common.close}
-                >
-                  /{displaySkillName(skill)}
-                </button>
-              ))}
-              {selectedCliApps.map((app) => (
-                <button
-                  key={`selected-cli-${app.name}`}
-                  onClick={() => setSelectedCliApps((prev) => prev.filter((item) => item.name !== app.name))}
-                  className="shrink-0 mt-[3px] mr-1.5 rounded-full bg-[#eef2ff] px-2 py-0.5 text-[12px] font-medium text-[#4f46e5] hover:line-through dark:bg-[#2e2f4a] dark:text-[#a5b4fc] dark:hover:bg-[#383a5c]"
-                  title={t.common.close}
-                >
-                  @{app.display_name || app.name}
-                </button>
-              ))}
-              {selectedMcpPresets.map((preset) => (
-                <button
-                  data-selected-mcp-preset={preset.name}
-                  key={`selected-mcp-${preset.name}`}
-                  onClick={() => setSelectedMcpPresets((prev) => prev.filter((item) => item.name !== preset.name))}
-                  className="mt-[3px] mr-1.5 inline-flex shrink-0 items-center gap-1 rounded-full bg-[#ecfdf5] px-2 py-0.5 text-[12px] font-medium text-[#047857] hover:line-through dark:bg-[#1f3a33] dark:text-[#6ee7b7] dark:hover:bg-[#26473e]"
-                  title={t.common.close}
-                >
-                  <Puzzle className="h-3 w-3" />
-                  {preset.display_name || preset.name}
-                </button>
-              ))}
+            {/* The text area keeps the full width; capabilities live in the toolbar. */}
+            <div data-composer-text-row data-has-attachments={hasAttachments ? 'true' : undefined} className="flex items-start px-4 pt-4 pb-0.5">
               <textarea
                 ref={textareaRef}
                 value={text}
@@ -2578,31 +2821,37 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                   lastCompositionEndTimeRef.current = Date.now();
                 }}
                 placeholder={placeholder}
-                disabled={disabled}
+                aria-label={isWelcome ? t.chat.welcomeInputPlaceholder : t.chat.inputPlaceholder}
+                disabled={disabled || !!preparingShortcutKey}
                 readOnly={voiceState !== 'idle'}
                 data-voice-input-state={voiceState}
                 data-codex-composer-input
                 data-welcome-composer-input={isWelcome ? 'true' : undefined}
                 rows={isWelcome ? 2 : 1}
                 className={cn(
-                  'flex-1 resize-none bg-transparent font-user-message text-[#29261b] outline-none placeholder:text-[#969289]',
-                  isWelcome
-                    ? 'min-h-[52px] max-h-[160px] text-[16px] leading-6'
-                    : 'min-h-[28px] max-h-[160px] py-0.5 text-[15px] leading-relaxed disabled:opacity-40'
+                  'max-h-[160px] flex-1 resize-none bg-transparent font-user-message text-[#29261b] outline-none placeholder:text-[#969289] disabled:opacity-40',
+                  isWelcome ? 'min-h-[52px] text-[16px] leading-6' : 'min-h-[28px] py-0.5 text-[15px] leading-relaxed',
                 )}
               />
             </div>
 
             {/* Bottom Toolbar */}
-            {isWelcome ? (
-              /* Welcome variant: [+] + --- + Start button */
-              <div data-codex-composer-toolbar data-welcome-composer-toolbar className="flex flex-wrap items-center gap-2 px-4 pb-3">
-                <div className="relative">
+            <div data-codex-composer-toolbar data-welcome-composer-toolbar={isWelcome ? 'true' : undefined} className="flex flex-wrap items-center gap-2 px-4 pb-3">
+              <div
+                data-composer-leading-controls
+                className={cn(
+                  'flex flex-1 flex-wrap items-center gap-1.5',
+                  hasCapabilitySelections ? 'min-w-[min(100%,14rem)]' : 'min-w-0',
+                )}
+              >
+                <div className="relative shrink-0">
                   <Button
                     data-composer-action
+                    data-composer-attachment-trigger
                     variant="ghost"
                     size="icon"
                     onClick={() => setShowPlusMenu(!showPlusMenu)}
+                    aria-busy={pendingFileImports > 0}
                     aria-label={t.chat.addAttachment}
                     className={cn(
                       "btn-ghost h-8 w-8 rounded-xl text-[#29261b] transition-colors hover:text-[#29261b] dark:text-[#d6d2ca] dark:hover:text-white",
@@ -2611,123 +2860,79 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                         : "hover:bg-[#eeeeea] dark:hover:bg-[#2d2d2c]"
                     )}
                   >
-                    <Plus className={cn("h-4 w-4 transition-transform duration-200", showPlusMenu && "rotate-45")} />
+                    {pendingFileImports > 0
+                      ? <Loader2 className="h-4 w-4 animate-spin" />
+                      : <Plus className={cn("h-4 w-4 transition-transform duration-200", showPlusMenu && "rotate-45")} />}
                   </Button>
                   {showPlusMenu && renderPlusMenu()}
                 </div>
                 {voiceInputAvailable ? renderVoiceControl() : null}
                 {renderSelectedExpertTeam()}
+                {renderDraftCapabilities()}
                 {renderBoundMcpPresets()}
-                <div className="flex-1" />
+              </div>
+              <div data-composer-trailing-controls className="ml-auto flex shrink-0 items-center gap-2 self-end">
                 {renderModelPicker()}
 
-                <button
-                  data-codex-submit
-                  data-codex-send-button
-                  data-welcome-submit
-                  onClick={handleSend}
-                  disabled={!hasContent || disabled || sendDisabled}
-                  aria-label={t.chat.send}
-                  title={t.chat.send}
-                  className="composer-send-button"
-                >
-                  <ArrowUp className="h-3.5 w-3.5" strokeWidth={2.35} />
-                </button>
-              </div>
-            ) : (
-              /* Chat variant: [+] + --- + Model label + Stop/Send */
-              <div data-codex-composer-toolbar className="flex flex-wrap items-center justify-between gap-y-2 px-4 pb-3 pt-1">
-                {/* Left Actions */}
-                <div className="flex items-center gap-0.5">
-                  <div className="relative">
-                    <Button
-                      data-composer-action
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setShowPlusMenu(!showPlusMenu)}
-                      aria-label={t.chat.addAttachment}
-                      className={cn(
-                        "btn-ghost h-8 w-8 rounded-xl text-[#29261b] transition-colors hover:text-[#29261b] dark:text-[#d6d2ca] dark:hover:text-white",
-                        showPlusMenu
-                          ? "bg-[#eeeeea] dark:bg-[#3a3835] dark:text-white"
-                          : "hover:bg-[#eeeeea] dark:hover:bg-[#2d2d2c]"
-                      )}
-                    >
-                      <Plus className={cn("h-4 w-4 transition-transform duration-200", showPlusMenu && "rotate-45")} />
-                    </Button>
-                    {showPlusMenu && renderPlusMenu()}
-                  </div>
-                  {voiceInputAvailable ? renderVoiceControl() : null}
-                  {renderSelectedExpertTeam()}
-                  {renderBoundMcpPresets()}
-                </div>
-
-                <div className="ml-auto flex items-center gap-2">
-                  {/* Model picker dropdown */}
-                  {renderModelPicker()}
-
-                  {/* Send / Stop Button */}
-                  {isStreaming ? (
-                    <>
-                      <Button
-                        data-codex-submit
-                        data-codex-queue-submit
-                        size="icon"
-                        onClick={handleSend}
-                        disabled={!hasContent || disabled || sendDisabled}
-                        aria-label="加入队列"
-                        className={cn(
-                          'h-8 w-8 rounded-[10px] transition-colors',
-                          hasContent && !disabled && !sendDisabled
-                            ? 'bg-[#29261b] hover:bg-[#3d3a2f] text-[#faf9f5] shadow-sm'
-                            : 'bg-[#e8e5de] text-[#656358]/50 cursor-not-allowed hover:bg-[#e8e5de]',
-                        )}
-                        title="加入队列"
-                      >
-                        <CornerDownRight className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        data-codex-stop
-                        size="icon"
-                        onClick={handleStop}
-                        disabled={isStopping}
-                        aria-busy={isStopping}
-                        aria-label={isStopping ? t.chat.stopping : t.chat.stop}
-                        className="btn-claude-primary h-8 w-8 rounded-[10px] bg-red-500 hover:bg-red-600 text-white shadow-sm disabled:cursor-wait disabled:opacity-100"
-                        title={isStopping ? t.chat.stopping : t.chat.stop}
-                      >
-                        {isStopping ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Square className="h-3 w-3" fill="currentColor" />
-                        )}
-                      </Button>
-                    </>
-                  ) : (
+                {/* Send / Stop Button */}
+                {!isWelcome && isStreaming ? (
+                  <>
                     <Button
                       data-codex-submit
-                      data-codex-send-button
+                      data-codex-queue-submit
                       size="icon"
                       onClick={handleSend}
-                      disabled={!hasContent || disabled || sendDisabled}
-                      aria-label={t.chat.send}
-                      title={t.chat.send}
-                      className="composer-send-button"
+                      disabled={!hasContent || disabled || sendDisabled || pendingFileImports > 0}
+                      aria-label="加入队列"
+                      className={cn(
+                        'h-8 w-8 rounded-[10px] transition-colors',
+                        hasContent && !disabled && !sendDisabled && pendingFileImports === 0
+                          ? 'bg-[#29261b] hover:bg-[#3d3a2f] text-[#faf9f5] shadow-sm'
+                          : 'bg-[#e8e5de] text-[#656358]/50 cursor-not-allowed hover:bg-[#e8e5de]',
+                      )}
+                      title="加入队列"
                     >
-                      <ArrowUp className="h-3.5 w-3.5" strokeWidth={2.35} />
+                      <CornerDownRight className="h-3.5 w-3.5" />
                     </Button>
-                  )}
-                </div>
+                    <Button
+                      data-codex-stop
+                      size="icon"
+                      onClick={handleStop}
+                      disabled={isStopping}
+                      aria-busy={isStopping}
+                      aria-label={isStopping ? t.chat.stopping : t.chat.stop}
+                      className="btn-claude-primary h-8 w-8 rounded-[10px] bg-red-500 text-white shadow-sm hover:bg-red-600 active:bg-red-700 disabled:cursor-wait disabled:opacity-100"
+                      title={isStopping ? t.chat.stopping : t.chat.stop}
+                    >
+                      {isStopping ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Square className="h-3 w-3" fill="currentColor" />
+                      )}
+                    </Button>
+                  </>
+                ) : (
+                  <button
+                    data-codex-submit
+                    data-codex-send-button
+                    data-welcome-submit={isWelcome ? 'true' : undefined}
+                    onClick={handleSend}
+                    disabled={!hasContent || disabled || sendDisabled || pendingFileImports > 0 || !!preparingShortcutKey || missingShortcutSubject}
+                    aria-label={t.chat.send}
+                    title={t.chat.send}
+                    className="composer-send-button"
+                  >
+                    <ArrowUp className="h-3.5 w-3.5" strokeWidth={2.35} />
+                  </button>
+                )}
               </div>
-            )}
-
-            {!isWelcome ? projectSelector : null}
+            </div>
           </div>
 
-          {isWelcome ? projectSelector : null}
+          {projectSelector}
         </div>
 
-
+        {welcomeShortcuts}
 
         {isWelcome && activeCategory && (
           <div
@@ -2766,7 +2971,11 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                 return category.options.map((opt, idx) => (
                   <button
                     key={opt.key}
-                    onClick={() => handleShortcutOptionClick(isEn ? opt.promptEn : opt.promptZh)}
+                    data-welcome-shortcut-option={opt.key}
+                    disabled={!!preparingShortcutKey || disabled || voiceState !== 'idle'
+                      || (!!opt.research && expertTeamsLoading)}
+                    aria-busy={preparingShortcutKey === opt.key}
+                    onClick={() => void prepareWorkspaceShortcut(opt)}
                     onMouseEnter={() => setHoverPrompt(isEn ? opt.promptEn : opt.promptZh)}
                     onMouseLeave={() => setHoverPrompt(null)}
                     className={cn(
@@ -2777,7 +2986,11 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
                     <span className="font-medium group-hover:text-[#d97757] transition-colors">
                       {isEn ? opt.labelEn : opt.labelZh}
                     </span>
-                    <ArrowUp className="h-3.5 w-3.5 opacity-0 group-hover:opacity-100 text-[#d97757] transition-all transform translate-x-1 group-hover:translate-x-0 shrink-0 ml-2" />
+                    {preparingShortcutKey === opt.key ? (
+                      <Loader2 className="ml-2 h-3.5 w-3.5 shrink-0 animate-spin text-[#d97757]" />
+                    ) : (
+                      <ArrowUp className="h-3.5 w-3.5 opacity-0 group-hover:opacity-100 text-[#d97757] transition-all transform translate-x-1 group-hover:translate-x-0 shrink-0 ml-2" />
+                    )}
                   </button>
                 ));
               })()}
@@ -2785,25 +2998,6 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
           </div>
         )}
 
-        {isWelcome && (
-          <div data-welcome-shortcuts className="mt-3 flex flex-wrap items-center justify-center gap-2">
-            {SHORTCUT_CATEGORIES.map((category) => {
-              const Icon = category.icon;
-              return (
-                <button
-                  key={category.id}
-                  data-welcome-shortcut={category.id}
-                  data-active={activeCategory === category.id ? 'true' : 'false'}
-                  onClick={() => handleShortcut(category.id)}
-                  className="flex h-9 items-center gap-1.5 rounded-lg border border-[#dedbd3]/80 bg-[#fffefa] px-3 text-[13px] font-medium text-[#29261b] shadow-[0_1px_2px_rgba(41,38,27,0.08)] transition-colors hover:bg-[#f5f3ee]"
-                >
-                  <Icon className="h-3.5 w-3.5 text-[#656358]" />
-                  <span>{t.chat[category.labelKey]}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
       </div>
     </>
   );

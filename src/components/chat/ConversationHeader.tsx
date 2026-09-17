@@ -3,9 +3,9 @@ import {
   ChevronDown,
   ChevronUp,
   Folder,
+  FolderOpen,
   ListTodo,
   Search,
-  Terminal,
   X,
 } from 'lucide-react';
 
@@ -16,7 +16,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
 
 interface ConversationHeaderProps {
   conversationTitle: string;
-  onOpenTerminal: () => void;
+  onOpenWorkspaceFolder?: () => void;
   searchOpen: boolean;
   searchQuery: string;
   searchMatchCount: number;
@@ -33,7 +33,7 @@ const iconButtonClassName =
 
 export default function ConversationHeader({
   conversationTitle,
-  onOpenTerminal,
+  onOpenWorkspaceFolder,
   searchOpen,
   searchQuery,
   searchMatchCount,
@@ -206,12 +206,13 @@ export default function ConversationHeader({
           <TooltipTrigger asChild>
             <button
               type="button"
-              data-conversation-header-open-terminal
-              onClick={onOpenTerminal}
-              className={iconButtonClassName}
-              aria-label={t.chat.openTerminal}
+              data-conversation-header-open-workspace
+              onClick={onOpenWorkspaceFolder}
+              disabled={!onOpenWorkspaceFolder}
+              className={cn(iconButtonClassName, 'disabled:cursor-not-allowed disabled:opacity-40')}
+              aria-label={t.chat.openWorkspaceFolder}
             >
-              <Terminal className="h-[18px] w-[18px]" strokeWidth={1.8} />
+              <FolderOpen className="h-[18px] w-[18px]" strokeWidth={1.8} />
             </button>
           </TooltipTrigger>
           <TooltipContent
@@ -219,7 +220,7 @@ export default function ConversationHeader({
             sideOffset={8}
             className="border border-white/10 bg-[#292824] px-2.5 py-1 text-[12px] font-medium text-white shadow-lg [&>svg]:hidden"
           >
-            {t.chat.openTerminal}
+            {t.chat.openWorkspaceFolder}
           </TooltipContent>
         </Tooltip>
       </div>

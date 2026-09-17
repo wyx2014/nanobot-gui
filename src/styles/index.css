@@ -540,7 +540,7 @@ body.window-modal-open [data-chat-surface] [class*="backdrop-blur"] {
 
 .claude-markdown {
   font-family: var(--font-claude-response);
-  color: #191814;
+  color: var(--cowork-ink);
   font-size: 18px;
   line-height: 1.8;
   letter-spacing: 0;
@@ -935,10 +935,6 @@ input[type="range"].slider-filled::-moz-range-thumb {
 .dark [data-settings-surface] [role="switch"] > span {
   background: #f0ece4;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
-}
-
-.dark [data-settings-surface] button:disabled:not([data-settings-nav-item]) {
-  color: #85817a;
 }
 
 /* Personalization is an editor, not a stack of light setting cards. Give it
@@ -1964,25 +1960,8 @@ html[data-dev-low-power] [data-hope-ripple] {
   background: #3a3835;
 }
 
-/* Codex-inspired dark composer shared by the welcome screen and conversations.
-   These rules only change colour and elevation; each variant keeps its own
-   existing dimensions, spacing and border radius. */
-.dark [data-codex-composer-shell] {
-  background: #1e1e1e;
-  border-color: rgba(255, 255, 255, 0.075);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.26);
-}
-
-/* A conversation already sits on the page surface. Avoid the extra rectangular
-   backing layer visible behind its rounded composer. */
-.dark [data-codex-composer-shell][data-composer-variant="chat"] {
-  background: transparent;
-  border-color: transparent;
-  box-shadow: none;
-}
-
-/* The bottom dock and live status merge into the conversation canvas. The
-   rounded composer is the only elevated surface. */
+/* Composer surfaces and layout are shared in cowork.css. The bottom dock and
+   live status continue to merge into the conversation canvas. */
 .dark [data-chat-composer-dock],
 .dark [data-generation-status] {
   background-color: transparent;
@@ -2004,42 +1983,6 @@ html[data-dev-low-power] [data-hope-ripple] {
 
 .dark [data-codex-project-selector] svg {
   color: #898985;
-}
-
-.dark [data-codex-composer-card] {
-  background: #2a2a2a;
-  border-color: rgba(255, 255, 255, 0.105);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.018),
-    0 2px 8px rgba(0, 0, 0, 0.18);
-}
-
-.dark [data-codex-composer-shell][data-composer-variant="chat"] [data-codex-composer-card] {
-  background: rgba(42, 42, 42, 0.84);
-  border-color: rgba(255, 255, 255, 0.12);
-  -webkit-backdrop-filter: blur(24px) saturate(1.18);
-  backdrop-filter: blur(24px) saturate(1.18);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.025),
-    0 16px 48px rgba(0, 0, 0, 0.34),
-    0 2px 10px rgba(0, 0, 0, 0.2);
-}
-
-/* Chromium's Linux compositor can expose a bright one-pixel backing-layer
-   seam around a translucent backdrop-filter surface. Keep the dark floating
-   composer visually identical but opaque and in the normal paint layer. */
-html.dark[data-desktop-platform="linux"]
-  [data-codex-composer-shell][data-composer-variant="chat"]
-  [data-floating-composer] {
-  background: #2a2a2a;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-
-.dark [data-codex-composer-shell][data-composer-variant="chat"] [data-codex-project-selector] {
-  color: #929292;
-  background: transparent;
-  border-color: rgba(255, 255, 255, 0.075);
 }
 
 .dark [data-codex-composer-input] {

@@ -13,6 +13,7 @@ import { fetchWorkspaces, updateNetworkSafetySettings } from '@/core/api';
 import { getNanobotClient, getNanobotConnectionStatus, getNanobotToken, getNanobotStatus } from '@/core/nanobotClient';
 import { projectNameFromPath } from '@/core/workspace';
 import { useChatStore } from '@/stores/chatStore';
+import { useOfficeGuideStore } from '@/stores/officeGuideStore';
 import { useScheduleStore } from '@/stores/scheduleStore';
 import { startScheduleRunMonitor } from '@/core/scheduleRunMonitor';
 
@@ -30,6 +31,7 @@ import { useSettingsStore, getEffectiveModel } from '@/stores/settingsStore';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ArrowLeft, ArrowRight, PanelLeft } from 'lucide-react';
 import ThinkingOrb from '@/components/common/ModalAwareThinkingOrb';
+import CenteredLoadingIndicator from '@/components/common/CenteredLoadingIndicator';
 import { useDocumentVisible } from '@/components/common/useVisualActivity';
 import { isDevLowPowerMode } from '@/utils/devPerformance';
 import { isLinux, isMacOS, isWindows } from '@/utils/platform';
@@ -62,8 +64,13 @@ const ToolboxView = lazy(() => import('@/components/settings/ToolboxModal'));
 const ChatView = lazy(() => import('@/components/chat/ChatView'));
 const RightPanel = lazy(() => import('@/components/panel/RightPanel'));
 
-function DeferredViewFallback() {
-  return <div className="flex h-full items-center justify-center text-sm text-[#77746b]">正在加载…</div>;
+function DeferredViewFallback({ label }: { label: string }) {
+  return (
+    <CenteredLoadingIndicator
+      label={label}
+      className="h-full w-full bg-[#fbfaf7] dark:bg-[#1f1f1f]"
+    />
+  );
 }
 
 function DeferredChatFallback({ label }: { label: string }) {
@@ -759,6 +766,9 @@ function App() {
               setGuideShown(true);
               setGuideInstallationId(installationId);
               closeGuide();
+              useChatStore.getState().startNewConversation();
+              useSettingsStore.getState().setViewMode('chat');
+              useOfficeGuideStore.getState().open();
             }}
           />
         )}
@@ -793,7 +803,7 @@ function App() {
           style={{ transitionDelay: shellTransitionDelay }}
         >
           <div
-            className="window-titlebar-no-drag pointer-events-auto absolute flex items-center gap-1 transition-[left] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)]"
+            className="cowork-titlebar-navigation window-titlebar-no-drag pointer-events-auto absolute flex items-center gap-1 transition-[left] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)]"
             style={{
               top: customTitlebar ? (windows ? 4 : 10) : 4,
               left: titlebarLayout.navigationLeft,
@@ -892,7 +902,7 @@ function App() {
           {/* Custom title bars live inside the renderer, so content starts below them. */}
           <main
             className={cn(
-              'flex-1 min-w-0 bg-[#fbfaf7] transition-opacity duration-150 dark:bg-[#1f1f1f]',
+              'cowork-main flex-1 min-w-0 bg-[#fbfaf7] transition-opacity duration-150 dark:bg-[#1f1f1f]',
               previewExpanded && 'pointer-events-none overflow-hidden opacity-0',
               mac || linux ? 'pt-12' : windows && 'pt-9',
             )}
@@ -902,7 +912,11 @@ function App() {
               '--conversation-header-transition-delay': shellTransitionDelay,
             } as CSSProperties}
           >
-            <Suspense fallback={<DeferredViewFallback />}>
+            <Suspense fallback={(
+              <DeferredViewFallback
+                label={viewMode === 'schedule' ? t.schedule.loadingTasks : t.common.loading}
+              />
+            )}>
               {viewMode === 'schedule' && <ScheduleView />}
               {viewMode === 'toolbox' && <ToolboxView />}
               {viewMode === 'settings' && <SystemSettingsView />}

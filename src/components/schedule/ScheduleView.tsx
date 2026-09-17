@@ -3,7 +3,6 @@ import {
   AlarmClockCheck,
   Info,
   Plus,
-  RefreshCw,
   Sparkles,
   Wand2,
 } from 'lucide-react';
@@ -19,6 +18,7 @@ import ScheduleRunDetail from './ScheduleRunDetail';
 import ScheduleTaskCard from './ScheduleTaskCard';
 import ScheduleTemplateGallery from './ScheduleTemplateGallery';
 import { isArchivedOneTimeTask } from './scheduleTaskVisibility';
+import CenteredLoadingIndicator from '@/components/common/CenteredLoadingIndicator';
 
 type ScheduleTab = 'tasks' | 'runs';
 
@@ -26,6 +26,7 @@ export default function ScheduleView() {
   const { t, format } = useI18n();
   const {
     tasks,
+    showEditor,
     openEditor,
     loadTasks,
     loading,
@@ -67,6 +68,14 @@ export default function ScheduleView() {
   const handleAskAssistant = () => {
     navigateToChatWithInput(t.schedule.askAbuCreatePrompt);
   };
+
+  if (showEditor) {
+    return (
+      <div data-schedule-surface className="flex h-full min-h-0 flex-col bg-[#fbfaf7] dark:bg-[#191919]">
+        <ScheduleEditor />
+      </div>
+    );
+  }
 
   return (
     <div data-schedule-surface className="flex h-full min-h-0 flex-col bg-[#fbfaf7] dark:bg-[#191919]">
@@ -143,10 +152,10 @@ export default function ScheduleView() {
         <ScrollArea className="min-h-0 flex-1">
           <div className="mx-auto w-full max-w-[1320px] px-6 pb-10 pt-5">
             {loading && allTasks.length === 0 ? (
-              <div role="status" className="flex min-h-[240px] items-center justify-center gap-2 text-[13px] text-[#777267] dark:text-[#aaa69d]">
-                <RefreshCw className="h-4 w-4 animate-spin" />
-                {t.schedule.loadingTasks}
-              </div>
+              <CenteredLoadingIndicator
+                label={t.schedule.loadingTasks}
+                className="min-h-[240px]"
+              />
             ) : error ? (
               <div className="mb-6 flex items-center justify-between gap-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-[12px] text-red-700 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-300">
                 <span>{error}</span>
@@ -232,7 +241,6 @@ export default function ScheduleView() {
         </ScrollArea>
       )}
 
-      <ScheduleEditor />
       <ScheduleRunDetail />
     </div>
   );

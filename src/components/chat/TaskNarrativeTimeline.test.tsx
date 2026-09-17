@@ -28,7 +28,7 @@ function render(
     activeTurnStartedAt?: number;
     hasBodyBelow?: boolean;
     turnStatus?: TurnLifecycleStatus;
-    onReviseRole?: (runId: string, roleId: string, mode: 'supplement' | 'retry') => void;
+    onReviseRole?: (runId: string, roleId: string) => void;
   } = {},
 ) {
   if (!container) {
@@ -73,9 +73,8 @@ describe('TaskNarrativeTimeline Hope Agent-compatible UI', () => {
     const supplement = view.querySelector<HTMLButtonElement>('button[title="补充资料"]');
     expect(supplement).not.toBeNull();
     act(() => supplement!.click());
-    expect(revise).toHaveBeenLastCalledWith('byd-v1', 'risk-assessor', 'supplement');
-    act(() => view.querySelector<HTMLButtonElement>('button[title="仅重试该角色"]')!.click());
-    expect(revise).toHaveBeenLastCalledWith('byd-v1', 'risk-assessor', 'retry');
+    expect(revise).toHaveBeenLastCalledWith('byd-v1', 'risk-assessor');
+    expect(view.querySelector('button[title="仅重试该角色"]')).toBeNull();
   });
   it('keeps live tool time advancing and freezes it when the turn is interrupted', () => {
     vi.useFakeTimers();

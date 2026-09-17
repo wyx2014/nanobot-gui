@@ -398,7 +398,7 @@ export default function ConversationWorkbench({
                         roleId={step.id}
                         roleTitle={step.title}
                         disabled={revisionDisabled}
-                        onReviseRole={(runId, roleId, mode) => useExpertTeamRevisionStore.getState().setSelection({ chatId: activeConversationId, runId, roleId, mode })}
+                        onReviseRole={(runId, roleId) => useExpertTeamRevisionStore.getState().setSelection({ chatId: activeConversationId, runId, roleId })}
                       />
                     )}
                   </div>
@@ -451,13 +451,13 @@ export default function ConversationWorkbench({
 
         <div className="no-scrollbar min-h-0 max-h-[300px] overflow-y-auto px-3 pb-4">
           {error && !artifacts.length ? (
-            <div className="mx-1 rounded-xl border border-red-100 bg-red-50/70 px-3 py-3 text-center">
-              <p className="text-[12px] text-red-600">{t.panel.artifactsLoadFailed}</p>
-              <p className="mt-1 break-words text-[10.5px] leading-4 text-red-500">{error}</p>
+            <div className="mx-1 rounded-xl border border-red-100 bg-red-50/70 px-3 py-3 text-center dark:border-red-400/20 dark:bg-red-400/10">
+              <p className="text-[12px] text-red-600 dark:text-red-300">{t.panel.artifactsLoadFailed}</p>
+              <p className="mt-1 break-words text-[10.5px] leading-4 text-red-500 dark:text-red-300">{error}</p>
               <button
                 type="button"
                 onClick={() => void refreshArtifacts('blocking')}
-                className="mt-2 text-[11px] font-medium text-red-600 underline underline-offset-2"
+                className="mt-2 text-[11px] font-medium text-red-600 underline underline-offset-2 dark:text-red-300"
               >
                 {t.panel.artifactsRetry}
               </button>

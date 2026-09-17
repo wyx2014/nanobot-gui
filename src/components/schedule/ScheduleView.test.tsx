@@ -10,11 +10,26 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { ScheduledTask } from '@/types/schedule';
 
+const connectorMocks = vi.hoisted(() => ({
+  fetchMcpPresets: vi.fn<(...args: unknown[]) => Promise<unknown>>(() => new Promise(() => {})),
+}));
+
+vi.mock('@/core/api', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/core/api')>(),
+  fetchMcpPresets: connectorMocks.fetchMcpPresets,
+}));
+vi.mock('@/core/nanobotClient', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/core/nanobotClient')>(),
+  getNanobotStatus: vi.fn(async () => ({ ready: true, port: 8900 })),
+  getNanobotToken: vi.fn(() => 'token'),
+}));
+
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const originalLoadTasks = useScheduleStore.getState().loadTasks;
 const originalDeleteRun = useScheduleStore.getState().deleteRun;
 const originalMarkRunViewed = useScheduleStore.getState().markRunViewed;
+const originalCreateTask = useScheduleStore.getState().createTask;
 
 let container: HTMLDivElement | undefined;
 let root: Root | undefined;
@@ -70,6 +85,8 @@ function renderView() {
 }
 
 beforeEach(() => {
+  connectorMocks.fetchMcpPresets.mockReset();
+  connectorMocks.fetchMcpPresets.mockImplementation(() => new Promise(() => {}));
   useSettingsStore.getState().setLanguage('zh-CN');
   useDiscoveryStore.setState({ skills: [] });
   useChatStore.setState({
@@ -114,6 +131,7 @@ afterEach(() => {
     loadTasks: originalLoadTasks,
     deleteRun: originalDeleteRun,
     markRunViewed: originalMarkRunViewed,
+    createTask: originalCreateTask,
     tasks: {},
     selectedTaskId: null,
     showEditor: false,
@@ -133,6 +151,9 @@ describe('ScheduleView automation center', () => {
 
     const view = renderView();
 
+    expect(view.querySelector('[data-schedule-editor-overlay]')).toBeNull();
+    expect(view.querySelector('[data-schedule-editor-scroll]')).not.toBeNull();
+    expect(Number(view.querySelector<HTMLTextAreaElement>('textarea[name="schedule-prompt"]')?.rows)).toBeGreaterThanOrEqual(10);
     expect(view.querySelector('[data-schedule-once-date]')).not.toBeNull();
     expect(view.querySelector<HTMLInputElement>('input[name="schedule-date"]')?.value).toMatch(
       /^\d{4}-\d{2}-\d{2}$/,
@@ -156,7 +177,7 @@ describe('ScheduleView automation center', () => {
     });
     useScheduleStore.setState({ showEditor: true, editingTaskId: null, editorDraft: null });
     const view = renderView();
-    const trigger = view.querySelector<HTMLButtonElement>('button[aria-label="工作区路径"]');
+    const trigger = view.querySelector<HTMLButtonElement>('button[aria-label="工作空间"]');
 
     expect(trigger).not.toBeNull();
     act(() => trigger?.click());
@@ -166,21 +187,88 @@ describe('ScheduleView automation center', () => {
     expect(popover?.closest('[data-schedule-editor]')).not.toBeNull();
     expect(view.querySelector('[data-schedule-editor-scroll]')?.getAttribute('data-workspace-picker-open')).toBe('true');
 
-    const search = popover?.querySelector<HTMLInputElement>('input[aria-label="搜索工作空间名称或路径"]');
+    const search = popover?.querySelector<HTMLInputElement>('input[aria-label="搜索工作空间"]');
     act(() => {
       if (!search) return;
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(search, 'quarterly');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(search, '季度');
       search.dispatchEvent(new Event('input', { bubbles: true }));
     });
     const options = popover?.querySelectorAll<HTMLButtonElement>('[role="option"]');
     expect(options).toHaveLength(1);
     expect(options?.[0].textContent).toContain('季度报告');
-    expect(options?.[0].textContent).toContain('/Users/test/quarterly-report');
+    expect(options?.[0].textContent).not.toContain('/Users/test/quarterly-report');
 
     act(() => options?.[0].click());
-    expect(view.querySelector<HTMLInputElement>('input[name="schedule-workspace"]')?.value).toBe('/Users/test/quarterly-report');
+    expect(trigger?.textContent).toContain('季度报告');
+    expect(view.querySelector('input[name="schedule-workspace"]')).toBeNull();
+    expect(view.textContent).not.toContain('/Users/test/quarterly-report');
     expect(view.querySelector('[data-select-portal="true"]')).toBeNull();
     expect(view.querySelector('[data-schedule-editor-scroll]')?.hasAttribute('data-workspace-picker-open')).toBe(false);
+  });
+
+  it('selects available connectors and saves their bindings with the workspace', async () => {
+    connectorMocks.fetchMcpPresets.mockResolvedValue({
+      presets: [{ name: 'juyuan', display_name: '聚源金融数据', installed: true, configured: true, enabled: true, available: true }],
+      installed_count: 1,
+    });
+    useWorkspaceStore.setState({ projects: [{
+      id: 'project-quarterly', kind: 'workspace', name: '季度报告',
+      rootPath: '/Users/test/quarterly-report', status: 'active', createdAt: 1, updatedAt: 2,
+    }] });
+    const createTask = vi.fn(async () => 'new-task');
+    useScheduleStore.setState({ showEditor: true, createTask });
+    let view: HTMLDivElement | undefined;
+    await act(async () => { view = renderView(); });
+
+    const name = view?.querySelector<HTMLInputElement>('input[name="schedule-name"]');
+    const prompt = view?.querySelector<HTMLTextAreaElement>('textarea[name="schedule-prompt"]');
+    const connector = view?.querySelector<HTMLInputElement>('[data-schedule-connectors] input[type="checkbox"]');
+    const workspace = view?.querySelector<HTMLButtonElement>('button[aria-label="工作空间"]');
+    expect(connector?.closest('label')?.textContent).toContain('聚源金融数据');
+    act(() => {
+      for (const [field, value] of [[name, '每日数据'], [prompt, '获取数据并汇总']] as const) {
+        if (!field) continue;
+        Object.getOwnPropertyDescriptor(field instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype, 'value')?.set?.call(field, value);
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      connector?.click();
+      workspace?.click();
+    });
+    const selectedWorkspace = view?.querySelector<HTMLButtonElement>('[data-select-portal="true"] [role="option"]:nth-child(2)');
+    act(() => selectedWorkspace?.click());
+    await act(async () => view?.querySelector<HTMLButtonElement>('[data-schedule-editor-save]')?.click());
+
+    expect(createTask).toHaveBeenCalledWith(expect.objectContaining({
+      name: '每日数据', prompt: '获取数据并汇总',
+      workspacePath: '/Users/test/quarterly-report',
+      mcpPresets: [{ name: 'juyuan' }],
+    }));
+  });
+
+  it('keeps unsaved edits during task refresh and restores saved connectors', async () => {
+    connectorMocks.fetchMcpPresets.mockResolvedValue({
+      presets: [{ name: 'juyuan', display_name: '聚源金融数据', installed: true, configured: true, enabled: true, available: true }],
+      installed_count: 1,
+    });
+    useScheduleStore.setState({
+      tasks: { 'daily-brief': taskFixture({ mcpPresets: [{ name: 'juyuan' }] }) },
+      editingTaskId: 'daily-brief', showEditor: true,
+    });
+    let view: HTMLDivElement | undefined;
+    await act(async () => { view = renderView(); });
+
+    const prompt = view?.querySelector<HTMLTextAreaElement>('textarea[name="schedule-prompt"]');
+    expect(view?.querySelector<HTMLInputElement>('[data-schedule-connectors] input[type="checkbox"]')?.checked).toBe(true);
+    act(() => {
+      if (!prompt) return;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(prompt, '我还没有保存的修改');
+      prompt.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    act(() => useScheduleStore.setState({
+      tasks: { 'daily-brief': taskFixture({ prompt: '后台刷新的原始内容', mcpPresets: [{ name: 'juyuan' }] }) },
+    }));
+
+    expect(prompt?.value).toBe('我还没有保存的修改');
   });
 
   it('renders a chat-created one-time reminder with its exact date', () => {
@@ -558,8 +646,7 @@ describe('ScheduleView automation center', () => {
     });
     expect(document.querySelector('[data-schedule-run-detail]')).not.toBeNull();
 
-    const viewConversation = Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
-      .find((button) => button.textContent?.includes('查看完整对话'));
+    const viewConversation = document.querySelector<HTMLButtonElement>('[data-schedule-run-conversation]');
     await act(async () => {
       viewConversation?.click();
       await Promise.resolve();
@@ -612,9 +699,7 @@ describe('ScheduleView automation center', () => {
     expect(useScheduleStore.getState().activeRunDetail).toBeNull();
     expect(document.querySelector('[data-schedule-run-detail]')).toBeNull();
     expect(useChatStore.getState().activeConversationId).toBeNull();
-    expect(Array.from(document.querySelectorAll('button')).some(
-      (button) => button.textContent?.includes('查看完整对话'),
-    )).toBe(false);
+    expect(document.querySelector('[data-schedule-run-conversation]')).toBeNull();
   });
 
   it('keeps the awake-only notice behind an accessible info tooltip', () => {

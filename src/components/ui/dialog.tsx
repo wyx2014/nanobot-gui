@@ -17,6 +17,7 @@ const DialogOverlay = React.forwardRef<
   return (
     <DialogPrimitive.Overlay
       ref={ref}
+      data-window-modal-backdrop
       className={cn(
         windowModalBackdropPositionClasses('fixed'),
         "z-50 bg-black/15",
@@ -43,8 +44,9 @@ const DialogContent = React.forwardRef<
     <div className="window-modal-viewport fixed inset-0 z-50 flex items-center justify-center p-4" style={{ zIndex: layer }}>
       <DialogPrimitive.Content
         ref={ref}
+        data-slot="dialog-content"
         className={cn(
-          "grid w-full max-w-lg gap-4 border bg-background p-6 shadow-md sm:rounded-lg",
+          "relative grid w-full max-w-lg gap-4 border bg-background p-6 shadow-md rounded-2xl",
           className,
         )}
         {...props}
@@ -96,6 +98,7 @@ const DialogTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Title
     ref={ref}
+    data-slot="dialog-title"
     className={cn(
       "text-lg font-semibold leading-none tracking-tight",
       className,

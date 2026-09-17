@@ -1,0 +1,677 @@
+/* TP Cowork's blue desktop shell and architectural welcome canvas. */
+:root:not(.dark) body,
+:root:not(.dark) .cowork-main,
+:root:not(.dark) [data-chat-surface]:not([data-welcome-surface]) {
+  background-color: #f7faff;
+}
+
+:root:not(.dark) [data-window-titlebar-divider] {
+  background-color: var(--cowork-line);
+}
+
+.cowork-titlebar-navigation button {
+  color: var(--cowork-text);
+}
+
+.cowork-titlebar-navigation button:disabled {
+  color: var(--cowork-muted);
+  opacity: .65;
+}
+
+.cowork-titlebar-navigation button:not(:disabled):hover {
+  color: var(--cowork-ink);
+  background: var(--cowork-hover);
+}
+
+.cowork-sidebar {
+  color: var(--cowork-ink);
+  border-color: var(--cowork-line);
+  background: linear-gradient(155deg, #f1f6ff 0%, #f8fbff 52%, #f1f7ff 100%);
+}
+
+.dark .cowork-sidebar {
+  background: linear-gradient(155deg, #151e2e, #131c2a);
+}
+
+.cowork-sidebar-header {
+  padding: 11px 14px 13px;
+}
+
+.cowork-sidebar-brand {
+  color: var(--cowork-ink);
+  font-weight: 750;
+  letter-spacing: -.045em;
+}
+
+#root .cowork-sidebar-brand {
+  font-size: calc(19px * var(--app-font-scale, 1));
+}
+
+.cowork-sidebar-header button:not(.cowork-sidebar-brand) {
+  color: var(--cowork-text);
+}
+
+.cowork-sidebar-header button:not(.cowork-sidebar-brand):hover {
+  background: var(--cowork-hover);
+}
+
+.cowork-sidebar-nav {
+  padding: 0 10px 25px;
+}
+
+.cowork-sidebar .cowork-sidebar-nav > button {
+  height: 44px;
+  gap: 14px;
+  padding-inline: 13px;
+  color: var(--cowork-ink);
+  background: transparent;
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+#root .cowork-sidebar-nav > button {
+  font-size: calc(15px * var(--app-font-scale, 1));
+}
+
+.cowork-sidebar .cowork-sidebar-nav > button:hover {
+  background: var(--cowork-hover);
+}
+
+.cowork-sidebar .cowork-sidebar-nav > button[aria-current="page"] {
+  color: var(--cowork-blue);
+  background: var(--cowork-selected);
+}
+
+.cowork-sidebar-nav > button > svg {
+  width: 20px;
+  height: 20px;
+  color: var(--cowork-text);
+}
+
+.cowork-sidebar .cowork-sidebar-nav > button[aria-current="page"] > svg {
+  color: var(--cowork-blue);
+}
+
+.cowork-sidebar-list {
+  padding-inline: 9px;
+}
+
+.cowork-sidebar-list [class~="text-[#8a867c]"] {
+  color: var(--cowork-muted);
+  font-weight: 400;
+}
+
+.cowork-sidebar-list [data-sidebar-project] {
+  height: 37px;
+  color: var(--cowork-ink);
+}
+
+.cowork-sidebar-list [data-sidebar-project] svg {
+  color: var(--cowork-text);
+}
+
+.cowork-sidebar-list [data-sidebar-conversation] {
+  height: 34px;
+  color: var(--cowork-text);
+}
+
+.cowork-sidebar-list [data-sidebar-conversation]:hover,
+.cowork-sidebar-list [data-sidebar-project]:hover {
+  background: var(--cowork-hover);
+}
+
+.cowork-sidebar-list [data-sidebar-conversation][aria-current="true"] {
+  color: var(--cowork-ink);
+  background: var(--cowork-selected);
+}
+
+.cowork-sidebar-list [data-conversation-relative-time] {
+  color: var(--cowork-muted);
+}
+
+.cowork-sidebar-account {
+  min-height: 64px;
+  padding: 13px 14px;
+  border-color: var(--cowork-line);
+}
+
+.cowork-sidebar-account button,
+.cowork-sidebar-account button div {
+  color: var(--cowork-ink);
+}
+
+.cowork-sidebar-account button:hover {
+  background: var(--cowork-hover);
+}
+
+.cowork-sidebar-account button:first-child {
+  gap: 11px;
+}
+
+.cowork-sidebar-account .cowork-sidebar-avatar {
+  width: 34px;
+  height: 34px;
+  border-color: #c5d7f4;
+  background: #ffffffa8;
+}
+
+.dark .cowork-sidebar-account .cowork-sidebar-avatar {
+  border-color: var(--cowork-line);
+  background: #1d2a40;
+}
+
+.cowork-sidebar-account > div > button:not(:first-child) {
+  width: 30px;
+  height: 30px;
+  color: var(--cowork-text);
+}
+
+.cowork-sidebar-account > div > button:not(:first-child) svg {
+  width: 18px;
+  height: 18px;
+}
+
+.cowork-sidebar button:focus-visible,
+.cowork-titlebar-navigation button:focus-visible {
+  outline: 2px solid var(--cowork-blue);
+  outline-offset: 2px;
+}
+
+/* Background layers never intercept composer or native window interactions. */
+.cowork-welcome {
+  position: relative;
+  isolation: isolate;
+  container-type: inline-size;
+  overflow: auto;
+  color: var(--cowork-ink);
+  background: #f5f9ff;
+}
+
+.cowork-welcome-backdrop {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  background: linear-gradient(180deg, #e1efff 0%, #f4f9ff 48%, #f0f7ff 100%);
+}
+
+/* Keep the skyline above the composer without stretching the architecture. */
+.cowork-welcome-backdrop::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 82%;
+  aspect-ratio: 1672 / 941;
+  background: var(--cowork-welcome-art) center / 100% 100% no-repeat;
+  content: '';
+  mask-image: linear-gradient(90deg, transparent 10%, #000 48%, #000);
+}
+
+/* Extend only the source image's water into the lower part of the viewport. */
+.cowork-welcome-backdrop::after {
+  position: absolute;
+  inset: 49% 0 0;
+  background: var(--cowork-welcome-art) right bottom / 100% 275% no-repeat;
+  content: '';
+  mask-image: linear-gradient(180deg, transparent, #000 32%);
+}
+
+.cowork-welcome-content {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  padding: clamp(115px, 19.4vh, 184px) clamp(32px, 5.7cqw, 80px) clamp(32px, 7.7vh, 74px);
+}
+
+.cowork-welcome-hero {
+  position: relative;
+}
+
+.cowork-welcome-title {
+  display: flex;
+  min-block-size: 2.64em;
+  flex-direction: column;
+  justify-content: flex-end;
+  max-width: 100%;
+  margin: 0;
+  color: var(--cowork-ink);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-size: clamp(25px, 3.5cqw, 46px);
+  font-weight: 650;
+  line-height: 1.32;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.cowork-welcome-title > span {
+  display: block;
+}
+
+.cowork-welcome-title > .cowork-welcome-project-line {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: baseline;
+  white-space: nowrap;
+}
+
+.cowork-welcome-project-line > span {
+  flex: none;
+}
+
+.cowork-welcome-project-line > .cowork-welcome-project-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cowork-welcome-subtitle {
+  margin: 16px 0 0;
+  color: var(--cowork-text);
+  font-size: clamp(14px, 1.8cqw, 23px);
+  font-weight: 400;
+  line-height: 1.65;
+  letter-spacing: .065em;
+}
+
+.cowork-welcome-composer {
+  width: 82%;
+  max-width: 980px;
+  margin: clamp(38px, 7.8vh, 72px) auto 0;
+}
+
+/* Keep welcome and conversation controls on the same blue accent. */
+:root:not(.dark) [data-codex-composer-card] {
+  border-color: #d3e0f4;
+}
+
+:root:not(.dark) [data-codex-composer-input] {
+  color: var(--cowork-ink);
+}
+
+[data-codex-composer-shell] {
+  border: 1px solid #aacbff;
+  border-radius: 21px;
+  background: #f3f8ffcf;
+  box-shadow: 0 7px 26px #4e91e617, 0 1px 4px #4e91e60d;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+[data-codex-composer-shell]:focus-within {
+  border-color: #85b5ff;
+  box-shadow: 0 8px 32px #4e91e61f, 0 0 0 2px #2983ff08;
+}
+
+[data-codex-composer-shell] [data-codex-composer-card] {
+  border: 0;
+  border-bottom: 1px solid #dce9fc;
+  border-radius: 20px;
+  background: #ffffffed;
+  box-shadow: 0 2px 8px #6595d205;
+}
+
+[data-codex-composer-card] [data-composer-text-row] {
+  padding: 19px 20px 7px;
+}
+
+#root [data-codex-composer-input] {
+  min-width: 0;
+  min-height: 52px;
+  font-size: calc(clamp(16px, 1.6cqw, 20px) * var(--app-font-scale, 1));
+  line-height: 1.6;
+}
+
+[data-codex-composer-input]::placeholder {
+  color: #8598ba;
+}
+
+[data-codex-composer-toolbar] {
+  gap: 8px;
+  padding: 0 17px 12px;
+}
+
+[data-codex-composer-toolbar] [data-composer-attachment-trigger] {
+  width: 36px;
+  height: 36px;
+  color: var(--cowork-ink);
+  border: 1px solid var(--cowork-line);
+  border-radius: 10px;
+  background: transparent;
+}
+
+[data-codex-composer-toolbar] [data-composer-attachment-trigger] svg {
+  width: 19px;
+  height: 19px;
+}
+
+[data-codex-composer-toolbar] [data-codex-model-picker] {
+  gap: 9px;
+  color: var(--cowork-ink);
+}
+
+#root [data-codex-composer-toolbar] [data-codex-model-picker] {
+  font-size: calc(15px * var(--app-font-scale, 1));
+}
+
+[data-codex-composer-toolbar] [data-composer-action]:hover,
+[data-codex-composer-toolbar] [data-codex-model-picker]:hover {
+  background: var(--cowork-hover);
+}
+
+[data-codex-composer-shell] [data-codex-project-selector] {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  min-height: 36px;
+  padding: 4px 15px;
+  color: var(--cowork-text);
+}
+
+[data-codex-project-selector] > div:first-child > div:first-child > button {
+  color: var(--cowork-text);
+  font-size: 13px;
+}
+
+.cowork-welcome-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin: 12px auto 0;
+}
+
+.cowork-welcome-shortcuts [data-welcome-shortcut] {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 4px 9px;
+  border: 1px solid var(--cowork-line);
+  border-radius: 8px;
+  color: var(--cowork-text);
+  background: var(--cowork-surface);
+  box-shadow: none;
+  font-size: 12px;
+  font-weight: 500;
+  transition: color 140ms ease, border-color 140ms ease, background-color 140ms ease;
+}
+
+.cowork-welcome-shortcuts [data-welcome-shortcut]:hover,
+.cowork-welcome-shortcuts [data-welcome-shortcut][data-active="true"] {
+  border-color: var(--cowork-blue);
+  color: var(--cowork-blue);
+  background: var(--cowork-hover);
+}
+
+:root .cowork-welcome-shortcuts [data-welcome-shortcut] svg {
+  color: currentColor;
+}
+
+[data-codex-composer-toolbar] .composer-send-button {
+  color: #fff;
+  border-color: #2983ff;
+  background: #2983ff;
+  box-shadow: inset 0 1px 0 #ffffff30, 0 3px 9px #2983ff1a;
+}
+
+[data-codex-composer-toolbar] .composer-send-button:not(:disabled):hover {
+  border-color: #1875ee;
+  background: #1875ee;
+  box-shadow: 0 5px 15px #2983ff35;
+}
+
+[data-codex-composer-toolbar] .composer-send-button:disabled {
+  color: #ffffffd9;
+  border-color: #72a9f6;
+  background: #72a9f6;
+  box-shadow: none;
+}
+
+[data-codex-composer-toolbar] .composer-send-button:focus-visible {
+  outline: 2px solid var(--cowork-blue);
+  outline-offset: 3px;
+  box-shadow: none;
+}
+
+[data-codex-composer-toolbar] .composer-send-button {
+  width: 36px;
+  height: 36px;
+  flex-basis: 36px;
+}
+
+[data-codex-send-button] svg {
+  width: 19px;
+  height: 19px;
+  stroke-width: 1.8;
+}
+
+/* Conversation inputs share the palette and controls but retain their compact
+   dimensions and translucent floating surface. */
+:root [data-codex-composer-shell][data-composer-variant="chat"] {
+  background: transparent;
+}
+
+[data-codex-composer-shell][data-composer-variant="chat"] [data-codex-composer-card] {
+  background: rgb(255 255 255 / 86%);
+  -webkit-backdrop-filter: blur(24px) saturate(1.18);
+  backdrop-filter: blur(24px) saturate(1.18);
+  box-shadow: 0 14px 42px #29261b21, 0 2px 8px #29261b0e;
+}
+
+[data-composer-variant="chat"] [data-composer-text-row] {
+  padding: 14px 16px 4px;
+}
+
+[data-composer-variant="chat"] [data-composer-text-row][data-has-attachments="true"] {
+  padding-top: 4px;
+}
+
+#root [data-composer-variant="chat"] [data-codex-composer-input] {
+  min-height: 28px;
+  font-size: calc(15px * var(--app-font-scale, 1));
+  line-height: 1.625;
+}
+
+[data-composer-variant="chat"] [data-codex-composer-toolbar] {
+  padding-top: 4px;
+}
+
+[data-composer-variant="chat"] [data-composer-attachment-trigger],
+[data-composer-variant="chat"] .composer-send-button {
+  width: 32px;
+  height: 32px;
+  flex-basis: 32px;
+}
+
+[data-composer-variant="chat"] [data-composer-attachment-trigger] svg {
+  width: 16px;
+  height: 16px;
+}
+
+[data-composer-variant="chat"] [data-codex-send-button] svg {
+  width: 14px;
+  height: 14px;
+}
+
+#root [data-composer-variant="chat"] [data-codex-model-picker] {
+  font-size: calc(13px * var(--app-font-scale, 1));
+}
+
+.cowork-welcome-setup {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+  padding: 14px 18px;
+  border: 1px solid var(--cowork-line);
+  border-radius: 14px;
+  background: #ffffffd6;
+}
+
+.cowork-welcome-setup-title {
+  font-size: 14px;
+  font-weight: 550;
+}
+
+.cowork-welcome-setup-description {
+  margin-top: 3px;
+  color: var(--cowork-text);
+  font-size: 12px;
+}
+
+.cowork-welcome-setup-button {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  color: #fff;
+  background: #2983ff;
+  font-size: 12px;
+}
+
+.cowork-welcome-setup-button:hover {
+  background: #1875ee;
+}
+
+.dark .cowork-welcome {
+  background: #121d30;
+}
+
+.dark .cowork-welcome-backdrop {
+  background: linear-gradient(180deg, #051c3d 0%, #0c2d54 48%, #03152f 100%);
+}
+
+.dark [data-codex-composer-shell] {
+  border-color: #3b5983;
+  background: #17263b;
+  box-shadow: 0 8px 28px #050d193d;
+}
+
+.dark [data-codex-composer-shell]:focus-within {
+  border-color: #6a9be0;
+}
+
+.dark [data-codex-composer-shell] [data-codex-composer-card] {
+  border-color: #314563;
+  background: #1d2d44;
+}
+
+.dark [data-codex-composer-shell][data-composer-variant="chat"] {
+  background: transparent;
+}
+
+.dark [data-codex-composer-shell][data-composer-variant="chat"] [data-codex-composer-card] {
+  background: rgb(29 45 68 / 84%);
+  box-shadow: inset 0 1px 0 #ffffff06, 0 16px 48px #00000057, 0 2px 10px #00000033;
+}
+
+/* Avoid Chromium's bright compositing seam on Linux dark windows. */
+html.dark[data-desktop-platform="linux"] [data-composer-variant="chat"] [data-floating-composer] {
+  background: #1d2d44;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.dark [data-codex-composer-shell] [data-codex-project-selector] {
+  background: transparent;
+}
+
+.dark [data-codex-composer-toolbar] [data-codex-model-picker],
+.dark [data-codex-composer-toolbar] [data-composer-action] {
+  color: var(--cowork-ink);
+}
+
+.dark [data-codex-composer-input]::placeholder {
+  color: var(--cowork-muted);
+}
+
+.dark .cowork-welcome-setup {
+  background: #1d2d44;
+}
+
+@container (max-width: 960px) {
+  .cowork-welcome-composer {
+    width: 94%;
+  }
+}
+
+@container (max-width: 700px) {
+  .cowork-welcome-content {
+    padding-inline: 28px;
+  }
+
+  .cowork-welcome-composer {
+    width: 100%;
+    margin-top: 46px;
+  }
+}
+
+@container (max-width: 460px) {
+  .cowork-welcome-content {
+    padding-inline: 20px;
+  }
+
+  .cowork-welcome-title {
+    font-size: 23px;
+  }
+
+  .cowork-welcome-subtitle {
+    font-size: 13px;
+    letter-spacing: .02em;
+  }
+
+  [data-codex-composer-toolbar] {
+    padding-inline: 12px;
+  }
+
+  [data-codex-composer-toolbar] [data-codex-model-picker] {
+    padding-inline: 5px;
+  }
+
+  #root [data-codex-composer-toolbar] [data-codex-model-picker] {
+    font-size: calc(12px * var(--app-font-scale, 1));
+  }
+
+  [data-codex-composer-toolbar] [data-codex-model-picker] > span {
+    max-width: 130px;
+  }
+
+  .cowork-welcome-setup {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (max-height: 700px) {
+  .cowork-welcome-backdrop::before {
+    height: 72%;
+  }
+
+  .cowork-welcome-backdrop::after {
+    top: 43%;
+  }
+
+  .cowork-welcome-content {
+    padding-top: 105px;
+    padding-bottom: 28px;
+  }
+
+  .cowork-welcome-composer {
+    margin-top: 34px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cowork-sidebar *,
+  .cowork-welcome *,
+  .cowork-titlebar-navigation * {
+    transition: none;
+  }
+}

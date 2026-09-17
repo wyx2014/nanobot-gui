@@ -2,7 +2,7 @@ import fs from 'fs/promises'
 import os from 'os'
 import path from 'path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { listWorkspaceFiles } from './workspaceFiles'
+import { importWorkspaceFile, listWorkspaceFiles } from './workspaceFiles'
 
 const temporaryDirectories: string[] = []
 
@@ -69,5 +69,48 @@ describe('listWorkspaceFiles', () => {
 
     expect(files).toHaveLength(2)
     expect(files.map((file) => file.relativePath)).toEqual(['a.txt', 'b.txt'])
+  })
+})
+
+describe('importWorkspaceFile', () => {
+  it('copies external files into attachments without changing the original or overwriting a same-name file', async () => {
+    const root = await createWorkspace()
+    const external = await createWorkspace()
+    const source = path.join(external, 'report.pdf')
+    await fs.writeFile(source, 'source')
+    await fs.mkdir(path.join(root, 'attachments'))
+    await fs.writeFile(path.join(root, 'attachments', 'report.pdf'), 'existing')
+
+    const first = await importWorkspaceFile(root, source)
+    const second = await importWorkspaceFile(root, source)
+    const canonicalRoot = await fs.realpath(root)
+
+    expect(first).toBe(path.join(canonicalRoot, 'attachments', 'report (2).pdf'))
+    expect(second).toBe(path.join(canonicalRoot, 'attachments', 'report (3).pdf'))
+    expect(await fs.readFile(source, 'utf8')).toBe('source')
+    expect(await fs.readFile(path.join(root, 'attachments', 'report.pdf'), 'utf8')).toBe('existing')
+    expect(await fs.readFile(first, 'utf8')).toBe('source')
+    expect((await listWorkspaceFiles(root)).map((file) => file.relativePath)).toContain('attachments/report (2).pdf')
+  })
+
+  it('uses existing workspace files without making another copy', async () => {
+    const root = await createWorkspace()
+    const source = path.join(root, 'notes.txt')
+    await fs.writeFile(source, 'notes')
+
+    await expect(importWorkspaceFile(root, source)).resolves.toBe(await fs.realpath(source))
+    await expect(fs.readdir(root)).resolves.toEqual(['notes.txt'])
+  })
+
+  it('rejects directories and attachments folders that link outside the workspace', async () => {
+    const root = await createWorkspace()
+    const external = await createWorkspace()
+    const source = path.join(external, 'notes.txt')
+    await fs.writeFile(source, 'notes')
+
+    await expect(importWorkspaceFile(root, external)).rejects.toThrow('source path must be a file')
+    await fs.symlink(external, path.join(root, 'attachments'), 'dir')
+    await expect(importWorkspaceFile(root, source)).rejects.toThrow('workspace attachments path must be a directory')
+    await expect(fs.readdir(external)).resolves.toEqual(['notes.txt'])
   })
 })

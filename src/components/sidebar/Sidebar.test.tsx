@@ -6,6 +6,7 @@ import { formatSidebarConversationTime } from './conversationTime';
 import { useChatStore } from '@/stores/chatStore';
 import { useScheduleStore } from '@/stores/scheduleStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { useOfficeGuideStore } from '@/stores/officeGuideStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { usePromptHubStore } from '@/stores/promptHubStore';
 import { shellBridge } from '@/lib/ipc-factory';
@@ -37,6 +38,7 @@ function buttonWithText(rootNode: ParentNode, text: string) {
 }
 
 beforeEach(() => {
+  useOfficeGuideStore.getState().close();
   useSettingsStore.getState().setLanguage('zh-CN');
   useSettingsStore.setState({ viewMode: 'chat', guideShown: true, guideOpen: false });
   useScheduleStore.setState({ tasks: {} });
@@ -370,14 +372,18 @@ describe('Sidebar workspace creation', () => {
 });
 
 describe('Sidebar help', () => {
-  it('reopens the first-run guide without resetting its completion flag', () => {
+  it('replays the office tutorial on the homepage while preserving conversations and first-run settings', () => {
     const view = renderSidebar();
     const helpButton = view.querySelector<HTMLButtonElement>('button[title="帮助"]');
 
     expect(helpButton).not.toBeNull();
     act(() => helpButton?.click());
 
-    expect(useSettingsStore.getState().guideOpen).toBe(true);
+    expect(useOfficeGuideStore.getState().step).toBe('welcome');
+    expect(useChatStore.getState().activeConversationId).toBeNull();
+    expect(useChatStore.getState().conversations.alpha.messages).toHaveLength(1);
+    expect(useSettingsStore.getState().viewMode).toBe('chat');
+    expect(useSettingsStore.getState().guideOpen).toBe(false);
     expect(useSettingsStore.getState().guideShown).toBe(true);
   });
 });

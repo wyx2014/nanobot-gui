@@ -39,7 +39,7 @@ function button(text: string): HTMLButtonElement {
 }
 
 async function render(chatId = 'byd') {
-  await act(async () => root.render(<ExpertTeamRevisionDialog key={chatId} chatId={chatId} runId="old" roleId="risk-assessor" mode="supplement" onClose={close} onStart={start} />));
+  await act(async () => root.render(<ExpertTeamRevisionDialog key={chatId} chatId={chatId} runId="old" roleId="risk-assessor" onClose={close} onStart={start} />));
 }
 
 beforeEach(() => {

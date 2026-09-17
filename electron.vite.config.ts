@@ -12,6 +12,12 @@ const BUILTIN_MCP_BUILD_CONSTANTS = {
   __TPCOWORK_BUILTIN_ANYSEARCH_API_KEY__: 'ANYSEARCH_API_KEY',
 } as const
 
+const IMAGE_EXTRACT_BUILD_CONSTANTS = {
+  __TPCOWORK_IMAGE_EXTRACT_API_URL__: 'TPCOWORK_IMAGE_EXTRACT_API_URL',
+  __TPCOWORK_IMAGE_EXTRACT_API_KEY__: 'TPCOWORK_IMAGE_EXTRACT_API_KEY',
+  __TPCOWORK_IMAGE_EXTRACT_MODEL__: 'TPCOWORK_IMAGE_EXTRACT_MODEL',
+} as const
+
 export default defineConfig(({ mode }) => {
   let revision = 'unknown';
   let dirty = true;
@@ -22,7 +28,7 @@ export default defineConfig(({ mode }) => {
   const buildIdentity = JSON.stringify({ id: randomUUID(), revision, dirty, created_at: new Date().toISOString() });
   const fileEnv = loadEnv(mode, process.cwd(), '')
   const mainCredentialDefines = Object.fromEntries(
-    Object.entries(BUILTIN_MCP_BUILD_CONSTANTS).map(([constant, envName]) => [
+    Object.entries({ ...BUILTIN_MCP_BUILD_CONSTANTS, ...IMAGE_EXTRACT_BUILD_CONSTANTS }).map(([constant, envName]) => [
       constant,
       JSON.stringify(process.env[envName]?.trim() || fileEnv[envName]?.trim() || ''),
     ]),

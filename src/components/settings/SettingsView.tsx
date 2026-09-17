@@ -69,6 +69,7 @@ import { useToastStore } from "@/stores/toastStore";
 import { isProtectedBuiltinModelProvider } from "@/config/builtinModelServices";
 import { Button } from "@/components/ui/button";
 import ConfirmDialog from "@/components/common/ConfirmDialog";
+import CenteredLoadingIndicator from "@/components/common/CenteredLoadingIndicator";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Toggle } from "@/components/ui/toggle";
@@ -221,7 +222,7 @@ function StatusPill({ ok, children }: { ok: boolean; children: string }) {
     <span
       className={cn(
         "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs",
-        ok ? "bg-emerald-50 text-emerald-700" : "bg-[#f1eee8] text-[#777267]",
+        ok ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300" : "bg-[#f1eee8] text-[#777267]",
       )}
     >
       {ok ? <Check className="h-3 w-3" /> : <AlertCircle className="h-3 w-3" />}
@@ -855,9 +856,11 @@ export function SettingsView({
     return (
       <div className="window-modal-viewport fixed inset-0 z-[70] flex items-center justify-center text-[#777267]">
         <WindowModalBackdrop />
-        <div className="relative flex h-[min(720px,calc(100vh-var(--window-titlebar-safe-top)-64px))] w-[min(1040px,calc(100vw-96px))] items-center justify-center rounded-xl border border-black/5 bg-white shadow-lg">
-          <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-          正在连接设置服务...
+        <div data-settings-dialog className="relative flex h-[min(720px,calc(100vh-var(--window-titlebar-safe-top)-64px))] w-[min(1040px,calc(100vw-96px))] items-center justify-center rounded-xl border border-black/5 bg-white shadow-lg">
+          <CenteredLoadingIndicator
+            label={isEnglish ? "Connecting to settings..." : "正在连接设置服务..."}
+            className="h-full w-full min-h-0"
+          />
         </div>
       </div>
     );
@@ -867,7 +870,7 @@ export function SettingsView({
     <div data-settings-surface className="window-modal-viewport fixed inset-0 z-[70] flex items-center justify-center p-8 text-[#202020]">
       <WindowModalBackdrop />
       <div data-settings-dialog className="relative flex h-[min(720px,calc(100vh-var(--window-titlebar-safe-top)-64px))] w-[min(1040px,calc(100vw-96px))] overflow-hidden rounded-xl border border-black/5 bg-white shadow-lg">
-        <aside data-settings-sidebar className="w-[236px] shrink-0 bg-[#f2f2f3] px-3 py-9">
+        <aside data-settings-sidebar className="w-[180px] shrink-0 overflow-y-auto bg-[#f2f2f3] px-3 py-4">
           <nav className="space-y-1">
             {localizedTabs.map((tab) => {
               const Icon = tab.icon;
@@ -880,7 +883,7 @@ export function SettingsView({
                   data-settings-nav-item
                   data-active={active ? "true" : "false"}
                   className={cn(
-                    "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-[15px] transition-colors",
+                    "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[13px] transition-colors",
                     active ? "bg-[#e7e7e8] text-[#161616]" : "text-[#222] hover:bg-[#e9e9ea]",
                   )}
                 >
@@ -902,7 +905,7 @@ export function SettingsView({
                   data-active={active ? "true" : "false"}
                   data-disabled={tab.disabled ? "true" : "false"}
                   className={cn(
-                    "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-[15px] transition-colors",
+                    "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[13px] transition-colors",
                     active && "bg-[#e7e7e8] text-[#161616]",
                     !active && !tab.disabled && "text-[#222] hover:bg-[#e9e9ea]",
                     tab.disabled && "text-[#777] opacity-70",
@@ -918,9 +921,9 @@ export function SettingsView({
 
         <main data-settings-content className="relative min-w-0 flex-1 bg-white">
           <div className="flex h-full flex-col">
-            <div data-settings-header className="flex items-center justify-between border-b border-[#eeeeef] px-10 py-8">
+            <div data-settings-header className="flex min-h-16 shrink-0 items-center justify-between gap-4 border-b border-[#eeeeef] px-6 py-4">
               <div>
-                <h2 className="text-[22px] font-semibold tracking-[-0.01em]">
+                <h2 className="text-[17px] font-semibold tracking-[-0.01em]">
                   {activeTab === "account"
                     ? (isEnglish ? settingsEnglish.account : "账户管理")
                     : activeTab === "help"
@@ -949,7 +952,7 @@ export function SettingsView({
               </div>
             </div>
 
-            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-10 py-6">
+            <div data-settings-body className="min-h-0 flex-1 space-y-2 overflow-y-auto px-6 pb-10 pt-5">
               {error ? (
                 <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                   <span>{error}</span>

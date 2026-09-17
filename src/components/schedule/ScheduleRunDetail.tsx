@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 import { useOpenScheduleRun } from './useOpenScheduleRun';
 
 function formatTimestamp(timestamp: number | undefined, locale: string): string {
@@ -156,17 +157,19 @@ export default function ScheduleRunDetail() {
 
         {hasConversation && (
           <DialogFooter className="border-t border-[#ebe7df] px-6 py-4 dark:border-white/10">
-            <button
+            <Button
+              data-cowork-button="primary"
+              data-schedule-run-conversation
               type="button"
               onClick={() => void handleOpenConversation()}
               disabled={opening}
-              className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-[#292722] px-4 text-[12.5px] font-medium text-white hover:bg-[#171613] disabled:opacity-60 dark:bg-[#eeeae2] dark:text-[#23211e] dark:hover:bg-white"
+              className="h-9 rounded-lg px-4 text-[12.5px] disabled:opacity-60"
             >
               {opening
                 ? <LoaderCircle className="h-4 w-4 animate-spin" />
                 : <ExternalLink className="h-4 w-4" />}
               {t.schedule.viewFullConversation}
-            </button>
+            </Button>
           </DialogFooter>
         )}
       </DialogContent>

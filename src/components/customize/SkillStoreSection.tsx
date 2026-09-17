@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Download, FileText, Loader2, RefreshCw, X } from 'lucide-react';
+import { AlertCircle, Download, FileText, Loader2, RefreshCw, Store, X } from 'lucide-react';
 import { useDiscoveryStore } from '@/stores/discoveryStore';
 import { usePromptHubStore } from '@/stores/promptHubStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import CenteredLoadingIndicator from '@/components/common/CenteredLoadingIndicator';
 import { fetchSkills, runSkillAction } from '@/core/api';
 import { getNanobotStatus, getNanobotToken, refreshNanobotAuth } from '@/core/nanobotClient';
 import {
@@ -161,9 +162,14 @@ export default function SkillStoreSection() {
 
   if (!token) {
     return (
-      <div data-skill-store-surface className="flex h-full items-center justify-center p-5">
-        <div data-skill-store-login className="max-w-[420px] rounded-lg border border-[#e8e4dd] bg-white p-5 text-center">
-          <h3 data-skill-store-login-title className="text-sm font-semibold text-[#29261b]">{isEnglish ? 'Sign in first' : '请先登录账号'}</h3>
+      <div data-skill-store-surface className="flex h-full flex-col">
+        <header data-page-section-heading>
+          <h2>{isEnglish ? 'Skill Store' : '技能商店'}</h2>
+          <p>{isEnglish ? 'Discover skills for research and everyday work.' : '发现并添加适合研究与办公的技能。'}</p>
+        </header>
+        <div data-skill-store-login className="m-auto flex max-w-[430px] flex-col items-center px-6 py-12 text-center">
+          <span className="cowork-empty-icon mb-4"><Store className="h-8 w-8" strokeWidth={1.55} /></span>
+          <h3 data-skill-store-login-title className="text-[17px] font-medium">{isEnglish ? 'Sign in to explore skills' : '登录后探索更多技能'}</h3>
           <p data-skill-store-login-description className="mt-2 text-xs leading-5 text-[#656358]">
             {isEnglish ? 'Sign in to browse the Skill Store and download approved skills.' : '登录后即可查看技能商店并下载已审核发布的技能。'}
           </p>
@@ -181,7 +187,11 @@ export default function SkillStoreSection() {
 
   return (
     <div data-skill-store-surface className="relative flex h-full flex-col overflow-hidden">
-      <div className="flex-1 overflow-y-auto px-4 py-4">
+      <header data-page-section-heading>
+        <h2>{isEnglish ? 'Skill Store' : '技能商店'}</h2>
+        <p>{isEnglish ? 'Discover skills for research and everyday work.' : '发现并添加适合研究与办公的技能。'}</p>
+      </header>
+      <div data-toolbox-list-body className="flex-1 overflow-y-auto px-4 py-4">
         {(error || message) && (
           <div className={`mb-4 flex items-start gap-2 rounded-lg border p-3 ${
             error ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'
@@ -192,12 +202,12 @@ export default function SkillStoreSection() {
         )}
 
         {loading ? (
-          <div className="flex items-center justify-center gap-2 py-12 text-sm text-neutral-400">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            {isEnglish ? 'Loading Skill Store...' : '正在读取技能商店'}
-          </div>
+          <CenteredLoadingIndicator
+            label={isEnglish ? 'Loading Skill Store...' : '正在读取技能商店'}
+            className="min-h-[240px]"
+          />
         ) : (
-          <div className="space-y-2">
+          <div data-toolbox-card-grid className="space-y-2">
             {filteredHubSkills.length === 0 ? (
               <div className="py-8 text-center text-sm text-neutral-400">{isEnglish ? 'No skills found in the store' : '没有找到商店技能'}</div>
             ) : filteredHubSkills.map((skill) => {

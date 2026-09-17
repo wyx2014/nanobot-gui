@@ -765,6 +765,7 @@ function appendScheduleParams(
     schedule?: ScheduleConfig;
     skillName?: string;
     workspacePath?: string;
+    mcpPresets?: import('./types').OutboundMcpPresetMention[];
     timezone?: string;
   },
 ): void {
@@ -773,6 +774,9 @@ function appendScheduleParams(
   if (data.prompt !== undefined) query.set("prompt", data.prompt);
   if (data.skillName !== undefined) query.set("skill_name", data.skillName ?? "");
   if (data.workspacePath !== undefined) query.set("workspace_path", data.workspacePath ?? "");
+  if (data.mcpPresets !== undefined) {
+    query.set("mcp_presets", JSON.stringify(data.mcpPresets.map(({ name }) => ({ name }))));
+  }
   const timezone = data.timezone ?? data.schedule?.timezone;
   if (timezone !== undefined) query.set("timezone", timezone);
   if (data.schedule !== undefined) {
@@ -820,6 +824,7 @@ export async function createScheduleTask(
     schedule: ScheduleConfig;
     skillName?: string;
     workspacePath?: string;
+    mcpPresets?: import('./types').OutboundMcpPresetMention[];
     timezone?: string;
   },
   base: string = "",
@@ -839,6 +844,7 @@ export async function updateScheduleTask(
     schedule: ScheduleConfig;
     skillName?: string;
     workspacePath?: string;
+    mcpPresets?: import('./types').OutboundMcpPresetMention[];
     timezone?: string;
   },
   base: string = "",

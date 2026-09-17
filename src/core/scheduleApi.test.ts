@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createScheduleTask } from './api';
+import { createScheduleTask, updateScheduleTask } from './api';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -53,5 +53,32 @@ describe('schedule API', () => {
     expect(url.searchParams.get('frequency')).toBe('once');
     expect(url.searchParams.get('at')).toBe('2099-08-30T01:15:00.000Z');
     expect(url.searchParams.get('timezone')).toBe('Asia/Shanghai');
+  });
+
+  it('sends connector bindings by name on create and clears them on update', async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ tasks: [] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    const data = {
+      name: '每日研究',
+      prompt: '查询市场数据',
+      workspacePath: '/Users/test/research',
+      schedule: { frequency: 'daily' as const, time: { hour: 9, minute: 0 } },
+    };
+
+    await createScheduleTask('token', {
+      ...data, mcpPresets: [{ name: 'juyuan', display_name: '聚源' }],
+    }, 'http://127.0.0.1:8900');
+    await updateScheduleTask('token', 'daily-study', {
+      ...data, mcpPresets: [],
+    }, 'http://127.0.0.1:8900');
+
+    const createUrl = new URL(String(fetchMock.mock.calls[0][0]));
+    const updateUrl = new URL(String(fetchMock.mock.calls[1][0]));
+    expect(createUrl.searchParams.get('workspace_path')).toBe('/Users/test/research');
+    expect(JSON.parse(createUrl.searchParams.get('mcp_presets') ?? '')).toEqual([{ name: 'juyuan' }]);
+    expect(updateUrl.searchParams.get('mcp_presets')).toBe('[]');
   });
 });

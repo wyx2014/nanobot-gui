@@ -22,6 +22,7 @@ import type {
 } from "@/core/types";
 import { notifyMcpPresetsChanged } from "@/lib/mcp-preset-events";
 import { useSettingsStore } from "@/stores/settingsStore";
+import CenteredLoadingIndicator from "@/components/common/CenteredLoadingIndicator";
 import { useI18n } from "@/i18n";
 import { McpServerDialog } from "./McpServerDialog";
 import SubTabBar from "./SubTabBar";
@@ -159,6 +160,10 @@ export default function MCPSection({
 
   return (
     <div data-mcp-surface className="mcp-settings">
+      <header data-page-section-heading>
+        <h2>{t("连接器", "Connectors")}</h2>
+        <p>{t("连接研究所需的数据源和外部工具，统一管理服务状态。", "Connect your data sources and tools, and manage their availability.")}</p>
+      </header>
       <div className="mcp-toolbar">
         <SubTabBar
           tabs={[
@@ -199,10 +204,10 @@ export default function MCPSection({
       )}
       <div className="mcp-server-list">
         {loading && !payload ? (
-          <div className="mcp-empty">
-            <Loader2 size={20} className="animate-spin" />
-            {t("正在加载服务", "Loading servers")}
-          </div>
+          <CenteredLoadingIndicator
+            label={t("正在加载服务", "Loading servers")}
+            className="min-h-[240px]"
+          />
         ) : !visible.length ? (
           <div className="mcp-empty">
             <p>
@@ -259,6 +264,7 @@ export default function MCPSection({
                       aria-label={`${server.display_name} ${t("启用", "enabled")}`}
                       checked={server.enabled !== false}
                       disabled={!!busy}
+                      size="md"
                       onChange={() =>
                         void action("toggle", server, {
                           enabled: server.enabled === false,
@@ -277,7 +283,7 @@ export default function MCPSection({
                     </Button>
                   )}
                 </div>
-                <div className="mcp-server-bottom">
+                <div data-mcp-card-footer className="mcp-server-bottom">
                   <div className="mcp-server-meta">
                     <span className={`mcp-status ${state}`}>
                       <span aria-hidden="true" className={`mcp-state-dot ${state}`} />

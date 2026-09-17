@@ -9,13 +9,12 @@ import type { ExpertTeamRevisionContext, ExpertTeamRevisionPlan } from '@/core/t
 import ExpertTeamMaterialGuide from './ExpertTeamMaterialGuide';
 import './expertTeamRevision.css';
 
-export type RevisionAction = (runId: string, roleId: string, mode: 'supplement' | 'retry') => void;
+export type RevisionAction = (runId: string, roleId: string) => void;
 
 interface Props {
   chatId: string;
   runId: string;
   roleId: string;
-  mode: 'supplement' | 'retry';
   disabled?: boolean;
   onClose: () => void;
   onStart: (plan: ExpertTeamRevisionPlan) => boolean;
@@ -30,7 +29,7 @@ function encodeFile(file: File): Promise<{ name: string; base64: string }> {
   });
 }
 
-export default function ExpertTeamRevisionDialog({ chatId, runId, roleId, mode, disabled, onClose, onStart }: Props) {
+export default function ExpertTeamRevisionDialog({ chatId, runId, roleId, disabled, onClose, onStart }: Props) {
   const [context, setContext] = useState<ExpertTeamRevisionContext | null>(null);
   const [roles, setRoles] = useState([roleId]);
   const [shared, setShared] = useState(false);
@@ -107,7 +106,7 @@ export default function ExpertTeamRevisionDialog({ chatId, runId, roleId, mode, 
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="expert-team-revision relative max-h-[85dvh] max-w-xl overflow-y-auto rounded-lg p-5 text-sm tracking-normal">
         <DialogTitle className="pr-7 text-base leading-6 tracking-normal">
-          {context?.target || '研究结果'} · {plan ? `确认更新 v${plan.version}` : mode === 'retry' ? '重试角色' : '补充资料'}
+          {context?.target || '研究结果'} · {plan ? `确认更新 v${plan.version}` : '补充资料'}
         </DialogTitle>
         <DialogDescription className="break-words text-xs">{role?.name || '角色记录'}{role ? ` · ${role.reason}` : ''}</DialogDescription>
         {!context && !error && <div role="status" className="flex items-center gap-2"><Loader2 className="size-4 animate-spin" />读取研究记录</div>}

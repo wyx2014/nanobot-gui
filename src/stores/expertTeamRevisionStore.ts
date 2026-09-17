@@ -4,7 +4,6 @@ interface RevisionSelection {
   chatId: string;
   runId: string;
   roleId: string;
-  mode: 'supplement' | 'retry';
 }
 
 // Both the transcript and workbench open the dialog owned by ChatView.

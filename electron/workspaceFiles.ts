@@ -1,4 +1,5 @@
 import fs from 'fs/promises'
+import { constants } from 'fs'
 import path from 'path'
 
 export interface WorkspaceFileEntry {
@@ -40,6 +41,36 @@ function compareNames(left: string, right: string): number {
 function isWithinRoot(root: string, candidate: string): boolean {
   const relative = path.relative(root, candidate)
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
+}
+
+export async function importWorkspaceFile(workspacePath: string, sourcePath: string): Promise<string> {
+  if (!workspacePath.trim() || !sourcePath.trim()) throw new Error('workspace and source paths are required')
+
+  const root = await fs.realpath(path.resolve(workspacePath))
+  if (!(await fs.stat(root)).isDirectory()) throw new Error('workspace path must be a directory')
+  const source = await fs.realpath(path.resolve(sourcePath))
+  if (!(await fs.stat(source)).isFile()) throw new Error('source path must be a file')
+  if (isWithinRoot(root, source)) return source
+
+  const destinationDirectory = path.join(root, 'attachments')
+  await fs.mkdir(destinationDirectory, { recursive: true })
+  const directoryStats = await fs.lstat(destinationDirectory)
+  if (!directoryStats.isDirectory() || directoryStats.isSymbolicLink()) {
+    throw new Error('workspace attachments path must be a directory')
+  }
+
+  const { name, ext } = path.parse(sourcePath)
+  for (let number = 1; number <= 1000; number += 1) {
+    const filename = number === 1 ? path.basename(sourcePath) : `${name} (${number})${ext}`
+    const destination = path.join(destinationDirectory, filename)
+    try {
+      await fs.copyFile(source, destination, constants.COPYFILE_EXCL)
+      return destination
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+    }
+  }
+  throw new Error('too many files with the same name in workspace attachments')
 }
 
 export async function listWorkspaceFiles(

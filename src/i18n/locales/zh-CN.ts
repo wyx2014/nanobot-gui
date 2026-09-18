@@ -139,7 +139,7 @@ const zhCN: TranslationDict = {
     shortcutInvestmentAnalysis: '投资研究',
     shortcutFixedIncome: '固收业务',
     shortcutDataAnalysis: '数据分析',
-    shortcutOffice: '综合办公',
+    shortcutOffice: 'PPT制作',
   },
 
   status: {

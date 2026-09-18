@@ -406,7 +406,7 @@ describe('ChatInput welcome layout', () => {
     const view = await renderChatInput('welcome');
     const shortcuts = [...view.querySelectorAll<HTMLButtonElement>('[data-welcome-shortcut]')];
 
-    expect(shortcuts.map((button) => button.textContent)).toEqual(['投资研究', '数据分析', '综合办公']);
+    expect(shortcuts.map((button) => button.textContent)).toEqual(['投资研究', '数据分析', 'PPT制作']);
     expect(shortcuts.every((button) => button.disabled)).toBe(true);
     await act(async () => shortcuts[0]?.click());
     expect(view.querySelector('[data-welcome-shortcut-panel]')).toBeNull();
@@ -441,7 +441,7 @@ describe('ChatInput welcome layout', () => {
     expect(shortcuts[0]?.textContent).toMatch(/投资研究|Equity Research/);
     expect(shortcuts[1]?.textContent).toMatch(/固收业务|Fixed Income/);
     expect(shortcuts[2]?.textContent).toMatch(/数据分析|Data Analysis/);
-    expect(shortcuts[3]?.textContent).toMatch(/综合办公|Office Work/);
+    expect(shortcuts[3]?.textContent).toMatch(/PPT制作|Office Work/);
 
     await act(async () => shortcuts[0]?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
     expect(shortcuts[0]?.dataset.active).toBe('true');

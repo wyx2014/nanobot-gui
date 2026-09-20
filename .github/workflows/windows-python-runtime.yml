@@ -81,8 +81,10 @@ jobs:
           $bundledNode = "dist/installers/win-unpacked/resources/node/node.exe"
           & $bundledNode --version
           if ($LASTEXITCODE -ne 0) { throw "Bundled Node smoke test failed" }
-          & $bundledNode "dist/installers/win-unpacked/resources/node/npm/bin/npm-cli.js" --version
+          & $bundledNode "dist/installers/win-unpacked/resources/node/npm-runtime/bin/npm-cli.js" --version
           if ($LASTEXITCODE -ne 0) { throw "Bundled npm smoke test failed" }
+          & "dist/installers/win-unpacked/resources/node/npm.cmd" --version
+          if ($LASTEXITCODE -ne 0) { throw "Bundled npm launcher smoke test failed" }
           & "dist/installers/win-unpacked/resources/node/npx.cmd" --version
           if ($LASTEXITCODE -ne 0) { throw "Bundled npx smoke test failed" }
 

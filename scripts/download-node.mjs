@@ -16,7 +16,8 @@ const archive = `${distribution}.${windows ? 'zip' : 'tar.gz'}`;
 const url = `https://nodejs.org/dist/v${version}/`;
 const destination = path.join(root, 'embedded-node', 'runtime');
 const relativeNode = windows ? 'node.exe' : 'bin/node';
-const relativeNpm = windows ? 'node_modules/npm/bin/npm-cli.js' : 'lib/node_modules/npm/bin/npm-cli.js';
+const relativeNpm = windows ? 'npm/bin/npm-cli.js' : 'lib/node_modules/npm/bin/npm-cli.js';
+const relativeNpxCli = windows ? 'npm/bin/npx-cli.js' : 'lib/node_modules/npm/bin/npx-cli.js';
 const relativeNpx = windows ? 'npx.cmd' : 'bin/npx';
 
 if (process.argv.includes('--print-config')) {
@@ -28,14 +29,37 @@ async function usable(directory) {
   try {
     const marker = JSON.parse(await fs.readFile(path.join(directory, '.tpcowork-node.json'), 'utf8'));
     if (marker.version !== version || marker.target !== target) return false;
-    await Promise.all([relativeNode, relativeNpm, relativeNpx].map(name => fs.access(path.join(directory, name))));
+    if (windows && marker.layout !== 'portable-npm-v1') return false;
+    await Promise.all([relativeNode, relativeNpm, relativeNpxCli, relativeNpx].map(name => fs.access(path.join(directory, name))));
+    if (windows) {
+      const npmLauncher = await fs.readFile(path.join(directory, 'npm.cmd'), 'utf8');
+      const npxLauncher = await fs.readFile(path.join(directory, 'npx.cmd'), 'utf8');
+      if (!npmLauncher.includes('%~dp0\\npm\\bin\\npm-cli.js')
+          || !npxLauncher.includes('%~dp0\\npm\\bin\\npx-cli.js')) return false;
+    }
     if (target === `${process.platform}-${process.arch}`) {
       const binary = path.join(directory, relativeNode);
       if (execFileSync(binary, ['--version'], { encoding: 'utf8' }).trim() !== `v${version}`) return false;
       execFileSync(binary, [path.join(directory, relativeNpm), '--version'], { stdio: 'pipe' });
+      execFileSync(binary, [path.join(directory, relativeNpxCli), '--version'], { stdio: 'pipe' });
     }
     return true;
   } catch { return false; }
+}
+
+async function makeWindowsNpmPortable(directory) {
+  if (!windows) return;
+  await fs.rename(path.join(directory, 'node_modules', 'npm'), path.join(directory, 'npm'));
+  for (const name of ['npm', 'npm.cmd', 'npm.ps1', 'npx', 'npx.cmd', 'npx.ps1']) {
+    const launcher = path.join(directory, name);
+    const contents = await fs.readFile(launcher, 'utf8');
+    const rewritten = contents
+      .replaceAll('$CLI_BASEDIR/node_modules/npm', '$CLI_BASEDIR/npm')
+      .replaceAll('%~dp0\\node_modules\\npm', '%~dp0\\npm')
+      .replaceAll('$PSScriptRoot/node_modules/npm', '$PSScriptRoot/npm');
+    if (rewritten === contents) throw new Error(`Unable to rewrite bundled ${name} launcher`);
+    await fs.writeFile(launcher, rewritten);
+  }
 }
 
 async function download(file) {
@@ -60,7 +84,13 @@ if (await usable(destination)) {
     await fs.writeFile(archivePath, data);
     execFileSync('tar', ['-xf', archivePath, '-C', staging], { stdio: 'inherit' });
     const extracted = path.join(staging, distribution);
-    await fs.writeFile(path.join(extracted, '.tpcowork-node.json'), JSON.stringify({ version, target, sha256: expected }));
+    await makeWindowsNpmPortable(extracted);
+    await fs.writeFile(path.join(extracted, '.tpcowork-node.json'), JSON.stringify({
+      version,
+      target,
+      sha256: expected,
+      ...(windows ? { layout: 'portable-npm-v1' } : {}),
+    }));
     if (!await usable(extracted)) throw new Error('Bundled Node/npm validation failed');
     // Preserve an existing generated runtime until the replacement is validated.
     try { await fs.rename(destination, `${destination}.previous-${Date.now()}`); }

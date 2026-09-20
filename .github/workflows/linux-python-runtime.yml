@@ -52,7 +52,7 @@ jobs:
 
       - name: Verify packaging contracts
         working-directory: nanobot-gui
-        run: npm run test -- electron/pythonRuntimePackaging.test.ts electron/packagingDependencies.test.ts
+        run: npm run test -- electron/pythonRuntimePackaging.test.ts electron/nodeRuntimePackaging.test.ts electron/packagingDependencies.test.ts
 
       - name: Build Linux packages with native Python runtime
         working-directory: nanobot-gui

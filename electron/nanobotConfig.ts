@@ -769,6 +769,16 @@ export async function syncNanobotConfig(cfg: NanobotConfigInput): Promise<boolea
     },
   };
   const refreshedManagedModels = await refreshDesktopModelCatalog();
+  // This section is gateway-owned after initial setup. Never overwrite a
+  // source or opt-out saved through the dependency settings API.
+  if (!existing?.tools?.packageSources && !existing?.tools?.package_sources) {
+    patch.tools.packageSources = {
+      enabled: app.isPackaged === true,
+      workspacePython: true,
+      npmRegistry: 'http://10.94.211.66/repository/npm_mirror/',
+      pypiIndexUrl: 'http://10.94.211.66/repository/officialPypi/simple/',
+    };
+  }
   const managedModels = resolveDesktopManagedModels(existing, refreshedManagedModels);
   const managedModelPatch = buildDesktopManagedModelPatch(
     existing,

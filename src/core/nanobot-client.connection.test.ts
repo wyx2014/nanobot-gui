@@ -21,6 +21,32 @@ class FakeSocket {
 }
 
 describe("NanobotClient readiness", () => {
+  it('correlates stop acknowledgements and never queues stop while offline', () => {
+    const socket = new FakeSocket();
+    const client = new NanobotClient({ url: 'ws://127.0.0.1:8900/', reconnect: false,
+      socketFactory: () => socket as unknown as WebSocket });
+    expect(() => client.sendMessage('chat-a', '/stop')).toThrow();
+    client.connect();
+    socket.open();
+    socket.receive({ event: 'ready', chat_id: 'chat-a', client_id: 'desktop' });
+    expect(socket.send.mock.calls.some(([raw]) => JSON.parse(raw).type === 'message')).toBe(false);
+    const onChat = vi.fn();
+    client.onChat('chat-a', onChat);
+    const actionId = client.sendMessage('chat-a', '/stop');
+    expect(JSON.parse(socket.send.mock.lastCall![0])).toMatchObject({
+      content: '/stop', client_action_id: actionId,
+    });
+    const result = { event: 'stop_result', chat_id: 'chat-a', client_action_id: actionId,
+      status: 'stopped', runtime_snapshot: { thread_status: { type: 'idle' } } };
+    socket.receive(result);
+    expect(onChat).toHaveBeenLastCalledWith(result);
+    socket.send.mockImplementationOnce(() => { throw new Error('connection lost'); });
+    expect(() => client.sendMessage('chat-a', '/stop')).toThrow();
+    socket.send.mockClear();
+    socket.receive({ event: 'ready', chat_id: 'chat-a', client_id: 'desktop' });
+    expect(socket.send.mock.calls.some(([raw]) => JSON.parse(raw).type === 'message')).toBe(false);
+    client.close();
+  });
   it("keeps a presentation document binding on queued wire messages", () => {
     const socket = new FakeSocket();
     const client = new NanobotClient({ url: 'ws://127.0.0.1:8900/', reconnect: false, socketFactory: () => socket as unknown as WebSocket });

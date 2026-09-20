@@ -85,9 +85,13 @@ TP Cowork 的所有任务都在本地电脑上执行，无需把文件上传到�
 | 场景 | 推荐写法 |
 | --- | --- |
 | 日常办公 | 根据我附上的会议记录，整理决策事项、负责人和截止日期，输出 Markdown 表格。 |
-| 表格分析 | 分析这份持仓表，检查行业集中度和前十大持仓，并给出三条需要跟踪的风险。 |
+| 表格分析 | 根据这份经营数据，生成 1～3 张交互式图表，说明主要变化、数据依据和统计口径。 |
 | 单股投研 | 使用资产投研团队 · 个股研究分析长江电力（600900.SH），数据截至今天，最后交付 HTML 研报。 |
 | 项目文件 | 阅读当前工作区的 README 和配置文件，先说明问题，再提出修改方案；暂时不要改代码。 |
+
+首页的 **投资研究** 包含个股深度研究、产业链机会挖掘和信用债主体研究，统一使用「我的投研分析」工作空间；信用债主体研究会自动加入聚源和财汇连接器。
+**数据分析 → 表格快速洞察 / 指标趋势对比** 会选择已安装的智能图表技能，并准备「我的数据分析」工作空间；添加表格后即可生成可离线查看的 HTML 图表。
+**综合办公 → 撰写与润色材料** 会选择已安装的润色技能和图片识别能力，并准备「我的综合办公」。点击任务会将所需的“我的技能”绑定到该工作空间；技能未安装或停用时会提示处理。
 
 按 **Enter** 发送，按 **Shift+Enter** 换行。任务运行时仍可继续输入，新内容会进入队列。
 
@@ -134,9 +138,13 @@ A useful request includes the **goal, inputs, scope, output, and constraints**.
 | Scenario | Example |
 | --- | --- |
 | Office work | Turn the attached meeting record into decisions, owners, and deadlines in a Markdown table. |
-| Spreadsheet | Review this holdings file for sector concentration and top-ten exposure, then list three risks to monitor. |
+| Spreadsheet | Turn this business data into 1–3 interactive charts, explaining the main changes, supporting figures, and aggregation bases. |
 | Stock research | Use Asset Research Team · Stock Research to analyze 600900.SH with data through today and deliver an HTML report. |
 | Project work | Read the README and configuration in this workspace, explain the issue, and propose a fix without editing yet. |
+
+On the homepage, **Investment Research** includes stock research, supply chain opportunities, and credit issuer research, all using the “我的投研分析” workspace. Credit issuer research automatically selects the Juyuan and Caihui connectors.
+**Data Analysis → Quick spreadsheet insights / Metric trends and comparisons** selects the installed chart skill and prepares the “我的数据分析” workspace. Add a table to generate offline HTML charts.
+**Office → Draft and polish materials** selects the installed editing skill and image reading, and prepares “我的综合办公”. Selecting a task binds its required personal skills to that workspace; missing or disabled skills are reported before proceeding.
 
 Press **Enter** to send and **Shift+Enter** for a new line. While a task runs, new requests are placed in the queue.
 
@@ -756,7 +764,7 @@ Missed executions are not guaranteed to catch up after shutdown or sleep. Test i
 打开 **工具箱 → 技能**：
 
 - **内置技能**：随 TP Cowork 提供，可启用或禁用；
-- **我的技能**：你创建或导入的工作区技能，可编辑管理和删除。
+- **我的技能**：统一保存你创建或导入的个人技能，可管理和删除，不随当前工作空间切换。
 
 禁用技能后，它不会出现在输入候选中，也不会参与 Agent 的技能发现。
 
@@ -764,11 +772,13 @@ Missed executions are not guaranteed to catch up after shutdown or sleep. Test i
 
 工具箱右上角的创建菜单提供：
 
-- **让 TP Cowork 创建**：进入会话，由 Agent 帮你梳理技能；
+- **让 TP Cowork 创建**：进入会话，由 Agent 生成技能，完成后默认保存到“我的技能”；
 - **手动创建**：填写英文小写名称、触发描述和技能正文；
 - **上传文件**：导入 Markdown，推荐文件名为 SKILL.md。
 
 技能名称只能使用英文小写、数字和连字符。
+
+在普通会话中要求生成技能，也会默认保存到“我的技能”，包含技能所需的脚本和资源。明确要求仅保存在当前项目时，才保留为项目文件。
 
 ## 项目绑定
 
@@ -795,11 +805,13 @@ Choose only skills relevant to the task. Project skills appear only when authori
 
 ## Manage skills
 
-**Toolbox → Skills** separates built-in skills from **My Skills**. Skills can be enabled or disabled; workspace skills can also be deleted.
+**Toolbox → Skills** separates built-in skills from **My Skills**, your personal library shared across workspaces. Skills can be enabled or disabled; personal skills can also be deleted.
 
 ## Create a skill
 
 Use the create menu to ask TP Cowork for help, create manually, or import Markdown (preferably SKILL.md). Names use lowercase English letters, digits, and hyphens.
+
+Skills generated in a conversation are saved to **My Skills** by default, including their scripts and resources. Explicit requests for project-only files keep that destination.
 
 ## Project binding
 

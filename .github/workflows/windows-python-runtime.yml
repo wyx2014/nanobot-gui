@@ -76,6 +76,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw "Bundled Python smoke test failed"
           }
+          & $python scripts/check-python-commands.py
+          if ($LASTEXITCODE -ne 0) { throw "Agent Python command smoke test failed" }
+          $bundledNode = "dist/installers/win-unpacked/resources/node/node.exe"
+          & $bundledNode --version
+          if ($LASTEXITCODE -ne 0) { throw "Bundled Node smoke test failed" }
+          & $bundledNode "dist/installers/win-unpacked/resources/node/node_modules/npm/bin/npm-cli.js" --version
+          if ($LASTEXITCODE -ne 0) { throw "Bundled npm smoke test failed" }
+          & "dist/installers/win-unpacked/resources/node/npx.cmd" --version
+          if ($LASTEXITCODE -ne 0) { throw "Bundled npx smoke test failed" }
 
       - name: Read package metadata and checksum
         id: package

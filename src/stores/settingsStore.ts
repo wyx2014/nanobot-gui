@@ -204,6 +204,7 @@ export type ViewMode = 'chat' | 'schedule' | 'toolbox' | 'settings';
 // System settings tabs
 export type SystemSettingsTab =
   | 'general'
+  | 'dependencies'
   | 'ai-services'
   | 'voice'
   | 'sandbox'

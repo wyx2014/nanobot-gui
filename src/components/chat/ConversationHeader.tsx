@@ -169,7 +169,8 @@ export default function ConversationHeader({
             <TooltipContent
               side="bottom"
               sideOffset={8}
-              className="border border-white/10 bg-[#292824] px-2.5 py-1 text-[12px] font-medium text-white shadow-lg [&>svg]:hidden"
+              showArrow={false}
+              className="border border-white/10 bg-[#292824] px-2.5 py-1 text-[12px] font-medium text-white shadow-lg"
             >
               {t.chat.searchConversation}
             </TooltipContent>
@@ -196,7 +197,8 @@ export default function ConversationHeader({
           <TooltipContent
             side="bottom"
             sideOffset={8}
-            className="border border-white/10 bg-[#292824] px-2.5 py-1 text-[12px] font-medium text-white shadow-lg [&>svg]:hidden"
+            showArrow={false}
+            className="border border-white/10 bg-[#292824] px-2.5 py-1 text-[12px] font-medium text-white shadow-lg"
           >
             {t.panel.pinnedSummary}
           </TooltipContent>
@@ -218,7 +220,8 @@ export default function ConversationHeader({
           <TooltipContent
             side="bottom"
             sideOffset={8}
-            className="border border-white/10 bg-[#292824] px-2.5 py-1 text-[12px] font-medium text-white shadow-lg [&>svg]:hidden"
+            showArrow={false}
+            className="border border-white/10 bg-[#292824] px-2.5 py-1 text-[12px] font-medium text-white shadow-lg"
           >
             {t.chat.openWorkspaceFolder}
           </TooltipContent>

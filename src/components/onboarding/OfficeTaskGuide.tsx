@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { ArrowRight, FilePenLine, Loader2, X } from 'lucide-react';
 import { useI18n } from '@/i18n';
 import { useOfficeGuideStore, type OfficeGuideStep } from '@/stores/officeGuideStore';
-import { OFFICE_WRITING_EXAMPLES } from '@/components/chat/workspaceTaskShortcuts';
+import { OFFICE_WRITING_EXAMPLES, OFFICE_WRITING_SKILL_NAME } from '@/components/chat/workspaceTaskShortcuts';
 import { Button } from '@/components/ui/button';
 import { placeOfficeGuide, type GuideRect } from './officeGuideLayout';
 import './officeTaskGuide.css';
@@ -13,7 +13,7 @@ const TARGETS: Record<OfficeGuideStep, string[]> = {
   category: ['[data-welcome-shortcut="office"]'],
   task: ['[data-welcome-shortcut-option="draft_material"]'],
   workspace: ['[data-welcome-project-selector]'],
-  skills: ['[data-selected-skill="office-documents"]', '[data-selected-skill="image-extract"]'],
+  skills: [`[data-selected-skill="${OFFICE_WRITING_SKILL_NAME}"]`, '[data-selected-skill="image-extract"]'],
   compose: ['[data-welcome-composer-input]'],
 };
 
@@ -167,7 +167,7 @@ export default function OfficeTaskGuide({
     },
     task: {
       title: isEn ? 'Choose Draft and polish materials' : '选择「撰写与润色材料」',
-      description: isEn ? 'This prepares an office workspace, document and image-reading skills, and an editable writing request.' : '点击后会准备办公工作空间、文档与图片识别技能，并填好一段可修改的写作要求。',
+      description: isEn ? 'This prepares an office workspace, binds your editing skill, adds image reading, and fills an editable writing request.' : '点击后会准备办公工作空间、绑定你的润色技能、加入图片识别，并填好一段可修改的写作要求。',
       action: isEn ? 'Choose this task' : '选择这个任务',
     },
     workspace: {
@@ -176,8 +176,8 @@ export default function OfficeTaskGuide({
       action: isEn ? 'Explore the skills' : '看看已加入的技能',
     },
     skills: {
-      title: isEn ? 'Writing and image-reading skills' : '写作和图片识别能力已带上',
-      description: isEn ? 'office-documents handles writing and layout; image-extract reads text in screenshots. Use + to add capabilities, or hover a tag to remove it.' : 'office-documents 负责撰写与排版，image-extract 负责识别截图文字。以后可从「+」添加能力，移到标签上可删除。',
+      title: isEn ? 'Editing and image-reading skills' : '润色和图片识别能力已带上',
+      description: isEn ? 'Your editing skill removes boilerplate and improves wording while preserving facts and a professional tone; image-extract reads screenshots. Use + to add capabilities, or hover a tag to remove it.' : '已加入的润色技能负责去套话、改善表达，保留事实和正式语气；image-extract 负责识别截图文字。以后可从「+」添加能力，移到标签上可删除。',
       action: isEn ? 'Add your requirements' : '补充我的要求',
     },
     compose: {

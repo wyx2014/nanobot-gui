@@ -69,7 +69,7 @@ async function getSkillsAuth(): Promise<{ token: string; baseUrl: string }> {
 
 function sourceLabel(source: string, isEnglish: boolean): string {
   if (source === 'builtin') return isEnglish ? 'Built-in' : '内置';
-  if (source === 'workspace') return isEnglish ? 'Workspace' : '工作区';
+  if (source === 'workspace') return isEnglish ? 'My Skills' : '我的技能';
   return source || (isEnglish ? 'Unknown' : '未知');
 }
 
@@ -517,7 +517,7 @@ export default function SkillsSection({ manualCreateTrigger }: { manualCreateTri
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
                 <h3 className="text-[17px] font-semibold text-[#29261b]">创建技能</h3>
-                <p className="mt-1 text-[13px] text-[#8a867c]">保存后会写入工作区的我的技能。</p>
+                <p className="mt-1 text-[13px] text-[#8a867c]">{isEnglish ? 'Save to My Skills, then select it in a conversation or bind it to a project.' : '保存到“我的技能”后，可在会话中选择或绑定到工作空间。'}</p>
               </div>
               <button
                 onClick={() => setCreateOpen(false)}

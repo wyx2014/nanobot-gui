@@ -36,6 +36,8 @@ import type {
   SecurityAuditPage,
   SecurityPolicyPayload,
   SecurityPolicyUpdate,
+  PackageSourcesSettings,
+  PackageSourcesPayload,
 } from "./types";
 import type { ScheduleConfig } from "@/types/schedule";
 import { isProtectedBuiltinModelProvider } from "@/config/builtinModelServices";
@@ -458,9 +460,10 @@ export async function fetchSessionRuntimeSnapshot(
   token: string,
   key: string,
   base: string = "",
+  signal?: AbortSignal,
 ): Promise<ThreadRuntimeSnapshot | null> {
   const url = `${base}/api/sessions/${encodeURIComponent(key)}/runtime-snapshot`;
-  const res = await fetchGatewayResponse(url, token, undefined, API_READ_TIMEOUT_MS);
+  const res = await fetchGatewayResponse(url, token, { signal, cache: "no-store" }, API_READ_TIMEOUT_MS);
   if (res.status === 404) return null;
   if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}`);
   return (await res.json()) as ThreadRuntimeSnapshot;
@@ -720,6 +723,20 @@ export async function fetchSettings(
     undefined,
     API_READ_TIMEOUT_MS,
   );
+}
+
+export async function fetchPackageSources(token: string, base: string): Promise<PackageSourcesPayload> {
+  return request<PackageSourcesPayload>(`${base}/api/settings/package-sources`, token, undefined, API_READ_TIMEOUT_MS);
+}
+
+export async function savePackageSources(token: string, values: PackageSourcesSettings, base: string): Promise<PackageSourcesPayload> {
+  return request<PackageSourcesPayload>(`${base}/api/settings/package-sources/save`, token, {
+    headers: { 'X-Nanobot-Package-Sources': asciiJsonStringify(values) },
+  }, 30_000);
+}
+
+export async function checkPackageSources(token: string, base: string): Promise<PackageSourcesPayload> {
+  return request<PackageSourcesPayload>(`${base}/api/settings/package-sources/check`, token, undefined, API_READ_TIMEOUT_MS);
 }
 
 export async function updateTranscriptionSettings(

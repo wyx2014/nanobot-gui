@@ -1,21 +1,30 @@
 export interface WorkspaceTaskBinding {
   workspaceName: string;
   skillNames: string[];
+  /** Personal skills explicitly granted by selecting this task. */
+  userSkillNames?: string[];
   financialData?: boolean;
   subjectZh?: string;
   subjectEn?: string;
 }
 
+export const DATA_CHART_SKILL_NAME = 'smart-charts-8.4.0';
+export const OFFICE_WRITING_SKILL_NAME = 'reduce-ai-perception-1.0.5';
+
 const DATA_WORKSPACE: WorkspaceTaskBinding = {
   workspaceName: '我的数据分析',
-  skillNames: ['portfolio-analysis'],
-  financialData: true,
+  skillNames: [DATA_CHART_SKILL_NAME],
+  userSkillNames: [DATA_CHART_SKILL_NAME],
 };
 
 const OFFICE_WORKSPACE: WorkspaceTaskBinding = {
   workspaceName: '我的综合办公',
-  skillNames: ['office-documents', 'image-extract'],
+  skillNames: [OFFICE_WRITING_SKILL_NAME, 'image-extract'],
+  userSkillNames: [OFFICE_WRITING_SKILL_NAME],
 };
+
+const OFFICE_STYLE_ZH = '使用已选润色技能去除套话、重复和机械表达。本任务以正式办公规范为准：保留事实数字、专业术语、责任主体、结论强度和必要的标题、列表与标点，不强行口语化、自嘲或添加原文没有的细节。';
+const OFFICE_STYLE_EN = 'Use the selected editing skill to remove boilerplate, repetition, and mechanical wording. Formal business conventions take priority: preserve facts, figures, terminology, responsible parties, the strength of conclusions, and useful headings, lists, and punctuation. Do not force colloquialisms, self-deprecation, or invented details.';
 
 export const OFFICE_WRITING_EXAMPLES = [
   {
@@ -36,23 +45,27 @@ export const OFFICE_WRITING_EXAMPLES = [
 
 export const DATA_ANALYSIS_SHORTCUTS = [
   {
-    key: 'portfolio_structure_review',
-    labelZh: '持仓结构体检',
-    labelEn: 'Portfolio structure review',
-    promptZh: `请体检我提供的持仓表；未提供时提醒我上传 Excel/CSV。核对产品、日期、币种及权重口径，分析资产分布、集中度与到期结构，按已提供的限额检查偏离。
-补充数据仅用已选聚源、财汇；缺失字段如实说明。将报告、汇总 CSV 和计算脚本保存到当前工作空间，保留原件并返回摘要与路径。`,
-    promptEn: `Review my holdings structure; ask for Excel/CSV files if missing. Verify product, date, currency, and weight basis. Analyze allocation, concentration, and maturities; check against supplied limits.
-Supplement data through selected Juyuan and Caihui connectors; report missing fields. Save reports, CSV summaries, and calculation scripts in the workspace, preserve originals, and return a summary and paths.`,
+    key: 'table_quick_insights',
+    labelZh: '表格快速洞察',
+    labelEn: 'Quick spreadsheet insights',
+    promptZh: `请从我上传或用 @ 指定的 Excel/CSV 等表格中找出值得关注的发现；未提供时提醒我添加文件。
+使用已选智能图表技能检查字段、缺失值、单位和统计口径，自动选择 1～3 张最能说明问题的图，不必让我先选图型。每张图附上关键发现、数据依据和口径说明，区分事实与推测。
+将可离线打开的交互式 HTML 图表保存到当前工作空间的“图表”目录，保留原件，返回简要发现与文件路径。`,
+    promptEn: `Find useful insights in the Excel/CSV or other table files I attach or reference with @; ask me to add a file if none is supplied.
+Use the selected chart skill to inspect fields, missing values, units, and aggregation bases. Choose 1–3 informative charts without asking me to choose chart types. Include a finding, supporting figures, and scope for each chart; distinguish facts from hypotheses.
+Save standalone offline interactive HTML charts in the workspace's “图表” folder, preserve originals, and return brief findings and file paths.`,
     workspaceTask: DATA_WORKSPACE,
   },
   {
-    key: 'portfolio_changes_review',
-    labelZh: '持仓变动复盘',
-    labelEn: 'Holdings change review',
-    promptZh: `请复盘前后两期持仓，资料不齐先提醒我补充。统一产品、证券标识和估值口径，列出新增、退出及数量、市值、权重变化；区分交易与估值影响，不将市值差当成损益。
-补充数据仅用已选聚源、财汇。将报告、差异 CSV 和计算脚本保存到当前工作空间，保留原件，说明数据缺口并返回摘要与路径。`,
-    promptEn: `Compare two holdings snapshots; ask for missing inputs. Align products, security identifiers, and valuation bases. Show additions, exits, and quantity, value, and weight changes. Separate trading from valuation effects; value differences alone are not profit or loss.
-Supplement data through selected Juyuan and Caihui connectors. Save reports, CSV differences, and calculation scripts in the workspace, preserve originals, and return a summary, gaps, and paths.`,
+    key: 'metric_trend_comparison',
+    labelZh: '指标趋势对比',
+    labelEn: 'Metric trends and comparisons',
+    promptZh: `请根据我提供的表格，对关注的指标做趋势或横向对比，例如产品规模、净流入、收入费用。缺少文件或无法确定指标、比较对象时，仅询问必要信息。
+使用已选智能图表技能统一时间范围、单位和统计口径，按时间、产品或部门比较，突出明显变化与差异。收益率等比例不直接累加，缺失值不当作零；缺少时间数据时只做有依据的横向对比。
+将带有数据解读和口径说明的离线交互式 HTML 图表保存到当前工作空间的“图表”目录，保留原件，返回主要差异与文件路径。`,
+    promptEn: `Use my table files to show trends or comparisons for the metrics I care about, such as product assets, net inflows, revenue, or expenses. Ask only for missing files or essential clarification of metrics and comparison groups.
+Use the selected chart skill to align periods, units, and aggregation bases, then compare over time or across products or departments. Highlight material changes and differences. Do not sum rates or treat missing values as zero; without time data, make only supported cross-sectional comparisons.
+Save offline interactive HTML charts with interpretations and scope notes in the workspace's “图表” folder, preserve originals, and return the main differences and file paths.`,
     workspaceTask: DATA_WORKSPACE,
   },
 ];
@@ -63,11 +76,13 @@ export const OFFICE_SHORTCUTS = [
     labelZh: '撰写与润色材料',
     labelEn: 'Draft and polish materials',
     promptZh: `请根据我提供的主题、要点或原稿，撰写或润色工作材料，可用于部门汇报、专项说明、业务邮件或对外沟通。
-结合用途、读者、篇幅和模板组织内容；新写时梳理重点、形成完整正文，润色时保留原意、事实和数字，优化结构、逻辑与措辞。默认采用资产管理公司的正式、简洁风格，结论先行、层次清楚。
+结合用途、读者、篇幅和模板组织内容；新写时先形成完整正文，再润色；修改原稿时保留原意，优化结构、逻辑与措辞。默认采用资产管理公司的正式、简洁风格。
+${OFFICE_STYLE_ZH}
 支持文档、表格和截图资料，图片先识别文字；只询问影响成稿的关键信息，其余缺项标注待补充，不编造数据、业绩或承诺。
 将可编辑 Word 和 Markdown 保存到当前工作空间，保留原件，返回文件路径，并简要说明主要改动及待确认事项。`,
     promptEn: `Draft or polish work materials from my topic, notes, or existing draft, such as department reports, special briefings, business emails, or external communications.
-Adapt to the purpose, audience, length, and template. For new writing, organize the key points into a complete draft; when polishing, preserve meaning, facts, and figures while improving structure, logic, and wording. Default to a formal, concise asset-management style with conclusions first and clear sections.
+Adapt to the purpose, audience, length, and template. For new writing, produce a complete draft before editing; when polishing, preserve meaning while improving structure, logic, and wording. Default to a formal, concise asset-management style.
+${OFFICE_STYLE_EN}
 Use supplied documents, spreadsheets, and screenshots, extracting text from images first. Ask only for information essential to drafting; flag other gaps and never invent data, performance figures, or commitments.
 Save editable Word and Markdown files in the current workspace, preserve originals, and return file paths with a brief account of key changes and items to confirm.`,
     workspaceTask: OFFICE_WORKSPACE,
@@ -76,16 +91,24 @@ Save editable Word and Markdown files in the current workspace, preserve origina
     key: 'meeting_minutes_actions',
     labelZh: '会议纪要与待办',
     labelEn: 'Meeting minutes and action items',
-    promptZh: '请将会议记录整理为纪要和待办，区分讨论、决策与待确认事项；待办列明负责人和期限，未知项不补写，图片记录先识别文字。将 Word/Markdown 纪要及待办 CSV 保存到当前工作空间，保留原件并返回路径，不自动发通知或建日程。',
-    promptEn: 'Turn meeting notes into minutes and actions, separating discussion, decisions, and open questions. List owners and deadlines without inventing them; extract text from image notes. Save Word/Markdown minutes and an action CSV in the workspace, preserve originals, and return paths. Do not send notifications or create calendar events automatically.',
+    promptZh: `请将会议记录整理为纪要和待办，区分讨论、决策与待确认事项；待办列明负责人和期限，未知项不补写，图片记录先识别文字。
+成稿后精简措辞。${OFFICE_STYLE_ZH}
+将 Word/Markdown 纪要及待办 CSV 保存到当前工作空间，保留原件并返回路径，不自动发通知或建日程。`,
+    promptEn: `Turn meeting notes into minutes and actions, separating discussion, decisions, and open questions. List owners and deadlines without inventing them; extract text from image notes.
+Polish the completed draft. ${OFFICE_STYLE_EN}
+Save Word/Markdown minutes and an action CSV in the workspace, preserve originals, and return paths. Do not send notifications or create calendar events automatically.`,
     workspaceTask: OFFICE_WORKSPACE,
   },
   {
     key: 'weekly_work_report',
     labelZh: '工作周报自动汇总',
     labelEn: 'Automated weekly work report',
-    promptZh: '请创建每周五 17:00（北京时间）自动执行的工作周报任务：汇总当前工作空间中当周的工作记录、会议纪要和项目资料，整理本周完成、重点进展、问题风险及下周计划，缺失内容标注待补充。将 Word 和 Markdown 周报按执行日期保存到当前工作空间的“周报”目录，返回摘要与文件路径。',
-    promptEn: 'Create a recurring weekly work report task for Fridays at 17:00 Asia/Shanghai. On each run, summarize that week’s work records, meeting notes, and project materials in the current workspace into completed work, key progress, issues and risks, and next week’s plans. Flag missing information. Save Word and Markdown reports dated by execution in a “周报” folder in the workspace, and return a summary and file paths.',
+    promptZh: `请创建每周五 17:00（北京时间）自动执行的工作周报任务：汇总当前工作空间中当周的工作记录、会议纪要和项目资料，整理本周完成、重点进展、问题风险及下周计划，缺失内容标注待补充。
+每次成稿后精简措辞。${OFFICE_STYLE_ZH}
+将 Word 和 Markdown 周报按执行日期保存到当前工作空间的“周报”目录，返回摘要与文件路径。`,
+    promptEn: `Create a recurring weekly work report task for Fridays at 17:00 Asia/Shanghai. On each run, summarize that week’s work records, meeting notes, and project materials in the current workspace into completed work, key progress, issues and risks, and next week’s plans. Flag missing information.
+Polish each completed draft. ${OFFICE_STYLE_EN}
+Save Word and Markdown reports dated by execution in a “周报” folder in the workspace, and return a summary and file paths.`,
     workspaceTask: {
       ...OFFICE_WORKSPACE,
       skillNames: [...OFFICE_WORKSPACE.skillNames, 'cron'],

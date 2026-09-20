@@ -11,10 +11,13 @@ import { VoiceStreamError } from '@/core/nanobot-client';
 import { fsBridge } from '@/lib/ipc-factory';
 import type { McpPresetInfo, NanobotSkillInfo } from '@/core/types';
 import ChatInput from './ChatInput';
+import { DATA_CHART_SKILL_NAME, OFFICE_WRITING_SKILL_NAME } from './workspaceTaskShortcuts';
 
 const mocks = vi.hoisted(() => ({
   fetchExpertTeams: vi.fn(),
   fetchSkills: vi.fn(),
+  fetchProjectSkills: vi.fn(),
+  saveProjectSkills: vi.fn(),
   fetchMcpPresets: vi.fn(),
   setExpertTeam: vi.fn(),
   setMcpPresets: vi.fn(),
@@ -35,15 +38,6 @@ const mocks = vi.hoisted(() => ({
   mkdir: vi.fn(),
   documentDir: vi.fn(),
   switchGatewayTextModelDefault: vi.fn(),
-  welcomeShortcutsInteractive: true,
-  showFixedIncomeShortcut: true,
-}));
-
-vi.mock('./welcomeShortcutAvailability', () => ({
-  getWelcomeShortcutAvailability: () => ({
-    interactive: mocks.welcomeShortcutsInteractive,
-    showFixedIncome: mocks.showFixedIncomeShortcut,
-  }),
 }));
 
 vi.mock('@/core/nanobotClient', async () => {
@@ -100,6 +94,8 @@ vi.mock('@/core/api', async () => {
     ...actual,
     fetchExpertTeams: mocks.fetchExpertTeams,
     fetchSkills: mocks.fetchSkills,
+    fetchProjectSkills: mocks.fetchProjectSkills,
+    saveProjectSkills: mocks.saveProjectSkills,
     listSlashCommands: vi.fn().mockResolvedValue([]),
     fetchCliApps: vi.fn().mockResolvedValue({ apps: [] }),
     fetchMcpPresets: mocks.fetchMcpPresets,
@@ -125,11 +121,11 @@ let root: Root | undefined;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 beforeEach(() => {
-  mocks.welcomeShortcutsInteractive = true;
-  mocks.showFixedIncomeShortcut = true;
   useOfficeGuideStore.getState().close();
   useDiscoveryStore.setState({ skills: [], agents: [], experts: [], isLoading: false });
   mocks.fetchSkills.mockResolvedValue({ skills: [], disabled: [], installed_count: 0 });
+  mocks.fetchProjectSkills.mockImplementation(async (_token, projectPath) => ({ project_path: projectPath, skills: [] }));
+  mocks.saveProjectSkills.mockImplementation(async (_token, projectPath, skills) => ({ project_path: projectPath, skills }));
   useSettingsStore.setState({
     language: 'zh-CN',
     provider: 'qiniu',
@@ -397,21 +393,6 @@ describe('ChatInput stop feedback', () => {
 });
 
 describe('ChatInput welcome layout', () => {
-  it('shows only three noninteractive category labels while retaining shortcut definitions', async () => {
-    const { getWelcomeShortcutAvailability } = await vi.importActual<typeof import('./welcomeShortcutAvailability')>('./welcomeShortcutAvailability');
-    expect(getWelcomeShortcutAvailability()).toEqual({ interactive: false, showFixedIncome: false });
-    mocks.welcomeShortcutsInteractive = false;
-    mocks.showFixedIncomeShortcut = false;
-    useSettingsStore.getState().setLanguage('zh-CN');
-    const view = await renderChatInput('welcome');
-    const shortcuts = [...view.querySelectorAll<HTMLButtonElement>('[data-welcome-shortcut]')];
-
-    expect(shortcuts.map((button) => button.textContent)).toEqual(['投资研究', '数据分析', 'PPT制作']);
-    expect(shortcuts.every((button) => button.disabled)).toBe(true);
-    await act(async () => shortcuts[0]?.click());
-    expect(view.querySelector('[data-welcome-shortcut-panel]')).toBeNull();
-  });
-
   it('keeps the existing compact layout while exposing scoped dark-theme hooks', async () => {
     const view = await renderChatInput('welcome');
     const shell = view.querySelector<HTMLElement>('[data-welcome-composer-shell]');
@@ -434,18 +415,18 @@ describe('ChatInput welcome layout', () => {
     );
     expect(shortcuts.map((button) => button.dataset.welcomeShortcut)).toEqual([
       'investment-analysis',
-      'fixed-income',
       'data-analysis',
       'office',
     ]);
-    expect(shortcuts[0]?.textContent).toMatch(/投资研究|Equity Research/);
-    expect(shortcuts[1]?.textContent).toMatch(/固收业务|Fixed Income/);
-    expect(shortcuts[2]?.textContent).toMatch(/数据分析|Data Analysis/);
-    expect(shortcuts[3]?.textContent).toMatch(/PPT制作|Office Work/);
+    expect(shortcuts[0]?.textContent).toMatch(/投资研究|Investment Research/);
+    expect(shortcuts[1]?.textContent).toMatch(/数据分析|Data Analysis/);
+    expect(shortcuts[2]?.textContent).toMatch(/综合办公|Office Work/);
 
     await act(async () => shortcuts[0]?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
     expect(shortcuts[0]?.dataset.active).toBe('true');
     expect(view.querySelector('[data-welcome-shortcut-panel]')).not.toBeNull();
+    expect([...view.querySelectorAll<HTMLElement>('[data-welcome-shortcut-option]')].map((option) => option.dataset.welcomeShortcutOption))
+      .toEqual(['stock_research', 'supply_chain_opportunities', 'credit_issuer_research']);
   });
 
   it('shares composer controls while keeping conversations compact and floating', async () => {
@@ -741,8 +722,8 @@ describe('ChatInput investment research shortcuts', () => {
   });
 });
 
-describe('ChatInput fixed-income shortcuts', () => {
-  const workspacePath = '/Users/test/Documents/TPCowork Projects/我的固收业务';
+describe('ChatInput credit issuer research shortcut', () => {
+  const workspacePath = '/Users/test/Documents/TPCowork Projects/我的投研分析';
   const presets: McpPresetInfo[] = [
     { name: 'juyuan', display_name: '聚源金融数据' },
     { name: 'caihui_mcp', display_name: '财汇金融数据' },
@@ -756,11 +737,12 @@ describe('ChatInput fixed-income shortcuts', () => {
 
   beforeEach(() => {
     mocks.fetchMcpPresets.mockResolvedValue({ presets, installed_count: presets.length });
+    mocks.fetchExpertTeams.mockResolvedValue({ teams: [{ ...investmentTeam, id: 'asset-research-team' }] });
     useToastStore.setState({ toasts: [] });
   });
 
-  async function selectFixedIncomeTask(view: HTMLDivElement, key = 'credit_issuer_research') {
-    await act(async () => view.querySelector<HTMLButtonElement>('[data-welcome-shortcut="fixed-income"]')!.click());
+  async function selectInvestmentTask(view: HTMLDivElement, key = 'credit_issuer_research') {
+    await act(async () => view.querySelector<HTMLButtonElement>('[data-welcome-shortcut="investment-analysis"]')!.click());
     const option = view.querySelector<HTMLButtonElement>(`[data-welcome-shortcut-option="${key}"]`)!;
     expect(option).not.toBeNull();
     expect(option.disabled).toBe(false);
@@ -781,16 +763,16 @@ describe('ChatInput fixed-income shortcuts', () => {
     const onWorkspaceScopeChange = vi.fn();
     const view = await renderChatInput('welcome', onSend, { onWorkspaceScopeChange });
 
-    await selectFixedIncomeTask(view);
+    await selectInvestmentTask(view);
 
     expect(mocks.fetchMcpPresets).toHaveBeenLastCalledWith('token', 'http://127.0.0.1:8900');
     expect(mocks.mkdir).toHaveBeenCalledWith(workspacePath, { recursive: true });
     expect(onWorkspaceScopeChange).toHaveBeenCalledWith({
-      project_path: workspacePath, project_name: '我的固收业务',
+      project_path: workspacePath, project_name: '我的投研分析',
       access_mode: 'full', restrict_to_workspace: false,
     });
     expect(useWorkspaceStore.getState().currentPath).toBe(workspacePath);
-    expect(view.querySelector('[data-welcome-project-selector]')?.textContent).toContain('我的固收业务');
+    expect(view.querySelector('[data-welcome-project-selector]')?.textContent).toContain('我的投研分析');
     expect([...view.querySelectorAll<HTMLElement>('[data-selected-mcp-preset]')].map((chip) => chip.dataset.selectedMcpPreset))
       .toEqual(['juyuan', 'caihui_mcp']);
     expect(useChatStore.getState().pendingExpertTeam).toBeNull();
@@ -832,18 +814,20 @@ describe('ChatInput fixed-income shortcuts', () => {
   });
 
   it.each([
-    { language: 'zh-CN' as const, subject: '【债券代码或筛选条件】', documents: '/Users/test/Documents', workspace: workspacePath },
-    { language: 'en-US' as const, subject: '[bond code or screening criteria]', documents: 'C:\\Users\\test\\Documents\\', workspace: 'C:\\Users\\test\\Documents\\TPCowork Projects\\我的固收业务' },
-  ])('requires a bond or screening criteria before sending and reuses the workspace in $language', async ({ language, subject, documents, workspace }) => {
+    { language: 'zh-CN' as const, subject: '【发行人名称或债券代码】', documents: '/Users/test/Documents', workspace: workspacePath },
+    { language: 'en-US' as const, subject: '[issuer name or bond code]', documents: 'C:\\Users\\test\\Documents\\', workspace: 'C:\\Users\\test\\Documents\\TPCowork Projects\\我的投研分析' },
+  ])('requires an issuer or bond before sending and reuses the investment workspace in $language', async ({ language, subject, documents, workspace }) => {
     useSettingsStore.setState({ language });
     mocks.documentDir.mockResolvedValue(documents);
     const onSend = vi.fn().mockReturnValue(true);
     const onWorkspaceScopeChange = vi.fn();
     const view = await renderChatInput('welcome', onSend, { onWorkspaceScopeChange });
-    await selectFixedIncomeTask(view);
-    await selectFixedIncomeTask(view, 'bond_relative_value');
+    await selectInvestmentTask(view, 'stock_research');
+    expect(view.querySelector('[data-selected-expert-team="asset-research-team"]')).not.toBeNull();
+    await selectInvestmentTask(view);
 
     expect(mocks.mkdir.mock.calls.map(([path]) => path)).toEqual([workspace, workspace]);
+    expect(view.querySelector('[data-selected-expert-team]')).toBeNull();
     expect(useWorkspaceStore.getState().recentPaths).toEqual([workspace.replace(/\\/g, '/')]);
     expect(onWorkspaceScopeChange).toHaveBeenLastCalledWith(expect.objectContaining({
       project_path: workspace, access_mode: 'full', restrict_to_workspace: false,
@@ -858,7 +842,7 @@ describe('ChatInput fixed-income shortcuts', () => {
     await act(async () => textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
     expect(onSend).not.toHaveBeenCalled();
 
-    const filledPrompt = textarea.value.replace(subject, '人民币、剩余期限 1—3 年、AAA 级信用债');
+    const filledPrompt = textarea.value.replace(subject, '测试发行人股份有限公司');
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, filledPrompt);
       textarea.dispatchEvent(new Event('input', { bubbles: true }));
@@ -888,7 +872,7 @@ describe('ChatInput fixed-income shortcuts', () => {
     });
     mocks.fetchMcpPresets.mockResolvedValue({ presets: changedPresets, installed_count: changedPresets.length });
 
-    await selectFixedIncomeTask(view);
+    await selectInvestmentTask(view);
 
     expect(mocks.mkdir).not.toHaveBeenCalled();
     expect(onWorkspaceScopeChange).not.toHaveBeenCalled();
@@ -908,7 +892,7 @@ describe('ChatInput fixed-income shortcuts', () => {
     const onWorkspaceScopeChange = vi.fn();
     const view = await renderChatInput('welcome', () => true, { onWorkspaceScopeChange });
 
-    await selectFixedIncomeTask(view);
+    await selectInvestmentTask(view);
 
     expect(onWorkspaceScopeChange).not.toHaveBeenCalled();
     expect(view.querySelector('textarea')?.value).toBe('已有分析目标');
@@ -925,7 +909,7 @@ describe('ChatInput fixed-income shortcuts', () => {
     let finishLoading!: (payload: { presets: McpPresetInfo[]; installed_count: number }) => void;
     mocks.fetchMcpPresets.mockReturnValueOnce(new Promise((resolve) => { finishLoading = resolve; }));
 
-    const option = await selectFixedIncomeTask(view);
+    const option = await selectInvestmentTask(view);
     expect(option.getAttribute('aria-busy')).toBe('true');
     expect(option.disabled).toBe(true);
     expect(view.querySelector<HTMLButtonElement>('[data-welcome-submit]')?.disabled).toBe(true);
@@ -941,8 +925,9 @@ describe('ChatInput fixed-income shortcuts', () => {
 });
 
 describe('ChatInput data and office workspace shortcuts', () => {
-  const taskSkills: NanobotSkillInfo[] = ['portfolio-analysis', 'office-documents', 'image-extract', 'cron'].map((name) => ({
-    name, description: name, path: `/builtin/${name}/SKILL.md`, source: 'builtin',
+  const taskSkills: NanobotSkillInfo[] = [DATA_CHART_SKILL_NAME, OFFICE_WRITING_SKILL_NAME, 'image-extract', 'cron'].map((name, index) => ({
+    name, description: name, path: `/${index < 2 ? 'workspace/skills' : 'builtin'}/${name}/SKILL.md`,
+    source: index < 2 ? 'workspace' : 'builtin',
     enabled: true, available: true, missing: '', user_invocable: true, always: false, tags: [],
   }));
   const connectors: McpPresetInfo[] = ['juyuan', 'caihui_mcp', 'hexin-ifind-ds-news-mcp'].map((name) => ({
@@ -952,6 +937,7 @@ describe('ChatInput data and office workspace shortcuts', () => {
   }));
 
   beforeEach(() => {
+    useSettingsStore.getState().setLanguage('zh-CN');
     mocks.fetchSkills.mockResolvedValue({ skills: taskSkills, disabled: [], installed_count: taskSkills.length });
     mocks.fetchMcpPresets.mockResolvedValue({ presets: connectors, installed_count: 3 });
     useToastStore.setState({ toasts: [] });
@@ -987,7 +973,8 @@ describe('ChatInput data and office workspace shortcuts', () => {
     await clickGuidePrimary();
     expect(useOfficeGuideStore.getState().step).toBe('skills');
     expect([...view.querySelectorAll<HTMLElement>('[data-selected-skill]')].map((chip) => chip.dataset.selectedSkill))
-      .toEqual(['office-documents', 'image-extract']);
+      .toEqual([OFFICE_WRITING_SKILL_NAME, 'image-extract']);
+    expect(document.querySelector('[data-office-task-guide]')?.textContent).toContain('保留事实和正式语气');
     await clickGuidePrimary();
     expect(useOfficeGuideStore.getState().step).toBe('compose');
     await act(async () => document.querySelector<HTMLButtonElement>(`[data-office-guide-example="${example}"]`)!.click());
@@ -1000,7 +987,7 @@ describe('ChatInput data and office workspace shortcuts', () => {
     await act(async () => view.querySelector<HTMLButtonElement>('[data-welcome-submit]')!.click());
     expect(onSend).toHaveBeenCalledWith(expect.stringContaining('练习素材'), undefined,
       '/Users/test/Documents/TPCowork Projects/我的综合办公', expect.objectContaining({
-        skillScope: { explicit_skills: ['office-documents', 'image-extract'], project_bound_user_skills: [] },
+        skillScope: { explicit_skills: [OFFICE_WRITING_SKILL_NAME, 'image-extract'], project_bound_user_skills: [OFFICE_WRITING_SKILL_NAME] },
       }));
   });
 
@@ -1066,23 +1053,23 @@ describe('ChatInput data and office workspace shortcuts', () => {
     expect(mocks.mkdir).not.toHaveBeenCalled();
   });
 
-  it('keeps Data Analysis with exactly the two holdings tasks', async () => {
+  it('keeps Data Analysis with two chart-oriented tasks', async () => {
     useSettingsStore.getState().setLanguage('zh-CN');
     const view = await renderChatInput('welcome');
     const category = view.querySelector<HTMLButtonElement>('[data-welcome-shortcut="data-analysis"]')!;
     expect(category.textContent).toBe('数据分析');
     await act(async () => category.click());
     expect([...view.querySelectorAll('[data-welcome-shortcut-option]')].map((option) => option.textContent))
-      .toEqual(['持仓结构体检', '持仓变动复盘']);
+      .toEqual(['表格快速洞察', '指标趋势对比']);
   });
 
   it.each([
-    { category: 'data-analysis', key: 'portfolio_structure_review', workspace: '我的数据分析', skills: ['portfolio-analysis'], finance: true },
-    { category: 'data-analysis', key: 'portfolio_changes_review', workspace: '我的数据分析', skills: ['portfolio-analysis'], finance: true },
-    { category: 'office', key: 'draft_material', workspace: '我的综合办公', skills: ['office-documents', 'image-extract'], finance: false },
-    { category: 'office', key: 'meeting_minutes_actions', workspace: '我的综合办公', skills: ['office-documents', 'image-extract'], finance: false },
-    { category: 'office', key: 'weekly_work_report', workspace: '我的综合办公', skills: ['office-documents', 'image-extract', 'cron'], finance: false },
-  ])('prepares $key without auto-sending and carries the real skills, workspace, and source files', async ({ category, key, workspace, skills, finance }) => {
+    { category: 'data-analysis', key: 'table_quick_insights', workspace: '我的数据分析', skills: [DATA_CHART_SKILL_NAME] },
+    { category: 'data-analysis', key: 'metric_trend_comparison', workspace: '我的数据分析', skills: [DATA_CHART_SKILL_NAME] },
+    { category: 'office', key: 'draft_material', workspace: '我的综合办公', skills: [OFFICE_WRITING_SKILL_NAME, 'image-extract'] },
+    { category: 'office', key: 'meeting_minutes_actions', workspace: '我的综合办公', skills: [OFFICE_WRITING_SKILL_NAME, 'image-extract'] },
+    { category: 'office', key: 'weekly_work_report', workspace: '我的综合办公', skills: [OFFICE_WRITING_SKILL_NAME, 'image-extract', 'cron'] },
+  ])('prepares $key without auto-sending and carries the real skills, workspace, and source files', async ({ category, key, workspace, skills }) => {
     useChatStore.setState({ pendingExpertTeam: investmentTeam });
     localStorage.setItem('nanobot.gui.composerDraft.v1:welcome', JSON.stringify({
       text: '旧任务', files: [{ id: 'source', kind: 'file', path: '/Users/test/资料.xlsx', name: '资料.xlsx' }],
@@ -1110,14 +1097,24 @@ describe('ChatInput data and office workspace shortcuts', () => {
     expect(view.textContent).toContain('资料.xlsx');
     expect(onSend).not.toHaveBeenCalled();
     expect(mocks.fetchSkills).toHaveBeenLastCalledWith('token', 'http://127.0.0.1:8900');
+    expect(mocks.fetchProjectSkills).toHaveBeenLastCalledWith('token', path, 'http://127.0.0.1:8900');
+    expect(mocks.saveProjectSkills).toHaveBeenLastCalledWith('token', path, [skills[0]], 'http://127.0.0.1:8900');
+    expect(useWorkspaceStore.getState().projectSkillBindings[path]).toEqual([skills[0]]);
     expect([...view.querySelectorAll<HTMLElement>('[data-selected-mcp-preset]')].map((chip) => chip.dataset.selectedMcpPreset))
-      .toEqual(finance ? ['juyuan', 'caihui_mcp'] : []);
-    if (!finance) expect(mocks.fetchMcpPresets).not.toHaveBeenCalled();
+      .toEqual([]);
+    expect(mocks.fetchMcpPresets).not.toHaveBeenCalled();
 
     const prompt = view.querySelector<HTMLTextAreaElement>('textarea')!.value;
+    if (category === 'data-analysis') {
+      expect(prompt).toContain('HTML');
+      expect(prompt).toContain('图表');
+    } else {
+      expect(prompt).toContain('保留事实数字、专业术语');
+      expect(prompt).toContain('不强行口语化');
+    }
     await act(async () => view.querySelector<HTMLButtonElement>('[data-welcome-submit]')!.click());
     expect(onSend).toHaveBeenCalledWith(expect.stringContaining(prompt), undefined, path, expect.objectContaining({
-      skillScope: { explicit_skills: skills, project_bound_user_skills: [] },
+      skillScope: { explicit_skills: skills, project_bound_user_skills: [skills[0]] },
     }));
     const [message, , , options] = onSend.mock.calls[0];
     expect(message).toContain('/Users/test/资料.xlsx');
@@ -1126,24 +1123,102 @@ describe('ChatInput data and office workspace shortcuts', () => {
     expect(options.presentation).toBeUndefined();
     expect(options.cliApps).toBeUndefined();
     expect(options.mcpPresets?.map((preset: { name: string }) => preset.name) ?? [])
-      .toEqual(finance ? ['juyuan', 'caihui_mcp'] : []);
+      .toEqual([]);
   });
 
-  it.each(['not configured', 'catalog unavailable'])('can analyze supplied holdings when optional financial connectors are %s', async (state) => {
+  it('can chart supplied tables without a financial connector catalog', async () => {
     const view = await renderChatInput('welcome');
-    if (state === 'not configured') {
-      mocks.fetchMcpPresets.mockResolvedValue({ presets: [connectors[2]], installed_count: 1 });
-    } else {
-      mocks.fetchMcpPresets.mockRejectedValueOnce(new Error('MCP catalog timed out'));
-    }
+    mocks.fetchMcpPresets.mockClear().mockRejectedValue(new Error('MCP catalog timed out'));
 
-    await selectTask(view, 'data-analysis', 'portfolio_structure_review');
+    await selectTask(view, 'data-analysis', 'table_quick_insights');
 
-    expect(view.querySelector('[data-selected-skill="portfolio-analysis"]')).not.toBeNull();
+    expect(mocks.fetchMcpPresets).not.toHaveBeenCalled();
+    expect(view.querySelector(`[data-selected-skill="${DATA_CHART_SKILL_NAME}"]`)).not.toBeNull();
     expect(view.querySelector('[data-selected-mcp-preset]')).toBeNull();
-    expect(view.querySelector('textarea')?.value).toContain('上传 Excel');
+    expect(view.querySelector('textarea')?.value).toContain('提醒我添加文件');
     expect(useWorkspaceStore.getState().currentPath).toContain('我的数据分析');
     expect(useToastStore.getState().toasts).toEqual([]);
+  });
+
+  it('preserves server grants and adds only the personal skill required by the task', async () => {
+    const path = '/Users/test/Documents/TPCowork Projects/我的数据分析';
+    useWorkspaceStore.getState().setProjectSkillBindings(path, ['stale-local-skill']);
+    mocks.fetchProjectSkills.mockResolvedValue({ project_path: path, skills: ['existing-skill'] });
+    const view = await renderChatInput('welcome');
+
+    await selectTask(view, 'data-analysis', 'table_quick_insights');
+
+    expect(mocks.saveProjectSkills).toHaveBeenCalledExactlyOnceWith(
+      'token', path, ['existing-skill', DATA_CHART_SKILL_NAME], 'http://127.0.0.1:8900',
+    );
+    expect(useWorkspaceStore.getState().projectSkillBindings[path]).toEqual(['existing-skill', DATA_CHART_SKILL_NAME]);
+    expect(view.querySelector(`[data-selected-skill="${OFFICE_WRITING_SKILL_NAME}"]`)).toBeNull();
+  });
+
+  it('uses existing server authorization without resaving it', async () => {
+    const path = '/Users/test/Documents/TPCowork Projects/我的综合办公';
+    const skills = ['existing-skill', OFFICE_WRITING_SKILL_NAME];
+    mocks.fetchProjectSkills.mockResolvedValue({ project_path: path, skills });
+    const view = await renderChatInput('welcome');
+
+    await selectTask(view, 'office', 'draft_material');
+
+    expect(mocks.saveProjectSkills).not.toHaveBeenCalled();
+    expect(useWorkspaceStore.getState().projectSkillBindings[path]).toEqual(skills);
+    expect(view.querySelector(`[data-selected-skill="${OFFICE_WRITING_SKILL_NAME}"]`)).not.toBeNull();
+  });
+
+  it.each(['read', 'save', 'unconfirmed'])('preserves the previous selection when skill authorization is %s', async (failure) => {
+    const onWorkspaceScopeChange = vi.fn();
+    const view = await renderChatInput('welcome', () => true, { onWorkspaceScopeChange });
+    await selectTask(view, 'data-analysis', 'table_quick_insights');
+    const draft = view.querySelector('textarea')?.value;
+    const bindings = useWorkspaceStore.getState().projectSkillBindings;
+    onWorkspaceScopeChange.mockClear();
+    mocks.saveProjectSkills.mockClear();
+    if (failure === 'read') {
+      mocks.fetchProjectSkills.mockRejectedValueOnce(new Error('Binding read failed'));
+    } else if (failure === 'save') {
+      mocks.saveProjectSkills.mockRejectedValueOnce(new Error('Binding save failed'));
+    } else {
+      mocks.saveProjectSkills.mockResolvedValueOnce({ project_path: '/Users/test/Documents/TPCowork Projects/我的综合办公', skills: [] });
+    }
+
+    await selectTask(view, 'office', 'draft_material');
+
+    expect(view.querySelector('textarea')?.value).toBe(draft);
+    expect(view.querySelector(`[data-selected-skill="${DATA_CHART_SKILL_NAME}"]`)).not.toBeNull();
+    expect(view.querySelector(`[data-selected-skill="${OFFICE_WRITING_SKILL_NAME}"]`)).toBeNull();
+    expect(useWorkspaceStore.getState().currentPath).toContain('我的数据分析');
+    expect(useWorkspaceStore.getState().projectSkillBindings).toEqual(bindings);
+    expect(onWorkspaceScopeChange).not.toHaveBeenCalled();
+    expect(useToastStore.getState().toasts.at(-1)?.message).toContain(
+      failure === 'unconfirmed' ? '技能未能绑定' : `Binding ${failure} failed`,
+    );
+    if (failure === 'read') expect(mocks.saveProjectSkills).not.toHaveBeenCalled();
+  });
+
+  it('blocks sending during skill authorization and ignores its response after leaving the homepage', async () => {
+    useChatStore.setState({ pendingInput: '保留我的原稿' });
+    const onSend = vi.fn();
+    const onWorkspaceScopeChange = vi.fn();
+    const view = await renderChatInput('welcome', onSend, { onWorkspaceScopeChange });
+    let finishSaving!: (payload: { project_path: string; skills: string[] }) => void;
+    mocks.saveProjectSkills.mockReturnValueOnce(new Promise((resolve) => { finishSaving = resolve; }));
+
+    const option = await selectTask(view, 'office', 'draft_material');
+
+    expect(mocks.saveProjectSkills).toHaveBeenCalledTimes(1);
+    expect(option.getAttribute('aria-busy')).toBe('true');
+    expect(view.querySelector('textarea')?.value).toBe('保留我的原稿');
+    expect(view.querySelector<HTMLButtonElement>('[data-welcome-submit]')?.disabled).toBe(true);
+    await act(async () => view.querySelector('textarea')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+    expect(onSend).not.toHaveBeenCalled();
+    await act(async () => { root?.unmount(); root = undefined; });
+    await act(async () => finishSaving({ project_path: '/Users/test/Documents/TPCowork Projects/我的综合办公', skills: [OFFICE_WRITING_SKILL_NAME] }));
+    expect(onWorkspaceScopeChange).not.toHaveBeenCalled();
+    expect(useWorkspaceStore.getState().currentPath).toBeNull();
+    expect(useWorkspaceStore.getState().projectSkillBindings).toEqual({});
   });
 
   it.each(['missing', 'disabled', 'unavailable', 'ungranted workspace override'])('keeps the previous draft when its required skill is %s', async (state) => {
@@ -1152,31 +1227,34 @@ describe('ChatInput data and office workspace shortcuts', () => {
     mocks.fetchSkills.mockResolvedValue({
       skills: state === 'missing' ? [taskSkills[2], taskSkills[3]] : [{
         ...taskSkills[1], enabled: state !== 'disabled', available: state !== 'unavailable',
-        source: state === 'ungranted workspace override' ? 'workspace' : 'builtin',
-      }, taskSkills[2], taskSkills[3]],
+      }, {
+        ...taskSkills[2], source: state === 'ungranted workspace override' ? 'workspace' : 'builtin',
+      }, taskSkills[3]],
       disabled: [], installed_count: state === 'missing' ? 2 : 3,
     });
 
     await selectTask(view, 'office', 'weekly_work_report');
 
     expect(mocks.mkdir).not.toHaveBeenCalled();
+    expect(mocks.saveProjectSkills).not.toHaveBeenCalled();
     expect(view.querySelector('textarea')?.value).toBe('已有研究目标');
     expect(view.querySelector('[data-selected-skill]')).toBeNull();
     expect(useChatStore.getState().pendingExpertTeam?.id).toBe(investmentTeam.id);
-    expect(useToastStore.getState().toasts.at(-1)?.message).toContain('office-documents 技能在此工作空间暂不可用');
+    const missingSkill = state === 'ungranted workspace override' ? 'image-extract' : OFFICE_WRITING_SKILL_NAME;
+    expect(useToastStore.getState().toasts.at(-1)?.message).toContain(`${missingSkill} 技能在此工作空间暂不可用`);
   });
 
   it('reuses category workspaces and replaces capabilities when switching from data to office to equity', async () => {
     mocks.fetchExpertTeams.mockResolvedValue({ teams: [{ ...investmentTeam, id: 'asset-research-team' }] });
     const view = await renderChatInput('welcome');
-    await selectTask(view, 'data-analysis', 'portfolio_structure_review');
-    await selectTask(view, 'data-analysis', 'portfolio_changes_review');
+    await selectTask(view, 'data-analysis', 'table_quick_insights');
+    await selectTask(view, 'data-analysis', 'metric_trend_comparison');
     expect(useWorkspaceStore.getState().recentPaths).toHaveLength(1);
     await selectTask(view, 'office', 'meeting_minutes_actions');
     await selectTask(view, 'office', 'draft_material');
     expect(useWorkspaceStore.getState().recentPaths).toHaveLength(2);
     expect(view.querySelector('[data-selected-mcp-preset]')).toBeNull();
-    expect(view.querySelector('[data-selected-skill="office-documents"]')).not.toBeNull();
+    expect(view.querySelector(`[data-selected-skill="${OFFICE_WRITING_SKILL_NAME}"]`)).not.toBeNull();
     await selectTask(view, 'investment-analysis', 'stock_research');
     expect(view.querySelector('[data-selected-skill]')).toBeNull();
     expect(view.querySelector('[data-selected-expert-team="asset-research-team"]')).not.toBeNull();
@@ -1196,18 +1274,18 @@ describe('ChatInput data and office workspace shortcuts', () => {
       access_mode: 'restricted', restrict_to_workspace: true,
     }));
     expect(view.querySelector('textarea')?.value).toContain('Create a recurring weekly work report task');
-    expect(view.querySelector('[data-selected-skill="office-documents"]')).not.toBeNull();
+    expect(view.querySelector(`[data-selected-skill="${OFFICE_WRITING_SKILL_NAME}"]`)).not.toBeNull();
   });
 
   it('preserves the previous selection when creating an office workspace fails', async () => {
     const view = await renderChatInput('welcome');
-    await selectTask(view, 'data-analysis', 'portfolio_structure_review');
+    await selectTask(view, 'data-analysis', 'table_quick_insights');
     const draft = view.querySelector('textarea')?.value;
     mocks.mkdir.mockRejectedValueOnce(new Error('Permission denied'));
     await selectTask(view, 'office', 'weekly_work_report');
     expect(view.querySelector('textarea')?.value).toBe(draft);
-    expect(view.querySelector('[data-selected-skill="portfolio-analysis"]')).not.toBeNull();
-    expect(view.querySelector('[data-selected-mcp-preset="juyuan"]')).not.toBeNull();
+    expect(view.querySelector(`[data-selected-skill="${DATA_CHART_SKILL_NAME}"]`)).not.toBeNull();
+    expect(view.querySelector('[data-selected-mcp-preset]')).toBeNull();
     expect(useWorkspaceStore.getState().currentPath).toContain('我的数据分析');
     expect(useToastStore.getState().toasts.at(-1)?.message).toBe('Permission denied');
   });
@@ -1539,6 +1617,119 @@ describe('ChatInput versioned skills', () => {
 });
 
 describe('ChatInput workspace mentions and capabilities', () => {
+  const workspace = '/Users/test/live-workspace';
+  const fileEntry = (name: string, directory = workspace) => ({
+    kind: 'file' as const, name, path: `${directory}/${name}`, relativePath: name,
+  });
+  const changeMention = async (view: HTMLDivElement, value: string) => {
+    const textarea = view.querySelector<HTMLTextAreaElement>('textarea')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, value);
+      textarea.setSelectionRange(value.length, value.length);
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  };
+
+  it.each(['chat', 'welcome'] as const)('refreshes newly added and deleted files when @ opens in %s', async (variant) => {
+    const view = await renderChatInput(variant, () => true, {
+      workspaceScope: { project_path: workspace, access_mode: 'restricted', restrict_to_workspace: true },
+    });
+    expect(mocks.listWorkspaceFiles).toHaveBeenCalledTimes(1);
+    mocks.listWorkspaceFiles.mockResolvedValue([fileEntry('fresh-report.xlsx')]);
+
+    await changeMention(view, '请分析 @fresh');
+    expect(view.querySelector('[data-testid="composer-suggestions"]')?.textContent).toContain('fresh-report.xlsx');
+    expect(view.querySelector('textarea')?.value).toBe('请分析 @fresh');
+
+    mocks.listWorkspaceFiles.mockResolvedValue([]);
+    await changeMention(view, '请分析 ');
+    await changeMention(view, '请分析 @fresh');
+    expect(view.querySelector('[data-testid="composer-suggestions"]')?.textContent).toContain('没有匹配');
+    expect(view.querySelector('[data-suggestion-kind="file"]')).toBeNull();
+  });
+
+  it.each(['focus', 'visibilitychange'])('refreshes an open @ list on %s without changing the prompt', async (eventName) => {
+    useChatStore.getState().createConversation(workspace, { title: '工作空间会话' });
+    const view = await renderChatInput();
+    await changeMention(view, '请分析 @fresh');
+    mocks.listWorkspaceFiles.mockResolvedValue([fileEntry('fresh-report.xlsx')]);
+
+    await act(async () => {
+      (eventName === 'focus' ? window : document).dispatchEvent(new Event(eventName));
+    });
+    expect(view.querySelector('[data-testid="composer-suggestions"]')?.textContent).toContain('fresh-report.xlsx');
+    expect(view.querySelector('textarea')?.value).toBe('请分析 @fresh');
+  });
+
+  it('updates files while @ stays open and stops periodic scans when it is dismissed', async () => {
+    useChatStore.getState().createConversation(workspace, { title: '工作空间会话' });
+    const view = await renderChatInput();
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      await changeMention(view, '@');
+      mocks.listWorkspaceFiles.mockResolvedValue([fileEntry('fresh-report.xlsx')]);
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+      expect(view.querySelector('[data-testid="composer-suggestions"]')?.textContent).toContain('fresh-report.xlsx');
+
+      await act(async () => {
+        view.querySelector('textarea')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      });
+      const scanCount = mocks.listWorkspaceFiles.mock.calls.length;
+      await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+      expect(mocks.listWorkspaceFiles).toHaveBeenCalledTimes(scanCount);
+      expect(view.querySelector('[data-testid="composer-suggestions"]')).toBeNull();
+
+      // A later file change must not reopen a picker the user closed.
+      mocks.listWorkspaceFiles.mockResolvedValue([]);
+      await act(async () => window.dispatchEvent(new Event('focus')));
+      expect(view.querySelector('[data-testid="composer-suggestions"]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('queues one fresh scan when files change during an unfinished scan', async () => {
+    let finishInitial!: (entries: ReturnType<typeof fileEntry>[]) => void;
+    mocks.listWorkspaceFiles.mockImplementationOnce(() => new Promise((resolve) => { finishInitial = resolve; }));
+    useChatStore.getState().createConversation(workspace, { title: '工作空间会话' });
+    const view = await renderChatInput();
+    mocks.listWorkspaceFiles.mockResolvedValue([fileEntry('fresh-report.xlsx')]);
+    await changeMention(view, '@fresh');
+    await act(async () => window.dispatchEvent(new Event('focus')));
+    expect(mocks.listWorkspaceFiles).toHaveBeenCalledTimes(1);
+
+    await act(async () => finishInitial([]));
+    expect(mocks.listWorkspaceFiles).toHaveBeenCalledTimes(2);
+    expect(view.querySelector('[data-testid="composer-suggestions"]')?.textContent).toContain('fresh-report.xlsx');
+  });
+
+  it('ignores an old scan after switching to another workspace', async () => {
+    let finishInitial!: (entries: ReturnType<typeof fileEntry>[]) => void;
+    mocks.listWorkspaceFiles.mockImplementationOnce(() => new Promise((resolve) => { finishInitial = resolve; }));
+    useChatStore.getState().createConversation(workspace, { title: '原工作空间' });
+    const view = await renderChatInput();
+    await changeMention(view, '@');
+    mocks.listWorkspaceFiles.mockResolvedValue([fileEntry('new-workspace.xlsx', '/Users/test/new-workspace')]);
+    await act(async () => {
+      useChatStore.getState().createConversation('/Users/test/new-workspace', { title: '新工作空间' });
+    });
+    await changeMention(view, '@');
+    await act(async () => finishInitial([fileEntry('old-workspace.xlsx')]));
+    const popup = view.querySelector('[data-testid="composer-suggestions"]');
+    expect(popup?.textContent).toContain('new-workspace.xlsx');
+    expect(popup?.textContent).not.toContain('old-workspace.xlsx');
+  });
+
+  it('retries a failed directory scan when @ opens', async () => {
+    mocks.listWorkspaceFiles.mockRejectedValueOnce(new Error('directory temporarily unavailable'));
+    useChatStore.getState().createConversation(workspace, { title: '工作空间会话' });
+    const view = await renderChatInput();
+    mocks.listWorkspaceFiles.mockResolvedValue([fileEntry('fresh-report.xlsx')]);
+    await changeMention(view, '@fresh');
+    expect(view.querySelector('[data-testid="composer-suggestions"]')?.textContent).toContain('fresh-report.xlsx');
+    expect(view.querySelector('[data-testid="composer-suggestions"]')?.textContent).not.toContain('无法读取');
+  });
+
   it('indexes files in the default workspace even though it is hidden as a project', async () => {
     useChatStore.getState().createConversation('/Users/test/workspace', { title: '默认工作空间会话' });
     await renderChatInput();
@@ -1550,7 +1741,7 @@ describe('ChatInput workspace mentions and capabilities', () => {
     const conversationId = useChatStore.getState().createConversation('/Users/test/quarterly-review', { title: '工作空间会话' });
     expect(useChatStore.getState().conversations[conversationId].workspacePath).toBe('/Users/test/quarterly-review');
     expect(fsBridge.listWorkspaceFiles).toBe(mocks.listWorkspaceFiles);
-    mocks.listWorkspaceFiles.mockResolvedValueOnce([
+    mocks.listWorkspaceFiles.mockResolvedValue([
       {
         kind: 'file',
         name: 'quarterly.xlsx',
@@ -1600,7 +1791,7 @@ describe('ChatInput workspace mentions and capabilities', () => {
 
   it('finds folders with @ and keeps the folder type visible and structured', async () => {
     useChatStore.getState().createConversation('/Users/test/quarterly-review', { title: '工作空间会话' });
-    mocks.listWorkspaceFiles.mockResolvedValueOnce([
+    mocks.listWorkspaceFiles.mockResolvedValue([
       {
         kind: 'folder',
         name: 'reports',
@@ -1645,7 +1836,7 @@ describe('ChatInput workspace mentions and capabilities', () => {
 
   it('uses file-type icons while keeping every path label out of the skill category', async () => {
     useChatStore.getState().createConversation('/Users/test/design-assets', { title: '素材工作空间' });
-    mocks.listWorkspaceFiles.mockResolvedValueOnce([
+    mocks.listWorkspaceFiles.mockResolvedValue([
       { kind: 'folder', name: 'assets', path: '/Users/test/design-assets/assets', relativePath: 'assets' },
       { kind: 'file', name: 'cover.png', path: '/Users/test/design-assets/cover.png', relativePath: 'cover.png' },
       { kind: 'file', name: 'roadshow.pptx', path: '/Users/test/design-assets/roadshow.pptx', relativePath: 'roadshow.pptx' },

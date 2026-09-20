@@ -44,7 +44,13 @@ export function streamProtocolReducer(
     case 'streaming':
       return state.isStreaming === action.value && (action.value || !state.isStopping)
         ? state
-        : { ...state, isStreaming: action.value, isStopping: action.value ? state.isStopping : false };
+        : {
+            ...state,
+            isStreaming: action.value,
+            isStopping: action.value ? state.isStopping : false,
+            streamError: !action.value && state.streamError?.kind === 'stop_unconfirmed'
+              ? null : state.streamError,
+          };
     case 'stopping':
       return state.isStopping === action.value ? state : { ...state, isStopping: action.value };
     case 'goal_state':
@@ -64,6 +70,7 @@ export function streamProtocolReducer(
         isStreaming: false,
         isStopping: false,
         runStartedAt: null,
+        streamError: state.streamError?.kind === 'stop_unconfirmed' ? null : state.streamError,
         ...(action.goalState ? { goalState: action.goalState } : {}),
       };
   }

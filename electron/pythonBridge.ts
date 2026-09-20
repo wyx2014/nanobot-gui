@@ -215,6 +215,12 @@ export class PythonBridge {
 
     const gatewayEnv = { ...process.env };
     if (app.isPackaged) {
+      const nodeBin = process.platform === 'win32'
+        ? path.join(process.resourcesPath, 'node', 'node.exe')
+        : path.join(process.resourcesPath, 'node', 'bin', 'node');
+      if (fs.existsSync(nodeBin)) gatewayEnv.NANOBOT_NODE_BIN = nodeBin;
+    }
+    if (app.isPackaged) {
       // The packaged runtime must use the wheel prepared inside standalone
       // Python even when the parent shell happens to export PYTHONPATH.
       delete gatewayEnv.PYTHONPATH;

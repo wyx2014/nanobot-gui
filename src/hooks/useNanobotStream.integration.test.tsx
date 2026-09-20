@@ -2,13 +2,15 @@ import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { InboundEvent, TaskProgressStep, UIMessage } from "@/core/types";
+import type { InboundEvent, TaskProgressStep, ThreadRuntimeSnapshot, UIMessage } from "@/core/types";
 import { mapWebuiThreadToGuiMessages } from "@/core/nanobotClient";
+import { NanobotClient } from "@/core/nanobot-client";
 
 const mocks = vi.hoisted(() => ({
   getNanobotClient: vi.fn(),
   sendMessage: vi.fn(),
   respondSecurityApproval: vi.fn(),
+  fetchSessionRuntimeSnapshot: vi.fn(),
 }));
 
 vi.mock("@/core/nanobotClient", async () => {
@@ -18,8 +20,15 @@ vi.mock("@/core/nanobotClient", async () => {
   return {
     ...actual,
     getNanobotClient: mocks.getNanobotClient,
+    getGatewayBaseUrl: () => 'http://127.0.0.1:8900',
+    getNanobotToken: () => 'test-token',
   };
 });
+
+vi.mock("@/core/api", async () => ({
+  ...await vi.importActual<typeof import("@/core/api")>("@/core/api"),
+  fetchSessionRuntimeSnapshot: mocks.fetchSessionRuntimeSnapshot,
+}));
 
 import { useNanobotStream } from "./useNanobotStream";
 import { useTurnPlanStore } from "@/stores/turnPlanStore";
@@ -59,10 +68,16 @@ beforeEach(() => {
     planByConversation: {},
     currentTurnByConversation: {},
   });
+  const runtimeClient = new NanobotClient({ url: 'ws://test', reconnect: false });
+  mocks.sendMessage.mockImplementation(() => `stop-${mocks.sendMessage.mock.calls.length}`);
+  mocks.fetchSessionRuntimeSnapshot.mockReset();
   mocks.getNanobotClient.mockReturnValue({
     status: "open",
     getRunStartedAt: () => null,
     getGoalState: () => undefined,
+    getRuntimeSnapshot: runtimeClient.getRuntimeSnapshot.bind(runtimeClient),
+    applyRuntimeSnapshot: runtimeClient.applyRuntimeSnapshot.bind(runtimeClient),
+    onRuntimeSnapshot: runtimeClient.onRuntimeSnapshot.bind(runtimeClient),
     onError: () => () => {},
     onChat: (_chatId: string, handler: EventHandler) => {
       eventHandler = handler;
@@ -87,6 +102,149 @@ afterEach(() => {
   latest = undefined;
   eventHandler = undefined;
   vi.clearAllMocks();
+  vi.useRealTimers();
+});
+
+const idleStopSnapshot = (): ThreadRuntimeSnapshot => ({
+  session_key: 'websocket:chat-media-progress',
+  runtime_epoch: 'epoch-stop',
+  snapshot_revision: 2,
+  thread_status: { type: 'idle' },
+  active_turn: null,
+  latest_turn: null,
+});
+
+describe('stop confirmation recovery', () => {
+  it('confirms an already idle backend without requiring a turn_end event', () => {
+    act(() => latest?.stop());
+    emit({ event: 'stop_result', chat_id: 'chat-media-progress', client_action_id: 'stop-1',
+      status: 'stopped', runtime_snapshot: idleStopSnapshot() });
+    expect(latest?.isStreaming).toBe(false);
+    expect(latest?.isStopping).toBe(false);
+    expect(latest?.messages).toEqual([]);
+  });
+
+  it('reconciles a missing confirmation against a fresh idle snapshot', async () => {
+    vi.useFakeTimers();
+    mocks.fetchSessionRuntimeSnapshot.mockResolvedValue(idleStopSnapshot());
+    act(() => latest?.stop());
+    emit({ event: 'message', chat_id: 'chat-media-progress', text: '没有运行中的任务。' });
+    expect(latest?.isStopping).toBe(true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(8_000); });
+    expect(mocks.fetchSessionRuntimeSnapshot).toHaveBeenCalledWith(
+      'test-token', 'websocket:chat-media-progress', 'http://127.0.0.1:8900', expect.any(AbortSignal),
+    );
+    expect(latest?.isStreaming).toBe(false);
+    expect(latest?.isStopping).toBe(false);
+    expect(latest?.streamError).toBeNull();
+  });
+
+  it('retains running state and permits retry when fresh state is active', async () => {
+    vi.useFakeTimers();
+    mocks.fetchSessionRuntimeSnapshot.mockResolvedValue({
+      ...idleStopSnapshot(), thread_status: { type: 'active', active_flags: [] },
+    });
+    act(() => latest?.stop());
+    await act(async () => { await vi.advanceTimersByTimeAsync(8_000); });
+    expect(latest?.isStreaming).toBe(true);
+    expect(latest?.isStopping).toBe(false);
+    expect(latest?.streamError).toMatchObject({ kind: 'stop_unconfirmed', reason: 'active' });
+    act(() => latest?.stop());
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(2);
+    expect(latest?.isStopping).toBe(true);
+    // The old request's delayed reply must not end the new attempt.
+    emit({ event: 'stop_result', chat_id: 'chat-media-progress', client_action_id: 'stop-1',
+      status: 'stopped', runtime_snapshot: idleStopSnapshot() });
+    expect(latest?.isStopping).toBe(true);
+  });
+
+  it.each(['rejects', 'hangs'] as const)('restores retry when the runtime query %s', async (mode) => {
+    vi.useFakeTimers();
+    if (mode === 'rejects') mocks.fetchSessionRuntimeSnapshot.mockRejectedValue(new Error('offline'));
+    else mocks.fetchSessionRuntimeSnapshot.mockReturnValue(new Promise(() => {}));
+    act(() => latest?.stop());
+    await act(async () => { await vi.advanceTimersByTimeAsync(13_000); });
+    expect(latest?.isStreaming).toBe(true);
+    expect(latest?.isStopping).toBe(false);
+    expect(latest?.streamError).toMatchObject({ kind: 'stop_unconfirmed', reason: 'unreachable' });
+    act(() => latest?.stop());
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it('accepts delayed completion after a pending acknowledgement', () => {
+    act(() => latest?.stop());
+    emit({ event: 'stop_result', chat_id: 'chat-media-progress', client_action_id: 'stop-1',
+      status: 'stopping', runtime_snapshot: idleStopSnapshot() });
+    expect(latest?.isStreaming).toBe(true);
+    expect(latest?.isStopping).toBe(false);
+    emit({ event: 'stop_result', chat_id: 'chat-media-progress', client_action_id: 'stop-1',
+      status: 'stopped', runtime_snapshot: idleStopSnapshot() });
+    expect(latest?.isStreaming).toBe(false);
+    expect(latest?.streamError).toBeNull();
+  });
+
+  it('ignores a stale idle revision after a newer active snapshot', () => {
+    act(() => mocks.getNanobotClient().applyRuntimeSnapshot('chat-media-progress', {
+      ...idleStopSnapshot(), snapshot_revision: 3, thread_status: { type: 'active' },
+    }));
+    act(() => latest?.stop());
+    emit({ event: 'stop_result', chat_id: 'chat-media-progress', client_action_id: 'stop-1',
+      status: 'stopped', runtime_snapshot: idleStopSnapshot() });
+    expect(latest?.isStreaming).toBe(true);
+    expect(latest?.isStopping).toBe(false);
+  });
+
+  it.each(['switch', 'new turn', 'unmount'] as const)('ignores an in-flight query after %s', async (action) => {
+    vi.useFakeTimers();
+    let resolve!: (snapshot: ThreadRuntimeSnapshot) => void;
+    mocks.fetchSessionRuntimeSnapshot.mockReturnValue(new Promise((done) => { resolve = done; }));
+    act(() => latest?.stop());
+    await act(async () => { await vi.advanceTimersByTimeAsync(8_000); });
+    const signal = mocks.fetchSessionRuntimeSnapshot.mock.calls[0][3] as AbortSignal;
+    if (action === 'switch') act(() => root?.render(<Harness chatId='another-chat' />));
+    else if (action === 'new turn') {
+      emit({ event: 'turn_end', chat_id: 'chat-media-progress', finish_reason: 'cancelled' });
+      act(() => latest?.send('新任务'));
+    } else act(() => { root?.unmount(); root = undefined; });
+    expect(signal.aborted).toBe(true);
+    await act(async () => { resolve(idleStopSnapshot()); });
+    if (action !== 'unmount') expect(latest?.isStreaming).toBe(true);
+    expect(mocks.getNanobotClient().getRuntimeSnapshot('chat-media-progress')).toBeUndefined();
+  });
+
+  it('cancels its timeout on a normal terminal event', async () => {
+    vi.useFakeTimers();
+    act(() => latest?.stop());
+    emit({ event: 'turn_end', chat_id: 'chat-media-progress', finish_reason: 'cancelled' });
+    await act(async () => { await vi.advanceTimersByTimeAsync(13_000); });
+    expect(mocks.fetchSessionRuntimeSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('ignores an old stop acknowledgement after a different turn becomes active', () => {
+    const client = mocks.getNanobotClient();
+    act(() => client.applyRuntimeSnapshot('chat-media-progress', {
+      ...idleStopSnapshot(), thread_status: { type: 'active' },
+      active_turn: { id: 'old-turn', status: 'inProgress', started_at: 1 },
+    }));
+    act(() => latest?.stop());
+    act(() => client.applyRuntimeSnapshot('chat-media-progress', {
+      ...idleStopSnapshot(), snapshot_revision: 3, thread_status: { type: 'active' },
+      active_turn: { id: 'new-turn', status: 'inProgress', started_at: 2 },
+    }));
+    emit({ event: 'stop_result', chat_id: 'chat-media-progress', client_action_id: 'stop-1',
+      status: 'stopped', runtime_snapshot: idleStopSnapshot() });
+    expect(latest?.isStreaming).toBe(true);
+    expect(latest?.isStopping).toBe(false);
+    expect(latest?.streamError).toBeNull();
+  });
+
+  it('does not queue stop while disconnected', () => {
+    mocks.getNanobotClient().status = 'reconnecting';
+    act(() => latest?.stop());
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+    expect(latest?.isStopping).toBe(false);
+    expect(latest?.streamError).toMatchObject({ kind: 'stop_unconfirmed' });
+  });
 });
 
 describe("useNanobotStream media progress lifecycle", () => {

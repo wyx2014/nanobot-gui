@@ -136,8 +136,7 @@ const enUS: TranslationDict = {
     inputTokens: 'Input',
     outputTokens: 'Output',
     addAttachment: 'Add images or files',
-    shortcutInvestmentAnalysis: 'Equity Research',
-    shortcutFixedIncome: 'Fixed Income',
+    shortcutInvestmentAnalysis: 'Investment Research',
     shortcutDataAnalysis: 'Data Analysis',
     shortcutOffice: 'Office Work',
   },
@@ -499,7 +498,7 @@ const enUS: TranslationDict = {
     viewLogs: 'View Logs',
     noLogs: 'No logs',
     installing: 'Installing...',
-    aiCreateSkillPrompt: 'Help me create a Skill. My requirements are:',
+    aiCreateSkillPrompt: 'Create a skill and save it to My Skills when finished. My requirements are:',
   },
 
   permission: {

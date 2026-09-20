@@ -151,7 +151,6 @@ export interface TranslationDict {
     outputTokens: string;
     addAttachment: string;
     shortcutInvestmentAnalysis: string;
-    shortcutFixedIncome: string;
     shortcutDataAnalysis: string;
     shortcutOffice: string;
   };

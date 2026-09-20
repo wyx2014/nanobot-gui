@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 
-import { getNanobotClient } from "@/core/nanobotClient";
+import { getGatewayBaseUrl, getNanobotClient, getNanobotToken } from "@/core/nanobotClient";
+import { fetchSessionRuntimeSnapshot } from "@/core/api";
 import { resolveArtifactUrl } from "@/core/artifacts";
 import {
   mergeToolProgressEvents,
@@ -21,6 +22,7 @@ import type {
   GoalStateWsPayload,
   ToolProgressEvent,
   TaskProgressStep,
+  ThreadRuntimeSnapshot,
   TurnPlanResource,
   UIImage,
   UIFileEdit,
@@ -44,6 +46,13 @@ interface StreamBuffer {
   messageId: string;
   streamId?: string;
   turnId?: string;
+}
+
+interface StopRequest {
+  actionId: string;
+  turnId: string | null;
+  timer?: ReturnType<typeof setTimeout>;
+  controller?: AbortController;
 }
 
 interface ActiveAssistantCursor {
@@ -1392,7 +1401,17 @@ export function useNanobotStream(
     isStreaming: initialStreaming,
   });
   const { isStreaming, isStopping, runStartedAt, goalState, streamError } = protocol;
-  const setIsStreaming = useCallback((value: boolean) => dispatchProtocol({ type: 'streaming', value }), []);
+  const stopRequestRef = useRef<StopRequest | null>(null);
+  const clearStopRequest = useCallback(() => {
+    const request = stopRequestRef.current;
+    stopRequestRef.current = null;
+    if (request?.timer) clearTimeout(request.timer);
+    request?.controller?.abort();
+  }, []);
+  const setIsStreaming = useCallback((value: boolean) => {
+    if (!value) clearStopRequest();
+    dispatchProtocol({ type: 'streaming', value });
+  }, [clearStopRequest]);
   const setIsStopping = useCallback((value: boolean) => dispatchProtocol({ type: 'stopping', value }), []);
   const setGoalState = useCallback((value: GoalStateWsPayload | undefined) => dispatchProtocol({ type: 'goal_state', value }), []);
   const setRunStartedAt = useCallback((value: number | null) => dispatchProtocol({ type: 'goal_status', status: value === null ? 'idle' : 'running', ...(value === null ? {} : { startedAt: value }) }), []);
@@ -1420,6 +1439,55 @@ export function useNanobotStream(
    * the loading spinner alive across tool-call boundaries without needing
    * backend changes. */
   const streamEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const stopUnconfirmed = useCallback((request: StopRequest, reason: 'active' | 'unreachable') => {
+    if (stopRequestRef.current !== request || !chatId) return;
+    if (request.timer) clearTimeout(request.timer);
+    request.controller?.abort();
+    setIsStopping(false);
+    setStreamError({ kind: 'stop_unconfirmed', reason, chatId });
+    // Keep the request identity so a delayed completion can still confirm it.
+  }, [chatId, setIsStopping, setStreamError]);
+
+  const applyStopSnapshot = useCallback((request: StopRequest, snapshot: ThreadRuntimeSnapshot) => {
+    if (stopRequestRef.current !== request || !client || !chatId) return;
+    client.applyRuntimeSnapshot(chatId, snapshot);
+    // applyRuntimeSnapshot rejects stale revisions; use the accepted state.
+    const current = client.getRuntimeSnapshot(chatId);
+    if (!current || current.thread_status.type === 'active') {
+      stopUnconfirmed(request, 'active');
+      return;
+    }
+    setIsStreaming(false);
+    setRunStartedAt(null);
+    setSecurityApproval(null);
+    setMessages((previous) => current.thread_status.type === 'systemError'
+      ? finalizeFailedTurnProgress(previous)
+      : current.latest_turn?.status === 'interrupted'
+        ? finalizeInterruptedTurn(previous, current.latest_turn.completed_at ?? Date.now())
+        : closeOpenStreams(previous));
+  }, [chatId, client, setIsStreaming, setRunStartedAt, stopUnconfirmed]);
+
+  const reconcileStop = useCallback(async (request: StopRequest) => {
+    if (stopRequestRef.current !== request || !chatId) return;
+    const controller = new AbortController();
+    request.controller = controller;
+    request.timer = setTimeout(() => stopUnconfirmed(request, 'unreachable'), 5_000);
+    try {
+      const base = getGatewayBaseUrl();
+      if (!base) throw new Error('Gateway unavailable');
+      const snapshot = await fetchSessionRuntimeSnapshot(
+        getNanobotToken(), `websocket:${chatId}`, base, controller.signal,
+      );
+      if (controller.signal.aborted || stopRequestRef.current !== request) return;
+      if (snapshot) applyStopSnapshot(request, snapshot);
+      else stopUnconfirmed(request, 'unreachable');
+    } catch {
+      if (!controller.signal.aborted) stopUnconfirmed(request, 'unreachable');
+    }
+  }, [applyStopSnapshot, chatId, stopUnconfirmed]);
+
+  useEffect(() => clearStopRequest, [chatId, client, clearStopRequest]);
 
   useEffect(() => {
     setSecurityApproval(null);
@@ -1760,6 +1828,13 @@ export function useNanobotStream(
     if (!chatId || !client) return;
 
     const handle = (ev: InboundEvent) => {
+      if (ev.event === 'stop_result') {
+        const request = stopRequestRef.current;
+        if (!request || ev.client_action_id !== request.actionId) return;
+        if (ev.status === 'stopped') applyStopSnapshot(request, ev.runtime_snapshot);
+        else stopUnconfirmed(request, ev.status === 'stopping' ? 'active' : 'unreachable');
+        return;
+      }
       if (
         ev.event === "browser_frame"
         || ev.event === "browser_status"
@@ -1938,6 +2013,14 @@ export function useNanobotStream(
       }
 
       if (ev.event === "turn_started") {
+        const request = stopRequestRef.current;
+        if (request?.turnId && request.turnId !== ev.turn.id) {
+          clearStopRequest();
+          setIsStopping(false);
+          setStreamError(null);
+        } else if (request) {
+          request.turnId = ev.turn.id;
+        }
         lifecycleTerminalHandledRef.current = false;
         activeTurnIdRef.current = ev.turn.id;
         lastAnswerStreamRef.current = { turnId: ev.turn.id };
@@ -2568,6 +2651,17 @@ export function useNanobotStream(
       ? runtimeSubscriber.call(client, (snapshotChatId, snapshot) => {
           if (snapshotChatId !== chatId) return;
           const active = snapshot.thread_status.type === "active";
+          const request = stopRequestRef.current;
+          if (active && snapshot.active_turn) {
+            if (request?.turnId && request.turnId !== snapshot.active_turn.id) {
+              clearStopRequest();
+              setIsStopping(false);
+              setStreamError(null);
+            } else if (request) {
+              request.turnId = snapshot.active_turn.id;
+            }
+            activeTurnIdRef.current = snapshot.active_turn.id;
+          }
           setRunStartedAt(
             active && snapshot.active_turn
               ? snapshot.active_turn.started_at
@@ -2597,10 +2691,12 @@ export function useNanobotStream(
       }
     };
   }, [
+    applyStopSnapshot,
     chatId,
     client,
     clearActivitySegment,
     clearPendingStreamWork,
+    clearStopRequest,
     detachedActivitySegmentId,
     ensureActivitySegmentId,
     flushPendingStreamEvents,
@@ -2612,6 +2708,7 @@ export function useNanobotStream(
     setIsStreaming,
     setRunStartedAt,
     setStreamError,
+    stopUnconfirmed,
   ]);
 
   const send = useCallback(
@@ -2653,6 +2750,7 @@ export function useNanobotStream(
       // Mark streaming immediately so the UI shows the loading indicator
       // right away, before the first delta arrives from the server.
       setTurnUsage(undefined);
+      clearStopRequest();
       setIsStopping(false);
       setIsStreaming(true);
       const wireMedia = hasImages ? images!.map((i) => i.media) : undefined;
@@ -2663,15 +2761,32 @@ export function useNanobotStream(
       }
       return true;
     },
-    [chatId, clearActivitySegment, client, flushPendingStreamEvents, setIsStopping, setIsStreaming],
+    [chatId, clearActivitySegment, clearStopRequest, client, flushPendingStreamEvents, setIsStopping, setIsStreaming],
   );
 
   const stop = useCallback(() => {
     if (!chatId || !client || !isStreaming || isStopping) return;
     flushPendingStreamEvents();
+    clearStopRequest();
+    setStreamError(null);
     setIsStopping(true);
-    client.sendMessage(chatId, "/stop");
-  }, [chatId, client, flushPendingStreamEvents, isStopping, isStreaming, setIsStopping]);
+    const request: StopRequest = { actionId: '', turnId: activeTurnIdRef.current };
+    stopRequestRef.current = request;
+    // Never queue an unscoped /stop across a disconnect: it could cancel a
+    // later turn when the socket reconnects.
+    if (client.status !== 'open') {
+      stopUnconfirmed(request, 'unreachable');
+      void reconcileStop(request);
+      return;
+    }
+    try {
+      request.actionId = client.sendMessage(chatId, "/stop");
+      request.timer = setTimeout(() => { void reconcileStop(request); }, 8_000);
+    } catch {
+      stopUnconfirmed(request, 'unreachable');
+    }
+  }, [chatId, clearStopRequest, client, flushPendingStreamEvents, isStopping, isStreaming,
+    reconcileStop, setIsStopping, setStreamError, stopUnconfirmed]);
 
   const respondSecurityApproval = useCallback((decision: "allow_turn" | "deny") => {
     if (!chatId || !client || client.status !== "open" || !securityApproval) return false;

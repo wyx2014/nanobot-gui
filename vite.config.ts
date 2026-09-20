@@ -23,7 +23,7 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     watch: {
-      ignored: ['**/embedded-python/**', '**/dist/**'],
+      ignored: ['**/embedded-python/**', '**/embedded-node/**', '**/dist/**'],
     },
   },
   envPrefix: ['VITE_'],

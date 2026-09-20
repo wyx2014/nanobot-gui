@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Plus, ArrowUp, Square, X, ChevronDown, Check, File, FileArchive, FileCode2, FileImage, FileSpreadsheet, FileText, FileType2, Folder, CornerDownRight, Pencil, Trash2, GraduationCap, Paperclip, ChevronRight, Puzzle, Globe, Search, BarChart3, TrendingUp, Landmark, Users, Mic, Loader2, Presentation, Terminal } from 'lucide-react';
+import { Plus, ArrowUp, Square, X, ChevronDown, Check, File, FileArchive, FileCode2, FileImage, FileSpreadsheet, FileText, FileType2, Folder, CornerDownRight, Pencil, Trash2, GraduationCap, Paperclip, ChevronRight, Puzzle, Globe, Search, BarChart3, TrendingUp, Users, Mic, Loader2, Presentation, Terminal } from 'lucide-react';
 import ThinkingOrb from '@/components/common/ModalAwareThinkingOrb';
 import ExpertTeamIcon from '@/components/common/ExpertTeamIcon';
 import { dialogBridge, fsBridge, mediaBridge, osBridge, type WorkspaceFileEntry } from '@/lib/ipc-factory';
 import { useFileDragDrop } from '@/hooks/useFileDragDrop';
+import { useWorkspaceFiles } from '@/hooks/useWorkspaceFiles';
 import { uint8ArrayToBase64 } from '@/utils/base64';
 import { getBaseName, IMAGE_MIME_MAP, isLocalFilePath } from '@/utils/pathUtils';
 import { isImageFile } from '@/components/chat/FileAttachment';
@@ -21,7 +22,7 @@ import { cn } from '@/lib/utils';
 import type { ImageAttachment, SkillMetadata } from '@/types';
 import type { OutboundCliAppMention, OutboundMcpPresetMention, OutboundSkillScope } from '@/core/types';
 import type { CliAppInfo, ExpertTeamBinding, ExpertTeamSummary, McpPresetInfo, SlashCommand, WorkspaceScopePayload } from '@/core/types';
-import { fetchExpertTeams, fetchMcpPresets, fetchSkills } from '@/core/api';
+import { fetchExpertTeams, fetchMcpPresets, fetchProjectSkills, fetchSkills, saveProjectSkills } from '@/core/api';
 import {
   getNanobotClient,
   getNanobotStatus,
@@ -61,9 +62,8 @@ import { normalizePresentationSelection, type PresentationSelection } from '@/co
 import { USER_PROJECTS_DIRECTORY_NAME } from '@/config/appDirectories';
 import { INVESTMENT_WORKSPACE_NAME, RESEARCH_SHORTCUTS, type ResearchShortcutBinding } from './researchShortcuts';
 import {
+  CREDIT_ISSUER_SHORTCUT,
   FIXED_INCOME_CONNECTORS,
-  FIXED_INCOME_SHORTCUTS,
-  FIXED_INCOME_WORKSPACE_NAME,
   type FixedIncomeShortcutBinding,
 } from './fixedIncomeShortcuts';
 import { DATA_ANALYSIS_SHORTCUTS, OFFICE_SHORTCUTS, type WorkspaceTaskBinding } from './workspaceTaskShortcuts';
@@ -72,7 +72,6 @@ import {
   removeComposerSuggestionTrigger,
   searchWorkspaceFiles,
 } from '@/core/composerSuggestions';
-import { getWelcomeShortcutAvailability } from './welcomeShortcutAvailability';
 
 const SHOW_PRESENTATION_PLUS_MENU_ENTRY = false;
 
@@ -98,7 +97,7 @@ interface ShortcutOption {
 interface ShortcutCategory {
   id: string;
   icon: any;
-  labelKey: 'shortcutInvestmentAnalysis' | 'shortcutFixedIncome' | 'shortcutDataAnalysis' | 'shortcutOffice';
+  labelKey: 'shortcutInvestmentAnalysis' | 'shortcutDataAnalysis' | 'shortcutOffice';
   options: ShortcutOption[];
 }
 
@@ -111,13 +110,7 @@ const SHORTCUT_CATEGORIES: ShortcutCategory[] = [
     id: 'investment-analysis',
     icon: TrendingUp,
     labelKey: 'shortcutInvestmentAnalysis',
-    options: RESEARCH_SHORTCUTS,
-  },
-  {
-    id: 'fixed-income',
-    icon: Landmark,
-    labelKey: 'shortcutFixedIncome',
-    options: FIXED_INCOME_SHORTCUTS,
+    options: [...RESEARCH_SHORTCUTS, CREDIT_ISSUER_SHORTCUT],
   },
   {
     id: 'data-analysis',
@@ -426,9 +419,6 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [cursorPosition, setCursorPosition] = useState(0);
-  const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFileEntry[]>([]);
-  const [workspaceFilesLoading, setWorkspaceFilesLoading] = useState(false);
-  const [workspaceFilesError, setWorkspaceFilesError] = useState<string | null>(null);
   const [mcpPresets, setMcpPresets] = useState<McpPresetInfo[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const voiceRecorderRef = useRef<PcmVoiceRecorder | null>(null);
@@ -524,6 +514,19 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
   const activeWorkspacePathRef = useRef(activeWorkspacePath);
   activeWorkspacePathRef.current = activeWorkspacePath;
 
+  // `@` references a file in the active workspace; `/` selects a capability.
+  const suggestionTrigger = useMemo(
+    () => findComposerSuggestionTrigger(text, cursorPosition),
+    [cursorPosition, text],
+  );
+  const suggestionType = suggestionTrigger?.type ?? null;
+  const {
+    files: workspaceFiles,
+    loading: workspaceFilesLoading,
+    error: workspaceFilesError,
+    refresh: refreshWorkspaceFiles,
+  } = useWorkspaceFiles(activeWorkspacePath, suggestionType === 'file' && !suggestionsDismissed);
+
   // Chat-only derived state
   const isRunning = activeConv?.status === 'running';
   const isStreaming = isStreamingProp ?? (!isWelcome && isRunning);
@@ -595,14 +598,14 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     const isCurrentRequest = () => shortcutPreparationRef.current === request
       && !useChatStore.getState().activeConversationId;
     try {
-      const workspaceName = option.workspaceTask?.workspaceName
-        ?? (option.fixedIncome ? FIXED_INCOME_WORKSPACE_NAME : INVESTMENT_WORKSPACE_NAME);
+      const workspaceName = option.workspaceTask?.workspaceName ?? INVESTMENT_WORKSPACE_NAME;
       const documentsPath = await osBridge.documentDir();
       if (!isCurrentRequest()) return;
       const separator = documentsPath.includes('\\') ? '\\' : '/';
       const workspacePath = `${documentsPath.replace(/[\\/]+$/, '')}${separator}${USER_PROJECTS_DIRECTORY_NAME}${separator}${workspaceName}`;
       let connectors: OutboundMcpPresetMention[] = [];
       let availableSkills: SkillMetadata[] | null = null;
+      let projectSkillSetup: { token: string; base: string; existing: string[]; granted: string[] } | null = null;
       const taskSkills = option.workspaceTask?.skillNames ?? [];
       if (option.fixedIncome || option.workspaceTask) {
         // Resolve actual configured presets so these attachments scope the
@@ -618,19 +621,20 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
           token = refreshed.token;
           base = refreshed.baseUrl;
         }
-        const [skillsPayload, mcpPayload] = await Promise.all([
+        const [skillsPayload, mcpPayload, projectSkillsPayload] = await Promise.all([
           option.workspaceTask ? fetchSkills(token, base) : Promise.resolve(null),
           option.fixedIncome || option.workspaceTask?.financialData
             ? fetchMcpPresets(token, base).catch((error) => {
-              // Holdings files remain useful without optional market data.
+              // File-based tasks can proceed without optional market data.
               if (option.fixedIncome) throw error;
               return null;
             })
             : Promise.resolve(null),
+          option.workspaceTask ? fetchProjectSkills(token, workspacePath, base) : Promise.resolve(null),
         ]);
         if (!isCurrentRequest()) return;
         if (skillsPayload) {
-          availableSkills = skillsPayload.skills
+          const enabledSkills = skillsPayload.skills
             .filter((skill) => skill.enabled && skill.available && skill.user_invocable !== false)
             .map((skill) => ({
               name: skill.name,
@@ -638,11 +642,15 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
               userInvocable: skill.user_invocable,
               tags: [skill.source, ...skill.tags],
             }));
-          const usable = usableSkillsForScope(
-            availableSkills,
-            workspacePath,
-            useWorkspaceStore.getState().projectSkillBindings[normalizeProjectPath(workspacePath)] ?? [],
-          );
+          const existingGrants = projectSkillsPayload?.skills ?? [];
+          // Clicking a scenario explicitly selects its named personal skills.
+          // Do not implicitly authorize user overrides of other built-in skills.
+          const requestedGrants = (option.workspaceTask?.userSkillNames ?? []).filter((name) => (
+            taskSkills.includes(name)
+            && enabledSkills.some((skill) => skill.name === name && skill.tags?.[0] === 'workspace')
+          ));
+          const granted = [...new Set([...existingGrants, ...requestedGrants])];
+          const usable = usableSkillsForScope(enabledSkills, workspacePath, granted);
           const missingSkills = taskSkills.filter((name) => !usable.some((skill) => skill.name === name));
           if (missingSkills.length) {
             const names = missingSkills.map(displaySkillName).join(isEn ? ', ' : '、');
@@ -650,6 +658,8 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
               ? `${names} unavailable in this workspace. Check the skill in Toolbox and try again.`
               : `${names} 技能在此工作空间暂不可用，请在工具箱中检查是否已安装并启用。`);
           }
+          availableSkills = enabledSkills;
+          projectSkillSetup = { token, base, existing: existingGrants, granted };
         }
         const available = mcpPayload
           ? installedMcpPresetsFromPayload(mcpPayload).filter((preset) => preset.available)
@@ -680,6 +690,22 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
 
       await fsBridge.mkdir(workspacePath, { recursive: true });
       if (!isCurrentRequest()) return;
+
+      if (projectSkillSetup) {
+        const { token, base, existing, granted } = projectSkillSetup;
+        // The gateway owns grants. Publish local state only after it confirms
+        // the binding, so sending cannot silently lose the selected skill.
+        const saved = granted.some((name) => !existing.includes(name))
+          ? await saveProjectSkills(token, workspacePath, granted, base)
+          : { skills: existing };
+        if (!isCurrentRequest()) return;
+        if (granted.some((name) => !existing.includes(name) && !saved.skills.includes(name))) {
+          throw new Error(isEn
+            ? 'The skill could not be bound to this workspace. Check that it is still installed and try again.'
+            : '技能未能绑定到此工作空间，请确认技能仍已安装后重试。');
+        }
+        useWorkspaceStore.getState().setProjectSkillBindings(workspacePath, saved.skills);
+      }
 
       const accessMode = workspaceScope?.access_mode ?? 'full';
       onWorkspaceScopeChange?.({
@@ -729,7 +755,7 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
       addToast({
         type: 'error',
         title: option.fixedIncome
-          ? (isEn ? 'Could not prepare fixed-income research' : '固收任务准备失败')
+          ? (isEn ? 'Could not prepare credit research' : '信用债研究准备失败')
           : option.research
             ? (isEn ? 'Could not prepare research' : '投研任务准备失败')
             : (isEn ? 'Could not prepare task' : '任务准备失败'),
@@ -954,14 +980,12 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
         },
       );
       if (workspace && preparedPaths.length && activeWorkspacePathRef.current === targetWorkspacePath) {
-        void fsBridge.listWorkspaceFiles(workspace).then((entries) => {
-          if (activeWorkspacePathRef.current === targetWorkspacePath) setWorkspaceFiles(entries);
-        }).catch(() => {});
+        refreshWorkspaceFiles();
       }
     } finally {
       setPendingFileImports((count) => count - 1);
     }
-  }, [addToast, isEn]);
+  }, [addToast, isEn, refreshWorkspaceFiles]);
 
   // File drag & drop (always called; works for both variants)
   const { isDragging } = useFileDragDrop(async (paths, unresolvedNames) => {
@@ -1072,49 +1096,6 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     [activeProjectPath, activeProjectSkillNames, skills],
   );
 
-  useEffect(() => {
-    let cancelled = false;
-    setWorkspaceFiles([]);
-    setWorkspaceFilesError(null);
-    if (!activeWorkspacePath) {
-      setWorkspaceFilesLoading(false);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    setWorkspaceFilesLoading(true);
-    void fsBridge.listWorkspaceFiles(activeWorkspacePath)
-      .then((entries) => {
-        if (!cancelled) {
-          // Treat entries from an older Electron main process as files until
-          // the app is restarted and begins returning the explicit kind.
-          setWorkspaceFiles(entries.map((entry) => ({
-            ...entry,
-            kind: workspacePathKind(entry),
-          })));
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setWorkspaceFilesError(error instanceof Error ? error.message : String(error));
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setWorkspaceFilesLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeWorkspacePath]);
-
-  // `@` references a file in the active workspace; `/` selects a capability.
-  const suggestionTrigger = useMemo(
-    () => findComposerSuggestionTrigger(text, cursorPosition),
-    [cursorPosition, text],
-  );
-  const suggestionType = suggestionTrigger?.type ?? null;
-
   // Slash command and capability suggestions.
   const skillPickerOpen = showPlusMenu || suggestionType === 'capability';
   useEffect(() => {
@@ -1196,11 +1177,15 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     workspaceFiles,
   ]);
 
-  // Reset dismissed state when suggestions change
+  // Background file refreshes must not reopen an explicitly dismissed picker.
   useEffect(() => {
     setSuggestionsDismissed(false);
-    if (suggestionType !== null && suggestions.length > 0) setSelectedIndex(0);
-  }, [suggestionTrigger?.query, suggestionType, suggestions.length]);
+    setSelectedIndex(0);
+  }, [suggestionTrigger?.query, suggestionType]);
+
+  useEffect(() => {
+    setSelectedIndex((index) => Math.min(index, Math.max(0, suggestions.length - 1)));
+  }, [suggestions.length]);
 
   const showSuggestions = !suggestionsDismissed && suggestionType !== null;
 
@@ -2545,12 +2530,9 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
     </div>
   ) : null;
 
-  const shortcutAvailability = getWelcomeShortcutAvailability();
   const welcomeShortcuts = isWelcome ? (
     <div data-welcome-shortcuts className="cowork-welcome-shortcuts">
-      {SHORTCUT_CATEGORIES.filter((category) => (
-        category.id !== 'fixed-income' || shortcutAvailability.showFixedIncome
-      )).map((category) => {
+      {SHORTCUT_CATEGORIES.map((category) => {
         const Icon = category.icon;
         return (
           <button
@@ -2558,7 +2540,6 @@ export default function ChatInput({ variant, onSend, onStop, isStreaming: isStre
             data-welcome-shortcut={category.id}
             data-active={activeCategory === category.id ? 'true' : 'false'}
             aria-expanded={activeCategory === category.id}
-            disabled={!shortcutAvailability.interactive}
             onClick={() => handleShortcut(category.id)}
           >
             <Icon className="h-3.5 w-3.5" />

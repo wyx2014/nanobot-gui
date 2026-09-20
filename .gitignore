@@ -9,6 +9,7 @@ coverage/
 
 # Embedded Python Runtime
 embedded-python/
+embedded-node/
 
 # Environment
 .env

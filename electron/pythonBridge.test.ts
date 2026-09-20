@@ -288,6 +288,7 @@ describe('PythonBridge lifecycle', () => {
         cwd: '/tmp/tpcowork-test/workspace',
       });
       expect(spawn.mock.calls[0][2]?.env?.PYTHONPATH).toBeUndefined();
+      expect(spawn.mock.calls[0][2]?.env?.NANOBOT_NODE_BIN).toBe('/tmp/resources/node/bin/node');
       expect(spawn.mock.calls[0][0]).toBe('/tmp/resources/python/bin/python3');
     } finally {
       if (previousPythonPath === undefined) delete process.env.PYTHONPATH;

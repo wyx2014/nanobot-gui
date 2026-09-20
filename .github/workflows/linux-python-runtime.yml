@@ -75,7 +75,10 @@ jobs:
           chmod +x "$appimage"
           "$appimage" --appimage-extract >/dev/null
           test -x squashfs-root/resources/python/bin/python3
+          squashfs-root/resources/node/bin/node --version
+          squashfs-root/resources/node/bin/node squashfs-root/resources/node/lib/node_modules/npm/bin/npm-cli.js --version
           squashfs-root/resources/python/bin/python3 -c "import nanobot; from nanobot.cli.commands import app; print(nanobot.__file__); print(type(app).__name__)"
+          squashfs-root/resources/python/bin/python3 scripts/check-python-commands.py
           broken_link="$(find squashfs-root/resources/python -xtype l -print -quit)"
           test -z "$broken_link"
 
@@ -90,7 +93,11 @@ jobs:
           test -n "$deb_python"
           test -x "$deb_python"
           "$deb_python" -c "import nanobot; from nanobot.cli.commands import app; print(nanobot.__file__); print(type(app).__name__)"
+          "$deb_python" scripts/check-python-commands.py
           deb_runtime="$(dirname "$(dirname "$deb_python")")"
+          bundled_node_root="$(dirname "$deb_runtime")/node"
+          "$bundled_node_root/bin/node" --version
+          "$bundled_node_root/bin/node" "$bundled_node_root/lib/node_modules/npm/bin/npm-cli.js" --version
           broken_link="$(find "$deb_runtime" -xtype l -print -quit)"
           test -z "$broken_link"
           desktop_entry="$(find "$deb_root/usr/share/applications" -type f -name '*.desktop' -print -quit)"

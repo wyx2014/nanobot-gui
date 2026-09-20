@@ -799,6 +799,23 @@ export type ModelCapabilitySource =
   | "provider"
   | "heuristic";
 
+export interface PackageSourcesSettings {
+  enabled: boolean;
+  npm_registry: string;
+  pypi_index_url: string;
+  workspace_python: boolean;
+}
+
+export interface PackageSourcesPayload extends PackageSourcesSettings {
+  python_path: string;
+  npm_path: string;
+  node_path: string;
+  uv_path: string;
+  requires_restart?: boolean;
+  mcp_reload_error?: string;
+  checks?: Array<{ name: 'npm' | 'pip'; ok: boolean; code: string; message: string }>;
+}
+
 export interface SettingsPayload {
   surface?: RuntimeSurface;
   runtime_surface?: RuntimeSurface;
@@ -1535,6 +1552,13 @@ export type InboundEvent =
       session_id?: string;
       turn_id: string;
       plan: TurnPlanResource;
+    }
+  | {
+      event: "stop_result";
+      chat_id: string;
+      client_action_id?: string;
+      status: "stopped" | "stopping" | "failed";
+      runtime_snapshot: ThreadRuntimeSnapshot;
     }
   | {
       event: "thread_status_changed";

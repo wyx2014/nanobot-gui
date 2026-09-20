@@ -137,9 +137,8 @@ const zhCN: TranslationDict = {
     outputTokens: '输出',
     addAttachment: '添加图片或文件',
     shortcutInvestmentAnalysis: '投资研究',
-    shortcutFixedIncome: '固收业务',
     shortcutDataAnalysis: '数据分析',
-    shortcutOffice: 'PPT制作',
+    shortcutOffice: '综合办公',
   },
 
   status: {
@@ -499,7 +498,7 @@ const zhCN: TranslationDict = {
     viewLogs: '查看日志',
     noLogs: '暂无日志',
     installing: '安装中...',
-    aiCreateSkillPrompt: '帮我创建一个 Skill，我的需求是：',
+    aiCreateSkillPrompt: '帮我创建一个技能，完成后保存到“我的技能”。我的需求是：',
   },
 
   permission: {

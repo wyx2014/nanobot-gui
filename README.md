@@ -213,6 +213,7 @@ chmod +x TPCowork-0.0.1.AppImage
 - `out/**/*`
 - `package.json`
 - `embedded-python/runtime/` -> `resources/python/`
+- `embedded-node/runtime/` -> `resources/node/`（Node 22 与 npm/npx）
 - `../nanobot/` 会在 `prepare-python` 时安装并预编译进 `resources/python/`
 
 用户机器是否需要环境：
@@ -220,6 +221,31 @@ chmod +x TPCowork-0.0.1.AppImage
 - 不需要 Node。
 - 正常打包成功后不需要系统 Python。
 - 仍需要用户配置自己的模型 API Key 或 OAuth。
+
+## 内网依赖包源
+
+在“系统设置 → 依赖包源”中设置 npm 与 Python 索引，或使用“填入公司内网源”。
+打包版首次迁移默认启用公司源，开发环境默认关闭；后续启动保留用户在 gateway 中保存的设置。
+
+- npm：`http://10.94.211.66/repository/npm_mirror/`
+- pip/uv：`http://10.94.211.66/repository/officialPypi/simple/`
+
+这些配置由 nanobot 注入 Agent 命令、技能脚本和 MCP stdio 进程，覆盖 pip、npm/npx、uv/uvx 的默认索引。
+配置仅用于任务进程，不修改用户全局 `.npmrc` 或 pip 配置；关闭后使用原有包源设置。
+指定 HTTP Python 源时仅信任该主机；明确配置的仓库 IP 会通过现有网络白名单机制放行，域名规则仍然有效。
+
+工作空间 Python 开关默认开启。首次执行命令时使用内置 Python 创建并复用工作空间 `.venv`，
+继承内置包的读取能力，新增依赖安装到该虚拟环境。已有环境会保留；不完整环境会提示修复，不自动删除。
+桌面任务中的 `python` / `python3` 与 `pip` / `pip3` 共用该解释器；关闭工作空间 Python 环境后，仍默认使用启动 gateway 的 Python（开发版为 nanobot venv，打包版为内置 Python）。
+兼容入口仅位于软件自己的运行目录，不修改系统 PATH。MCP 的普通 Python 启动命令也会解析为内置解释器；显式指定的其他解释器路径仍会保留。
+模型会收到实际解释器路径、包源与安装失败的处理说明。常见安装命令首次检查源的可达性，检查结果缓存一分钟。
+
+“检查已保存配置”查询 `docx` / `python-docx` 示例包的元数据，不代表所有版本和平台的包均可下载。
+显式指定的安装 URL、项目锁文件、scoped registry、浏览器等额外二进制下载仍需要相应内网资源。
+保存后新命令使用新配置，已有 stdio MCP 会尝试重连；连接失败会提示到工具箱检查，需要重启时会单独说明。
+
+打包命令会自动执行 `prepare-node`，从 Node 官方发行页下载指定平台的 Node/npm，并校验 SHA-256。
+内网终端运行软件不需要再次下载 Node，也不需要额外安装 Python。
 
 ## 常用命令
 

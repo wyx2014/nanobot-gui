@@ -400,7 +400,7 @@
   transition: color 140ms ease, border-color 140ms ease, background-color 140ms ease;
 }
 
-.cowork-welcome-shortcuts [data-welcome-shortcut]:not(:disabled):hover,
+.cowork-welcome-shortcuts [data-welcome-shortcut]:hover,
 .cowork-welcome-shortcuts [data-welcome-shortcut][data-active="true"] {
   border-color: var(--cowork-blue);
   color: var(--cowork-blue);

@@ -95,6 +95,7 @@ type RuntimeSnapshotGapHandler = (chatId: string) => void;
 type CanonicalEventHandler = (event: CanonicalSessionEvent) => void;
 
 export type StreamError =
+  | { kind: "stop_unconfirmed"; reason: "active" | "unreachable"; chatId: string }
   | { kind: "expert_team_revision_rejected"; reason?: string; chatId?: string }
   | { kind: "message_too_big" }
   | { kind: "workspace_scope_rejected"; reason?: string; chatId?: string }
@@ -588,11 +589,12 @@ export class NanobotClient {
       expertTeam?: ExpertTeamBinding;
       expertTeamRevisionPlanId?: string;
     },
-  ): void {
+  ): string {
     this.knownChats.add(chatId);
+    const actionId = diagnosticId('action');
     const frame: Outbound = {
       type: "message",
-      client_action_id: diagnosticId('action'),
+      client_action_id: actionId,
       chat_id: chatId,
       content,
       ...(options?.presentation ? { presentation: options.presentation } : {}),
@@ -608,15 +610,19 @@ export class NanobotClient {
       webui: true,
     };
     recordDiagnostic({ event_name: 'websocket.message', client_action_id: frame.client_action_id, chat_id: chatId, status: 'started' });
-    if (options?.expertTeamRevisionPlanId) {
+    if (options?.expertTeamRevisionPlanId || content.trim() === '/stop') {
       if (this.socket?.readyState !== WS_OPEN) {
         recordDiagnostic({ event_name: 'websocket.message', client_action_id: frame.client_action_id, chat_id: chatId, status: 'failed', level: 'error', details: { error_code: 'SOCKET_CLOSED' } });
-        throw new Error("网关连接已断开，请重新确认更新范围");
+        throw new Error("网关连接已断开，请重试");
       }
       this.rawSend(frame);
     } else {
       this.queueSend(frame);
     }
+    if (content.trim() === '/stop') {
+      recordDiagnostic({ event_name: 'websocket.stop', client_action_id: actionId, chat_id: chatId, status: 'started' });
+    }
+    return actionId;
   }
 
   revisionContext(chatId: string, runId: string): Promise<ExpertTeamRevisionContext> {
@@ -896,6 +902,10 @@ export class NanobotClient {
       recordDiagnostic({ event_name: 'websocket.turn', client_action_id: parsed.client_action_id, chat_id: parsed.chat_id, turn_id: parsed.turn.id,
         trace_id: parsed.turn.trace_id ?? undefined, status: parsed.event === 'turn_started' ? 'started' : parsed.turn.status === 'failed' ? 'failed' : parsed.turn.status === 'interrupted' ? 'cancelled' : 'completed',
         details: { snapshot_revision: parsed.snapshot_revision, runtime_epoch: parsed.turn.runtime_epoch } });
+    } else if (parsed.event === 'stop_result') {
+      recordDiagnostic({ event_name: 'websocket.stop', client_action_id: parsed.client_action_id, chat_id: parsed.chat_id,
+        status: parsed.status === 'stopped' ? 'completed' : parsed.status === 'failed' ? 'failed' : 'started',
+        details: { stop_status: parsed.status } });
     } else if (parsed.event === 'error') {
       recordDiagnostic({ event_name: 'websocket.error', status: 'failed', level: 'error', details: { error_code: parsed.detail } });
     }
@@ -1268,6 +1278,11 @@ export class NanobotClient {
       this.socket.send(JSON.stringify(frame));
       if (frame.type === 'message') recordDiagnostic({ event_name: 'websocket.message', client_action_id: frame.client_action_id, chat_id: frame.chat_id, status: 'completed', details: { stage: 'sent' } });
     } catch {
+      if (frame.type === 'message' && frame.content.trim() === '/stop') {
+        recordDiagnostic({ event_name: 'websocket.send_failed', client_action_id: frame.client_action_id,
+          chat_id: frame.chat_id, status: 'failed', level: 'error', details: { stage: 'stop' } });
+        throw new Error('网关连接已断开，请重试');
+      }
       this.sendQueue.push(frame);
       if (frame.type === 'message') recordDiagnostic({ event_name: 'websocket.send_failed', client_action_id: frame.client_action_id, chat_id: frame.chat_id, status: 'failed', level: 'error', details: { queue_depth: this.sendQueue.length } });
     }

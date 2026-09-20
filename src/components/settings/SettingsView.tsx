@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import DataManagementSection from "./DataManagementSection";
+import DependencySettingsSection from "./DependencySettingsSection";
 import SecurityProtectionSection from "./SecurityProtectionSection";
 import WindowModalBackdrop from "@/components/common/WindowModalBackdrop";
 import {
@@ -91,6 +92,7 @@ type TabKey =
   | "voice"
   | "search"
   | "general"
+  | "dependencies"
   | "personalization"
   | "security"
   | "data"
@@ -141,6 +143,7 @@ const tabs: Array<{ key: TabKey; label: string; description: string; icon: typeo
   { key: "general", label: "系统设置", description: "语言、关闭行为、助手信息", icon: SlidersHorizontal },
   { key: "providers", label: "模型配置", description: "提供商 / API 密钥 / OAuth 授权", icon: Cpu },
   { key: "voice", label: "语音设置", description: "默认 ASR 模型和语音输入", icon: Mic },
+  { key: "dependencies", label: "依赖包源", description: "内网包源与 Python / npm 运行环境", icon: Database },
   { key: "personalization", label: "个性化", description: "助手人格 SOUL.md 与用户画像 USER.md", icon: Sparkles },
 ];
 
@@ -157,6 +160,7 @@ const settingsEnglish = {
     general: { label: "System", description: "Language, behavior, and assistant preferences" },
     providers: { label: "Model Configuration", description: "Providers, API keys, and OAuth" },
     voice: { label: "Voice", description: "Default ASR model and voice input" },
+    dependencies: { label: "Dependencies", description: "Package sources and Python / npm runtimes" },
     personalization: { label: "Personalization", description: "Assistant persona (SOUL.md) and user profile (USER.md)" },
     safety: { label: "Security", description: "Workspace permissions and local-service access" },
   },
@@ -1005,6 +1009,8 @@ export function SettingsView({
               {activeTab === "personalization" && (
                 <PersonalizationSection isEnglish={isEnglish} />
               )}
+
+              {activeTab === "dependencies" && <DependencySettingsSection token={token} apiBase={apiBase} isEnglish={isEnglish} />}
 
               {activeTab === "general" && settings && (
                 <GeneralSection

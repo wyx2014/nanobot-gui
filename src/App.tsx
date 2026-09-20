@@ -828,7 +828,8 @@ function App() {
               <TooltipContent
                 side="bottom"
                 sideOffset={8}
-                className="border border-white/10 bg-[#292824] px-2.5 py-1 text-[12px] font-medium text-white shadow-lg [&>svg]:hidden"
+                showArrow={false}
+                className="border border-white/10 bg-[#292824] px-2.5 py-1 text-[12px] font-medium text-white shadow-lg"
               >
                 {effectiveSidebarCollapsed ? t.sidebar.showSidebar : t.sidebar.hideSidebar}
               </TooltipContent>
@@ -850,7 +851,8 @@ function App() {
               <TooltipContent
                 side="bottom"
                 sideOffset={8}
-                className="border border-white/10 bg-[#292824] px-2.5 py-1 text-[12px] font-medium text-white shadow-lg [&>svg]:hidden"
+                showArrow={false}
+                className="border border-white/10 bg-[#292824] px-2.5 py-1 text-[12px] font-medium text-white shadow-lg"
               >
                 {t.sidebar.goBack}
               </TooltipContent>
@@ -872,7 +874,8 @@ function App() {
               <TooltipContent
                 side="bottom"
                 sideOffset={8}
-                className="border border-white/10 bg-[#292824] px-2.5 py-1 text-[12px] font-medium text-white shadow-lg [&>svg]:hidden"
+                showArrow={false}
+                className="border border-white/10 bg-[#292824] px-2.5 py-1 text-[12px] font-medium text-white shadow-lg"
               >
                 {t.sidebar.goForward}
               </TooltipContent>
